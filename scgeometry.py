@@ -1143,6 +1143,46 @@ class SCLoop:
         """
         return min(distance_to(point, segment) for segment in self.segments)
 
+    # Method `SCLoop.contains()`:
+    def contains(self, point: Point) -> bool:
+        """Return whether a point is inside the loop (either way round).
+
+        A ray from the point toward +X crosses the loop an odd number
+        of times when the point is inside.  The ray is moved up by a
+        hair, so that it does not pass exactly through a joint.
+
+        Arguments:
+        * `point` (`Point`): The point (not on the loop itself).
+
+        Returns:
+        * (`bool`): True when it is inside.
+        """
+        x: float = point[0]
+        y: float = point[1] + math.pi * 1e-8
+        crossings: int = 0
+        segment: SCSegment
+        for segment in self.segments:
+            if isinstance(segment, SCLine):
+                (x1, y1), (x2, y2) = segment.start, segment.end
+                if (y1 > y) != (y2 > y) and x < x1 + (y - y1) * (x2 - x1) / (
+                    y2 - y1
+                ):
+                    crossings += 1
+                continue
+            rise: float = y - segment.center[1]
+            if abs(rise) >= segment.radius:
+                continue
+            across: float = math.sqrt(segment.radius**2 - rise**2)
+            side: float
+            for side in (-across, across):
+                meeting: Point = (segment.center[0] + side, y)
+                if (
+                    meeting[0] > x
+                    and 0.0 <= fraction_of(segment, meeting) <= 1.0
+                ):
+                    crossings += 1
+        return crossings % 2 == 1
+
     # Method `SCLoop.corners()`:
     def corners(self) -> list[tuple[Point, Point, Point]]:
         """Return where the loop turns sharply between two segments.
@@ -1243,10 +1283,106 @@ def inset(loops: Sequence[SCLoop], distance: float, name: str) -> list[SCLoop]:
     kept: list[SCSegment] = _trim(_moved(loops, distance), loops, distance)
 
     # Join the pieces into loops.
-    chains: list[list[SCSegment]] = _chain(kept)
+    return _loops(kept, name)
+
+
+# Function `beyond()`:
+def beyond(
+    region: Sequence[SCLoop],
+    inner: Sequence[SCLoop],
+    distance: float,
+    name: str,
+) -> list[SCLoop]:
+    """Return the part of a region farther than a distance from another.
+
+    `inner` is a region inside `region` (both with their regions on
+    the left of their loops).  The result is what is left of `region`
+    once everything within `distance` of `inner` (or inside it) is
+    taken away: `inner` is grown by `distance` (an inset of its
+    outside), the two outlines are split where they cross, and the
+    pieces of `region`'s outline far enough from `inner`, with the
+    pieces of the grown outline inside `region`, are joined into loops.
+
+    Arguments:
+    * `region` (`Sequence[SCLoop]`): The region's loops.
+    * `inner` (`Sequence[SCLoop]`): The inner region's loops.
+    * `distance` (`float`): How far from `inner` to take away.
+    * `name` (`str`): The name of the loops found (numbered when there
+      are several).
+
+    Returns:
+    * (`list[SCLoop]`): The loops of what is left, with it on their
+      left.
+    """
+    # Grow the inner region: an inset of its outside.
+    if not inner:
+        return list(region)
+    grown: list[SCLoop] = inset(
+        [loop.reversed() for loop in inner], distance, name
+    )
+    outline: list[SCSegment] = [
+        segment for loop in region for segment in loop.segments
+    ]
+    edge: list[SCSegment] = [
+        segment for loop in grown for segment in loop.segments
+    ]
+
+    # Keep the region's outline where it is far from the inner region,
+    # and the grown outline where it is inside the region.
+    kept: list[SCSegment] = []
+    segment: SCSegment
+    for segment in outline:
+        piece: SCSegment
+        for piece in _split_by(segment, edge):
+            middle: Point = point_at(piece, 0.5)
+            if all(loop.distance(middle) > distance + TOUCH for loop in inner):
+                kept.append(piece)
+    for segment in edge:
+        for piece in _split_by(segment, outline):
+            middle = point_at(piece, 0.5)
+            if sum(loop.contains(middle) for loop in region) % 2 == 1:
+                kept.append(piece)
+    return _loops(kept, name)
+
+
+# Function `_split_by()`:
+def _split_by(
+    segment: SCSegment, others: Sequence[SCSegment]
+) -> list[SCSegment]:
+    """Split a segment wherever other segments cross it.
+
+    Arguments:
+    * `segment` (`SCSegment`): The segment.
+    * `others` (`Sequence[SCSegment]`): The segments that may cross it.
+
+    Returns:
+    * (`list[SCSegment]`): Its pieces (longer than `TOUCH`), in order.
+    """
+    crossings: list[Point] = [
+        point for other in others for point in meet(segment, other)
+    ]
+    return [
+        piece
+        for piece in split_at(segment, crossings)
+        if piece.length() > TOUCH
+    ]
+
+
+# Function `_loops()`:
+def _loops(pieces: list[SCSegment], name: str) -> list[SCLoop]:
+    """Join pieces into named loops, dropping any with no area.
+
+    Arguments:
+    * `pieces` (`list[SCSegment]`): The pieces, in any order.
+    * `name` (`str`): The loops' name (numbered when there are
+      several).
+
+    Returns:
+    * (`list[SCLoop]`): The loops.
+    """
     found: list[SCLoop] = []
     chain: list[SCSegment]
-    for chain in chains:
+    for chain in _chain(pieces):
         result: SCLoop = SCLoop(name, tuple(_merge(chain)))
         if abs(result.signed_area()) > EPSILON:
             found.append(result)

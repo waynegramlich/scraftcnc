@@ -3,6 +3,7 @@
 import math
 import re
 import unittest
+from collections.abc import Sequence
 
 from scgeometry import (
     SCArc,
@@ -11,7 +12,6 @@ from scgeometry import (
     SCRoundPoly,
     SCSegment,
     distance_to,
-    point_at,
 )
 from scmachine import SCMachine, SCTool
 from solidcraftcnc import SCCNC, SCRing, _number, cut_order, plan_pocket
@@ -20,7 +20,7 @@ from test_scgeometry import dumbbell, square
 
 # Function `machine()`:
 def machine(**changes: object) -> SCMachine:
-    """Return a test machine: an end mill (1) and two drills (2, 3).
+    """Return a test machine: end mill 1, drills 2 and 3, bits 5 and 6.
 
     Arguments:
     * `changes` (`object`): Preferences to change from the defaults.
@@ -36,12 +36,24 @@ def machine(**changes: object) -> SCMachine:
         "tool_change": "T{number:02d}",
         "rapid_speed": 60.0,
         "drill_cycle": "G83",
+        "through_overcut": 0.1,
         "stepover": 0.9,
         "ramp_angle": 3.0,
         "tools": (
             SCTool(1, "End mill", "end mill", 0.25, 1200, 12.0, 6.0),
             SCTool(2, "Drill", "drill", 0.234375, 1200, 4.0, 4.0, 0.05),
             SCTool(3, "Small drill", "drill", 0.125, 1200, 4.0, 4.0, 0.05),
+            SCTool(5, "V-bit", "chamfer", 0.02, 1200, 12.0, 4.0, angle=90.0),
+            SCTool(
+                6,
+                "Rounder",
+                "corner round",
+                0.125,
+                1200,
+                12.0,
+                4.0,
+                radius=0.0625,
+            ),
         ),
     }
     settings.update(changes)
@@ -237,79 +249,125 @@ def rings(roots: list[SCRing]) -> list[SCRing]:
 
 # Function `uncut()`:
 def uncut(
-    poly: SCRoundPoly, diameter: float, stepover: float, spacing: float
+    poly: SCRoundPoly,
+    stepover: float,
+    spacing: float,
+    islands: Sequence[SCRoundPoly] = (),
 ) -> list[tuple[float, float]]:
     """Return the points of a pocket that no ring's cut reaches.
 
+    The tool is 0.25 in across.
+
     Arguments:
     * `poly` (`SCRoundPoly`): The pocket.
-    * `diameter` (`float`): The tool's diameter.
     * `stepover` (`float`): The rings' stepover.
     * `spacing` (`float`): How far apart the points tried are.
+    * `islands` (`Sequence[SCRoundPoly]`): Outlines left standing.
 
     Returns:
     * (`list[tuple[float, float]]`): The points left uncut.
     """
     # Every segment and spur that the tool's center follows.
-    boundary: SCLoop = SCLoop.from_poly(poly)
+    wall: SCLoop = SCLoop.from_poly(poly)
+    holes: list[SCLoop] = [SCLoop.from_poly(island) for island in islands]
+    region: list[SCLoop] = [
+        wall,
+        *(hole.reversed() if hole.is_ccw() else hole for hole in holes),
+    ]
     cuts: list[SCSegment] = [
         segment
-        for ring in rings(plan_pocket(boundary, diameter, stepover))
-        for segment in (*ring.loop.segments, *ring.spurs)
+        for ring in rings(plan_pocket(region, 0.25, stepover))
+        for segment in (
+            *(part for loop in ring.loops for part in loop.segments),
+            *ring.spurs,
+        )
     ]
 
-    # Try points inside the pocket (a crossing count around its
-    # outline, sampled finely), not right at its wall.
-    outline: list[tuple[float, float]] = [
-        point_at(segment, step / 20.0)
-        for segment in boundary.segments
-        for step in range(20)
-    ]
+    # Try points in the pocket (not in an island), not right at a wall.
+    xs: list[float] = [segment.start[0] for segment in wall.segments]
+    ys: list[float] = [segment.start[1] for segment in wall.segments]
     missed: list[tuple[float, float]] = []
-    xs: list[float] = [point[0] for point in outline]
-    ys: list[float] = [point[1] for point in outline]
-    across: int = int((max(xs) - min(xs)) / spacing)
-    up: int = int((max(ys) - min(ys)) / spacing)
-    for column in range(across + 1):
-        for row in range(up + 1):
+    for column in range(int((max(xs) - min(xs)) / spacing) + 1):
+        for row in range(int((max(ys) - min(ys)) / spacing) + 1):
             point: tuple[float, float] = (
                 min(xs) + column * spacing,
                 min(ys) + row * spacing,
             )
-            if not inside(outline, point) or boundary.distance(point) < 1e-3:
-                continue
             if (
-                min(distance_to(point, cut) for cut in cuts)
-                > diameter / 2 + 1e-6
+                not wall.contains(point)
+                or any(hole.contains(point) for hole in holes)
+                or min(loop.distance(point) for loop in region) < 1e-3
             ):
+                continue
+            if min(distance_to(point, cut) for cut in cuts) > 0.125 + 1e-6:
                 missed.append(point)
     return missed
 
 
-# Function `inside()`:
-def inside(
-    outline: list[tuple[float, float]], point: tuple[float, float]
-) -> bool:
-    """Return whether a point is inside a polygon (counting crossings).
+# Function `depth()`:
+def depth(ring: SCRing) -> int:
+    """Return how many rings deep a ring's tree goes.
 
     Arguments:
-    * `outline` (`list[tuple[float, float]]`): The polygon's corners.
-    * `point` (`tuple[float, float]`): The point.
+    * `ring` (`SCRing`): The ring.
 
     Returns:
-    * (`bool`): True when it is inside.
+    * (`int`): 1 for a ring with none inside it.
     """
-    crossings: int = 0
-    index: int
-    x1: float
-    y1: float
-    for index, (x1, y1) in enumerate(outline):
-        x2, y2 = outline[(index + 1) % len(outline)]
-        if (y1 > point[1]) != (y2 > point[1]) and point[0] < x1 + (
-            point[1] - y1
-        ) * (x2 - x1) / (y2 - y1):
-            crossings += 1
-    return crossings % 2 == 1
+    return 1 + max((depth(child) for child in ring.children), default=0)
+
+
+# Function `island_pocket()`:
+def island_pocket() -> tuple[SCRoundPoly, list[SCRoundPoly]]:
+    """Return a pocket with three islands, as the demonstration has.
+
+    The islands are a triangle and a square with slightly rounded
+    corners, and a square whose corner arcs make a circle.
+
+    Returns:
+    * (`SCRoundPoly`): The pocket.
+    * (`list[SCRoundPoly]`): Its islands.
+    """
+    edge: float = 0.0625
+    return (
+        SCRoundPoly(
+            "Pocket",
+            [
+                SCCorner(0.3, 0.3, 0.1875),
+                SCCorner(2.75, 0.3, 0.1875),
+                SCCorner(2.75, 2.05, 0.1875),
+                SCCorner(0.3, 2.05, 0.1875),
+            ],
+        ),
+        [
+            SCRoundPoly(
+                "Triangle",
+                [
+                    SCCorner(0.65, 0.65, edge),
+                    SCCorner(1.25, 0.65, edge),
+                    SCCorner(0.95, 1.2, edge),
+                ],
+            ),
+            SCRoundPoly(
+                "Square",
+                [
+                    SCCorner(1.65, 0.65, edge),
+                    SCCorner(2.15, 0.65, edge),
+                    SCCorner(2.15, 1.15, edge),
+                    SCCorner(1.65, 1.15, edge),
+                ],
+            ),
+            SCRoundPoly(
+                "Circle",
+                [
+                    SCCorner(1.2, 1.35, 0.2),
+                    SCCorner(1.6, 1.35, 0.2),
+                    SCCorner(1.6, 1.75, 0.2),
+                    SCCorner(1.2, 1.75, 0.2),
+                ],
+            ),
+        ],
+    )
 
 
 # Function `rounded_dumbbell()`:
@@ -340,19 +398,19 @@ class TestPocket(unittest.TestCase):
     def test_plan(self) -> None:
         """A dumbbell's rings come apart into one tree per lobe."""
         roots: list[SCRing] = plan_pocket(
-            SCLoop.from_poly(rounded_dumbbell()), 0.25, 0.9
+            [SCLoop.from_poly(rounded_dumbbell())], 0.25, 0.9
         )
         self.assertEqual(len(roots), 1)
         self.assertEqual(len(roots[0].children), 2)
         self.assertEqual(roots[0].spurs, [])
         child: SCRing
         for child in roots[0].children:
-            self.assertTrue(child.loop.is_ccw())
+            self.assertTrue(child.loops[0].is_ccw())
             self.assertEqual(len(child.spurs), 5)
 
         # A pocket too small for the tool is refused.
         with self.assertRaises(ValueError):
-            plan_pocket(SCLoop.from_poly(square(0.2, 0.0)), 0.25, 0.9)
+            plan_pocket([SCLoop.from_poly(square(0.2, 0.0))], 0.25, 0.9)
 
     # Method `TestPocket.test_coverage()`:
     def test_coverage(self) -> None:
@@ -372,15 +430,13 @@ class TestPocket(unittest.TestCase):
         ):
             stepover: float
             for stepover in (0.5, 0.9, 1.0):
-                self.assertEqual(
-                    uncut(poly, 0.25, stepover, 0.01), [], poly.name
-                )
+                self.assertEqual(uncut(poly, stepover, 0.01), [], poly.name)
 
     # Method `TestPocket.test_order()`:
     def test_order(self) -> None:
         """Rings are cut after the rings inside them."""
         roots: list[SCRing] = plan_pocket(
-            SCLoop.from_poly(square(2.0, 0.125)), 0.25, 0.9
+            [SCLoop.from_poly(square(2.0, 0.125))], 0.25, 0.9
         )
         order: list[tuple[SCRing, str]] = list(cut_order(roots[0], 0.25))
         self.assertIs(order[-1][0], roots[0])
@@ -390,7 +446,7 @@ class TestPocket(unittest.TestCase):
         ring: SCRing
         for ring, _ in order:
             for child in ring.children:
-                if child.loop.length() >= 0.5 or child.children:
+                if child.length() >= 0.5 or child.children:
                     self.assertIn(child, seen)
             seen.append(ring)
         self.assertEqual(len(seen), len(rings(roots)))
@@ -450,9 +506,10 @@ class TestPocket(unittest.TestCase):
         """The machine's stepover and ramp angle are used."""
         narrow: SCCNC = milling(stepover=0.5)
         wide: SCCNC = milling()
-        narrow.pocket(square(2.0, 0.125), -0.1, 0.1)
-        wide.pocket(square(2.0, 0.125), -0.1, 0.1)
-        self.assertGreater(narrow.minutes, wide.minutes)
+        self.assertGreater(
+            depth(narrow.pocket(square(2.0, 0.125), -0.1, 0.1)[0]),
+            depth(wide.pocket(square(2.0, 0.125), -0.1, 0.1)[0]),
+        )
         steep: SCCNC = milling(ramp_angle=30.0)
         steep.pocket(square(2.0, 0.125), -0.1, 0.1)
         self.assertLess(len(steep.commands), len(wide.commands))
@@ -554,6 +611,148 @@ class TestDrill(unittest.TestCase):
         self.assertEqual(
             cnc.profile_entry(square(2.0, 0.25), cnc.cutter), (-0.375, 1.0)
         )
+
+
+# Class `TestIslands`:
+class TestIslands(unittest.TestCase):
+    """Pockets with islands left standing in them."""
+
+    # Method `TestIslands.test_plan()`:
+    def test_plan(self) -> None:
+        """The wall ring goes around each island, clockwise."""
+        poly: SCRoundPoly
+        islands: list[SCRoundPoly]
+        poly, islands = island_pocket()
+        cnc: SCCNC = milling()
+        roots: list[SCRing] = cnc.pocket(poly, -0.1, 0.1, islands=islands)
+        self.assertEqual(len(roots), 1)
+        self.assertEqual(len(roots[0].loops), 4)
+        self.assertTrue(roots[0].loops[0].is_ccw())
+        self.assertFalse(any(loop.is_ccw() for loop in roots[0].loops[1:]))
+        self.assertIn("(Pocket Pocket around 3 islands to Z-0.1)", cnc.gcode())
+
+        # A drill hole for each loop of each ring with nothing in it.
+        entries: list[tuple[float, float]] = cnc.pocket_entries(
+            poly, cnc.cutter, islands
+        )
+        loops: int = sum(
+            len(ring.loops)
+            for root in roots
+            for ring, mode in cut_order(root, 0.25)
+            if mode == "ramp"
+        )
+        self.assertEqual(len(entries), loops)
+
+    # Method `TestIslands.test_coverage()`:
+    def test_coverage(self) -> None:
+        """Every point of the pocket outside the islands is reached."""
+        poly: SCRoundPoly
+        islands: list[SCRoundPoly]
+        poly, islands = island_pocket()
+        stepover: float
+        for stepover in (0.9, 1.0):
+            self.assertEqual(uncut(poly, stepover, 0.01, islands), [])
+
+    # Method `TestIslands.test_gcode()`:
+    def test_gcode(self) -> None:
+        """No cut comes nearer an island than the tool's radius."""
+        poly: SCRoundPoly
+        islands: list[SCRoundPoly]
+        poly, islands = island_pocket()
+        cnc: SCCNC = milling()
+        cnc.pocket(poly, -0.1, 0.1, islands=islands)
+        holes: list[SCLoop] = [SCLoop.from_poly(island) for island in islands]
+        line: str
+        for line in cnc.gcode().splitlines():
+            found: dict[str, float] = {
+                letter: float(value)
+                for letter, value in re.findall(r"([XY])(-?[0-9.]+)", line)
+            }
+            if not line.startswith(("G1", "G2", "G3")) or len(found) < 2:
+                continue
+            point: tuple[float, float] = (found["X"], found["Y"])
+            for hole in holes:
+                self.assertFalse(hole.contains(point), line)
+                self.assertGreaterEqual(
+                    hole.distance(point), 0.125 - 1e-4, line
+                )
+
+    # Method `TestIslands.test_bad_islands()`:
+    def test_bad_islands(self) -> None:
+        """Islands outside the pocket, or crossing, are refused."""
+        poly: SCRoundPoly
+        islands: list[SCRoundPoly]
+        poly, islands = island_pocket()
+        cnc: SCCNC = milling()
+        outside: SCRoundPoly = square(0.2, 0.0)
+        crossing: SCRoundPoly = SCRoundPoly(
+            "Across",
+            [SCCorner(x, y) for x, y in ((0.2, 1), (0.5, 1), (0.5, 1.2))],
+        )
+        bad: list[SCRoundPoly]
+        for bad in ([outside], [crossing], [islands[0], islands[0]]):
+            with self.assertRaises(ValueError):
+                cnc.pocket(poly, -0.1, 0.1, islands=bad)
+
+
+# Class `TestEdges`:
+class TestEdges(unittest.TestCase):
+    """Cuts through the part, and chamfered or rounded edges."""
+
+    # Method `TestEdges.test_through()`:
+    def test_through(self) -> None:
+        """A cut through the part goes 10% of its thickness deeper."""
+        cnc: SCCNC = milling()
+        self.assertAlmostEqual(cnc.below(-0.5), -0.55)
+        self.assertEqual(cnc.below(-0.5, through=False), -0.5)
+        cnc.profile(square(1.0, 0.25), -0.5, 0.25, through=True)
+        self.assertIn("(Profile Square outside to Z-0.55)", cnc.gcode())
+        depths: list[str] = [
+            line
+            for line in cnc.gcode().splitlines()
+            if line.startswith("G1 Z")
+        ]
+        self.assertEqual(depths[-1], "G1 Z-0.55 F6")
+        cnc.change_tool(2)
+        cnc.drill([(0.0, 0.0)], -0.5, through=True)
+        self.assertIn(" Z-0.55 R", cnc.gcode())
+
+    # Method `TestEdges.test_bevel()`:
+    def test_bevel(self) -> None:
+        """A V-bit runs just off the wall, deep enough to bevel."""
+        cnc: SCCNC = milling()
+        cnc.change_tool(5)
+        path: SCRoundPoly = cnc.chamfer(square(1.0, 0.25), 0.03)
+        lines: list[str] = cnc.gcode().splitlines()
+        self.assertIn("(Chamfer Square 0.03 wide outside)", lines)
+
+        # 45 degrees: as deep as it is wide (plus the clearance); the
+        # tip's center is its radius plus the clearance off the wall.
+        self.assertIn("G1 Z-0.035 F4", lines)
+        self.assertAlmostEqual(path.corners[0].x, -0.015)
+        self.assertFalse(path.is_ccw())
+        with self.assertRaises(ValueError):
+            cnc.chamfer(square(1.0, 0.25))
+
+        # Inside a hole, it goes around the other way.
+        inner: SCRoundPoly = cnc.chamfer(square(1.0, 0.25), 0.03, inside=True)
+        self.assertTrue(inner.is_ccw())
+        self.assertAlmostEqual(inner.corners[0].x, 0.015)
+
+    # Method `TestEdges.test_round_over()`:
+    def test_round_over(self) -> None:
+        """A corner rounding bit rides its tip radius off the wall."""
+        cnc: SCCNC = milling()
+        cnc.change_tool(6)
+        path: SCRoundPoly = cnc.chamfer(square(1.0, 0.25))
+        lines: list[str] = cnc.gcode().splitlines()
+        self.assertIn("(Round over Square to 0.0625 outside)", lines)
+        self.assertIn("G1 Z-0.0625 F4", lines)
+        self.assertAlmostEqual(path.corners[0].x, -0.0625)
+
+        # An end mill cannot chamfer.
+        with self.assertRaises(ValueError):
+            milling().chamfer(square(1.0, 0.25), 0.03)
 
 
 if __name__ == "__main__":

@@ -34,10 +34,13 @@ from scgeometry import (
     SCLoop,
     SCRoundPoly,
     SCSegment,
+    beyond,
+    distance_to,
     halves,
     inset,
     left,
     meet,
+    point_at,
     start_tangent,
     turn_between,
     unit,
@@ -54,6 +57,17 @@ RS274: TypeAlias = dict[str, float | int | str]
 # first), or cut straight into (a ring too small to ramp into, cut
 # after the ring around it).
 CutMode: TypeAlias = Literal["ramp", "drilled", "lead", "plain"]
+
+# A chamfer bit's tip runs this far off the wall (beyond its own
+# radius), so that it does not rub the wall below the bevel.
+CHAMFER_CLEAR: float = 0.005
+
+# Finding what a pocket's rings leave uncut, a point counts as reached
+# when it is within a tool radius plus this of a ring's path.  At a
+# stepover of 1, the next ring's reach ends exactly on the edge of what
+# this ring leaves, and outlines lying exactly on each other cannot be
+# sorted reliably; the margin moves one just past the other.
+REACH_MARGIN: float = 1e-4
 
 # A smallest ring shorter than this many tool diameters is too small to
 # ramp into well (going around it would be little better than plunging
@@ -147,26 +161,28 @@ def _check_leads(
 
 # Function `_profile_path()`:
 def _profile_path(
-    poly: SCRoundPoly, inside: bool, diameter: float
+    poly: SCRoundPoly, inside: bool, offset: float, lead: float
 ) -> tuple[SCRoundPoly, tuple[SCArc, list[SCSegment], SCArc]]:
     """Return the path a tool follows to cut along an outline.
 
     Arguments:
     * `poly` (`SCRoundPoly`): The outline.
     * `inside` (`bool`): True to cut from inside the outline.
-    * `diameter` (`float`): The tool's diameter.
+    * `offset` (`float`):
+      How far off the outline the tool's center goes (its radius, for
+      an end mill).
+    * `lead` (`float`): The radius of the lead-in and lead-out.
 
     Returns:
     * (`SCRoundPoly`): The path of the tool's center: off the outline
-      by the tool's radius, going the climb milling way around.
+      by `offset`, going the climb milling way around.
     * (`tuple[SCArc, list[SCSegment], SCArc]`): Its lead-in, loop and
       lead-out (see `_leads()`).
     """
-    radius: float = diameter / 2.0
-    path: SCRoundPoly = poly.offset(-radius if inside else radius)
+    path: SCRoundPoly = poly.offset(-offset if inside else offset)
     if path.is_ccw() != inside:
         path = path.reversed()
-    return path, _leads(SCLoop.from_poly(path), radius)
+    return path, _leads(SCLoop.from_poly(path), lead)
 
 
 # Function `_number()`:
@@ -189,26 +205,40 @@ def _number(value: float) -> str:
 class SCRing:
     """One ring of a pocket's tool path, and the rings inside it.
 
+    A ring is a region's edge: its outer loop, and a loop around each
+    island in it.  Each loop has the region on its left, so the tool
+    goes counter-clockwise around the outer loop and clockwise around
+    the islands, climb milling with the material it cuts on its right.
+
     Attributes:
-    * `loop` (`SCLoop`):
-      The path the tool's center follows, counter-clockwise (so that
-      it climb mills, with the material it cuts on its right).
+    * `loops` (`list[SCLoop]`):
+      The paths the tool's center follows: the outer loop first, then
+      the loops around islands.
     * `children` (`list[SCRing]`): The rings just inside this one.
     * `spurs` (`list[SCLine]`):
-      Short cuts straight out from sharp corners of `loop` (and back),
-      into the corners between it and the rings around it, which would
-      otherwise be left uncut.
+      Short cuts straight out from sharp corners of `loops` (and back),
+      into the corners between them and the rings around them, which
+      would otherwise be left uncut.
 
     Constructor:
-    * `SCRing(loop)`
+    * `SCRing(loops)`
     """
 
     # Constructor arguments:
-    loop: SCLoop = field(init=True)
+    loops: list[SCLoop] = field(init=True)
 
     # Attributes filled in by `plan_pocket()` (alphabetized):
     children: list["SCRing"] = field(init=False, default_factory=list)
     spurs: list[SCLine] = field(init=False, default_factory=list)
+
+    # Method `SCRing.length()`:
+    def length(self) -> float:
+        """Return the distance around all of the ring's loops.
+
+        Returns:
+        * (`float`): The total length.
+        """
+        return sum(loop.length() for loop in self.loops)
 
     # Method `SCRing.post_order()`:
     def post_order(self) -> Iterator["SCRing"]:
@@ -243,7 +273,7 @@ def cut_order(
     small: list[SCRing] = [
         child
         for child in ring.children
-        if not child.children and child.loop.length() < SMALL_RING * diameter
+        if not child.children and child.length() < SMALL_RING * diameter
     ]
     child: SCRing
     for child in ring.children:
@@ -256,18 +286,20 @@ def cut_order(
 
 # Function `plan_pocket()`:
 def plan_pocket(
-    boundary: SCLoop, diameter: float, stepover: float
+    region: Sequence[SCLoop], diameter: float, stepover: float
 ) -> list[SCRing]:
     """Plan the rings that clear a pocket.
 
-    The outermost rings follow the pocket's wall, a tool radius in
-    from it.  Inside each ring are the rings `stepover` of the tool's
-    diameter in from it, until they vanish; where the last rings would
-    leave the middle uncut, one more set follows the outline of what is
-    left.
+    The outermost rings follow the pocket's wall (and its islands'), a
+    tool radius in from them.  Inside each ring are the rings `stepover`
+    of the tool's diameter in from it, until they vanish; where the
+    last rings would leave the middle uncut, one more set follows the
+    outline of what is left.
 
     Arguments:
-    * `boundary` (`SCLoop`): The pocket's wall, counter-clockwise.
+    * `region` (`Sequence[SCLoop]`):
+      The pocket's wall (counter-clockwise), then its islands
+      (clockwise), so the pocket is on the left of each.
     * `diameter` (`float`): The tool's diameter.
     * `stepover` (`float`):
       How far apart the rings are, as a fraction of `diameter`.
@@ -279,14 +311,49 @@ def plan_pocket(
     Raises:
     * `ValueError`: If the tool does not fit in the pocket.
     """
-    walls: list[SCLoop] = inset([boundary], diameter / 2.0, boundary.name)
-    if not walls:
-        raise ValueError(f"{boundary.name}: the tool does not fit in it")
-    roots: list[SCRing] = [SCRing(loop) for loop in walls]
+    name: str = region[0].name
+    roots: list[SCRing] = [
+        SCRing(loops)
+        for loops in _regions(inset(region, diameter / 2.0, name))
+    ]
+    if not roots:
+        raise ValueError(f"{name}: the tool does not fit in it")
     root: SCRing
     for root in roots:
         _grow(root, diameter, stepover * diameter, 1)
     return roots
+
+
+# Function `_regions()`:
+def _regions(loops: Sequence[SCLoop]) -> list[list[SCLoop]]:
+    """Sort loops into regions: each outer loop, and the islands in it.
+
+    Arguments:
+    * `loops` (`Sequence[SCLoop]`):
+      Loops with their regions on their left: counter-clockwise outer
+      loops, and clockwise loops around islands.
+
+    Returns:
+    * (`list[list[SCLoop]]`): Each region's loops, outer loop first.
+      An island's loop goes with the smallest outer loop around it.
+    """
+    outers: list[SCLoop] = [loop for loop in loops if loop.is_ccw()]
+    regions: list[list[SCLoop]] = [[outer] for outer in outers]
+    island: SCLoop
+    for island in loops:
+        if island.is_ccw():
+            continue
+        around: list[int] = [
+            index
+            for index, outer in enumerate(outers)
+            if outer.contains(island.segments[0].start)
+        ]
+        if around:
+            smallest: int = min(
+                around, key=lambda index: outers[index].signed_area()
+            )
+            regions[smallest].append(island)
+    return regions
 
 
 # Function `_grow()`:
@@ -299,53 +366,91 @@ def _grow(ring: SCRing, diameter: float, step: float, level: int) -> None:
     * `step` (`float`): How far in each ring is from the one around it.
     * `level` (`int`): How many rings `ring` is inside of.
     """
-    # The rings a step in, or the last ones a smaller step in.
-    name: str = f"{ring.loop.name.split(' ring ')[0]} ring {level}"
-    loops: list[SCLoop] = inset([ring.loop], step, name)
-    if loops:
-        ring.children = [SCRing(loop) for loop in loops]
-        child: SCRing
-        for child in ring.children:
-            _grow(child, diameter, step, level + 1)
-    else:
-        ring.children = [
-            SCRing(loop) for loop in _last_rings(ring.loop, diameter, step)
-        ]
-
-    # Reach into the corners the rings leave uncut.
-    nearby: list[SCLoop] = [
-        ring.loop,
-        *(child.loop for child in ring.children),
-    ]
+    # The rings a step in, and theirs; and spurs into the corners they
+    # leave uncut.
+    radius: float = diameter / 2.0
+    base: str = ring.loops[0].name.split(" ring ")[0]
+    inner: list[SCLoop] = inset(ring.loops, step, f"{base} ring {level}")
+    ring.children = [SCRing(loops) for loops in _regions(inner)]
+    child: SCRing
     for child in ring.children:
-        child.spurs = _spurs(
-            child.loop,
-            [loop for loop in nearby if loop is not child.loop],
-            diameter,
+        _grow(child, diameter, step, level + 1)
+    _add_spurs(ring, ring.children, diameter)
+
+    # Where neither this ring's cut nor theirs (nor their spurs)
+    # reaches (the part more than a tool radius in from this ring, and
+    # more than a tool radius from theirs), a last ring follows the
+    # outline of what is left.  It is less than `step` minus a tool
+    # radius from that outline, so following it clears it.
+    if step > radius:
+        uncut: list[SCLoop] = beyond(
+            inset(ring.loops, radius, f"{base} ring last"),
+            inner,
+            radius + REACH_MARGIN,
+            f"{base} ring last",
         )
+        spurs: list[SCLine] = [
+            spur for child in ring.children for spur in child.spurs
+        ]
+        last: list[SCRing] = [
+            SCRing(loops)
+            for loops in _regions(uncut)
+            if not _reached(loops, spurs, radius)
+        ]
+        ring.children += last
+        _add_spurs(ring, last, diameter)
 
 
-# Function `_last_rings()`:
-def _last_rings(loop: SCLoop, diameter: float, step: float) -> list[SCLoop]:
-    """Return the rings needed to clear the middle of a smallest ring.
-
-    A ring clears a tool radius on either side, so the part of its
-    middle more than a tool radius in is left uncut.  That part is less
-    than `step` across, so following its outline clears it.
+# Function `_add_spurs()`:
+def _add_spurs(
+    ring: SCRing, children: Sequence[SCRing], diameter: float
+) -> None:
+    """Add spurs to the corners of rings, into what they leave uncut.
 
     Arguments:
-    * `loop` (`SCLoop`): The smallest ring (nothing is `step` in).
+    * `ring` (`SCRing`): The ring around them.
+    * `children` (`Sequence[SCRing]`): The rings to add spurs to.
     * `diameter` (`float`): The tool's diameter.
-    * `step` (`float`): The usual distance between rings.
+    """
+    nearby: list[SCLoop] = [
+        *ring.loops,
+        *(loop for child in ring.children for loop in child.loops),
+    ]
+    child: SCRing
+    for child in children:
+        child.spurs = [
+            spur
+            for loop in child.loops
+            for spur in _spurs(
+                loop,
+                [other for other in nearby if other is not loop],
+                diameter,
+            )
+        ]
+
+
+# Function `_reached()`:
+def _reached(
+    loops: Sequence[SCLoop], spurs: Sequence[SCLine], radius: float
+) -> bool:
+    """Return whether spurs' cuts reach all around some loops.
+
+    Arguments:
+    * `loops` (`Sequence[SCLoop]`): The loops (of a small region).
+    * `spurs` (`Sequence[SCLine]`): The spurs.
+    * `radius` (`float`): The tool's radius.
 
     Returns:
-    * (`list[SCLoop]`): The outlines of what is left uncut (none when
-      nothing is).
+    * (`bool`): True when every point tried along the loops is within
+      a tool radius of a spur.
     """
-    radius: float = diameter / 2.0
-    if step <= radius:
-        return []
-    return inset([loop], radius, f"{loop.name.split(' ring ')[0]} ring last")
+    return bool(spurs) and all(
+        min(distance_to(point_at(segment, fraction), spur) for spur in spurs)
+        <= radius
+        for loop in loops
+        for segment in loop.segments
+        for fraction in (0.0, 0.25, 0.5, 0.75)
+    )
 
 
 # Function `_spurs()`:
@@ -720,7 +825,9 @@ class SCCNC:
         self._move(1, (None, None, z), feed=self.cutter.plunge)
 
     # Method `SCCNC.drill()`:
-    def drill(self, points: Sequence[Point], bottom: float) -> None:
+    def drill(
+        self, points: Sequence[Point], bottom: float, *, through: bool = False
+    ) -> None:
         """Drill holes from `z_top` down to `bottom` with a drill.
 
         The machine's `drill_cycle` says how: a canned cycle (`G81`,
@@ -731,6 +838,9 @@ class SCCNC:
         Arguments:
         * `points` (`Sequence[Point]`): Where the holes go.
         * `bottom` (`float`): How deep they go.
+        * `through` (`bool`):
+          True when `bottom` is the bottom of the part, so the holes go
+          the machine's `through_overcut` deeper (see `below()`).
 
         Raises:
         * `ValueError`:
@@ -740,8 +850,7 @@ class SCCNC:
         tool: SCTool = self.cutter
         if tool.kind != "drill":
             raise ValueError(f"tool {tool.number} is not a drill")
-        if bottom >= self.z_top:
-            raise ValueError(f"{bottom=} must be below {self.z_top=}")
+        bottom = self.below(bottom, through)
         if not points:
             return
         cycle: str = self.machine.drill_cycle
@@ -826,6 +935,99 @@ class SCCNC:
         self.minutes += (retract - bottom) / self.cutter.plunge
         self.position = (point[0], point[1], self.z_safe)
 
+    # Method `SCCNC.below()`:
+    def below(self, bottom: float, through: bool = True) -> float:
+        """Return how deep to cut to reach a bottom.
+
+        A cut through the part goes the machine's `through_overcut`
+        (a fraction of the part's thickness) deeper, so that the metal
+        is cut cleanly instead of stretching and bulging out.
+
+        Arguments:
+        * `bottom` (`float`): The bottom (of the part, when `through`).
+        * `through` (`bool`): True for a cut through the part.
+
+        Returns:
+        * (`float`): The Z to cut down to.
+
+        Raises:
+        * `ValueError`: If `bottom` is not below `z_top`.
+        """
+        if bottom >= self.z_top:
+            raise ValueError(f"{bottom=} must be below {self.z_top=}")
+        if not through:
+            return bottom
+        return bottom - self.machine.through_overcut * (self.z_top - bottom)
+
+    # Method `SCCNC.chamfer()`:
+    def chamfer(
+        self, poly: SCRoundPoly, size: float = 0.0, *, inside: bool = False
+    ) -> SCRoundPoly:
+        """Bevel or round over the top edge of an outline.
+
+        With a chamfer bit (a V-bit of included angle 2θ), the bevel is
+        `size` wide across the top: the tip runs `CHAMFER_CLEAR` (plus
+        its own radius) off the wall, `(size + CHAMFER_CLEAR) / tan θ`
+        down, so the bit's flank lays the bevel across the edge (45
+        degrees for a 90 degree bit).  With a corner rounding bit, the
+        edge is rounded to the bit's radius (`size` is not used): its
+        tip runs its own radius off the wall, the radius down.
+
+        The tool climb mills (the part on its right), with half circle
+        leads as a profile has, in one pass.
+
+        Arguments:
+        * `poly` (`SCRoundPoly`): The outline whose top edge to do.
+        * `size` (`float`): The bevel's width across the top.
+        * `inside` (`bool`):
+          True for the edge of a hole or pocket (from inside the
+          outline), False for the outside of the part (or an island).
+
+        Returns:
+        * (`SCRoundPoly`): The path the tool's center followed.
+
+        Raises:
+        * `ValueError`:
+          If the tool is neither a chamfer nor a corner rounding bit,
+          or a bevel's size is not positive.
+        """
+        # How far off the wall the tip goes, how deep, and how wide the
+        # bit cuts at the top.
+        tool: SCTool = self.cutter
+        tip: float = tool.diameter / 2.0
+        if tool.kind == "chamfer":
+            if size <= 0.0:
+                raise ValueError(f"chamfer {size=} must be positive")
+            slope: float = math.tan(math.radians(tool.angle / 2.0))
+            offset: float = tip + CHAMFER_CLEAR
+            depth: float = (size + CHAMFER_CLEAR) / slope
+            reach: float = offset + depth * slope
+            what: str = f"Chamfer {poly.name} {_number(size)} wide"
+        elif tool.kind == "corner round":
+            offset = tip
+            depth = tool.radius
+            reach = tip + tool.radius
+            what = f"Round over {poly.name} to {_number(tool.radius)}"
+        else:
+            raise ValueError(f"tool {tool.number} cannot chamfer")
+
+        # Down at the lead-in's start, in, once around, out, and up.
+        path: SCRoundPoly
+        lead_in: SCArc
+        loop: list[SCSegment]
+        lead_out: SCArc
+        path, (lead_in, loop, lead_out) = _profile_path(
+            poly, inside, offset, reach
+        )
+        self.comment(f"{what} {'inside' if inside else 'outside'}")
+        self.rapid(z=self.z_safe)
+        self.rapid(x=lead_in.start[0], y=lead_in.start[1])
+        self.rapid(z=self.z_top + self.clearance)
+        self.plunge(self.z_top - depth)
+        self._follow([lead_in, *loop, lead_out], [])
+        self.rapid(z=self.z_safe)
+        return path
+
     # Method `SCCNC._depths()`:
     def _depths(self, bottom: float, step: float) -> list[float]:
         """Return the depths to cut at, from just below `z_top` down.
@@ -876,12 +1078,16 @@ class SCCNC:
                     self.linear(x=spur.start[0], y=spur.start[1])
 
     # Method `SCCNC.profile()`:
-    def profile(
+    # Each argument is part of saying what to cut, and the optional
+    # ones are keyword-only, so there are more than `pylint` likes.
+    def profile(  # pylint: disable=too-many-arguments
         self,
         poly: SCRoundPoly,
         bottom: float,
         step: float,
+        *,
         inside: bool = False,
+        through: bool = False,
     ) -> SCRoundPoly:
         """Cut along a polygon's outline, from `z_top` down to `bottom`.
 
@@ -907,6 +1113,9 @@ class SCCNC:
         * `bottom` (`float`): The deepest Z to cut to.
         * `step` (`float`): The most to go down between passes.
         * `inside` (`bool`): True to cut from inside the outline.
+        * `through` (`bool`):
+          True when `bottom` is the bottom of the part, so the cut goes
+          the machine's `through_overcut` deeper (see `below()`).
 
         Returns:
         * (`SCRoundPoly`): The path the tool's center followed.
@@ -917,13 +1126,15 @@ class SCCNC:
           the tool cannot follow the outline.
         """
         # Plan the path and its leads.
+        bottom = self.below(bottom, through)
         depths: list[float] = self._depths(bottom, step)
         path: SCRoundPoly
         lead_in: SCArc
         loop: list[SCSegment]
         lead_out: SCArc
+        radius: float = self.cutter.diameter / 2.0
         path, (lead_in, loop, lead_out) = _profile_path(
-            poly, inside, self.cutter.diameter
+            poly, inside, radius, radius
         )
 
         # Go over the lead-in's start, then down to just above the top.
@@ -943,7 +1154,7 @@ class SCCNC:
 
     # Method `SCCNC.profile_entry()`:
     def profile_entry(
-        self, poly: SCRoundPoly, tool: SCTool, inside: bool = False
+        self, poly: SCRoundPoly, tool: SCTool, *, inside: bool = False
     ) -> Point:
         """Return where a profile cut with a tool goes down.
 
@@ -957,15 +1168,21 @@ class SCCNC:
         Returns:
         * (`Point`): The start of the profile's lead-in.
         """
-        return _profile_path(poly, inside, tool.diameter)[1][0].start
+        radius: float = tool.diameter / 2.0
+        return _profile_path(poly, inside, radius, radius)[1][0].start
 
     # Method `SCCNC.pocket()`:
-    def pocket(
+    # Each argument is part of saying what to cut, and the optional
+    # ones are keyword-only, so there are more than `pylint` likes.
+    def pocket(  # pylint: disable=too-many-arguments
         self,
         poly: SCRoundPoly,
         bottom: float,
         step: float,
+        *,
+        islands: Sequence[SCRoundPoly] = (),
         drilled: bool = False,
+        through: bool = False,
     ) -> list[SCRing]:
         """Clear the inside of a polygon, from `z_top` down to `bottom`.
 
@@ -989,25 +1206,44 @@ class SCCNC:
         * `poly` (`SCRoundPoly`): The pocket's outline.
         * `bottom` (`float`): The pocket's floor.
         * `step` (`float`): The most to go down between depths.
+        * `islands` (`Sequence[SCRoundPoly]`):
+          Outlines inside the pocket to leave standing.
         * `drilled` (`bool`):
           True when holes have been drilled at `pocket_entries()`.
+        * `through` (`bool`):
+          True when `bottom` is the bottom of the part, so the cut goes
+          the machine's `through_overcut` deeper (see `below()`).
 
         Returns:
         * (`list[SCRing]`): The outermost rings (with the rest inside).
 
         Raises:
         * `ValueError`:
-          If `bottom` is not below `z_top`, `step` is not positive, or
-          the tool does not fit in the pocket.
+          If `bottom` is not below `z_top`, `step` is not positive, the
+          islands are not inside the pocket and apart, or the tool does
+          not fit in the pocket.
         """
-        # Plan the rings.
+        # Plan the rings, then cut them.
+        bottom = self.below(bottom, through)
         depths: list[float] = self._depths(bottom, step)
-        diameter: float = self.cutter.diameter
-        roots: list[SCRing] = self._plan(poly, diameter)
-        walls: list[SCLoop] = [root.loop for root in roots]
+        roots: list[SCRing] = self._plan(poly, islands, self.cutter.diameter)
+        around: str = f" around {len(islands)} islands" if islands else ""
+        self.comment(f"Pocket {poly.name}{around} to Z{_number(bottom)}")
+        self._clear(roots, depths, drilled)
+        return roots
 
-        # Cut every ring at each depth, smallest rings first.
-        self.comment(f"Pocket {poly.name} to Z{_number(bottom)}")
+    # Method `SCCNC._clear()`:
+    def _clear(
+        self, roots: Sequence[SCRing], depths: Sequence[float], drilled: bool
+    ) -> None:
+        """Cut every ring of a pocket at each depth, smallest first.
+
+        Arguments:
+        * `roots` (`Sequence[SCRing]`): The outermost rings.
+        * `depths` (`Sequence[float]`): The depths, from the top down.
+        * `drilled` (`bool`): True when the entries have been drilled.
+        """
+        walls: list[SCLoop] = [loop for root in roots for loop in root.loops]
         self.rapid(z=self.z_safe)
         above: float = self.z_top + self.clearance
         z: float
@@ -1016,50 +1252,88 @@ class SCCNC:
             for root in roots:
                 ring: SCRing
                 mode: CutMode
-                for ring, mode in cut_order(root, diameter):
+                for ring, mode in cut_order(root, self.cutter.diameter):
                     if drilled and mode == "ramp":
                         mode = "drilled"
                     self._cut_ring(ring, mode, (above, z), walls)
             above = z
         self.rapid(z=self.z_safe)
-        return roots
 
     # Method `SCCNC._plan()`:
-    def _plan(self, poly: SCRoundPoly, diameter: float) -> list[SCRing]:
+    def _plan(
+        self,
+        poly: SCRoundPoly,
+        islands: Sequence[SCRoundPoly],
+        diameter: float,
+    ) -> list[SCRing]:
         """Plan the rings that clear a pocket with a tool.
 
         Arguments:
         * `poly` (`SCRoundPoly`): The pocket's outline.
+        * `islands` (`Sequence[SCRoundPoly]`): Outlines to leave.
         * `diameter` (`float`): The tool's diameter.
 
         Returns:
         * (`list[SCRing]`): The outermost rings.
+
+        Raises:
+        * `ValueError`:
+          If an island is not inside the pocket, or two outlines cross
+          or touch.
         """
-        boundary: SCLoop = SCLoop.from_poly(poly)
-        if not boundary.is_ccw():
-            boundary = boundary.reversed()
-        return plan_pocket(boundary, diameter, self.machine.stepover)
+        # The pocket's wall goes counter-clockwise, and its islands
+        # clockwise, so the pocket is on the left of each.
+        wall: SCLoop = SCLoop.from_poly(poly)
+        if not wall.is_ccw():
+            wall = wall.reversed()
+        region: list[SCLoop] = [wall]
+        island: SCRoundPoly
+        for island in islands:
+            loop: SCLoop = SCLoop.from_poly(island)
+            region.append(loop.reversed() if loop.is_ccw() else loop)
+            if not wall.contains(loop.segments[0].start):
+                raise ValueError(f"{island.name} is not inside {poly.name}")
+
+        # No two outlines may cross or touch.
+        index: int
+        for index, loop in enumerate(region):
+            other: SCLoop
+            for other in region[index + 1 :]:
+                if any(
+                    meet(first, second)
+                    for first in loop.segments
+                    for second in other.segments
+                ):
+                    raise ValueError(f"{loop.name} meets {other.name}")
+        return plan_pocket(region, diameter, self.machine.stepover)
 
     # Method `SCCNC.pocket_entries()`:
-    def pocket_entries(self, poly: SCRoundPoly, tool: SCTool) -> list[Point]:
+    def pocket_entries(
+        self,
+        poly: SCRoundPoly,
+        tool: SCTool,
+        islands: Sequence[SCRoundPoly] = (),
+    ) -> list[Point]:
         """Return where a pocket cut with a tool goes down into it.
 
         These are where to drill, so that the tool goes down holes
-        (with `pocket(..., drilled=True)`): the starts of the rings
-        that have nothing cut inside them.
+        (with `pocket(..., drilled=True)`): the start of each loop of
+        the rings that have nothing cut inside them.
 
         Arguments:
         * `poly` (`SCRoundPoly`): The pocket's outline.
         * `tool` (`SCTool`): The tool that will clear it.
+        * `islands` (`Sequence[SCRoundPoly]`): Outlines to leave.
 
         Returns:
         * (`list[Point]`): The points, in the order they are cut.
         """
         return [
-            ring.loop.segments[0].start
-            for root in self._plan(poly, tool.diameter)
+            loop.segments[0].start
+            for root in self._plan(poly, islands, tool.diameter)
             for ring, mode in cut_order(root, tool.diameter)
             if mode == "ramp"
+            for loop in ring.loops
         ]
 
     # Method `SCCNC._cut_ring()`:
@@ -1081,39 +1355,58 @@ class SCCNC:
         * `walls` (`Sequence[SCLoop]`): The pocket's outermost rings.
         """
         # A ring with nothing cut inside it is ramped down into, along
-        # itself (or plunged into, down a drilled hole); a small one is
-        # cut straight into.
+        # each of its loops (or plunged into, down a drilled hole at
+        # each); a small one is cut straight into.
         above: float
         z: float
         above, z = heights
+        loop: SCLoop
         if mode != "lead":
-            self._arrive(
-                ring.loop.segments[0].start,
-                z if mode == "plain" else above,
-                walls,
-            )
-            if mode == "ramp":
-                self._ramp(ring.loop, above, z)
-            elif mode == "drilled":
-                self.plunge(z)
-            self._follow(ring.loop.segments, ring.spurs)
+            for loop in ring.loops:
+                self._arrive(
+                    loop.segments[0].start,
+                    z if mode == "plain" else above,
+                    walls,
+                )
+                if mode == "ramp":
+                    self._ramp(loop, above, z)
+                elif mode == "drilled":
+                    self.plunge(z)
+                self._follow(loop.segments, ring.spurs)
             return
 
         # Another ring is led into from inside it, where it is cut.
+        for loop in ring.loops:
+            self._cut_loop(loop, ring.spurs, z, walls)
+
+    # Method `SCCNC._cut_loop()`:
+    def _cut_loop(
+        self,
+        loop: SCLoop,
+        spurs: Sequence[SCLine],
+        z: float,
+        walls: Sequence[SCLoop],
+    ) -> None:
+        """Cut once around a loop at one depth, led in from its left.
+
+        Arguments:
+        * `loop` (`SCLoop`): The loop (with what is cut on its left).
+        * `spurs` (`Sequence[SCLine]`): Spurs from its corners.
+        * `z` (`float`): The Z to cut at.
+        * `walls` (`Sequence[SCLoop]`): The pocket's outermost rings.
+        """
         try:
             lead_in: SCArc
-            loop: list[SCSegment]
+            path: list[SCSegment]
             lead_out: SCArc
-            lead_in, loop, lead_out = _leads(
-                ring.loop, self.cutter.diameter / 2.0
-            )
+            lead_in, path, lead_out = _leads(loop, self.cutter.diameter / 2.0)
         except ValueError:
-            self._arrive(ring.loop.segments[0].start, z, walls)
-            self._follow(ring.loop.segments, ring.spurs)
+            self._arrive(loop.segments[0].start, z, walls)
+            self._follow(loop.segments, spurs)
             return
         self._arrive(lead_in.start, z, walls)
         self.arc(lead_in)
-        self._follow(loop, ring.spurs)
+        self._follow(path, spurs)
         self.arc(lead_out)
 
     # Method `SCCNC._arrive()`:

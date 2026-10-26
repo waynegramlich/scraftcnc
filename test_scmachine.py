@@ -37,6 +37,9 @@ class TestMachine(unittest.TestCase):
         self.assertEqual(mill.change_words(4), ["T04"])
         self.assertEqual(mill.tool(1).kind, "end mill")
         self.assertEqual(mill.drill_for(mill.tool(1)).number, 4)
+        self.assertAlmostEqual(mill.through_overcut, 0.1)
+        self.assertEqual(mill.tool(5).angle, 90.0)
+        self.assertEqual(mill.tool(6).radius, 0.0625)
 
     # Method `TestMachine.test_bad_files()`:
     def test_bad_files(self) -> None:
@@ -45,13 +48,26 @@ class TestMachine(unittest.TestCase):
         cases: list[tuple[str, str]] = [
             ("not = [valid", "machine.toml"),
             ("[[tools]]\nnumber = 1\n", "needs a"),
-            (good.replace("z_safe = 1.0", 'z_safe = "high"'), "z_safe"),
+            (good.replace('z_safe = "1 in"', 'z_safe = "high"'), "z_safe"),
+            (good.replace('z_safe = "1 in"', "z_safe = 1.0"), "needs a unit"),
+            (
+                good.replace('feed = "12 in/min"', 'feed = "12 in"'),
+                "wrong unit",
+            ),
+            (
+                good.replace('diameter = "0.25 in"', 'diameter = "0.25 ipm"'),
+                "wrong unit",
+            ),
+            (
+                good.replace('stepover = "90 %"', 'stepover = "0.9"'),
+                "stepover",
+            ),
             (
                 good.replace('drill_cycle = "G83"', 'drill_cycle = "G99"'),
                 "drill",
             ),
             (good.replace("number = 2", "number = 1"), "not all different"),
-            (good.replace("rpm = 1200", "rpm = 0", 1), "rpm"),
+            (good.replace('rpm = "1200 rpm"', 'rpm = "0 rpm"', 1), "rpm"),
             (good.replace('kind = "drill"', 'kind = "tap"', 1), "kind"),
             (good.replace('name = "Shop mill"\n', ""), "name is missing"),
         ]
@@ -60,6 +76,21 @@ class TestMachine(unittest.TestCase):
         for text, expected in cases:
             with self.assertRaisesRegex(ValueError, expected):
                 self.load(text)
+
+    # Method `TestMachine.test_units()`:
+    def test_units(self) -> None:
+        """Metric and other units are turned into inches."""
+        good: str = MACHINE_FILE.read_text(encoding="utf-8")
+        mill: SCMachine = self.load(
+            good.replace('diameter = "0.25 in"', 'diameter = "6.35 mm"')
+            .replace('feed = "12 in/min"', 'feed = "0.2 in/s"')
+            .replace('z_safe = "1 in"', 'z_safe = "2.54 cm"')
+        )
+        self.assertAlmostEqual(mill.tool(1).diameter, 0.25)
+        self.assertAlmostEqual(mill.tool(1).feed, 12.0)
+        self.assertAlmostEqual(mill.z_safe, 1.0)
+        self.assertAlmostEqual(mill.stepover, 0.9)
+        self.assertAlmostEqual(mill.ramp_angle, 3.0)
 
     # Method `TestMachine.test_preferences()`:
     def test_preferences(self) -> None:
@@ -71,6 +102,7 @@ class TestMachine(unittest.TestCase):
             {"stepover": 0.0},
             {"stepover": 1.1},
             {"ramp_angle": 0.0},
+            {"through_overcut": 1.5},
             {"tool_change": "T{tool:02d}"},
             {"tool_change": "{number}"},
         )
@@ -82,6 +114,10 @@ class TestMachine(unittest.TestCase):
             SCTool(1, "Bad", "end mill", 0.0, 1200, 1.0, 1.0)
         with self.assertRaises(ValueError):
             SCTool(0, "Bad", "end mill", 0.25, 1200, 1.0, 1.0)
+        with self.assertRaises(ValueError):
+            SCTool(5, "Bad", "chamfer", 0.02, 1200, 1.0, 1.0, angle=180.0)
+        with self.assertRaises(ValueError):
+            SCTool(6, "Bad", "corner round", 0.1, 1200, 1.0, 1.0)
 
 
 if __name__ == "__main__":

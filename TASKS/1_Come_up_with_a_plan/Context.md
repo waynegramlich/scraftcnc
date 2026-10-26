@@ -203,3 +203,107 @@ Done:
   to R, G1 to bottom, up); viewer uses per-move feed and tool size.
 * Demo: T04 drills 4 entries (2 pocket, 2 profile), T01 mills.  Plot
   republished (version 2).  41 tests pass.
+
+## 2026-10-25: Units required in machine.toml; islands (#13)
+
+User decisions: every number in the TOML must carry a unit, and wrong
+units must be refused (metric/imperial mix-ups).  Islands demo: a
+triangle and a square with slightly rounded corners, and a square
+whose corner arcs make a circle.
+
+Done:
+* `scmachine._measure()`: values are strings "number unit"; LENGTH
+  (in, inch, inches, ft, mm, cm), FEED (in/min, ipm, in/s, mm/min,
+  mm/s), SPEED (rpm), ANGLE (deg), FRACTION (%); bare numbers and
+  wrong kinds of unit raise `ValueError`.  Inside: inches, in/min.
+* `SCLoop.contains()` (ray crossing, ray nudged by pi*1e-8).
+* `beyond(region, inner, distance, name)`: region minus inner grown by
+  distance (classic split/trim/chain).
+* `SCRing` is now a region: `loops` (outer CCW first, island loops
+  CW).  `plan_pocket(region_loops, ...)`; `_regions()` groups island
+  loops into the smallest outer loop containing them.
+* Leftovers: after the step rings and their spurs, `beyond(inset(ring,
+  r), inner, r + REACH_MARGIN)` gives what nothing reaches; regions
+  not reached by spurs become last rings.  This replaced "last rings
+  only when the next inset is empty", which left gaps beside islands.
+  `REACH_MARGIN` (1e-4) fixes stepover 1.0, where outlines coincide.
+* Leaf regions get an entry (ramp or drilled plunge) on every loop;
+  `pocket(..., islands=..., drilled=...)`, `pocket_entries(poly, tool,
+  islands)`; islands outside the pocket or crossing are refused.
+* Coverage tests pass at stepover 0.5, 0.9, 1.0 for islands, dumbbell,
+  triangle and square.  Demo: 2.45 x 1.75 pocket with the 3 islands;
+  STEP shows the islands standing; about 14.1 minutes; GUI run 22 s.
+  Plot version 3.
+
+## 2026-10-25: Through cuts and edge finishing
+
+User decisions: through cuts go 10% (of the part's thickness) below
+the part, so the metal does not stretch and bulge; top edges can be
+beveled (V-bit, usually 45 degrees) or rounded over (size set by the
+bit), inside (holes, pockets) and outside; bottom chamfers (dovetail,
+ball nose bits) are for later.
+
+Done:
+* `machine.toml`: `through_overcut = "10 %"`; tool kinds "chamfer"
+  (`angle` = included, tip `diameter`) and "corner round" (`radius`);
+  T05 90 deg chamfer mill (0.02 in tip), T06 1/16 radius corner
+  rounding mill (0.125 in tip).
+* `SCCNC.below(bottom, through)`; `profile(..., through=)`,
+  `pocket(..., through=)`, `drill(..., through=)`; `inside` is now
+  keyword-only for `profile`, `profile_entry`, `chamfer`.
+* `SCCNC.chamfer(poly, size, inside=)`: V-bit tip `CHAMFER_CLEAR`
+  (0.005) plus tip radius off the wall at depth (size + clear) /
+  tan(angle/2); corner round: tip radius off the wall, radius deep.
+  Climb, half circle leads (radius = cutting radius at the top), one
+  pass.
+* Demo: T04 drills (profile entries through), T01 pocket + hole
+  through, T05 bevels pocket/islands/plate 0.03, T06 rounds the hole,
+  T01 cuts the plate out through.  Model: `solid.chamfer` /
+  `solid.fillet` on top edges picked by segment midpoints (STEP shows
+  Z -0.03 and -0.0625).  About 19.0 minutes; GUI run 36 s.  Plot v4.
+* 49 tests pass.
+
+## 2026-10-25: Where things stand (end of session)
+
+Open items (the user answers by number):
+* #15: `scplot`/`scgeometry` names clash with PyPI packages (EZPkg
+  fetches a stranger's package when the local file is not beside the
+  script).  The user opened a priority 1 task for it.
+* #22: bottom chamfers (dovetail, ball nose, bottom rounded bits).
+  Waiting on #25 and the user's bits.
+* #23: holding the part.  #23.1 tooling holes: holes drilled in the
+  part that screw it to a tooling plate with a rectangular grid of
+  screw holes; the user picks which holes.  #23.2 tabs in two phases:
+  phase 1 the tool jumps over the phase 1 tabs (where the hold downs
+  are); phase 2 the tool avoids the phase 2 hold downs and removes the
+  phase 1 tabs.
+* #24: a roughing bit (much better at removing material), probably
+  with a finishing pass.
+* #25: the gatekeeper (user's word).  A real tool table and a complete
+  set of tool profiles, with a 3D model of each tool built from
+  specifications in Python.  Claude's proposal (not yet agreed):
+  a tool is a 2D profile (lines and arcs, tip up the shank) revolved
+  about its axis; family classes (flat, bull nose, ball nose,
+  roughing, chamfer/V-bit, drill, corner rounding, dovetail) build
+  profiles from specifications; plus flutes, shank, lengths, coating.
+  Uses: `solid.revolve` 3D models (a tool gallery in the GUI), one
+  rule for edge finishing ("where must the profile sit to touch this
+  edge"), feeds and speeds (RPM from surface speed, feed = RPM x
+  flutes x chip load), later gouge checks and simulation.  Steps:
+  1 profile classes + tests, 2 gallery in SolidCraft, 3 tool file
+  format, 4 feeds and speeds, 5 use profiles (chamfers, bottom
+  chamfers, roughing, tabs, tooling holes).
+* Questions asked, not yet answered: #26 a tool library file (every
+  bit owned) separate from the machine's changer (which bit is in
+  which pocket)?  (Recommended.)  #27 are those 8 families the right
+  first set (T-slot, keyseat, engraving, thread mill)?  #28 feeds and
+  speeds computed from a material table, entered per tool, or computed
+  with per tool overrides (recommended)?  #29 does the user have a
+  list of real bits to seed the library?  Also offered: add #23, #24,
+  #25 as `TASKS/` items with `aic`.
+
+State: 49 tests pass; all checkers clean; demo plot
+https://claude.ai/artifact/4JmpGaAtAvyDds8W7r8ia8 (version 4).  The
+user commits to git; the last git commit was before the through cut
+and edge work (those files are modified, uncommitted in git, but in
+hg).
