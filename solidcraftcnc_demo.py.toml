@@ -1,0 +1,99 @@
+# Start of PROG_NAME.py.toml:
+
+# This file is meant to be self-documenting.  It contains the EZPkg settings
+# for PROG_NAME.py (i.e. your program).  More: https://pypi.org/project/ezpkg/
+
+# This file is created as an empty file next to PROG_NAME.py, in the same
+# directory.  Depending upon which operating system you are running, one of
+# the following commands creates the empty file:
+# * Windows (PowerShell): `ni PROG_NAME.py.toml`
+# * Windows (`cmd.exe`): `type nul > PROG_NAME.py.toml`
+# * Linux/macOS: `touch PROG_NAME.py.toml`
+
+# The mere existence of PROG_NAME.py.toml classifies you as a developer of
+# PROG_NAME.py.  Conversely, if you remove this file, you are no longer
+# treated as a developer.  Instead, you will be asked on the program's first
+# run whether its packages can be kept in the ~/.ezpkg directory.
+
+# Whenever PROG_NAME.py.toml is empty and PROG_NAME.py is run, its contents
+# are initialized to the text you are currently reading (i.e. from
+# "# Start of PROG_NAME.py.toml:" to "# End of PROG_NAME.py.toml".)  After
+# this file is created, only you (the developer) get to edit it.  If you
+# want it reinitialized, empty the file and run PROG_NAME.py again.
+
+# This file is the only place where your EZPkg rules are configured.  Any
+# additional information collected by EZPkg is stored in various files in
+# the `~/.ezpkg/` directory.  EZPkg only ever fills this file when it is
+# empty, and never modifies it after that.
+
+# All possible settings that can be set are shown as commented-out TOML
+# lines.  To enable an option, just remove the preceding "# ".  For a list,
+# such as "release", remove the "#" from each entry you want.  If you
+# accidentally enable two conflicting options, EZPkg will produce an error
+# message with line numbers for you to fix.
+
+# The following configuration options exist:
+
+# "verbosity" specifies how much EZPkg prints while the program runs.
+# There are 4 levels of verbosity.  The default is "low":
+# verbosity = "high"    # Also what EZPkg decided, and why.
+# verbosity = "medium"  # Also each change to the packages.
+# verbosity = "low"     # Only one-off notices (default).
+# verbosity = "none"    # Nothing, except errors that stop the program.
+
+# "update-frequency" specifies how often your runs move to newer package
+# versions.  A release always carries the versions your last run used, so
+# whoever receives it gets exactly what you tested.
+# update-frequency = "never"    # Leave the current versions alone (default).
+# update-frequency = "monthly"  # Move to the newest versions once a month.
+# update-frequency = "weekly"   # Move to the newest versions once a week.
+# update-frequency = "daily"    # Move to the newest versions once a day.
+
+# "purge-unused-after" specifies how long a package may go unused before
+# EZPkg removes it from ~/.ezpkg (it is fetched again if it is needed).
+# purge-unused-after = "month"  # Unused for a month (default).
+# purge-unused-after = "week"   # Unused for a week.
+# purge-unused-after = "day"    # Unused for a day.
+
+# "version" specifies the release string.  Whenever it differs from the
+# last version released, the next run builds the releases listed in
+# "release", and then runs the program as usual.  Change it whenever you
+# like.  If you really need to, you can even reuse a previous value.
+# version = "1.0.0"  # 1.0.0 is usually the first functional release number.
+
+# "release" lists which releases to generate, each named with the VERSION
+# above.  Remove the "#" from 0, 1, or more of the entries in the list.
+release = [
+#   "email",   # PROG_NAME-VERSION.py; email .py (network needed).
+#   "zipapp",  # PROG_NAME-VERSION.pyz; pure Python (no network needed).
+#   "uv",      # PROG_NAME-VERSION-uv.py and its lock (`uv` needed).
+]
+# Each release, and anything worth a second look, is recorded in
+# PROG_NAME.py.releases.
+
+# "bootstrap" specifies which EZPkg bootstrap the program carries.  Each
+# bootstrap is named by the date it was published ("YYYY-MM-DD").
+# bootstrap = "update"      # A release replaces an older one (default).
+# bootstrap = "2026-10-23"  # Keep exactly this one.
+
+# The next options are rarely needed.  Most people can stop reading now.
+# They are needed for difficult situations that EZPkg simply cannot figure
+# out on its own.
+
+# "requires-python" specifies the oldest Python the program runs on.  EZPkg
+# works this out from the program and its packages (never older than 3.11,
+# which EZPkg itself needs).  Set it only when the program needs a newer
+# Python for its own reasons, such as a library function that is new.
+# requires-python = ">=3.11"  # The default: EZPkg itself needs 3.11.
+
+# "dependencies" provides a way to manually specify values to be inserted
+# into the dependencies portion of the Python inline script metadata.  They
+# use the standard Python dependency specifier format.  See:
+#
+# https://packaging.python.org/en/latest/specifications/dependency-specifiers/
+#
+# Put every entry in the one list, which may span several lines.  If an
+# entry conflicts with what EZPkg would choose, your entry wins.
+# dependencies = ["numpy>=2.1", "requests[socks]"]  # For example.
+
+# End of PROG_NAME.py.toml.
