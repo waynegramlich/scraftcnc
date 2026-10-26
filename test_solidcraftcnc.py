@@ -1,310 +1,20 @@
 """Tests for `solidcraftcnc.py`: run `python3 -m unittest -v`."""
 
 import math
+import re
 import unittest
 
-from solidcraftcnc import (
-    SCCNC,
+from scgeometry import (
     SCArc,
     SCCorner,
-    SCLine,
+    SCLoop,
     SCRoundPoly,
     SCSegment,
-    _number,
+    distance_to,
+    point_at,
 )
-
-
-# Function `notched()`:
-def notched() -> SCRoundPoly:
-    """Return a notched rectangle, a different radius at each corner.
-
-    Returns:
-    * (`SCRoundPoly`): An 80 x 50 notched rectangle, going
-      counter-clockwise, whose notch's inner corner turns the other way.
-    """
-    return SCRoundPoly(
-        "Notched",
-        [
-            SCCorner(0.0, 0.0, 5.0),
-            SCCorner(80.0, 0.0, 10.0),
-            SCCorner(80.0, 50.0, 3.0),
-            SCCorner(40.0, 50.0, 2.0),
-            SCCorner(40.0, 30.0, 4.0),
-            SCCorner(20.0, 30.0, 0.0),
-            SCCorner(0.0, 50.0, 6.0),
-        ],
-    )
-
-
-# Function `square()`:
-def square(side: float, radius: float, ccw: bool = True) -> SCRoundPoly:
-    """Return a square with one corner at the origin.
-
-    Arguments:
-    * `side` (`float`): The length of each side.
-    * `radius` (`float`): The radius of every corner.
-    * `ccw` (`bool`): True to go counter-clockwise.
-
-    Returns:
-    * (`SCRoundPoly`): The square.
-    """
-    points: list[tuple[float, float]] = [
-        (0.0, 0.0),
-        (side, 0.0),
-        (side, side),
-        (0.0, side),
-    ]
-    if not ccw:
-        points.reverse()
-    return SCRoundPoly("Square", [SCCorner(x, y, radius) for x, y in points])
-
-
-# Function `polygon()`:
-def polygon(*points: tuple[float, float], radius: float = 0.0) -> SCRoundPoly:
-    """Return a polygon with the same radius at every corner.
-
-    Arguments:
-    * `points` (`tuple[float, float]`): The corners.
-    * `radius` (`float`): The radius of every corner.
-
-    Returns:
-    * (`SCRoundPoly`): The polygon.
-    """
-    return SCRoundPoly("Polygon", [SCCorner(x, y, radius) for x, y in points])
-
-
-# Function `close()`:
-def close(a: tuple[float, float], b: tuple[float, float]) -> bool:
-    """Return whether two points are the same, to rounding.
-
-    Arguments:
-    * `a` (`tuple[float, float]`): One point.
-    * `b` (`tuple[float, float]`): The other.
-
-    Returns:
-    * (`bool`): True when they are within 1e-9 of each other.
-    """
-    return math.dist(a, b) < 1e-9
-
-
-# Class `TestSCRoundPoly`:
-class TestSCRoundPoly(unittest.TestCase):
-    """The outline that `SCRoundPoly` computes."""
-
-    # Method `TestSCRoundPoly.check_outline()`:
-    def check_outline(self, poly: SCRoundPoly) -> None:
-        """Check that an outline is closed and its arcs are true.
-
-        Arguments:
-        * `poly` (`SCRoundPoly`): The polygon to check.
-        """
-        segments: tuple[SCSegment, ...] = poly.segments
-        index: int
-        segment: SCSegment
-        for index, segment in enumerate(segments):
-            following: SCSegment = segments[(index + 1) % len(segments)]
-            self.assertTrue(close(segment.end, following.start))
-            if isinstance(segment, SCArc):
-                self.assertAlmostEqual(
-                    math.dist(segment.center, segment.start), segment.radius
-                )
-                self.assertAlmostEqual(
-                    math.dist(segment.center, segment.end), segment.radius
-                )
-
-    # Method `TestSCRoundPoly.test_square_ccw()`:
-    def test_square_ccw(self) -> None:
-        """A rounded square: 4 lines and 4 counter-clockwise arcs."""
-        poly: SCRoundPoly = square(20.0, 3.0)
-        self.check_outline(poly)
-        self.assertTrue(poly.is_ccw())
-        self.assertAlmostEqual(poly.signed_area, 400.0)
-        kinds: list[type] = [type(segment) for segment in poly.segments]
-        self.assertEqual(kinds, [SCLine, SCArc] * 4)
-
-        # The outline starts on the edge leaving the first corner.
-        self.assertTrue(close(poly.segments[0].start, (3.0, 0.0)))
-        self.assertTrue(close(poly.segments[0].end, (17.0, 0.0)))
-        arc: SCSegment = poly.segments[1]
-        assert isinstance(arc, SCArc)
-        self.assertTrue(close(arc.center, (17.0, 3.0)))
-        self.assertAlmostEqual(arc.sweep, math.pi / 2)
-
-        # Its length is the straight parts plus one whole circle.
-        length: float = sum(segment.length() for segment in poly.segments)
-        self.assertAlmostEqual(length, 4 * 14.0 + 2 * math.pi * 3.0)
-
-    # Method `TestSCRoundPoly.test_square_cw()`:
-    def test_square_cw(self) -> None:
-        """Going clockwise, every arc is clockwise."""
-        poly: SCRoundPoly = square(20.0, 3.0, ccw=False)
-        self.check_outline(poly)
-        self.assertFalse(poly.is_ccw())
-        sweeps: list[float] = [
-            segment.sweep
-            for segment in poly.segments
-            if isinstance(segment, SCArc)
-        ]
-        self.assertEqual(len(sweeps), 4)
-        for sweep in sweeps:
-            self.assertAlmostEqual(sweep, -math.pi / 2)
-
-    # Method `TestSCRoundPoly.test_sharp()`:
-    def test_sharp(self) -> None:
-        """Sharp corners give just the polygon's edges."""
-        poly: SCRoundPoly = square(10.0, 0.0)
-        self.check_outline(poly)
-        self.assertTrue(
-            all(isinstance(segment, SCLine) for segment in poly.segments)
-        )
-        self.assertEqual(len(poly.segments), 4)
-
-    # Method `TestSCRoundPoly.test_circle()`:
-    def test_circle(self) -> None:
-        """Arcs that use up every edge leave no lines: a circle."""
-        poly: SCRoundPoly = square(10.0, 5.0)
-        self.check_outline(poly)
-        self.assertEqual(len(poly.segments), 4)
-        self.assertTrue(
-            all(isinstance(segment, SCArc) for segment in poly.segments)
-        )
-
-    # Method `TestSCRoundPoly.test_notched()`:
-    def test_notched(self) -> None:
-        """A notched shape, with one corner turning the other way."""
-        poly: SCRoundPoly = notched()
-        self.check_outline(poly)
-        sweeps: list[float] = [
-            segment.sweep
-            for segment in poly.segments
-            if isinstance(segment, SCArc)
-        ]
-        self.assertEqual(len(sweeps), 6)
-        self.assertEqual(len([sweep for sweep in sweeps if sweep < 0]), 1)
-
-        # The arc at the 135 degree corner.
-        arc: SCArc = next(
-            segment
-            for segment in poly.segments
-            if isinstance(segment, SCArc) and segment.radius == 6.0
-        )
-        self.assertAlmostEqual(arc.sweep, math.radians(135.0))
-        self.assertTrue(close(arc.end, (0.0, 50.0 - 6.0 * (1 + 2**0.5))))
-
-    # Method `TestSCRoundPoly.test_errors()`:
-    def test_errors(self) -> None:
-        """Polygons that cannot be rounded are refused."""
-        with self.assertRaises(ValueError):
-            square(10.0, 5.1)
-        with self.assertRaises(ValueError):
-            polygon((0, 0), (1, 0))
-        with self.assertRaises(ValueError):
-            polygon((0, 0), (0, 0), (1, 1))
-        with self.assertRaises(ValueError):
-            polygon((0, 0), (1, 0), (2, 0), (1, 1))
-        with self.assertRaises(ValueError):
-            polygon((0, 0), (2, 0), (1, 0))
-        with self.assertRaises(ValueError):
-            SCCorner(0, 0, -1.0)
-
-    # Method `TestSCRoundPoly.test_crossings()`:
-    def test_crossings(self) -> None:
-        """Outlines that cross or touch themselves are refused."""
-        # A bow tie: two edges cross.
-        with self.assertRaisesRegex(ValueError, "cross at"):
-            polygon((0, 0), (2, 2), (2, 0), (0, 2))
-
-        # A corner touching an edge, and two edges overlapping.
-        with self.assertRaisesRegex(ValueError, "cross at"):
-            polygon((0, 0), (4, 0), (4, 2), (2, 0), (0, 2))
-        with self.assertRaisesRegex(ValueError, "cross at"):
-            polygon(
-                (0, 0), (4, 0), (4, 2), (3, 2), (3, 0), (1, 0), (1, 2), (0, 2)
-            )
-
-        # Rounding a corner can be what makes the outline cross: a slot
-        # that runs close to a corner with a big radius.
-        slot: list[tuple[float, float]] = [
-            (0, 0),
-            (10, 0),
-            (10, 10),
-            (0, 10),
-            (0, 9.5),
-            (9.5, 9.5),
-            (9.5, 9),
-            (0, 9),
-        ]
-        polygon(*slot)
-        corners: list[SCCorner] = [SCCorner(x, y) for x, y in slot]
-        corners[2] = SCCorner(10, 10, 4.0)
-        with self.assertRaisesRegex(ValueError, "cross at"):
-            SCRoundPoly("Slot", corners)
-
-    # Method `TestSCRoundPoly.test_reversed()`:
-    def test_reversed(self) -> None:
-        """Reversing keeps the first corner and flips the direction."""
-        poly: SCRoundPoly = notched()
-        back: SCRoundPoly = poly.reversed()
-        self.check_outline(back)
-        self.assertFalse(back.is_ccw())
-        self.assertEqual(back.corners[0], poly.corners[0])
-        self.assertEqual(back.corners[1], poly.corners[-1])
-        self.assertAlmostEqual(back.signed_area, -poly.signed_area)
-
-    # Method `TestSCRoundPoly.test_offset_square()`:
-    def test_offset_square(self) -> None:
-        """A rounded square, moved out and in."""
-        # Moved out, both ways around, the corners' radii grow (the
-        # clockwise square starts at its top left corner).
-        poly: SCRoundPoly
-        first: tuple[float, float]
-        for poly, first in (
-            (square(20.0, 3.0), (-1.0, -1.0)),
-            (square(20.0, 3.0, ccw=False), (-1.0, 21.0)),
-        ):
-            out: SCRoundPoly = poly.offset(1.0)
-            self.check_outline(out)
-            self.assertEqual(out.is_ccw(), poly.is_ccw())
-            self.assertAlmostEqual(abs(out.signed_area), 22.0**2)
-            self.assertTrue(close((out.corners[0].x, out.corners[0].y), first))
-            self.assertEqual(
-                [corner.radius for corner in out.corners], [4.0] * 4
-            )
-
-        # Moved in past a corner's radius, the corner becomes sharp.
-        inner: SCRoundPoly = square(20.0, 3.0).offset(-4.0)
-        self.assertEqual(
-            [corner.radius for corner in inner.corners], [0.0] * 4
-        )
-        self.assertAlmostEqual(inner.signed_area, 12.0**2)
-
-        # Moved in too far, it collapses.
-        with self.assertRaises(ValueError):
-            square(20.0, 3.0).offset(-10.0)
-
-    # Method `TestSCRoundPoly.test_offset_notched()`:
-    def test_offset_notched(self) -> None:
-        """Moved out, the notch's inner corner shrinks its radius."""
-        out: SCRoundPoly = notched().offset(1.0)
-        self.check_outline(out)
-        radii: list[float] = [corner.radius for corner in out.corners]
-        self.assertEqual(radii, [6.0, 11.0, 4.0, 3.0, 3.0, 0.0, 7.0])
-
-        # The moved edges are 1 from the old ones.
-        self.assertTrue(close((out.corners[4].x, out.corners[4].y), (39, 31)))
-
-        # Every point of the moved outline is 1 from the old one, so
-        # an arc's center stays put.
-        arc: SCArc = next(
-            segment
-            for segment in out.segments
-            if isinstance(segment, SCArc) and segment.radius == 11.0
-        )
-        self.assertTrue(close(arc.center, (70.0, 10.0)))
-
-        # The sharp concave corner is cut with the tool's own radius.
-        moved: SCRoundPoly = notched().offset(5.0)
-        self.assertEqual(moved.corners[4].radius, 0.0)
+from solidcraftcnc import SCCNC, SCRing, _number, cut_order, plan_pocket
+from test_scgeometry import dumbbell, square
 
 
 # Class `TestSCCNC`:
@@ -456,6 +166,240 @@ class TestSCCNC(unittest.TestCase):
         cnc: SCCNC = SCCNC("Test")
         with self.assertRaises(ValueError):
             cnc.comment("a (nested) comment")
+
+
+# Function `rings()`:
+def rings(roots: list[SCRing]) -> list[SCRing]:
+    """Return every ring of a pocket's plan.
+
+    Arguments:
+    * `roots` (`list[SCRing]`): The outermost rings.
+
+    Returns:
+    * (`list[SCRing]`): All of the rings, each after those inside it.
+    """
+    return [ring for root in roots for ring in root.post_order()]
+
+
+# Function `uncut()`:
+def uncut(
+    poly: SCRoundPoly, diameter: float, stepover: float, spacing: float
+) -> list[tuple[float, float]]:
+    """Return the points of a pocket that no ring's cut reaches.
+
+    Arguments:
+    * `poly` (`SCRoundPoly`): The pocket.
+    * `diameter` (`float`): The tool's diameter.
+    * `stepover` (`float`): The rings' stepover.
+    * `spacing` (`float`): How far apart the points tried are.
+
+    Returns:
+    * (`list[tuple[float, float]]`): The points left uncut.
+    """
+    # Every segment and spur that the tool's center follows.
+    boundary: SCLoop = SCLoop.from_poly(poly)
+    cuts: list[SCSegment] = [
+        segment
+        for ring in rings(plan_pocket(boundary, diameter, stepover))
+        for segment in (*ring.loop.segments, *ring.spurs)
+    ]
+
+    # Try points inside the pocket (a crossing count around its
+    # outline, sampled finely), not right at its wall.
+    outline: list[tuple[float, float]] = [
+        point_at(segment, step / 20.0)
+        for segment in boundary.segments
+        for step in range(20)
+    ]
+    missed: list[tuple[float, float]] = []
+    xs: list[float] = [point[0] for point in outline]
+    ys: list[float] = [point[1] for point in outline]
+    across: int = int((max(xs) - min(xs)) / spacing)
+    up: int = int((max(ys) - min(ys)) / spacing)
+    for column in range(across + 1):
+        for row in range(up + 1):
+            point: tuple[float, float] = (
+                min(xs) + column * spacing,
+                min(ys) + row * spacing,
+            )
+            if not inside(outline, point) or boundary.distance(point) < 1e-3:
+                continue
+            if (
+                min(distance_to(point, cut) for cut in cuts)
+                > diameter / 2 + 1e-6
+            ):
+                missed.append(point)
+    return missed
+
+
+# Function `inside()`:
+def inside(
+    outline: list[tuple[float, float]], point: tuple[float, float]
+) -> bool:
+    """Return whether a point is inside a polygon (counting crossings).
+
+    Arguments:
+    * `outline` (`list[tuple[float, float]]`): The polygon's corners.
+    * `point` (`tuple[float, float]`): The point.
+
+    Returns:
+    * (`bool`): True when it is inside.
+    """
+    crossings: int = 0
+    index: int
+    x1: float
+    y1: float
+    for index, (x1, y1) in enumerate(outline):
+        x2, y2 = outline[(index + 1) % len(outline)]
+        if (y1 > point[1]) != (y2 > point[1]) and point[0] < x1 + (
+            point[1] - y1
+        ) * (x2 - x1) / (y2 - y1):
+            crossings += 1
+    return crossings % 2 == 1
+
+
+# Function `rounded_dumbbell()`:
+def rounded_dumbbell() -> SCRoundPoly:
+    """Return the dumbbell with its corners rounded as a pocket's are.
+
+    Returns:
+    * (`SCRoundPoly`): The pocket.
+    """
+    return SCRoundPoly(
+        "Bell",
+        [
+            SCCorner(
+                corner.x,
+                corner.y,
+                0.1875 if index % 6 in (0, 1, 4, 5) else 0.0625,
+            )
+            for index, corner in enumerate(dumbbell().corners)
+        ],
+    )
+
+
+# Class `TestPocket`:
+class TestPocket(unittest.TestCase):
+    """Pockets: their rings, and the G-code that clears them."""
+
+    # Method `TestPocket.test_plan()`:
+    def test_plan(self) -> None:
+        """A dumbbell's rings come apart into one tree per lobe."""
+        roots: list[SCRing] = plan_pocket(
+            SCLoop.from_poly(rounded_dumbbell()), 0.25, 0.9
+        )
+        self.assertEqual(len(roots), 1)
+        self.assertEqual(len(roots[0].children), 2)
+        self.assertEqual(roots[0].spurs, [])
+        child: SCRing
+        for child in roots[0].children:
+            self.assertTrue(child.loop.is_ccw())
+            self.assertEqual(len(child.spurs), 5)
+
+        # A pocket too small for the tool is refused.
+        with self.assertRaises(ValueError):
+            plan_pocket(SCLoop.from_poly(square(0.2, 0.0)), 0.25, 0.9)
+
+    # Method `TestPocket.test_coverage()`:
+    def test_coverage(self) -> None:
+        """The rings and spurs reach every point of a pocket."""
+        poly: SCRoundPoly
+        for poly in (
+            rounded_dumbbell(),
+            SCRoundPoly(
+                "Triangle",
+                [
+                    SCCorner(0, 0, 0.2),
+                    SCCorner(2, 0, 0.2),
+                    SCCorner(0.5, 1.2, 0.2),
+                ],
+            ),
+            square(1.3, 0.125),
+        ):
+            stepover: float
+            for stepover in (0.5, 0.9, 1.0):
+                self.assertEqual(
+                    uncut(poly, 0.25, stepover, 0.01), [], poly.name
+                )
+
+    # Method `TestPocket.test_order()`:
+    def test_order(self) -> None:
+        """Rings are cut after the rings inside them."""
+        roots: list[SCRing] = plan_pocket(
+            SCLoop.from_poly(square(2.0, 0.125)), 0.25, 0.9
+        )
+        order: list[tuple[SCRing, str]] = list(cut_order(roots[0], 0.25))
+        self.assertIs(order[-1][0], roots[0])
+        self.assertEqual(order[-1][1], "lead")
+        self.assertEqual(order[0][1], "ramp")
+        seen: list[SCRing] = []
+        ring: SCRing
+        for ring, _ in order:
+            for child in ring.children:
+                if child.loop.length() >= 0.5 or child.children:
+                    self.assertIn(child, seen)
+            seen.append(ring)
+        self.assertEqual(len(seen), len(rings(roots)))
+
+    # Method `TestPocket.test_gcode()`:
+    def test_gcode(self) -> None:
+        """The pocket's G-code stays safe and ramps gently."""
+        cnc: SCCNC = SCCNC("Test")
+        cnc.pocket(rounded_dumbbell(), -0.25, 0.125)
+        cnc.finish()
+        x: float = 0.0
+        y: float = 0.0
+        z: float = 1.0
+        line: str
+        for line in cnc.gcode().splitlines()[7:]:
+            if line.startswith("("):
+                continue
+            words: dict[str, float] = {
+                letter: float(value)
+                for letter, value in re.findall(r"([A-Z])(-?[0-9.]+)", line)
+            }
+            code: float = words.get("G", -1.0)
+            new: tuple[float, float, float] = (
+                words.get("X", x),
+                words.get("Y", y),
+                words.get("Z", z),
+            )
+            run: float = math.dist((x, y), new[:2])
+            if code in (2.0, 3.0):
+                arc: SCArc = SCArc(
+                    (x, y),
+                    new[:2],
+                    (x + words["I"], y + words["J"]),
+                    math.hypot(words["I"], words["J"]),
+                    0.0,
+                )
+                half: float = math.asin(min(run / 2 / arc.radius, 1.0))
+                run = 2 * half * arc.radius
+
+            # It never goes below the floor; rapids across are above
+            # the work; going down while moving is no steeper than 3
+            # degrees.
+            self.assertGreaterEqual(new[2], -0.25 - 1e-9, line)
+            if code == 0.0 and run > 0.0:
+                self.assertGreaterEqual(z, cnc.z_top + cnc.clearance, line)
+            if new[2] < z - 1e-4 and run > 0.0:
+                self.assertLessEqual(
+                    (z - new[2]) / run,
+                    math.tan(math.radians(3.0)) * 1.01,
+                    line,
+                )
+            x, y, z = new
+        self.assertEqual(z, cnc.z_safe)
+
+    # Method `TestPocket.test_settings()`:
+    def test_settings(self) -> None:
+        """A stepover or ramp angle that makes no sense is refused."""
+        with self.assertRaises(ValueError):
+            SCCNC("Test", stepover=0.0)
+        with self.assertRaises(ValueError):
+            SCCNC("Test", stepover=1.1)
+        with self.assertRaises(ValueError):
+            SCCNC("Test", ramp_angle=0.0)
 
 
 if __name__ == "__main__":

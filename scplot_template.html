@@ -1,0 +1,694 @@
+<title>__TITLE__</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,500..700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a machine-control screen; the work envelope fills the left,
+   a narrow control and G-code readout column sits on the right
+   (stacked below it on a phone). */
+:root {
+  --bg: #eef0ee;          /* Bench grey, a touch green. */
+  --panel: #f8f9f7;
+  --fg: #1d2421;
+  --muted: #5e6a64;
+  --rule: #d2d8d4;
+  --accent: #1f4fa8;      /* Layout fluid blue. */
+  --accent-fg: #ffffff;
+  --rapid: #d4600f;       /* Safety orange: moves in the air. */
+  --cut-top: #6aa7e8;
+  --cut-deep: #0b2a66;
+  --outline: #8a958f;
+  --grid: #dde2de;
+  --tool: #c2185b;
+  --font-ui: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo,
+    Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141816;
+    --panel: #1b201e;
+    --fg: #e4e9e6;
+    --muted: #93a19a;
+    --rule: #2c3431;
+    --accent: #7fa8ee;
+    --accent-fg: #0d1b33;
+    --rapid: #f08a3c;
+    --cut-top: #a9d0ff;
+    --cut-deep: #3f7fe0;
+    --outline: #66736d;
+    --grid: #232a27;
+    --tool: #ff6fa5;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #141816;
+  --panel: #1b201e;
+  --fg: #e4e9e6;
+  --muted: #93a19a;
+  --rule: #2c3431;
+  --accent: #7fa8ee;
+  --accent-fg: #0d1b33;
+  --rapid: #f08a3c;
+  --cut-top: #a9d0ff;
+  --cut-deep: #3f7fe0;
+  --outline: #66736d;
+  --grid: #232a27;
+  --tool: #ff6fa5;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 14px;
+}
+.app {
+  height: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+header {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 20px;
+  padding-block: 12px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  border-bottom: 1px solid var(--rule);
+}
+h1 {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 700;
+  font-stretch: 80%;
+  letter-spacing: 0.01em;
+  text-wrap: balance;
+}
+.stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.stats b { color: var(--fg); font-weight: 500; }
+.view { position: relative; min-width: 0; min-height: 0; }
+canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  cursor: grab;
+}
+canvas:active { cursor: grabbing; }
+.hint {
+  position: absolute;
+  left: 12px;
+  bottom: 10px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  pointer-events: none;
+}
+.legend {
+  position: absolute;
+  top: 10px;
+  left: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 12px;
+  color: var(--muted);
+  pointer-events: none;
+}
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.swatch { width: 18px; height: 0; border-top: 3px solid; }
+.swatch.rapid { border-top-style: dashed; border-color: var(--rapid); }
+.swatch.top { border-color: var(--cut-top); }
+.swatch.deep { border-color: var(--cut-deep); }
+.swatch.tool {
+  width: 10px; height: 10px; border: 2px solid var(--tool);
+  border-radius: 50%;
+}
+aside {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+  padding-block: 14px;
+  padding-left: 16px;
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  background: var(--panel);
+  border-left: 1px solid var(--rule);
+}
+.group { display: flex; flex-direction: column; gap: 8px; }
+.label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+button, select {
+  font: inherit;
+  font-size: 13px;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+button[aria-pressed="true"], button.primary {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+}
+button:focus-visible, select:focus-visible, input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+input[type="range"] { width: 100%; accent-color: var(--accent); }
+label.check { display: inline-flex; gap: 6px; align-items: center; }
+.readout {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.readout div {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 8px;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--bg);
+}
+.readout small {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  color: var(--muted);
+}
+.readout b { font-weight: 500; font-size: 15px; }
+.time {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.listing {
+  flex: 1;
+  min-height: 120px;
+  overflow: auto;
+  margin: 0;
+  padding: 6px 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.55;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--bg);
+}
+.listing div {
+  display: flex;
+  gap: 10px;
+  padding: 0 8px;
+  white-space: pre;
+  cursor: pointer;
+}
+.listing div i {
+  min-width: 3ch;
+  text-align: right;
+  font-style: normal;
+  color: var(--muted);
+}
+.listing div.comment { color: var(--muted); }
+.listing div.done { color: var(--fg); }
+.listing div.todo { color: var(--muted); opacity: 0.7; }
+.listing div.now {
+  background: var(--accent);
+  color: var(--accent-fg);
+  opacity: 1;
+}
+.listing div.now i { color: inherit; }
+@media (max-width: 760px) {
+  .app {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto 58vh auto;
+    height: auto;
+  }
+  aside { border-left: 0; border-top: 1px solid var(--rule); }
+  .listing { max-height: 260px; }
+}
+</style>
+
+<div class="app">
+  <header>
+    <h1 id="title">__TITLE__</h1>
+    <div class="stats" id="stats"></div>
+  </header>
+  <div class="view">
+    <canvas id="canvas" aria-label="Tool path in 3D"></canvas>
+    <div class="legend">
+      <span><i class="swatch rapid"></i>Rapid (G0)</span>
+      <span><i class="swatch top"></i>Cut near the top</span>
+      <span><i class="swatch deep"></i>Cut at the bottom</span>
+      <span><i class="swatch tool"></i>Tool</span>
+    </div>
+    <p class="hint">Drag to turn · Shift-drag to move · Scroll or
+      pinch to zoom</p>
+  </div>
+  <aside>
+    <div class="group">
+      <span class="label">View</span>
+      <div class="row" id="views">
+        <button type="button" data-view="iso" aria-pressed="true">Iso</button>
+        <button type="button" data-view="top">Top</button>
+        <button type="button" data-view="front">Front</button>
+        <select id="zscale" aria-label="Z exaggeration">
+          <option value="1">Z ×1</option>
+          <option value="2">Z ×2</option>
+          <option value="4" selected>Z ×4</option>
+          <option value="8">Z ×8</option>
+        </select>
+      </div>
+      <div class="row">
+        <label class="check"><input type="checkbox" id="rapids"
+          checked> Rapids</label>
+        <label class="check"><input type="checkbox" id="outlines"
+          checked> Part outlines</label>
+      </div>
+    </div>
+    <div class="group">
+      <span class="label">Run</span>
+      <div class="row">
+        <button type="button" class="primary" id="play">Play</button>
+        <button type="button" id="restart">From start</button>
+        <select id="speed" aria-label="Playback speed">
+          <option value="10">10× speed</option>
+          <option value="30" selected>30× speed</option>
+          <option value="120">120× speed</option>
+          <option value="600">600× speed</option>
+        </select>
+      </div>
+      <input type="range" id="scrub" min="0" max="1000" value="1000"
+        aria-label="Position in the program">
+      <div class="time"><span id="elapsed"></span><span id="total"></span></div>
+    </div>
+    <div class="readout" id="readout">
+      <div><small>X in</small><b id="rx">–</b></div>
+      <div><small>Y in</small><b id="ry">–</b></div>
+      <div><small>Z in</small><b id="rz">–</b></div>
+    </div>
+    <div class="listing" id="listing" role="list"
+      aria-label="G-code"></div>
+  </aside>
+</div>
+
+<script type="application/json" id="path-data">__DATA__</script>
+<script>
+(() => {
+  "use strict";
+  const data = JSON.parse(document.getElementById("path-data").textContent);
+  const canvas = document.getElementById("canvas");
+  const ctx = canvas.getContext("2d");
+  const $ = (id) => document.getElementById(id);
+
+  // Each move's time (minutes) at the program's speeds, and the time
+  // when each starts.
+  const moves = data.moves.map((move) => {
+    let length = 0;
+    for (let i = 1; i < move.pts.length; i++) {
+      const [a, b] = [move.pts[i - 1], move.pts[i]];
+      length += Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+    }
+    const speed = move.g === 0 ? data.rapid_speed : data.work_speed;
+    return { ...move, length, minutes: length / speed };
+  });
+  const starts = [];
+  let total = 0;
+  for (const move of moves) { starts.push(total); total += move.minutes; }
+
+  // The bounds of everything drawn, for fitting the view.
+  const all = moves.flatMap((m) => m.pts).concat(
+    data.outlines.flatMap((o) => o.pts.map((p) => [p[0], p[1], o.z])));
+  const lo = [0, 1, 2].map((k) => Math.min(...all.map((p) => p[k])));
+  const hi = [0, 1, 2].map((k) => Math.max(...all.map((p) => p[k])));
+  const center = lo.map((v, k) => (v + hi[k]) / 2);
+  const span = Math.max(hi[0] - lo[0], hi[1] - lo[1], 1);
+  const zLow = Math.min(...moves.filter((m) => m.g !== 0)
+    .flatMap((m) => m.pts.map((p) => p[2])), data.z_top);
+
+  const views = {
+    iso: { yaw: -Math.PI / 6, pitch: 1.0 },
+    top: { yaw: 0, pitch: 0 },
+    front: { yaw: 0, pitch: Math.PI / 2 },
+  };
+  const state = {
+    yaw: views.iso.yaw, pitch: views.iso.pitch, zoom: 1, pan: [0, 0],
+    zscale: 4, time: total, playing: false, rapids: true, outlines: true,
+  };
+
+  // Read the theme's colors each time the page is drawn, so the
+  // drawing follows a theme change.
+  function tokens() {
+    const css = getComputedStyle(document.documentElement);
+    const get = (name) => css.getPropertyValue(name).trim();
+    return {
+      bg: get("--bg"), rapid: get("--rapid"), top: get("--cut-top"),
+      deep: get("--cut-deep"), outline: get("--outline"),
+      grid: get("--grid"), tool: get("--tool"), muted: get("--muted"),
+    };
+  }
+  function rgb(hex) {
+    const v = parseInt(hex.replace("#", ""), 16);
+    return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+  }
+  function mix(a, b, f) {
+    const [x, y] = [rgb(a), rgb(b)];
+    return `rgb(${x.map((c, k) => Math.round(c + (y[k] - c) * f))})`;
+  }
+
+  // Project a point: turn about Z (yaw), then tip back (pitch), with Z
+  // stretched so shallow cuts can be seen.
+  let scale = 1;
+  function project(p) {
+    const x = p[0] - center[0];
+    const y = p[1] - center[1];
+    const z = (p[2] - data.z_top) * state.zscale;
+    const c = Math.cos(state.yaw), s = Math.sin(state.yaw);
+    const x1 = x * c - y * s, y1 = x * s + y * c;
+    const cp = Math.cos(state.pitch), sp = Math.sin(state.pitch);
+    const y2 = y1 * cp + z * sp;
+    const w = canvas.width, h = canvas.height;
+    return [w / 2 + (x1 * scale + state.pan[0]),
+            h / 2 - (y2 * scale + state.pan[1])];
+  }
+
+  function polyline(pts) {
+    pts.forEach((p, i) => {
+      const [sx, sy] = project(p);
+      if (i === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+    });
+  }
+
+  // Where the program is at `time`: the move, and how far through it.
+  function locate(time) {
+    let lo = 0, hi = moves.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (starts[mid] <= time) lo = mid; else hi = mid - 1;
+    }
+    const move = moves[lo];
+    const f = move.minutes > 0 ? Math.min(1, (time - starts[lo]) / move.minutes) : 1;
+    return { index: lo, fraction: f };
+  }
+  function partial(move, f) {
+    if (f >= 1) return move.pts;
+    const want = move.length * f;
+    const out = [move.pts[0]];
+    let done = 0;
+    for (let i = 1; i < move.pts.length; i++) {
+      const [a, b] = [move.pts[i - 1], move.pts[i]];
+      const d = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+      if (done + d >= want) {
+        const t = d > 0 ? (want - done) / d : 0;
+        out.push(a.map((v, k) => v + (b[k] - v) * t));
+        return out;
+      }
+      out.push(b);
+      done += d;
+    }
+    return out;
+  }
+
+  function draw() {
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    if (canvas.width !== Math.round(rect.width * dpr) ||
+        canvas.height !== Math.round(rect.height * dpr)) {
+      canvas.width = Math.round(rect.width * dpr);
+      canvas.height = Math.round(rect.height * dpr);
+    }
+    scale = Math.min(canvas.width, canvas.height) / span * 0.78 * state.zoom;
+    const t = tokens();
+    ctx.fillStyle = t.bg;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+
+    // A one inch grid on the top of the material.
+    ctx.strokeStyle = t.grid;
+    ctx.lineWidth = dpr;
+    ctx.beginPath();
+    for (let x = Math.floor(lo[0]); x <= Math.ceil(hi[0]); x++) {
+      polyline([[x, Math.floor(lo[1]), data.z_top],
+                [x, Math.ceil(hi[1]), data.z_top]]);
+    }
+    for (let y = Math.floor(lo[1]); y <= Math.ceil(hi[1]); y++) {
+      polyline([[Math.floor(lo[0]), y, data.z_top],
+                [Math.ceil(hi[0]), y, data.z_top]]);
+    }
+    ctx.stroke();
+
+    // The part's outlines.
+    if (state.outlines) {
+      ctx.strokeStyle = t.outline;
+      ctx.lineWidth = 1.25 * dpr;
+      ctx.setLineDash([]);
+      for (const o of data.outlines) {
+        ctx.beginPath();
+        polyline(o.pts.map((p) => [p[0], p[1], o.z]));
+        ctx.closePath();
+        ctx.stroke();
+      }
+    }
+
+    // The moves so far: rapids dashed, cuts shaded by depth.
+    const at = locate(state.time);
+    for (let i = 0; i <= at.index; i++) {
+      const move = moves[i];
+      const pts = i === at.index ? partial(move, at.fraction) : move.pts;
+      if (pts.length < 2) continue;
+      ctx.beginPath();
+      polyline(pts);
+      if (move.g === 0) {
+        if (!state.rapids) continue;
+        ctx.strokeStyle = t.rapid;
+        ctx.lineWidth = 1.25 * dpr;
+        ctx.setLineDash([5 * dpr, 4 * dpr]);
+      } else {
+        const z = pts.reduce((s, p) => s + p[2], 0) / pts.length;
+        const depth = zLow < data.z_top ?
+          Math.max(0, Math.min(1, (data.z_top - z) / (data.z_top - zLow))) : 0;
+        ctx.strokeStyle = mix(t.top, t.deep, depth);
+        ctx.lineWidth = 1.75 * dpr;
+        ctx.setLineDash([]);
+      }
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+
+    // The tool: its cutting circle, and its shank going up.
+    const move = moves[at.index];
+    const pts = partial(move, at.fraction);
+    const tip = pts[pts.length - 1];
+    const r = data.tool_diameter / 2;
+    ctx.strokeStyle = t.tool;
+    ctx.lineWidth = 2 * dpr;
+    ctx.beginPath();
+    const ring = [];
+    for (let k = 0; k <= 32; k++) {
+      const a = k / 32 * Math.PI * 2;
+      ring.push([tip[0] + r * Math.cos(a), tip[1] + r * Math.sin(a), tip[2]]);
+    }
+    polyline(ring);
+    ctx.stroke();
+    ctx.beginPath();
+    polyline([tip, [tip[0], tip[1], tip[2] + 0.75 / state.zscale]]);
+    ctx.stroke();
+
+    readout(at, tip);
+  }
+
+  // The readout: position, time, and the G-code around this move.
+  const listing = $("listing");
+  const rows = data.lines.map((text, i) => {
+    const row = document.createElement("div");
+    row.setAttribute("role", "listitem");
+    if (text.startsWith("(")) row.className = "comment";
+    const n = document.createElement("i");
+    n.textContent = String(i + 1);
+    row.append(n, document.createTextNode(text));
+    row.addEventListener("click", () => {
+      const index = moves.findIndex((m) => m.line >= i);
+      if (index >= 0) {
+        state.time = starts[index] + moves[index].minutes;
+        stop();
+        sync();
+        draw();
+      }
+    });
+    listing.append(row);
+    return row;
+  });
+  let shownLine = -1;
+  function readout(at, tip) {
+    const fmt = (v) => (Math.abs(v) < 5e-5 ? 0 : v).toFixed(4);
+    $("rx").textContent = fmt(tip[0]);
+    $("ry").textContent = fmt(tip[1]);
+    $("rz").textContent = fmt(tip[2]);
+    $("elapsed").textContent = clock(state.time);
+    const line = moves[at.index].line;
+    if (line !== shownLine) {
+      rows.forEach((row, i) => {
+        row.classList.toggle("now", i === line);
+        row.classList.toggle("done", i < line && !row.classList.contains("comment"));
+        row.classList.toggle("todo", i > line);
+      });
+      const row = rows[line];
+      const top = row.offsetTop - listing.clientHeight / 2;
+      listing.scrollTop = Math.max(0, top);
+      shownLine = line;
+    }
+  }
+  function clock(minutes) {
+    const s = Math.round(minutes * 60);
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  }
+
+  // The header's numbers.
+  const cutLength = moves.filter((m) => m.g !== 0)
+    .reduce((s, m) => s + m.length, 0);
+  $("stats").innerHTML = [
+    ["Tool", `⌀${data.tool_diameter} in`],
+    ["Feed", `${data.work_speed} in/min`],
+    ["Spindle", `${data.spindle_rpm} rpm`],
+    ["Cut", `${cutLength.toFixed(1)} in`],
+    ["Run", `≈ ${clock(total)}`],
+    ["Lines", `${data.lines.length}`],
+  ].map(([k, v]) => `<span>${k} <b>${v}</b></span>`).join("");
+  $("total").textContent = clock(total);
+
+  // Playing.
+  let last = 0;
+  function frame(now) {
+    if (!state.playing) return;
+    const dt = last ? (now - last) / 60000 : 0;
+    last = now;
+    state.time = Math.min(total, state.time + dt * Number($("speed").value));
+    if (state.time >= total) stop();
+    sync();
+    draw();
+    if (state.playing) requestAnimationFrame(frame);
+  }
+  function play() {
+    if (state.time >= total) state.time = 0;
+    state.playing = true;
+    last = 0;
+    $("play").textContent = "Pause";
+    requestAnimationFrame(frame);
+  }
+  function stop() {
+    state.playing = false;
+    $("play").textContent = "Play";
+  }
+  function sync() {
+    $("scrub").value = String(Math.round(state.time / total * 1000));
+  }
+  $("play").addEventListener("click", () => (state.playing ? stop() : play()));
+  $("restart").addEventListener("click", () => { state.time = 0; play(); });
+  $("scrub").addEventListener("input", (e) => {
+    stop();
+    state.time = Number(e.target.value) / 1000 * total;
+    draw();
+  });
+
+  // The view controls.
+  for (const button of document.querySelectorAll("#views button")) {
+    button.addEventListener("click", () => {
+      const v = views[button.dataset.view];
+      Object.assign(state, { yaw: v.yaw, pitch: v.pitch, zoom: 1, pan: [0, 0] });
+      for (const b of document.querySelectorAll("#views button")) {
+        b.setAttribute("aria-pressed", String(b === button));
+      }
+      draw();
+    });
+  }
+  $("zscale").addEventListener("change", (e) => {
+    state.zscale = Number(e.target.value); draw();
+  });
+  $("rapids").addEventListener("change", (e) => {
+    state.rapids = e.target.checked; draw();
+  });
+  $("outlines").addEventListener("change", (e) => {
+    state.outlines = e.target.checked; draw();
+  });
+
+  // Turning, moving and zooming with a mouse, pen or fingers.
+  const pointers = new Map();
+  let pinch = 0;
+  canvas.addEventListener("pointerdown", (e) => {
+    canvas.setPointerCapture(e.pointerId);
+    pointers.set(e.pointerId, [e.clientX, e.clientY]);
+  });
+  canvas.addEventListener("pointermove", (e) => {
+    if (!pointers.has(e.pointerId)) return;
+    const [px, py] = pointers.get(e.pointerId);
+    pointers.set(e.pointerId, [e.clientX, e.clientY]);
+    const dpr = window.devicePixelRatio || 1;
+    if (pointers.size === 2) {
+      const [a, b] = [...pointers.values()];
+      const d = Math.hypot(a[0] - b[0], a[1] - b[1]);
+      if (pinch) state.zoom = Math.min(20, Math.max(0.2, state.zoom * d / pinch));
+      pinch = d;
+    } else if (e.shiftKey || e.buttons === 4 || e.buttons === 2) {
+      state.pan[0] += (e.clientX - px) * dpr;
+      state.pan[1] -= (e.clientY - py) * dpr;
+    } else {
+      state.yaw += (e.clientX - px) * 0.008;
+      state.pitch = Math.min(Math.PI / 2, Math.max(0,
+        state.pitch + (e.clientY - py) * 0.008));
+    }
+    for (const b of document.querySelectorAll("#views button")) {
+      b.setAttribute("aria-pressed", "false");
+    }
+    draw();
+  });
+  const release = (e) => {
+    pointers.delete(e.pointerId);
+    if (pointers.size < 2) pinch = 0;
+  };
+  canvas.addEventListener("pointerup", release);
+  canvas.addEventListener("pointercancel", release);
+  canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+  canvas.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    state.zoom = Math.min(20, Math.max(0.2, state.zoom * Math.exp(-e.deltaY * 0.0015)));
+    draw();
+  }, { passive: false });
+
+  // Redraw when the size or the theme changes.
+  new ResizeObserver(() => draw()).observe(canvas);
+  window.matchMedia("(prefers-color-scheme: dark)")
+    .addEventListener("change", draw);
+  new MutationObserver(draw).observe(document.documentElement,
+    { attributes: true, attributeFilter: ["data-theme"] });
+  if (document.fonts) document.fonts.ready.then(draw);
+  sync();
+  draw();
+})();
+</script>
