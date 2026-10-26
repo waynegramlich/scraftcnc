@@ -1,0 +1,52 @@
+# The machine's preferences and its tool table, for `solidcraftcnc`.
+# Sizes are inches, feeds inches per minute.  See `scmachine.py`.
+
+[machine]
+name = "Shop mill"
+z_safe = 1.0            # Above all of the hold down tooling.
+clearance = 0.05        # Rapids down stop this far above the work.
+tool_change_z = 2.0     # Rise here before every tool change.
+tool_change = "T{number:02d}"   # The words that change the tool.
+rapid_speed = 60.0      # 1 inch per second (for time estimates).
+drill_cycle = "G83"     # G81, G73, G83, or "moves".
+stepover = 0.9          # Pocket rings apart, in tool diameters.
+ramp_angle = 3.0        # Degrees, when a pocket is not drilled.
+
+[[tools]]
+number = 1
+name = "1/4 inch 2 flute end mill"
+kind = "end mill"
+diameter = 0.25
+rpm = 1200
+feed = 12.0             # 0.2 inch per second.
+plunge = 6.0
+
+[[tools]]
+number = 2
+name = "1/8 inch drill"
+kind = "drill"
+diameter = 0.125
+rpm = 1200
+feed = 4.0
+plunge = 4.0
+peck = 0.05
+
+[[tools]]
+number = 3
+name = "7/32 inch drill"
+kind = "drill"
+diameter = 0.21875
+rpm = 1200
+feed = 4.0
+plunge = 4.0
+peck = 0.05
+
+[[tools]]
+number = 4
+name = "15/64 inch drill"
+kind = "drill"
+diameter = 0.234375
+rpm = 1200
+feed = 4.0
+plunge = 4.0
+peck = 0.05

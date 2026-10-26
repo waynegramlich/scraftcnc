@@ -176,3 +176,30 @@ coverage test found none).
   now sends `diameter` as `"0.5 mm"` (checked headless by STEP: 0.502
   mm; bare 0.5 gave 12.74 mm).  Watch for this with every size
   parameter (extrude distances already pass units).
+
+## 2026-10-25: Tool table, machine preferences, drilled entries (#14)
+
+User decisions: tool change is `T02` alone (some machines will not
+rise to a tool change height on their own); the drilling style is a
+machine preference, like the tool table; the entry drill is the
+largest drill smaller than the end mill (from the tool table); the
+table lives in a TOML file for now (Python users can write the TOML).
+
+Done:
+* `scmachine.py`: `SCTool`, `SCMachine`, `load_machine()` (tomllib;
+  every problem a `ValueError` naming the file), `change_words()` from
+  the `tool_change` template (`"T{number:02d}"`), `drill_for()`.
+* `machine.toml`: preferences (z_safe, clearance, tool_change_z,
+  tool_change, rapid_speed, drill_cycle G81/G73/G83/moves, stepover,
+  ramp_angle) and tools: T01 1/4 end mill, T02 1/8, T03 7/32, T04
+  15/64 drills.
+* `SCCNC(name, machine, z_top)`: `change_tool()` (rise to
+  tool_change_z, M5, template words, M3 S rpm), `plunge()` at the
+  tool's plunge feed, `drill(points, bottom)` (G98 + canned cycle +
+  G80, or pecks as moves), `pocket_entries()`, `profile_entry()`,
+  `pocket(..., drilled=True)` plunges at the entries instead of
+  ramping.  Settings moved to the machine; feeds per tool.
+* `scplot`: moves carry feed and tool; canned cycles drawn (over, down
+  to R, G1 to bottom, up); viewer uses per-move feed and tool size.
+* Demo: T04 drills 4 entries (2 pocket, 2 profile), T01 mills.  Plot
+  republished (version 2).  41 tests pass.

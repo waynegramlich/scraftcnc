@@ -335,7 +335,7 @@ label.check { display: inline-flex; gap: 6px; align-items: center; }
       const [a, b] = [move.pts[i - 1], move.pts[i]];
       length += Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
     }
-    const speed = move.g === 0 ? data.rapid_speed : data.work_speed;
+    const speed = move.g === 0 ? data.rapid_speed : (move.f || data.rapid_speed);
     return { ...move, length, minutes: length / speed };
   });
   const starts = [];
@@ -506,7 +506,8 @@ label.check { display: inline-flex; gap: 6px; align-items: center; }
     const move = moves[at.index];
     const pts = partial(move, at.fraction);
     const tip = pts[pts.length - 1];
-    const r = data.tool_diameter / 2;
+    const tool = data.tools[String(move.tool)];
+    const r = (tool ? tool.diameter : 0.25) / 2;
     ctx.strokeStyle = t.tool;
     ctx.lineWidth = 2 * dpr;
     ctx.beginPath();
@@ -573,10 +574,10 @@ label.check { display: inline-flex; gap: 6px; align-items: center; }
   // The header's numbers.
   const cutLength = moves.filter((m) => m.g !== 0)
     .reduce((s, m) => s + m.length, 0);
+  const used = [...new Set(moves.map((m) => m.tool).filter((t) => t))];
   $("stats").innerHTML = [
-    ["Tool", `⌀${data.tool_diameter} in`],
-    ["Feed", `${data.work_speed} in/min`],
-    ["Spindle", `${data.spindle_rpm} rpm`],
+    ...used.map((t) => [`T${String(t).padStart(2, "0")}`,
+      `⌀${data.tools[String(t)].diameter} in`]),
     ["Cut", `${cutLength.toFixed(1)} in`],
     ["Run", `≈ ${clock(total)}`],
     ["Lines", `${data.lines.length}`],

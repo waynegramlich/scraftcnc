@@ -2,9 +2,12 @@
 
 `SCCNC` collects RS-274 commands, each a plain dictionary of words
 (e.g. `{"G": 1, "X": 1.0, "F": 12.0}`), and writes them as G-code.  It
-works in inches, and cuts the shapes of `scgeometry` (such as
-`SCRoundPoly`): along their outlines (`SCCNC.profile()`) and out of
-their insides (`SCCNC.pocket()`).
+works in inches, with a machine and its tool table (`scmachine`), and
+cuts the shapes of `scgeometry` (such as `SCRoundPoly`): along their
+outlines (`SCCNC.profile()`) and out of their insides
+(`SCCNC.pocket()`).  It drills (`SCCNC.drill()`) where they go down
+(`SCCNC.pocket_entries()`, `SCCNC.profile_entry()`), so that an end
+mill can go straight down a hole instead of into solid material.
 
 A pocket is cleared by rings: the path along its wall, then smaller
 and smaller rings inside that, each `stepover` of the tool's diameter
@@ -39,16 +42,18 @@ from scgeometry import (
     turn_between,
     unit,
 )
+from scmachine import SCMachine, SCTool
 
 # One RS-274 command: its words, in order, keyed by letter (e.g.
 # `{"G": 1, "X": 10.0}`).  The key `comment` holds a comment's text.
 RS274: TypeAlias = dict[str, float | int | str]
 
 # How a pocket's ring is cut at each depth: ramped down into along
-# itself (nothing inside it is cut first), led into from inside (where
-# its rings are cut first), or cut straight into (a ring too small to
-# ramp into, cut after the ring around it).
-CutMode: TypeAlias = Literal["ramp", "lead", "plain"]
+# itself (nothing inside it is cut first), plunged into down a drilled
+# hole (likewise), led into from inside (where its rings are cut
+# first), or cut straight into (a ring too small to ramp into, cut
+# after the ring around it).
+CutMode: TypeAlias = Literal["ramp", "drilled", "lead", "plain"]
 
 # A smallest ring shorter than this many tool diameters is too small to
 # ramp into well (going around it would be little better than plunging
@@ -138,6 +143,30 @@ def _check_leads(
                         f"{path.name}: the lead-in or lead-out crosses "
                         f"the path at ({point[0]:g}, {point[1]:g})"
                     )
+
+
+# Function `_profile_path()`:
+def _profile_path(
+    poly: SCRoundPoly, inside: bool, diameter: float
+) -> tuple[SCRoundPoly, tuple[SCArc, list[SCSegment], SCArc]]:
+    """Return the path a tool follows to cut along an outline.
+
+    Arguments:
+    * `poly` (`SCRoundPoly`): The outline.
+    * `inside` (`bool`): True to cut from inside the outline.
+    * `diameter` (`float`): The tool's diameter.
+
+    Returns:
+    * (`SCRoundPoly`): The path of the tool's center: off the outline
+      by the tool's radius, going the climb milling way around.
+    * (`tuple[SCArc, list[SCSegment], SCArc]`): Its lead-in, loop and
+      lead-out (see `_leads()`).
+    """
+    radius: float = diameter / 2.0
+    path: SCRoundPoly = poly.offset(-radius if inside else radius)
+    if path.is_ccw() != inside:
+        path = path.reversed()
+    return path, _leads(SCLoop.from_poly(path), radius)
 
 
 # Function `_number()`:
@@ -402,69 +431,43 @@ def _uncut_reach(
 
 
 # Class `SCCNC`:
-# The machine's settings are all constructor arguments, so this class
-# has more attributes than `pylint` likes.
 @dataclass(slots=True)
-class SCCNC:  # pylint: disable=too-many-instance-attributes
+class SCCNC:
     """RS-274 (G-code) for a 3-axis mill, built one command at a time.
 
     The program works in inches and absolute coordinates, in the XY
     plane, with feeds per minute; arc centers (`I`, `J`) are relative
-    to each arc's start.  It starts the spindle clockwise (`M3`) at its
-    start, and cuts with an end mill of `tool_diameter`, climb milling:
-    the material being cut is always to the right of the cutter.
+    to each arc's start.  It cuts with the tool chosen by
+    `change_tool()`, from the machine's tool table, climb milling: the
+    material being cut is always to the right of the cutter.
 
     The tool moves across the work only at `z_safe` (above all of the
     hold down tooling), and comes down at the rapid speed to
     `clearance` above `z_top` (the top of the material, which may not
     be flat).  Below that, where it may be removing material, it moves
-    at `work_speed`.
+    at the tool's feed (or its plunge feed, going straight down).
 
     Attributes:
     * `name` (`str`): The program's name (its first comment).
+    * `machine` (`SCMachine`): The machine and its tool table.
     * `z_top` (`float`): The Z of the material's top surface.
-    * `z_safe` (`float`):
-      The Z above all of the hold down tooling, for moving across.
-    * `clearance` (`float`):
-      How far above `z_top` rapid moves down stop.
-    * `tool_diameter` (`float`): The end mill's diameter.
-    * `rapid_speed` (`float`):
-      The speed of rapid (`G0`) moves, in inches per minute.  The
-      machine sets it, so it is used only to estimate `minutes`.
-    * `work_speed` (`float`):
-      The feed of moves that may cut (`G1`, `G2`, `G3`), in inches per
-      minute.
-    * `spindle_rpm` (`float`): The spindle's speed (`S`), in RPM.
-    * `stepover` (`float`):
-      How far apart a pocket's rings are, as a fraction of
-      `tool_diameter`.
-    * `ramp_angle` (`float`):
-      The steepest angle (degrees) the tool goes down at into uncut
-      material in a pocket.
     * `commands` (`list[RS274]`): The program so far.
     * `minutes` (`float`):
-      The time the moves so far take, at `rapid_speed` and
-      `work_speed` (not counting acceleration).
+      The time the moves so far take, at the machine's rapid speed and
+      the tools' feeds (not counting acceleration or tool changes).
     * `position` (`tuple[float | None, float | None, float | None]`):
       Where the tool was last sent (X, Y, Z); `None` until that axis
       first moves.
+    * `tool` (`SCTool | None`): The tool in the spindle, if any.
 
     Constructor:
-    * `SCCNC(name, z_top, z_safe, clearance, tool_diameter,
-      rapid_speed, work_speed, spindle_rpm, stepover, ramp_angle)`
+    * `SCCNC(name, machine, z_top)`
     """
 
     # Constructor arguments:
     name: str = field(init=True)
+    machine: SCMachine = field(init=True)
     z_top: float = field(init=True, default=0.0)
-    z_safe: float = field(init=True, default=1.0)
-    clearance: float = field(init=True, default=0.05)
-    tool_diameter: float = field(init=True, default=0.25)
-    rapid_speed: float = field(init=True, default=60.0)  # 1 in/s.
-    work_speed: float = field(init=True, default=12.0)  # 0.2 in/s.
-    spindle_rpm: float = field(init=True, default=1200.0)
-    stepover: float = field(init=True, default=0.9)
-    ramp_angle: float = field(init=True, default=3.0)
 
     # Program state (alphabetized):
     commands: list[RS274] = field(init=False, default_factory=list)
@@ -472,39 +475,24 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
     position: tuple[float | None, float | None, float | None] = field(
         init=False, default=(None, None, None)
     )
+    tool: SCTool | None = field(init=False, default=None)
 
     # Method `SCCNC.__post_init__()`:
     def __post_init__(self) -> None:
-        """Validate the settings, and start the program.
+        """Validate the heights, and start the program.
 
-        The program starts with its name, the machine's modes, a rise
-        to `z_safe` and the spindle starting.
+        The program starts with its name, the machine's modes and a rise
+        to `z_safe`.
 
         Raises:
-        * `ValueError`:
-          If `z_safe` is not above `clearance` above `z_top`,
-          `clearance` is negative, a size or speed is not positive,
-          `stepover` is not above 0 and at most 1, or `ramp_angle` is
-          not above 0 and at most 90.
+        * `ValueError`: If `z_safe` is not above `clearance` above `z_top`.
         """
-        # Validate the settings.
-        if self.clearance < 0.0:
-            raise ValueError(f"{self.clearance=} must not be negative")
+        # Validate the heights.
         if self.z_safe <= self.z_top + self.clearance:
             raise ValueError(
                 f"{self.z_safe=} must be above {self.z_top=} "
                 f"+ {self.clearance=}"
             )
-        name: str
-        for name in ("tool_diameter", "rapid_speed", "work_speed"):
-            if getattr(self, name) <= 0.0:
-                raise ValueError(f"{name} must be positive")
-        if self.spindle_rpm <= 0.0:
-            raise ValueError(f"{self.spindle_rpm=} must be positive")
-        if not 0.0 < self.stepover <= 1.0:
-            raise ValueError(f"{self.stepover=} must be in (0, 1]")
-        if not 0.0 < self.ramp_angle <= 90.0:
-            raise ValueError(f"{self.ramp_angle=} must be in (0, 90]")
 
         # Start the program.
         self.comment(self.name)
@@ -513,7 +501,74 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         self.add({"G": 17})  # The XY plane.
         self.add({"G": 94})  # Feeds per minute.
         self.rapid(z=self.z_safe)
-        self.add({"M": 3, "S": self.spindle_rpm})
+
+    # Method `SCCNC.z_safe()`:
+    @property
+    def z_safe(self) -> float:
+        """Return the Z above all of the hold down tooling.
+
+        Returns:
+        * (`float`): The machine's `z_safe`.
+        """
+        return self.machine.z_safe
+
+    # Method `SCCNC.clearance()`:
+    @property
+    def clearance(self) -> float:
+        """Return how far above `z_top` rapids down stop.
+
+        Returns:
+        * (`float`): The machine's `clearance`.
+        """
+        return self.machine.clearance
+
+    # Method `SCCNC.cutter()`:
+    @property
+    def cutter(self) -> SCTool:
+        """Return the tool in the spindle.
+
+        Returns:
+        * (`SCTool`): The tool.
+
+        Raises:
+        * `ValueError`: If no tool has been chosen yet.
+        """
+        if self.tool is None:
+            raise ValueError(f"{self.name}: no tool yet (see change_tool())")
+        return self.tool
+
+    # Method `SCCNC.change_tool()`:
+    def change_tool(self, number: int) -> SCTool:
+        """Change to another tool from the tool table.
+
+        The tool rises to the machine's `tool_change_z` first (some
+        machines do not), the spindle stops, the machine's tool change
+        words are written, and the spindle starts at the new tool's
+        speed.
+
+        Arguments:
+        * `number` (`int`): The tool's number.
+
+        Returns:
+        * (`SCTool`): The tool.
+
+        Raises:
+        * `KeyError`: If the tool table has no such tool.
+        """
+        tool: SCTool = self.machine.tool(number)
+        self.comment(f"Tool {number}: {tool.name}")
+        self.rapid(z=self.machine.tool_change_z)
+        if self.tool is not None:
+            self.add({"M": 5})
+        self.add(
+            {
+                word[0].upper(): word[1:]
+                for word in self.machine.change_words(number)
+            }
+        )
+        self.tool = tool
+        self.add({"M": 3, "S": tool.rpm})
+        return tool
 
     # Method `SCCNC.add()`:
     def add(self, command: RS274) -> None:
@@ -544,6 +599,7 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         code: int,
         axes: tuple[float | None, float | None, float | None],
         arc: SCArc | None = None,
+        feed: float | None = None,
     ) -> None:
         """Append a move, leaving out unchanged axes and feeds.
 
@@ -554,6 +610,8 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         * `axes` (`tuple[float | None, float | None, float | None]`):
           The X, Y and Z to move to; `None` stays where it is.
         * `arc` (`SCArc | None`): The arc, for `G2` and `G3`.
+        * `feed` (`float | None`):
+          The feed of a `G1`, `G2` or `G3` (default: the tool's feed).
         """
         # Add each axis that moves, and remember where it goes.
         command: RS274 = {"G": code}
@@ -574,9 +632,9 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
             return
 
         # Add the feed when it is not the last one given.
-        speed: float = self.rapid_speed
+        speed: float = self.machine.rapid_speed
         if code != 0:
-            speed = self.work_speed
+            speed = self.cutter.feed if feed is None else feed
             if self._last_feed() != speed:
                 command["F"] = speed
         self.add(command)
@@ -628,7 +686,7 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         y: float | None = None,
         z: float | None = None,
     ) -> None:
-        """Cut in a straight line at `work_speed` (`G1`).
+        """Cut in a straight line at the tool's feed (`G1`).
 
         Arguments:
         * `x` (`float | None`): The X to move to, or `None` to stay.
@@ -639,7 +697,7 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
 
     # Method `SCCNC.arc()`:
     def arc(self, arc: SCArc, z: float | None = None) -> None:
-        """Cut along an XY arc at `work_speed` (`G2` or `G3`).
+        """Cut along an XY arc at the tool's feed (`G2` or `G3`).
 
         The tool must already be at the arc's start.  With `z`, it goes
         down (or up) as it goes around (a helix).
@@ -651,6 +709,122 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         self._move(
             3 if arc.sweep > 0.0 else 2, (arc.end[0], arc.end[1], z), arc
         )
+
+    # Method `SCCNC.plunge()`:
+    def plunge(self, z: float) -> None:
+        """Go straight down (or up) at the tool's plunge feed (`G1`).
+
+        Arguments:
+        * `z` (`float`): The Z to go to.
+        """
+        self._move(1, (None, None, z), feed=self.cutter.plunge)
+
+    # Method `SCCNC.drill()`:
+    def drill(self, points: Sequence[Point], bottom: float) -> None:
+        """Drill holes from `z_top` down to `bottom` with a drill.
+
+        The machine's `drill_cycle` says how: a canned cycle (`G81`,
+        `G73` or `G83`, returning to `z_safe` between holes with
+        `G98`), or the pecks written out as moves.  Each peck goes the
+        drill's `peck` deeper (all the way when it is 0).
+
+        Arguments:
+        * `points` (`Sequence[Point]`): Where the holes go.
+        * `bottom` (`float`): How deep they go.
+
+        Raises:
+        * `ValueError`:
+          If the tool is not a drill, or `bottom` is not below `z_top`.
+        """
+        # Validate the drill and the depth.
+        tool: SCTool = self.cutter
+        if tool.kind != "drill":
+            raise ValueError(f"tool {tool.number} is not a drill")
+        if bottom >= self.z_top:
+            raise ValueError(f"{bottom=} must be below {self.z_top=}")
+        if not points:
+            return
+        cycle: str = self.machine.drill_cycle
+        self.comment(f"Drill {len(points)} holes to Z{_number(bottom)}")
+        self.rapid(z=self.z_safe)
+        retract: float = self.z_top + self.clearance
+        peck: float = tool.peck if tool.peck > 0.0 else retract - bottom
+
+        # Pecks written out as moves.
+        point: Point
+        if cycle == "moves":
+            for point in points:
+                self._peck(point, bottom, retract)
+            return
+
+        # A canned cycle: one line for the first hole, then just where
+        # each of the others is.
+        self.add({"G": 98})
+        index: int
+        for index, point in enumerate(points):
+            command: RS274 = {"X": point[0], "Y": point[1]}
+            if index == 0:
+                command = {"G": int(cycle[1:]), **command}
+                command.update({"Z": bottom, "R": retract})
+                if cycle != "G81":
+                    command["Q"] = peck
+                command["F"] = tool.plunge
+            self.add(command)
+            self._time_hole(point, (retract, bottom), peck)
+        self.add({"G": 80})
+
+    # Method `SCCNC._peck()`:
+    def _peck(self, point: Point, bottom: float, retract: float) -> None:
+        """Drill one hole, pecking, with ordinary moves.
+
+        Arguments:
+        * `point` (`Point`): Where the hole goes.
+        * `bottom` (`float`): How deep it goes.
+        * `retract` (`float`): The Z to rise to between pecks.
+        """
+        # Go over the hole and down to just above the work.
+        tool: SCTool = self.cutter
+        peck: float = tool.peck if tool.peck > 0.0 else retract - bottom
+        self.rapid(x=point[0], y=point[1])
+        self.rapid(z=retract)
+
+        # Each peck goes back down quickly to just above the last one.
+        depth: float = self.z_top
+        while depth > bottom + EPSILON:
+            if depth < self.z_top:
+                self.rapid(z=min(depth + self.clearance, retract))
+            depth = max(bottom, depth - peck)
+            self.plunge(depth)
+            self.rapid(z=retract)
+        self.rapid(z=self.z_safe)
+
+    # Method `SCCNC._time_hole()`:
+    def _time_hole(
+        self, point: Point, heights: tuple[float, float], peck: float
+    ) -> None:
+        """Count the time a canned cycle takes for one hole.
+
+        Arguments:
+        * `point` (`Point`): Where the hole is.
+        * `heights` (`tuple[float, float]`):
+          The cycle's `R` (retract) Z and its bottom.
+        * `peck` (`float`): How deep each peck goes.
+        """
+        # Over to the hole at `z_safe`, then down, the pecks, and back.
+        retract: float
+        bottom: float
+        retract, bottom = heights
+        x: float | None
+        y: float | None
+        x, y, _ = self.position
+        rapids: float = 2.0 * (self.z_safe - retract)
+        if x is not None and y is not None:
+            rapids += math.dist((x, y), point)
+        pecks: int = max(1, math.ceil((retract - bottom) / peck - EPSILON))
+        rapids += pecks * 2.0 * (retract - bottom) / 2.0
+        self.minutes += rapids / self.machine.rapid_speed
+        self.minutes += (retract - bottom) / self.cutter.plunge
+        self.position = (point[0], point[1], self.z_safe)
 
     # Method `SCCNC._depths()`:
     def _depths(self, bottom: float, step: float) -> list[float]:
@@ -722,11 +896,11 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         cutter's left (away from the material being cut), and together
         make one circle, so the lead-out ends where the lead-in starts.
 
-        The tool rises to `z_safe`, moves over the lead-in's start,
-        comes down to `clearance` above `z_top`, and then at each depth
-        (`step` or less below the last) goes down, in along the
-        lead-in, once around, and out along the lead-out; finally it
-        rises to `z_safe`.
+        The tool rises to `z_safe`, moves over the lead-in's start (see
+        `profile_entry()`), comes down to `clearance` above `z_top`, and
+        then at each depth (`step` or less below the last) goes down at
+        the plunge feed, in along the lead-in, once around, and out
+        along the lead-out; finally it rises to `z_safe`.
 
         Arguments:
         * `poly` (`SCRoundPoly`): The outline to cut along.
@@ -742,21 +916,19 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
           If `bottom` is not below `z_top`, `step` is not positive, or
           the tool cannot follow the outline.
         """
-        # Move the tool's center off the outline by its radius, and go
-        # the climb milling way around.
+        # Plan the path and its leads.
         depths: list[float] = self._depths(bottom, step)
-        radius: float = self.tool_diameter / 2.0
-        path: SCRoundPoly = poly.offset(-radius if inside else radius)
-        if path.is_ccw() != inside:
-            path = path.reversed()
+        path: SCRoundPoly
+        lead_in: SCArc
+        loop: list[SCSegment]
+        lead_out: SCArc
+        path, (lead_in, loop, lead_out) = _profile_path(
+            poly, inside, self.cutter.diameter
+        )
 
         # Go over the lead-in's start, then down to just above the top.
         side: str = "inside" if inside else "outside"
         self.comment(f"Profile {poly.name} {side} to Z{_number(bottom)}")
-        lead_in: SCArc
-        loop: list[SCSegment]
-        lead_out: SCArc
-        lead_in, loop, lead_out = _leads(SCLoop.from_poly(path), radius)
         self.rapid(z=self.z_safe)
         self.rapid(x=lead_in.start[0], y=lead_in.start[1])
         self.rapid(z=self.z_top + self.clearance)
@@ -764,14 +936,36 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         # At each depth, go down, in, once around, and out.
         z: float
         for z in depths:
-            self.linear(z=z)
+            self.plunge(z)
             self._follow([lead_in, *loop, lead_out], [])
         self.rapid(z=self.z_safe)
         return path
 
+    # Method `SCCNC.profile_entry()`:
+    def profile_entry(
+        self, poly: SCRoundPoly, tool: SCTool, inside: bool = False
+    ) -> Point:
+        """Return where a profile cut with a tool goes down.
+
+        This is where to drill, so that the tool goes down a hole.
+
+        Arguments:
+        * `poly` (`SCRoundPoly`): The outline.
+        * `tool` (`SCTool`): The tool that will cut it.
+        * `inside` (`bool`): True to cut from inside the outline.
+
+        Returns:
+        * (`Point`): The start of the profile's lead-in.
+        """
+        return _profile_path(poly, inside, tool.diameter)[1][0].start
+
     # Method `SCCNC.pocket()`:
     def pocket(
-        self, poly: SCRoundPoly, bottom: float, step: float
+        self,
+        poly: SCRoundPoly,
+        bottom: float,
+        step: float,
+        drilled: bool = False,
     ) -> list[SCRing]:
         """Clear the inside of a polygon, from `z_top` down to `bottom`.
 
@@ -780,9 +974,11 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         the rings are cut from the smallest out, each ring after all of
         the rings inside it, so each ring's lead-in starts where they
         have already cut (see `cut_order()`).  The smallest rings have
-        nothing cut inside them, so the tool ramps down into them along
-        the ring itself, going around as many times as needed to go no
-        steeper than `ramp_angle`.
+        nothing cut inside them, so the tool goes down into them at
+        their starts (see `pocket_entries()`): straight down at the
+        plunge feed when holes have been drilled there, or else ramping
+        down along the ring itself, going around as many times as
+        needed to go no steeper than the machine's `ramp_angle`.
 
         Between rings, the tool stays in the pocket when the way there
         crosses no wall: going up to the last depth (where the pocket
@@ -793,6 +989,8 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         * `poly` (`SCRoundPoly`): The pocket's outline.
         * `bottom` (`float`): The pocket's floor.
         * `step` (`float`): The most to go down between depths.
+        * `drilled` (`bool`):
+          True when holes have been drilled at `pocket_entries()`.
 
         Returns:
         * (`list[SCRing]`): The outermost rings (with the rest inside).
@@ -804,12 +1002,8 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         """
         # Plan the rings.
         depths: list[float] = self._depths(bottom, step)
-        boundary: SCLoop = SCLoop.from_poly(poly)
-        if not boundary.is_ccw():
-            boundary = boundary.reversed()
-        roots: list[SCRing] = plan_pocket(
-            boundary, self.tool_diameter, self.stepover
-        )
+        diameter: float = self.cutter.diameter
+        roots: list[SCRing] = self._plan(poly, diameter)
         walls: list[SCLoop] = [root.loop for root in roots]
 
         # Cut every ring at each depth, smallest rings first.
@@ -822,11 +1016,51 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
             for root in roots:
                 ring: SCRing
                 mode: CutMode
-                for ring, mode in cut_order(root, self.tool_diameter):
+                for ring, mode in cut_order(root, diameter):
+                    if drilled and mode == "ramp":
+                        mode = "drilled"
                     self._cut_ring(ring, mode, (above, z), walls)
             above = z
         self.rapid(z=self.z_safe)
         return roots
+
+    # Method `SCCNC._plan()`:
+    def _plan(self, poly: SCRoundPoly, diameter: float) -> list[SCRing]:
+        """Plan the rings that clear a pocket with a tool.
+
+        Arguments:
+        * `poly` (`SCRoundPoly`): The pocket's outline.
+        * `diameter` (`float`): The tool's diameter.
+
+        Returns:
+        * (`list[SCRing]`): The outermost rings.
+        """
+        boundary: SCLoop = SCLoop.from_poly(poly)
+        if not boundary.is_ccw():
+            boundary = boundary.reversed()
+        return plan_pocket(boundary, diameter, self.machine.stepover)
+
+    # Method `SCCNC.pocket_entries()`:
+    def pocket_entries(self, poly: SCRoundPoly, tool: SCTool) -> list[Point]:
+        """Return where a pocket cut with a tool goes down into it.
+
+        These are where to drill, so that the tool goes down holes
+        (with `pocket(..., drilled=True)`): the starts of the rings
+        that have nothing cut inside them.
+
+        Arguments:
+        * `poly` (`SCRoundPoly`): The pocket's outline.
+        * `tool` (`SCTool`): The tool that will clear it.
+
+        Returns:
+        * (`list[Point]`): The points, in the order they are cut.
+        """
+        return [
+            ring.loop.segments[0].start
+            for root in self._plan(poly, tool.diameter)
+            for ring, mode in cut_order(root, tool.diameter)
+            if mode == "ramp"
+        ]
 
     # Method `SCCNC._cut_ring()`:
     def _cut_ring(
@@ -847,18 +1081,21 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         * `walls` (`Sequence[SCLoop]`): The pocket's outermost rings.
         """
         # A ring with nothing cut inside it is ramped down into, along
-        # itself; a small one is cut straight into.
+        # itself (or plunged into, down a drilled hole); a small one is
+        # cut straight into.
         above: float
         z: float
         above, z = heights
         if mode != "lead":
             self._arrive(
                 ring.loop.segments[0].start,
-                above if mode == "ramp" else z,
+                z if mode == "plain" else above,
                 walls,
             )
             if mode == "ramp":
                 self._ramp(ring.loop, above, z)
+            elif mode == "drilled":
+                self.plunge(z)
             self._follow(ring.loop.segments, ring.spurs)
             return
 
@@ -868,7 +1105,7 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
             loop: list[SCSegment]
             lead_out: SCArc
             lead_in, loop, lead_out = _leads(
-                ring.loop, self.tool_diameter / 2.0
+                ring.loop, self.cutter.diameter / 2.0
             )
         except ValueError:
             self._arrive(ring.loop.segments[0].start, z, walls)
@@ -943,7 +1180,7 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         if lap < EPSILON:
             self.linear(z=z)
             return
-        run: float = drop / math.tan(math.radians(self.ramp_angle))
+        run: float = drop / math.tan(math.radians(self.machine.ramp_angle))
         laps: int = max(1, math.ceil(run / lap - EPSILON))
 
         # Go down evenly along the way around.

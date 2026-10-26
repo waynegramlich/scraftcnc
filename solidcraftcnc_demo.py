@@ -8,7 +8,9 @@
 """Cut and model a demonstration shape with `solidcraftcnc`.
 
 It prints the G-code for a notched plate, with a hole through it and a
-pocket in it, whose corners each have their own radius.  With a
+pocket in it, whose corners each have their own radius.  The machine
+and its tools come from `machine.toml`: the places the end mill goes
+down are drilled first, with the largest drill smaller than it.  With a
 SolidCraft GUI's control port (`solidcraft --control PORT`) or
 `headless`, it also models the plate in SolidCraft:
 
@@ -76,6 +78,7 @@ from pysolidcraft import (
     connect,
 )
 from scgeometry import SCCorner, SCRoundPoly
+from scmachine import SCMachine, SCTool, load_machine
 from scplot import sketch_path, write_plot
 from solidcraftcnc import SCCNC
 
@@ -88,6 +91,10 @@ SOLIDCRAFT_CLI: Path = (
 
 # SolidCraft's sketch coordinates are millimeters.
 MM_PER_INCH: float = 25.4
+
+# The machine's preferences and tool table, and the end mill to use.
+MACHINE_FILE: Path = Path(__file__).resolve().parent / "machine.toml"
+END_MILL: int = 1
 
 
 # Function `demo_plate()`:
@@ -294,14 +301,27 @@ def main() -> int:
         )
         return 2
 
-    # Clear the 0.25 inch deep pocket, cut the hole, then cut the plate
-    # out, through a 0.5 inch plate, 0.125 inch at a time, with the
-    # default 0.25 inch end mill.
+    # Drill where the end mill will go down, with the largest drill
+    # smaller than it, then clear the 0.25 inch deep pocket, cut the
+    # hole, and cut the plate out, through a 0.5 inch plate, 0.125 inch
+    # at a time.
     plate: SCRoundPoly = demo_plate()
     hole: SCRoundPoly = demo_hole()
     pocket: SCRoundPoly = demo_pocket()
-    cnc: SCCNC = SCCNC("SolidCraftCNC demo")
-    cnc.pocket(pocket, -0.25, 0.125)
+    machine: SCMachine = load_machine(MACHINE_FILE)
+    end_mill: SCTool = machine.tool(END_MILL)
+    cnc: SCCNC = SCCNC("SolidCraftCNC demo", machine)
+    cnc.change_tool(machine.drill_for(end_mill).number)
+    cnc.drill(cnc.pocket_entries(pocket, end_mill), -0.25)
+    cnc.drill(
+        [
+            cnc.profile_entry(hole, end_mill, inside=True),
+            cnc.profile_entry(plate, end_mill),
+        ],
+        -0.5,
+    )
+    cnc.change_tool(end_mill.number)
+    cnc.pocket(pocket, -0.25, 0.125, drilled=True)
     cnc.profile(hole, -0.5, 0.125, inside=True)
     cnc.profile(plate, -0.5, 0.125)
     cnc.finish()

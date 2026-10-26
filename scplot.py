@@ -17,11 +17,12 @@ import html
 import json
 import math
 from collections.abc import Sequence
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, TypeAlias, TypedDict
 
 from scgeometry import SCRoundPoly, point_at
-from solidcraftcnc import SCCNC
+from solidcraftcnc import RS274, SCCNC
 
 if TYPE_CHECKING:
     from pysolidcraft import PySolidCraft
@@ -41,14 +42,19 @@ class Move(TypedDict):
     """One move of a program, as `path_moves()` finds it.
 
     Attributes:
-    * `g` (`int`): Its `G` code (0 to 3).
+    * `g` (`int`): Its `G` code (0 to 3; a drilling cycle is drawn as
+      rapids and a `G1` down each hole).
     * `line` (`int`): Its index in the G-code's lines.
     * `pts` (`list[SpacePoint]`): Where it goes (an arc as short lines).
+    * `f` (`float`): The feed in effect (0 before the first).
+    * `tool` (`int`): The tool in the spindle (0 before the first).
     """
 
     g: int
     line: int
     pts: list[SpacePoint]
+    f: float
+    tool: int
 
 
 # Function `path_moves()`:
@@ -56,37 +62,155 @@ def path_moves(cnc: SCCNC) -> list[Move]:
     """Return the program's moves as lines through 3D points.
 
     Moves before every axis has a position are left out, since where
-    they start is not known.
+    they start is not known.  A canned drilling cycle (`G81`, `G73`,
+    `G83`, until `G80`) is drawn as a rapid over each hole and down to
+    its `R`, one `G1` to its bottom (leaving out the pecks), and a
+    rapid back up to where the cycle started (`G98`).
 
     Arguments:
     * `cnc` (`SCCNC`): The program.
 
     Returns:
-    * (`list[Move]`): Each move's `g` (0 to 3), `line` (its index in
-      the G-code's lines) and `pts` (where it goes, arcs as many short
-      lines).
+    * (`list[Move]`): Each move's `G` code, line, points, feed and tool.
     """
     moves: list[Move] = []
-    position: list[float | None] = [None, None, None]
+    state: _State = _State()
     line: int
     for line, command in enumerate(cnc.commands):
+        # Follow the modal words: the feed, the tool, the cycle.
+        feed: float | int | str | None = command.get("F")
+        if isinstance(feed, (int, float)):
+            state.feed = float(feed)
+        tool: float | int | str | None = command.get("T")
+        if tool is not None:
+            state.tool = int(tool)
         code: float | int | str | None = command.get("G")
-        if code not in (0, 1, 2, 3):
+        if code == 80:
+            state.cycle = None
             continue
-        assert isinstance(code, int)
+        if code in (73, 81, 83):
+            state.start_cycle(command)
 
+        # A hole of a cycle, or an ordinary move.
+        if state.cycle is not None and ("X" in command or "Y" in command):
+            moves += state.hole(command, line)
+        elif code in (0, 1, 2, 3):
+            assert isinstance(code, int)
+            move: Move | None = state.move(command, code, line)
+            if move is not None:
+                moves.append(move)
+    return moves
+
+
+# Class `_State`:
+@dataclass(slots=True)
+class _State:
+    """Where a program is, and its modal words, while it is read.
+
+    Attributes:
+    * `position` (`list[float | None]`): Where the tool is (X, Y, Z).
+    * `feed` (`float`): The feed in effect.
+    * `tool` (`int`): The tool in the spindle.
+    * `cycle` (`tuple[float, float, float] | None`):
+      The canned cycle in effect: its starting Z, its `R` and its
+      bottom (`None` when there is none).
+
+    Constructor:
+    * `_State()`
+    """
+
+    # The program's state (alphabetized):
+    cycle: tuple[float, float, float] | None = field(init=False, default=None)
+    feed: float = field(init=False, default=0.0)
+    position: list[float | None] = field(
+        init=False, default_factory=lambda: [None, None, None]
+    )
+    tool: int = field(init=False, default=0)
+
+    # Method `_State.start_cycle()`:
+    def start_cycle(self, command: RS274) -> None:
+        """Start a canned cycle.
+
+        Arguments:
+        * `command` (`RS274`): The cycle's first line.
+        """
+        bottom: float | int | str = command.get("Z", 0.0)
+        retract: float | int | str = command.get("R", 0.0)
+        assert isinstance(bottom, (int, float))
+        assert isinstance(retract, (int, float))
+        self.cycle = (
+            float(self.position[2] or 0.0),
+            float(retract),
+            float(bottom),
+        )
+
+    # Method `_State.hole()`:
+    def hole(self, command: RS274, line: int) -> list[Move]:
+        """Return the moves that drill one hole of a canned cycle.
+
+        Arguments:
+        * `command` (`RS274`): The hole's line.
+        * `line` (`int`): Its index in the G-code's lines.
+
+        Returns:
+        * (`list[Move]`): Over, down to `R`, down to the bottom, up.
+        """
+        assert self.cycle is not None
+        start: float
+        retract: float
+        bottom: float
+        start, retract, bottom = self.cycle
+        old: list[float | None] = list(self.position)
+        x: float | int | str = command.get("X", old[0] or 0.0)
+        y: float | int | str = command.get("Y", old[1] or 0.0)
+        assert isinstance(x, (int, float)) and isinstance(y, (int, float))
+        self.position = [float(x), float(y), start]
+        if None in old:
+            return []
+        points: list[SpacePoint] = [
+            [float(old[0] or 0.0), float(old[1] or 0.0), start],
+            [float(x), float(y), start],
+            [float(x), float(y), retract],
+            [float(x), float(y), bottom],
+            [float(x), float(y), start],
+        ]
+        codes: tuple[int, ...] = (0, 0, 1, 0)
+        return [
+            {
+                "g": codes[index],
+                "line": line,
+                "pts": points[index : index + 2],
+                "f": self.feed,
+                "tool": self.tool,
+            }
+            for index in range(4)
+        ]
+
+    # Method `_State.move()`:
+    def move(self, command: RS274, code: int, line: int) -> Move | None:
+        """Return an ordinary move (`G0` to `G3`).
+
+        Arguments:
+        * `command` (`RS274`): The move's line.
+        * `code` (`int`): Its `G` code.
+        * `line` (`int`): Its index in the G-code's lines.
+
+        Returns:
+        * (`Move | None`): The move, or `None` when where it starts is
+          not known yet.
+        """
         # Where the move ends.
-        old: list[float | None] = list(position)
+        old: list[float | None] = list(self.position)
         axis: int
         letter: str
         for axis, letter in enumerate("XYZ"):
             value: float | int | str | None = command.get(letter)
             if isinstance(value, (int, float)):
-                position[axis] = float(value)
-        if None in old or None in position:
-            continue
+                self.position[axis] = float(value)
+        if None in old or None in self.position:
+            return None
         start: SpacePoint = [float(value or 0.0) for value in old]
-        end: SpacePoint = [float(value or 0.0) for value in position]
+        end: SpacePoint = [float(value or 0.0) for value in self.position]
 
         # Lines go straight; arcs (and helices) are broken up.
         points: list[SpacePoint] = [start, end]
@@ -97,8 +221,13 @@ def path_moves(cnc: SCCNC) -> list[Move]:
             points = _arc_points(
                 start, end, (start[0] + i, start[1] + j), code
             )
-        moves.append({"g": code, "line": line, "pts": points})
-    return moves
+        return {
+            "g": code,
+            "line": line,
+            "pts": points,
+            "f": self.feed,
+            "tool": self.tool,
+        }
 
 
 # Function `_arc_points()`:
@@ -166,15 +295,18 @@ def plot_html(
     data: dict[str, object] = {
         "z_top": cnc.z_top,
         "z_safe": cnc.z_safe,
-        "tool_diameter": cnc.tool_diameter,
-        "rapid_speed": cnc.rapid_speed,
-        "work_speed": cnc.work_speed,
-        "spindle_rpm": cnc.spindle_rpm,
+        "rapid_speed": cnc.machine.rapid_speed,
+        "tools": {
+            str(tool.number): {"name": tool.name, "diameter": tool.diameter}
+            for tool in cnc.machine.tools
+        },
         "lines": cnc.gcode().splitlines(),
         "moves": [
             {
                 "g": move["g"],
                 "line": move["line"],
+                "f": move["f"],
+                "tool": move["tool"],
                 "pts": [
                     [round(value, 5) for value in point]
                     for point in move["pts"]

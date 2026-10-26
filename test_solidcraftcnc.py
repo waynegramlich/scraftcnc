@@ -13,8 +13,55 @@ from scgeometry import (
     distance_to,
     point_at,
 )
+from scmachine import SCMachine, SCTool
 from solidcraftcnc import SCCNC, SCRing, _number, cut_order, plan_pocket
 from test_scgeometry import dumbbell, square
+
+
+# Function `machine()`:
+def machine(**changes: object) -> SCMachine:
+    """Return a test machine: an end mill (1) and two drills (2, 3).
+
+    Arguments:
+    * `changes` (`object`): Preferences to change from the defaults.
+
+    Returns:
+    * (`SCMachine`): The machine.
+    """
+    settings: dict[str, object] = {
+        "name": "Test mill",
+        "z_safe": 1.0,
+        "clearance": 0.05,
+        "tool_change_z": 2.0,
+        "tool_change": "T{number:02d}",
+        "rapid_speed": 60.0,
+        "drill_cycle": "G83",
+        "stepover": 0.9,
+        "ramp_angle": 3.0,
+        "tools": (
+            SCTool(1, "End mill", "end mill", 0.25, 1200, 12.0, 6.0),
+            SCTool(2, "Drill", "drill", 0.234375, 1200, 4.0, 4.0, 0.05),
+            SCTool(3, "Small drill", "drill", 0.125, 1200, 4.0, 4.0, 0.05),
+        ),
+    }
+    settings.update(changes)
+    return SCMachine(**settings)  # type: ignore[arg-type]
+
+
+# Function `milling()`:
+def milling(z_top: float = 0.0, **changes: object) -> SCCNC:
+    """Return a program on the test machine, with the end mill in.
+
+    Arguments:
+    * `z_top` (`float`): The top of the material.
+    * `changes` (`object`): Machine preferences to change.
+
+    Returns:
+    * (`SCCNC`): The program, after its tool change.
+    """
+    cnc: SCCNC = SCCNC("Test", machine(**changes), z_top)
+    cnc.change_tool(1)
+    return cnc
 
 
 # Class `TestSCCNC`:
@@ -31,44 +78,48 @@ class TestSCCNC(unittest.TestCase):
 
     # Method `TestSCCNC.test_start()`:
     def test_start(self) -> None:
-        """The program starts in inches, at `z_safe`, spindle on."""
-        cnc: SCCNC = SCCNC("Test")
+        """Start in inches at `z_safe`, then change to a tool."""
+        cnc: SCCNC = milling()
         self.assertEqual(
             cnc.gcode(),
-            "(Test)\nG20\nG90\nG17\nG94\nG0 Z1\nM3 S1200\n",
+            "(Test)\nG20\nG90\nG17\nG94\nG0 Z1\n"
+            "(Tool 1: End mill)\nG0 Z2\nT01\nM3 S1200\n",
         )
-        self.assertEqual(cnc.tool_diameter, 0.25)
-        self.assertEqual(cnc.rapid_speed, 60.0)
-        self.assertEqual(cnc.work_speed, 12.0)
+        self.assertEqual(cnc.cutter.diameter, 0.25)
+
+        # Changing again stops the spindle first; the words come from
+        # the machine's template.
+        cnc.change_tool(2)
+        self.assertEqual(
+            cnc.gcode().splitlines()[10:],
+            ["(Tool 2: Drill)", "M5", "T02", "M3 S1200"],
+        )
+        other: SCCNC = SCCNC("Test", machine(tool_change="T{number:02d} M06"))
+        other.change_tool(3)
+        self.assertIn("T03 M06\n", other.gcode())
+        with self.assertRaises(KeyError):
+            other.change_tool(9)
 
     # Method `TestSCCNC.test_settings()`:
     def test_settings(self) -> None:
-        """Settings that make no sense are refused."""
+        """Material too high for `z_safe`, and cutting with no tool."""
         with self.assertRaises(ValueError):
-            SCCNC("Test", z_top=1.0, z_safe=1.0)
+            SCCNC("Test", machine(), 1.0)
         with self.assertRaises(ValueError):
-            SCCNC("Test", z_safe=0.05)
-        with self.assertRaises(ValueError):
-            SCCNC("Test", clearance=-0.01)
-        with self.assertRaises(ValueError):
-            SCCNC("Test", tool_diameter=0.0)
-        with self.assertRaises(ValueError):
-            SCCNC("Test", work_speed=-1.0)
-        with self.assertRaises(ValueError):
-            SCCNC("Test", spindle_rpm=0.0)
+            SCCNC("Test", machine()).linear(z=-1.0)
 
     # Method `TestSCCNC.test_moves()`:
     def test_moves(self) -> None:
         """Unchanged axes and feeds, and still moves, are left out."""
-        cnc: SCCNC = SCCNC("Test")
+        cnc: SCCNC = milling()
         cnc.rapid(x=1.0, y=2.0, z=1.0)
         cnc.rapid(x=1.0)
         cnc.linear(z=-1.0)
         cnc.linear(x=3.0)
         cnc.finish()
         self.assertEqual(
-            cnc.gcode().splitlines()[7:],
-            ["G0 X1 Y2", "G1 Z-1 F12", "G1 X3", "G0 Z1", "M5", "M2"],
+            cnc.gcode().splitlines()[10:],
+            ["G0 X1 Y2 Z1", "G1 Z-1 F12", "G1 X3", "G0 Z1", "M5", "M2"],
         )
 
         # 2 inches of cutting at 12 per minute, 2 inches of rapids at
@@ -78,7 +129,7 @@ class TestSCCNC(unittest.TestCase):
     # Method `TestSCCNC.test_circle_arcs()`:
     def test_circle_arcs(self) -> None:
         """An arc back to where it started still gets written."""
-        cnc: SCCNC = SCCNC("Test")
+        cnc: SCCNC = milling()
         cnc.rapid(x=1.0, y=0.0)
         cnc.arc(SCArc((1.0, 0.0), (1.0, 0.0), (0.0, 0.0), 1.0, -2 * math.pi))
         self.assertEqual(cnc.gcode().splitlines()[-1], "G2 I-1 J0 F12")
@@ -86,22 +137,24 @@ class TestSCCNC(unittest.TestCase):
     # Method `TestSCCNC.test_profile_outside()`:
     def test_profile_outside(self) -> None:
         """Outside a polygon, the tool climb mills clockwise."""
-        cnc: SCCNC = SCCNC("Test", z_safe=0.5)
+        cnc: SCCNC = milling(z_safe=0.5)
         path: SCRoundPoly = cnc.profile(square(2.0, 0.25), -0.3, 0.125)
         self.assertFalse(path.is_ccw())
         self.assertEqual(path.corners[0].radius, 0.375)
 
         # The lead-in starts a tool diameter left of the middle of the
         # first (longest) edge, going up the left side.
+        # It goes down at the plunge feed, and cuts at the feed.
         lines: list[str] = cnc.gcode().splitlines()
         self.assertEqual(
-            lines[7:14],
+            lines[10:18],
             [
                 "(Profile Square outside to Z-0.3)",
+                "G0 Z0.5",
                 "G0 X-0.375 Y1",
                 "G0 Z0.05",
-                "G1 Z-0.1 F12",
-                "G3 X-0.125 I0.125 J0",
+                "G1 Z-0.1 F6",
+                "G3 X-0.125 I0.125 J0 F12",
                 "G1 Y1.75",
                 "G2 X0.25 Y2.125 I0.375 J0",
             ],
@@ -110,14 +163,15 @@ class TestSCCNC(unittest.TestCase):
         # The loop ends at the middle of that edge, and the lead-out
         # goes back to where the lead-in started.
         self.assertEqual(
-            lines[20:23], ["G1 Y1", "G3 X-0.375 I-0.125 J0", "G1 Z-0.2"]
+            lines[24:27],
+            ["G1 Y1", "G3 X-0.375 I-0.125 J0", "G1 Z-0.2 F6"],
         )
 
         # Three passes (0.3 deep, at most 0.125 each), four corners and
         # two leads each.
         self.assertEqual(
             [line for line in lines if line.startswith("G1 Z")],
-            ["G1 Z-0.1 F12", "G1 Z-0.2", "G1 Z-0.3"],
+            ["G1 Z-0.1 F6", "G1 Z-0.2 F6", "G1 Z-0.3 F6"],
         )
         self.assertEqual(
             len([line for line in lines if line.startswith("G2 ")]), 12
@@ -130,7 +184,7 @@ class TestSCCNC(unittest.TestCase):
     # Method `TestSCCNC.test_profile_inside()`:
     def test_profile_inside(self) -> None:
         """Inside a polygon, the tool climb mills counter-clockwise."""
-        cnc: SCCNC = SCCNC("Test")
+        cnc: SCCNC = milling()
         hole: SCRoundPoly = square(1.0, 0.25, ccw=False)
         path: SCRoundPoly = cnc.profile(hole, -0.1, 0.5, inside=True)
         self.assertTrue(path.is_ccw())
@@ -154,7 +208,7 @@ class TestSCCNC(unittest.TestCase):
     # Method `TestSCCNC.test_profile_errors()`:
     def test_profile_errors(self) -> None:
         """Depths that make no sense are refused."""
-        cnc: SCCNC = SCCNC("Test")
+        cnc: SCCNC = milling()
         with self.assertRaises(ValueError):
             cnc.profile(square(1.0, 0.0), 0.0, 0.1)
         with self.assertRaises(ValueError):
@@ -163,7 +217,7 @@ class TestSCCNC(unittest.TestCase):
     # Method `TestSCCNC.test_comment()`:
     def test_comment(self) -> None:
         """A comment may not hold parentheses."""
-        cnc: SCCNC = SCCNC("Test")
+        cnc: SCCNC = milling()
         with self.assertRaises(ValueError):
             cnc.comment("a (nested) comment")
 
@@ -344,7 +398,7 @@ class TestPocket(unittest.TestCase):
     # Method `TestPocket.test_gcode()`:
     def test_gcode(self) -> None:
         """The pocket's G-code stays safe and ramps gently."""
-        cnc: SCCNC = SCCNC("Test")
+        cnc: SCCNC = milling()
         cnc.pocket(rounded_dumbbell(), -0.25, 0.125)
         cnc.finish()
         x: float = 0.0
@@ -393,13 +447,113 @@ class TestPocket(unittest.TestCase):
 
     # Method `TestPocket.test_settings()`:
     def test_settings(self) -> None:
-        """A stepover or ramp angle that makes no sense is refused."""
+        """The machine's stepover and ramp angle are used."""
+        narrow: SCCNC = milling(stepover=0.5)
+        wide: SCCNC = milling()
+        narrow.pocket(square(2.0, 0.125), -0.1, 0.1)
+        wide.pocket(square(2.0, 0.125), -0.1, 0.1)
+        self.assertGreater(narrow.minutes, wide.minutes)
+        steep: SCCNC = milling(ramp_angle=30.0)
+        steep.pocket(square(2.0, 0.125), -0.1, 0.1)
+        self.assertLess(len(steep.commands), len(wide.commands))
+
+
+# Class `TestDrill`:
+class TestDrill(unittest.TestCase):
+    """Drilling where the end mill goes down."""
+
+    # Method `TestDrill.test_cycles()`:
+    def test_cycles(self) -> None:
+        """Each canned cycle, and pecks written out as moves."""
+        cycle: str
+        for cycle in ("G81", "G73", "G83"):
+            cnc: SCCNC = SCCNC("Test", machine(drill_cycle=cycle))
+            cnc.change_tool(2)
+            cnc.drill([(1.0, 1.0), (2.0, 1.5)], -0.2)
+            lines: list[str] = cnc.gcode().splitlines()[10:]
+            first: str = f"{cycle} X1 Y1 Z-0.2 R0.05"
+            if cycle != "G81":
+                first += " Q0.05"
+            self.assertEqual(
+                lines,
+                [
+                    "(Drill 2 holes to Z-0.2)",
+                    "G0 Z1",
+                    "G98",
+                    f"{first} F4",
+                    "X2 Y1.5",
+                    "G80",
+                ],
+            )
+            self.assertEqual(cnc.position, (2.0, 1.5, 1.0))
+
+        # Pecks: 0.05 at a time, back up to `R` between them, and back
+        # down quickly to just above the last.
+        cnc = SCCNC("Test", machine(drill_cycle="moves"))
+        cnc.change_tool(2)
+        cnc.drill([(1.0, 1.0)], -0.1)
+        self.assertEqual(
+            cnc.gcode().splitlines()[12:],
+            [
+                "G0 X1 Y1",
+                "G0 Z0.05",
+                "G1 Z-0.05 F4",
+                "G0 Z0.05",
+                "G0 Z0",
+                "G1 Z-0.1",
+                "G0 Z0.05",
+                "G0 Z1",
+            ],
+        )
+
+        # Only a drill drills.
         with self.assertRaises(ValueError):
-            SCCNC("Test", stepover=0.0)
+            milling().drill([(0.0, 0.0)], -0.1)
+
+    # Method `TestDrill.test_drill_for()`:
+    def test_drill_for(self) -> None:
+        """The largest drill smaller than the end mill is chosen."""
+        mill: SCMachine = machine()
+        self.assertEqual(mill.drill_for(mill.tool(1)).number, 2)
+        small: SCTool = SCTool(9, "Tiny", "end mill", 0.1, 1, 1.0, 1.0)
         with self.assertRaises(ValueError):
-            SCCNC("Test", stepover=1.1)
-        with self.assertRaises(ValueError):
-            SCCNC("Test", ramp_angle=0.0)
+            mill.drill_for(small)
+
+    # Method `TestDrill.test_drilled_pocket()`:
+    def test_drilled_pocket(self) -> None:
+        """A drilled pocket plunges down its holes, not ramping."""
+        cnc: SCCNC = milling()
+        poly: SCRoundPoly = rounded_dumbbell()
+        entries: list[tuple[float, float]] = cnc.pocket_entries(
+            poly, cnc.cutter
+        )
+        self.assertEqual(len(entries), 2)
+        cnc.pocket(poly, -0.25, 0.125, drilled=True)
+        lines: list[str] = cnc.gcode().splitlines()
+
+        # Every move down in X and Y together is gone; the plunges are
+        # at the entries, at the plunge feed.
+        self.assertFalse(
+            [line for line in lines if " Z-" in line and " X" in line]
+        )
+        plunges: list[int] = [
+            index
+            for index, line in enumerate(lines)
+            if line.startswith("G1 Z-") and "F6" in line
+        ]
+        self.assertEqual(len(plunges), 4)
+        for index in plunges:
+            self.assertTrue(
+                any(
+                    f"X{_number(x)} Y{_number(y)}" in " ".join(lines[:index])
+                    for x, y in entries
+                )
+            )
+
+        # A profile goes down at its lead-in's start.
+        self.assertEqual(
+            cnc.profile_entry(square(2.0, 0.25), cnc.cutter), (-0.375, 1.0)
+        )
 
 
 if __name__ == "__main__":

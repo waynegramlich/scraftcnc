@@ -10,6 +10,7 @@ from scgeometry import SCArc
 from scplot import path_moves, plot_html, sketch_path
 from solidcraftcnc import SCCNC
 from test_scgeometry import square
+from test_solidcraftcnc import milling
 
 
 # Class `TestPlot`:
@@ -19,7 +20,7 @@ class TestPlot(unittest.TestCase):
     # Method `TestPlot.test_moves()`:
     def test_moves(self) -> None:
         """Lines go straight, and arcs and helices are broken up."""
-        cnc: SCCNC = SCCNC("Test")
+        cnc: SCCNC = milling()
         cnc.rapid(x=1.0, y=0.0)
         cnc.linear(z=-0.1)
         cnc.arc(
@@ -30,7 +31,8 @@ class TestPlot(unittest.TestCase):
 
         # The rapids start where X and Y are not known yet.
         self.assertEqual([move["g"] for move in moves], [1, 3])
-        self.assertEqual(moves[0]["pts"], [[1.0, 0.0, 1.0], [1.0, 0.0, -0.1]])
+        self.assertEqual(moves[0]["pts"], [[1.0, 0.0, 2.0], [1.0, 0.0, -0.1]])
+        self.assertEqual((moves[0]["f"], moves[0]["tool"]), (12.0, 1))
         arc = moves[1]["pts"]
         self.assertEqual(len(arc), 19)
         for point in arc:
@@ -38,10 +40,24 @@ class TestPlot(unittest.TestCase):
         self.assertAlmostEqual(arc[9][2], -0.15)
         self.assertEqual(arc[-1], [0.0, 1.0, -0.2])
 
+    # Method `TestPlot.test_drilling()`:
+    def test_drilling(self) -> None:
+        """A canned cycle is drawn as over, down, through and up."""
+        cnc: SCCNC = milling()
+        cnc.change_tool(2)
+        cnc.rapid(x=0.0, y=0.0)
+        cnc.drill([(1.0, 1.0), (2.0, 1.0)], -0.2)
+        moves = path_moves(cnc)
+        holes = [move for move in moves if move["g"] == 1]
+        self.assertEqual(len(holes), 2)
+        self.assertEqual(holes[1]["pts"], [[2.0, 1.0, 0.05], [2.0, 1.0, -0.2]])
+        self.assertEqual((holes[1]["f"], holes[1]["tool"]), (4.0, 2))
+        self.assertEqual(moves[-1]["pts"][-1], [2.0, 1.0, 1.0])
+
     # Method `TestPlot.test_page()`:
     def test_page(self) -> None:
         """The page carries the program, its moves and the outlines."""
-        cnc: SCCNC = SCCNC("Test")
+        cnc: SCCNC = milling()
         cnc.pocket(square(1.0, 0.125), -0.2, 0.1)
         cnc.finish()
         page: str = plot_html(cnc, [(square(1.0, 0.125), 0.0)], "A </b> test")
@@ -57,7 +73,7 @@ class TestPlot(unittest.TestCase):
     # Method `TestPlot.test_sketch()`:
     def test_sketch(self) -> None:
         """The path goes into one 3D sketch per operation and kind."""
-        cnc: SCCNC = SCCNC("Test")
+        cnc: SCCNC = milling()
         cnc.profile(square(1.0, 0.25), -0.1, 0.1)
         cnc.finish()
         fake: FakeSolidCraft = FakeSolidCraft()
