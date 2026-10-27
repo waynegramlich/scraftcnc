@@ -2,10 +2,5 @@
 max-line-length = 79
 # `ruff format` puts spaces around `:` in complex slices (PEP 8 allows it).
 extend-ignore = E203
-# The EZPkg bootstrap, which must never be edited, puts several short
-# statements on one line (`E701`, `E702`) and defines `g()` without the
-# two blank lines around it (`E301`, `E306`).
-per-file-ignores =
-    solidcraftcnc_demo.py: E301, E306, E701, E702
-# The SolidCraft project checks its own `pysolidcraft.py`.
-exclude = pysolidcraft.py, solidcraft, rs274, aicontexts, ai_contexts.py
+# The `scraftpybind` project checks its own `scraftpybind.py`.
+exclude = scraftpybind.py, solidcraft, rs274

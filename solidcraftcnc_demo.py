@@ -1,19 +1,13 @@
 #!/usr/bin/env python3
-# Part 1: These lines look like `#` comments, but they are Python's inline
-# script metadata (PEP 723) that the EZPkg bootstrap needs.  Never remove them.
-# /// script
-# requires-python = ">=3.11"
-# dependencies = ["ezpkg>=0.0.1.dev0,<0.1"]
-# ///
 """Cut and model a demonstration shape with `solidcraftcnc`.
 
 It prints the G-code for a notched plate, with a hole through it and a
 pocket in it (around three islands), whose corners each have their own
-radius, with its top edges beveled (and the hole's rounded over).  The machine
-and its tools come from `machine.toml`: the places the end mill goes
-down are drilled first, with the largest drill smaller than it.  With a
-SolidCraft GUI's control port (`solidcraft --control PORT`) or
-`headless`, it also models the plate in SolidCraft:
+radius, with its top edges beveled (and the hole's rounded over).
+The machine and its tools come from `machine.toml`: the places the end
+mill goes down are drilled first, with the largest drill smaller than
+it.  With a SolidCraft GUI's control port (`solidcraft --control
+PORT`) or `headless`, it also models the plate in SolidCraft:
 
 ```
 ./solidcraftcnc_demo.py > demo.ngc
@@ -23,72 +17,28 @@ SolidCraft GUI's control port (`solidcraft --control PORT`) or
 ```
 """
 
-# The bootstrap below must never be edited, so `ruff format` is told
-# to leave it alone, and `pylint` is told not to report its compact
-# style (from here to the `enable` after it).
-# pylint: disable=multiple-statements,missing-function-docstring
-# pylint: disable=raise-missing-from,possibly-used-before-assignment
-# fmt: off
-# Begin the EZPkg bootstrap.  Never edit it.
-import hashlib
-import importlib
-import json
-import pathlib
-import subprocess
-import sys
-import urllib.error
-import urllib.request as req
-
-try:  # Do not edit try block!  See https://pypi.org/project/ezpkg/
-    s = "find ezpkg"; t = pathlib.Path.home()/".ezpkg"; w = t/"ezpkg.whl"
-    def g(u: str) -> bytes:  # Fetch u; curl if no certificates.
-        try: return bytes(req.urlopen(u, None, 60).read())
-        except urllib.error.URLError as y: z = y  # python.org Macs.
-        try: return subprocess.run(["curl", "-fsSL", u],
-                                   capture_output=True, check=True).stdout
-        except Exception: raise z from None
-    try: m = None; m = importlib.import_module("ezpkg")  # Present?
-    except ImportError: pass
-    if m is None and not w.is_file():  # Not downloaded yet.
-        s = "download ezpkg"; d = g("https://pypi.org/pypi/ezpkg/json")
-        e = next(e for e in json.loads(d)["urls"] if e["url"][-4:] == ".whl")
-        r = g(e["url"])
-        if hashlib.sha256(r).hexdigest() != e["digests"]["sha256"]:
-            raise ValueError(f"{e['filename']} fails its SHA-256 check")
-        t.mkdir(parents=True, exist_ok=True); p = t/"ezpkg.part"
-        p.write_bytes(r); p.replace(w)  # The rename is atomic.
-    if m is None:  # Python imports it straight from the wheel.
-        s = "import ezpkg"; sys.path.insert(0, str(w))
-        m = importlib.import_module("ezpkg")
-    s = "fetch packages"; m.EZPkg().install(bootstrap="2026-10-26")
-except Exception as x:  # Do not edit try block!
-    raise SystemExit(f"ezpkg: {s} failed: {x!r}")
-# End the EZPkg bootstrap.  Your imports go below it.
-# fmt: on
-# pylint: enable=multiple-statements,missing-function-docstring
-# pylint: enable=raise-missing-from,possibly-used-before-assignment
-
-# The bootstrap has already imported `sys`.
 import shutil
+import sys
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
-from pysolidcraft import (
-    JSON,
-    HeadlessTransport,
-    PySolidCraft,
-    Transport,
-    connect,
-)
 from scgeometry import SCCorner, SCRoundPoly, point_at
 from scmachine import SCMachine, SCTool, load_machine
 from scplot import sketch_path, write_plot
+from scraftpybind import (
+    JSON,
+    HeadlessTransport,
+    SolidCraftPyBind,
+    Transport,
+    connect,
+)
 from solidcraftcnc import SCCNC
 
-# The `solidcraft-cli` extracted from the SolidCraft project's
-# AppImage, for headless sessions when none is on the `PATH`.
+# A `solidcraft-cli` extracted from SolidCraft's AppImage, for
+# headless sessions when none is on the `PATH` (if it is there; it is
+# not part of this project).
 SOLIDCRAFT_CLI: Path = (
     Path(__file__).resolve().parent
     / "solidcraft/squashfs-root/usr/bin/solidcraft-cli"
@@ -253,13 +203,18 @@ def model(where: str, part: Part, cnc: SCCNC) -> int:
     Returns:
     * (`int`): The number of closed profiles the sketches made (one per
       outline when they all closed).
+
+    Raises:
+    * `OSError`: If SolidCraft is not there (no GUI on the port, or no
+      `solidcraft-cli`).
     """
-    # A headless session uses the extracted `solidcraft-cli` unless
-    # one is on the `PATH`.
+    # A headless session uses the extracted `solidcraft-cli` when none
+    # is on the `PATH` and it exists.
     transport: Transport = connect(where)
     if (
         isinstance(transport, HeadlessTransport)
         and shutil.which(transport.cli) is None
+        and SOLIDCRAFT_CLI.exists()
     ):
         transport = HeadlessTransport(cli=str(SOLIDCRAFT_CLI))
 
@@ -272,7 +227,7 @@ def model(where: str, part: Part, cnc: SCCNC) -> int:
     top, thickness, depth = part.sizes
     outlines: list[SCRoundPoly] = part.outlines
     with transport:
-        solidcraft: PySolidCraft = PySolidCraft(transport)
+        solidcraft: SolidCraftPyBind = SolidCraftPyBind(transport)
         solidcraft.document.units(units="in")
         curves: list[str] = _sketch(
             solidcraft, outlines, (top - thickness) * MM_PER_INCH
@@ -312,7 +267,7 @@ def model(where: str, part: Part, cnc: SCCNC) -> int:
 
 # Function `_edges()`:
 def _edges(
-    solidcraft: PySolidCraft,
+    solidcraft: SolidCraftPyBind,
     edges: Sequence[tuple[SCRoundPoly, Literal["chamfer", "fillet"], float]],
     z: float,
 ) -> None:
@@ -322,7 +277,7 @@ def _edges(
     of its outline, at the top.
 
     Arguments:
-    * `solidcraft` (`PySolidCraft`): Where the plate is.
+    * `solidcraft` (`SolidCraftPyBind`): Where the plate is.
     * `edges` (`Sequence[tuple[SCRoundPoly, Literal["chamfer",
       "fillet"], float]]`):
       The outlines, how to finish each, and the size (inches).
@@ -348,12 +303,12 @@ def _edges(
 
 # Function `_sketch()`:
 def _sketch(
-    solidcraft: PySolidCraft, outlines: list[SCRoundPoly], z: float
+    solidcraft: SolidCraftPyBind, outlines: list[SCRoundPoly], z: float
 ) -> list[str]:
     """Sketch outlines on a horizontal plane.
 
     Arguments:
-    * `solidcraft` (`PySolidCraft`): Where to sketch them.
+    * `solidcraft` (`SolidCraftPyBind`): Where to sketch them.
     * `outlines` (`list[SCRoundPoly]`): The outlines.
     * `z` (`float`): The plane's Z (mm).
 
@@ -472,7 +427,12 @@ def main() -> int:
                 (hole, "fillet", rounding.radius),
             ],
         )
-        profiles: int = model(arguments[0], part, cnc)
+        # A SolidCraft that is not there is reported in one line.
+        try:
+            profiles: int = model(arguments[0], part, cnc)
+        except OSError as error:
+            print(f"solidcraftcnc_demo.py: {error}", file=sys.stderr)
+            return 1
         print(f"{plate.name}: {profiles} profile(s)", file=sys.stderr)
         # The plate's sketch has 2 profiles (the plate around its hole,
         # and the hole); the pocket's has 1 around the islands, and 1

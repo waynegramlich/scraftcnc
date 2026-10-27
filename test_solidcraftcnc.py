@@ -15,6 +15,7 @@ from scgeometry import (
 )
 from scmachine import SCMachine, SCTool
 from solidcraftcnc import SCCNC, SCRing, _number, cut_order, plan_pocket
+from solidcraftcnc_demo import demo_islands, demo_pocket
 from test_scgeometry import dumbbell, square
 
 
@@ -319,55 +320,13 @@ def depth(ring: SCRing) -> int:
 
 # Function `island_pocket()`:
 def island_pocket() -> tuple[SCRoundPoly, list[SCRoundPoly]]:
-    """Return a pocket with three islands, as the demonstration has.
-
-    The islands are a triangle and a square with slightly rounded
-    corners, and a square whose corner arcs make a circle.
+    """Return the demonstration's pocket with its three islands.
 
     Returns:
     * (`SCRoundPoly`): The pocket.
     * (`list[SCRoundPoly]`): Its islands.
     """
-    edge: float = 0.0625
-    return (
-        SCRoundPoly(
-            "Pocket",
-            [
-                SCCorner(0.3, 0.3, 0.1875),
-                SCCorner(2.75, 0.3, 0.1875),
-                SCCorner(2.75, 2.05, 0.1875),
-                SCCorner(0.3, 2.05, 0.1875),
-            ],
-        ),
-        [
-            SCRoundPoly(
-                "Triangle",
-                [
-                    SCCorner(0.65, 0.65, edge),
-                    SCCorner(1.25, 0.65, edge),
-                    SCCorner(0.95, 1.2, edge),
-                ],
-            ),
-            SCRoundPoly(
-                "Square",
-                [
-                    SCCorner(1.65, 0.65, edge),
-                    SCCorner(2.15, 0.65, edge),
-                    SCCorner(2.15, 1.15, edge),
-                    SCCorner(1.65, 1.15, edge),
-                ],
-            ),
-            SCRoundPoly(
-                "Circle",
-                [
-                    SCCorner(1.2, 1.35, 0.2),
-                    SCCorner(1.6, 1.35, 0.2),
-                    SCCorner(1.6, 1.75, 0.2),
-                    SCCorner(1.2, 1.75, 0.2),
-                ],
-            ),
-        ],
-    )
+    return demo_pocket(), demo_islands()
 
 
 # Function `rounded_dumbbell()`:

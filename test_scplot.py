@@ -108,7 +108,7 @@ class TestPlot(unittest.TestCase):
 # Its commands come from `__getattr__()`, so `pylint` sees no public
 # methods.
 class FakeSolidCraft:  # pylint: disable=too-few-public-methods
-    """Stands in for `PySolidCraft`, recording the sketch commands.
+    """Stands in for `SolidCraftPyBind`, recording the sketch commands.
 
     Attributes:
     * `calls` (`list[tuple[str, dict[str, Any]]]`): Each command's name

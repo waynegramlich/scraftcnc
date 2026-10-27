@@ -11,9 +11,9 @@ segment in, finds where the moved segments cross, drops the pieces
 that came too close to the region's edge, and joins the rest into
 loops (one region can become several).
 
-This module only uses `pysolidcraft` through the `PySolidCraft` that
-is handed to `SCRoundPoly.sketch()`, so it does not import it (or
-carry the EZPkg bootstrap that a program importing it needs).
+This module only uses `scraftpybind` through the `SolidCraftPyBind`
+that is handed to `SCRoundPoly.sketch()`, so it imports it only for
+type checking.
 """
 
 # Most of this module's lines are docstrings and comments, so it is
@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, TypeAlias
 
 if TYPE_CHECKING:
-    from pysolidcraft import JSON, PySolidCraft
+    from scraftpybind import JSON, SolidCraftPyBind
 
 # A point in the XY plane, `(x, y)`.
 Point: TypeAlias = tuple[float, float]
@@ -500,7 +500,7 @@ class SCRoundPoly:
 
     # Method `SCRoundPoly.sketch()`:
     def sketch(
-        self, solidcraft: "PySolidCraft", mm_per_unit: float = 1.0
+        self, solidcraft: "SolidCraftPyBind", mm_per_unit: float = 1.0
     ) -> list[str]:
         """Draw the outline into SolidCraft's open sketch.
 
@@ -510,7 +510,7 @@ class SCRoundPoly:
         closed profile.
 
         Arguments:
-        * `solidcraft` (`PySolidCraft`): Where to draw it.
+        * `solidcraft` (`SolidCraftPyBind`): Where to draw it.
         * `mm_per_unit` (`float`):
           SolidCraft's sketch coordinates are millimeters, whatever the
           design's units, so this scales the outline's units to them

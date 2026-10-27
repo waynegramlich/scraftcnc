@@ -25,7 +25,7 @@ from scgeometry import SCRoundPoly, point_at
 from solidcraftcnc import RS274, SCCNC
 
 if TYPE_CHECKING:
-    from pysolidcraft import PySolidCraft
+    from scraftpybind import SolidCraftPyBind
 
 # The page the path is filled into.
 TEMPLATE: Path = Path(__file__).resolve().parent / "scplot_template.html"
@@ -357,7 +357,7 @@ def write_plot(
 
 # Function `sketch_path()`:
 def sketch_path(
-    solidcraft: "PySolidCraft", cnc: SCCNC, mm_per_unit: float = 1.0
+    solidcraft: "SolidCraftPyBind", cnc: SCCNC, mm_per_unit: float = 1.0
 ) -> list[str]:
     """Draw a program's tool path into SolidCraft as 3D sketches.
 
@@ -368,7 +368,7 @@ def sketch_path(
     spline through points along it.  The path is the tool's center.
 
     Arguments:
-    * `solidcraft` (`PySolidCraft`): Where to draw it.
+    * `solidcraft` (`SolidCraftPyBind`): Where to draw it.
     * `cnc` (`SCCNC`): The program.
     * `mm_per_unit` (`float`):
       SolidCraft's world coordinates are millimeters, so this scales
@@ -413,12 +413,12 @@ def sketch_path(
 
 # Function `_draw()`:
 def _draw(
-    solidcraft: "PySolidCraft", moves: list[Move], mm_per_unit: float
+    solidcraft: "SolidCraftPyBind", moves: list[Move], mm_per_unit: float
 ) -> None:
     """Draw moves into the open 3D sketch.
 
     Arguments:
-    * `solidcraft` (`PySolidCraft`): Where to draw them.
+    * `solidcraft` (`SolidCraftPyBind`): Where to draw them.
     * `moves` (`list[Move]`): The moves, in order.
     * `mm_per_unit` (`float`): The scale to millimeters.
     """
@@ -458,7 +458,7 @@ def _draw(
 
 # Function `tube_path()`:
 def tube_path(
-    solidcraft: "PySolidCraft",
+    solidcraft: "SolidCraftPyBind",
     cnc: SCCNC,
     mm_per_unit: float = 1.0,
     *,
@@ -483,7 +483,7 @@ def tube_path(
     way to see a path.
 
     Arguments:
-    * `solidcraft` (`PySolidCraft`): Where to draw it.
+    * `solidcraft` (`SolidCraftPyBind`): Where to draw it.
     * `cnc` (`SCCNC`): The program.
     * `mm_per_unit` (`float`):
       SolidCraft's world coordinates are millimeters, so this scales
@@ -532,12 +532,12 @@ def tube_path(
 
 # Function `_sketch_moves()`:
 def _sketch_moves(
-    solidcraft: "PySolidCraft", cnc: SCCNC, mm_per_unit: float, sketch: str
+    solidcraft: "SolidCraftPyBind", cnc: SCCNC, mm_per_unit: float, sketch: str
 ) -> list[tuple[int, list[str]]]:
     """Sketch each move of a program as 3D straight pieces.
 
     Arguments:
-    * `solidcraft` (`PySolidCraft`): Where to sketch them.
+    * `solidcraft` (`SolidCraftPyBind`): Where to sketch them.
     * `cnc` (`SCCNC`): The program.
     * `mm_per_unit` (`float`): The scale to millimeters.
     * `sketch` (`str`): The new 3D sketch's name.

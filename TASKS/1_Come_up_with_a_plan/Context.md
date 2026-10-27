@@ -321,3 +321,84 @@ hg).
     '2026-10-23'").
 * Verified in a scratch copy with a fresh `HOME` and `pysolidcraft.py`
   on the new bootstrap: the bootstrap passes and G-code is produced.
+
+## 2026-10-26: Moved to `scraftpybind`; EZPkg dropped
+
+User decisions: use the bindings now split out into `../scraftpybind`
+(GitHub `waynegramlich/scraftpybind`, not yet on PyPI) through a
+symlink; drop the EZPkg bootstrap for now; delete the old files.
+
+Done:
+* `scraftpybind.py -> ../scraftpybind/scraftpybind.py` replaces the
+  `pysolidcraft.py` symlink; `PySolidCraft` is now `SolidCraftPyBind`
+  (same command names, `connect`, `Transport`, `HeadlessTransport`,
+  `JSON`).  Once on PyPI it becomes an ordinary dependency.
+* `solidcraftcnc_demo.py` has no PEP 723 block or bootstrap (it now
+  imports `sys` itself); `solidcraftcnc_demo.py.toml` deleted; the
+  bootstrap's ignores removed from `ruff.toml` and `.flake8`; `mypy`
+  and `flake8` skip `scraftpybind.py` (its own project checks it).
+* With no EZPkg, #15 (PyPI name clash of `scplot`/`scgeometry`) no
+  longer arises.
+* Checked: all checkers clean (`mypy --strict` included); 49 tests
+  pass; G-code identical with no model, `--plot`, and `headless` (566
+  lines, about 19.0 minutes); headless STEP: Z -0.5 to 0, pocket floor
+  -0.25, bevels -0.03, round-over -0.0625, 6 profiles; GUI run 35 s.
+
+## 2026-10-26: Getting ready for GitHub
+
+User decisions (from Claude's list #1-#7): clone `scraftcnc` and
+`scraftpybind` side by side, with the relative `scraftpybind.py` link
+committed (Windows: `pip install git+...`); license MIT-0; `TASKS/`,
+`RULES/` and `Context.md` may be public; `git_hooks/` copied from
+`scraftpybind` (`core.hooksPath` set); the old `README.md` plan moved
+to `T.or~3` (`Details.md`); the repository (`scraftcnc`) is created
+once `README.md` is ready.  Still open: #2, the `solidcraft` and
+`rs274` links that would dangle on GitHub.
+
+Done: new `README.md` (what it does, status and a warning to check
+G-code before cutting, requirements, getting it, four "Trying It"
+steps, files, tests, license).  Debugged as a stranger in scratch: a
+fresh `HOME`, `scraftpybind` cloned from GitHub, SolidCraft 0.24.0
+(the current release; this project had used 0.20.0) from its release
+tarball, checksum checked.  Steps 1-4 and the tests all work; G-code
+the same as before; GUI run 14 s with 0.24.0.
+
+Found: `scraftpybind`'s `ControlTransport` raises a bare
+`FileNotFoundError` traceback when the GUI's token file is missing
+(e.g. GUI started under another `HOME`).
+
+## 2026-10-26: Ready to push
+
+User decisions: #2 untrack `solidcraft` and `rs274` (as long as a
+newcomer is not confused); #4 create the repository; #8 fix the token
+error in `scraftpybind` directly, and push both together.  GUI exit 0
+means the user quit it.
+
+Done:
+* `solidcraft`, `rs274` untracked (`git rm --cached`) and in
+  `.gitignore`; `CLAUDE.md` imports `../scraftpybind/README.md`
+  instead of `solidcraft/README.md`.
+* The demo uses the extracted `solidcraft-cli` only if it exists, and
+  reports a missing SolidCraft in one line (with `scraftpybind`'s new
+  messages; see its `T.ps~1`).
+* `test_solidcraftcnc.island_pocket()` uses the demo's `demo_pocket()`
+  and `demo_islands()` (pylint `duplicate-code`), possible now that
+  the demo has no bootstrap.
+* Newcomer test again (scratch copies of both): no `solidcraft-cli`
+  and no GUI each give one clear line; headless with 0.24.0 works.
+* No secrets in the history; largest object 55 KB.
+* https://github.com/waynegramlich/scraftcnc created (public, remote
+  `github`, upstream `github/main` set; `git push --dry-run` OK).
+  Nothing pushed yet: the user commits in both repositories first.
+
+## 2026-10-26: Commit email made private
+
+User decision: commits use GitHub's private address
+`2482253+waynegramlich@users.noreply.github.com` (`git config
+user.email` in this repository; the global one is still the real
+address).  Every existing commit was rewritten to it (`git
+fast-export | sed | git fast-import` in scratch, then `git reset
+--soft`); trees, names, dates and messages checked identical.
+`scraftpybind`'s `github/main` still has the old 4 commits, so its
+next push is `git push --force-with-lease github main` (the user
+agreed: nobody has cloned it).

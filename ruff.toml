@@ -1,11 +1,4 @@
-# Configuration for `ruff`.  Python 3.11 is the floor that the PEP 723
-# block in `solidcraftcnc_demo.py` names.
+# Configuration for `ruff`.  Python 3.11 is the floor that
+# `scraftpybind` names.
 target-version = "py311"
 line-length = 79
-
-[lint.per-file-ignores]
-# Every program that is run directly carries the EZPkg bootstrap, which
-# must never be edited.  It puts several short statements on one line
-# (`E701`, `E702`), and catches `Exception` on purpose so that a
-# failure reads as one line (`BLE001`).
-"solidcraftcnc_demo.py" = ["BLE001", "E701", "E702"]
