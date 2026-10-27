@@ -1,6 +1,8 @@
 # Files to ignore.
 *~
 *.pdf
+# Ignore emacs open files
+\#*
 .hg/
 .hgignore
 __pycache__/

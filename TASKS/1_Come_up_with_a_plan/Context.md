@@ -428,3 +428,18 @@ agreed: nobody has cloned it).
 * The user's global `git` email is now the private GitHub address;
   `gh` has the `user` scope (removable with `gh auth refresh -h
   github.com -r user`).
+
+## 2026-10-27: Issue emails
+
+* Issues are on (GitHub's default) and Discussions off for
+  `scraftcnc`, `scraftpybind`, `aicontexts` and `ezpkg`; the user
+  wants Issues only, no hosted conversations.
+* The user was not watching any of the four, so new issues sent no
+  email.  Now watched (`gh api -X PUT repos/OWNER/REPO/subscription
+  -F subscribed=true`, read back); notifications go to
+  the account's primary address (now a Gmail one), with
+  Email ticked under Watching.  New recovery codes generated.
+* `gh` now has the `notifications` scope (needed to read or set
+  watching; a 404 from `/subscription` with that scope means "not
+  watching").  `gh auth refresh` run from Claude's shell prints its
+  device code only to the background output file.
