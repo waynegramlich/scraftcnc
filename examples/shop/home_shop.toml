@@ -1,0 +1,11 @@
+# An example shop, at a public address (the Sunnyvale police station).
+name = "Home shop"
+kind = "shop"
+language = "English"
+version = "0.0.1"
+machines = ["@shop_mill.toml"]
+
+[location]
+latitude = "37.37066 deg"
+longitude = "-122.04002 deg"
+address = "700 All American Way, Sunnyvale, CA 94086"

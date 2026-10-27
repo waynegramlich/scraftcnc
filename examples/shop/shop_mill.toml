@@ -1,0 +1,49 @@
+# An example of a small knee mill converted to CNC.
+name = "Shop mill"
+kind = "machine"
+language = "English"
+version = "0.0.1"
+machine = "mill"
+controller = "@linuxcnc.toml"
+tool_table = { 1 = "1/4 inch 2 flute end mill", 4 = "15/64 inch drill" }
+
+[table]
+length = "34 in"
+width = "9.5 in"
+t_slots = 3
+t_slot_pitch = "2.5 in"
+t_slot_width = "0.625 in"
+t_slot_depth = "0.75 in"
+
+[spindle]
+taper = "R8"
+min_rpm = "100 rpm"
+max_rpm = "5000 rpm"
+reversible = true
+flood = true
+mist = false
+air = false
+
+[[axes]]
+letter = "X"
+travel = "18 in"
+max_feed = "110 in/min"
+max_acceleration = "10 in/s^2"
+limit_switches = true
+brake = false
+
+[[axes]]
+letter = "Y"
+travel = "9 in"
+max_feed = "110 in/min"
+max_acceleration = "10 in/s^2"
+limit_switches = true
+brake = false
+
+[[axes]]
+letter = "Z"
+travel = "16 in"
+max_feed = "90 in/min"
+max_acceleration = "10 in/s^2"
+limit_switches = true
+brake = true

@@ -1,0 +1,7 @@
+# The baseline controller.
+name = "LinuxCNC"
+kind = "controller"
+language = "English"
+version = "0.0.1"
+post_processor = "linuxcnc"
+tool_change = "T{number:02d} M6"
