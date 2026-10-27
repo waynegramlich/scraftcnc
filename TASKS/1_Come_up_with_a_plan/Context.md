@@ -402,3 +402,29 @@ fast-export | sed | git fast-import` in scratch, then `git reset
 `scraftpybind`'s `github/main` still has the old 4 commits, so its
 next push is `git push --force-with-lease github main` (the user
 agreed: nobody has cloned it).
+
+## 2026-10-26: Published
+
+* The user committed and pushed `scraftcnc` (`ea24786`); Claude
+  force-pushed `scraftpybind` (`6c31bf0`, with the user's approval).
+  GitHub shows only the private address on every commit of both,
+  linked to `waynegramlich`; `scraftcnc`'s license is MIT-0.
+* Stranger check from GitHub (fresh `HOME`, both cloned side by
+  side): README steps 1-3 work (same 566 line G-code; headless with
+  SolidCraft 0.24.0); no `solidcraft-cli` and no GUI each give one
+  clear line; both test suites pass.
+
+## 2026-10-26: Where things stand (end of session)
+
+* Next: the user announces `scraftcnc` and `scraftpybind` on the
+  SolidCraft discussion group (planned for 2026-10-27).
+* #15 (PyPI name clash through EZPkg) is gone now that EZPkg is not
+  used.  Still open from before: #22 bottom chamfers, #23 holding the
+  part (tooling holes, tabs), #24 roughing bit, #25 tool profiles (the
+  gatekeeper), and the unanswered questions #26-#29; most belong to
+  `T.ds~2` (Document a Shop).
+* `T.or~3` (Original Roadmap) holds the old `README.md` plan; it is
+  Pending and could be closed (its steps are done or superseded).
+* The user's global `git` email is now the private GitHub address;
+  `gh` has the `user` scope (removable with `gh auth refresh -h
+  github.com -r user`).
