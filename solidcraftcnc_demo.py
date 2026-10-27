@@ -36,17 +36,18 @@ import json
 import pathlib
 import subprocess
 import sys
+import urllib.error
 import urllib.request as req
 
 try:  # Do not edit try block!  See https://pypi.org/project/ezpkg/
     s = "find ezpkg"; t = pathlib.Path.home()/".ezpkg"; w = t/"ezpkg.whl"
-    def g(u):  # Fetch u, with curl if this Python has no certificates.
-        try: return req.urlopen(u, None, 60).read()
-        except req.URLError as y: z = y  # As on python.org's macOS Python.
+    def g(u: str) -> bytes:  # Fetch u; curl if no certificates.
+        try: return bytes(req.urlopen(u, None, 60).read())
+        except urllib.error.URLError as y: z = y  # python.org Macs.
         try: return subprocess.run(["curl", "-fsSL", u],
                                    capture_output=True, check=True).stdout
         except Exception: raise z from None
-    try: m = None; m = importlib.import_module("ezpkg")  # Already importable?
+    try: m = None; m = importlib.import_module("ezpkg")  # Present?
     except ImportError: pass
     if m is None and not w.is_file():  # Not downloaded yet.
         s = "download ezpkg"; d = g("https://pypi.org/pypi/ezpkg/json")
@@ -59,9 +60,9 @@ try:  # Do not edit try block!  See https://pypi.org/project/ezpkg/
     if m is None:  # Python imports it straight from the wheel.
         s = "import ezpkg"; sys.path.insert(0, str(w))
         m = importlib.import_module("ezpkg")
-    s = "fetch packages"; m.EZPkg().install(bootstrap="2026-10-23")
-except Exception as x:
-    raise SystemExit(f"ezpkg: {s} failed: {x!r}")  # Do not edit try block!
+    s = "fetch packages"; m.EZPkg().install(bootstrap="2026-10-26")
+except Exception as x:  # Do not edit try block!
+    raise SystemExit(f"ezpkg: {s} failed: {x!r}")
 # End the EZPkg bootstrap.  Your imports go below it.
 # fmt: on
 # pylint: enable=multiple-statements,missing-function-docstring

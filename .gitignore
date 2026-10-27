@@ -1,5 +1,6 @@
 # Files to ignore.
 *~
+*.pdf
 .hg/
 .hgignore
 __pycache__/

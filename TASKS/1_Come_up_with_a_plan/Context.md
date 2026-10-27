@@ -307,3 +307,17 @@ https://claude.ai/artifact/4JmpGaAtAvyDds8W7r8ia8 (version 4).  The
 user commits to git; the last git commit was before the through cut
 and edge work (those files are modified, uncommitted in git, but in
 hg).
+
+## 2026-10-26: EZPkg bootstrap 2026-10-26 (ezpkg 0.0.5)
+
+* `solidcraftcnc_demo.py` now has the 2026-10-26 bootstrap: `mypy
+  --strict` is clean (and ruff, flake8, pylint); tests pass.
+* It does not run yet, for two reasons outside this project:
+  * `~/.ezpkg/ezpkg.whl` is still 0.0.1, which only knows the
+    2026-10-23 bootstrap; the bootstrap never replaces a cached wheel.
+  * `pysolidcraft.py` (SolidCraft's) still has the 2026-10-23
+    bootstrap; when the demo imports it, ezpkg 0.0.5 refuses, and the
+    message blames the demo ("lines 42-65 ... calls itself
+    '2026-10-23'").
+* Verified in a scratch copy with a fresh `HOME` and `pysolidcraft.py`
+  on the new bootstrap: the bootstrap passes and G-code is produced.

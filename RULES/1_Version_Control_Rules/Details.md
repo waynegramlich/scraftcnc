@@ -10,9 +10,9 @@ The version control rules are:
 * The User is allowed to use features of `git`.
 * The User writes all `git` commit messages, so Claude never runs
   `git commit`.
-* Claude must ask permission before running any `git` command that
-  modifies the commit log (e.g. `merge`, `rebase`, `reset`, `revert`,
-  `cherry-pick`, `pull`, `push`).
+* Claude may run every other `git` command without asking, including
+  those that modify the commit log or a remote (e.g. `merge`,
+  `rebase`, `reset`, `revert`, `cherry-pick`, `pull`, `push`, `tag`).
 * Claude does an `hg` checkpoint before any `git` command that changes
   state (e.g. `add`, `mv`, `rm`, `restore`, `stash`).  This includes
   a `stash` that is popped straight back, such as one used to see how

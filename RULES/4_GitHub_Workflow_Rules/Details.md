@@ -89,6 +89,27 @@ macOS):
   * Run the stranger check on every supported Python with
     `uv run --no-project --python 3.X python release_check.py source`.
 
+## What the Other Systems Find
+
+The first runs of `aicontexts` on Windows and macOS (October 2026)
+found these, none of which show up on Linux:
+
+* Windows can not replace or delete a read-only file: make it writable
+  first (`path.chmod(path.stat().st_mode | stat.S_IWUSR)`), also before
+  `shutil.rmtree()`.
+* Windows has no `os.geteuid()`, and permission tests mean little
+  there; skip them with `os.name == "nt"` as well as for root.
+* `str(path)` and `sorted()` of paths differ on Windows (`\`, and case
+  is ignored): print paths the user typed with `as_posix()`, and sort
+  with `key=Path.as_posix` wherever the order is shown or tested.
+* `write_text()` writes `\r\n` on Windows; pass `newline="\n"` so files
+  (and their hashes) are the same everywhere.
+* On macOS, `/` has entries (`/.resolve`) that Python 3.11's
+  `Path.glob()` can not `stat`; a search that can reach `/` should list
+  directories with `iterdir()` and skip entries that raise `OSError`.
+* A test suite that only prints the names of failed checks gives little
+  to go on from a runner's log; print the output that failed too.
+
 ## Running and Watching
 
 Claude runs these itself, in the background for anything over a minute,
