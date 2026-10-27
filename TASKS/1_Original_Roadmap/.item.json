@@ -1,11 +1,15 @@
 {
-  "state": "Pending",
+  "state": "Closed",
   "created": "2026-10-27T04:15:30Z",
-  "updated": "2026-10-27T04:15:30Z",
+  "updated": "2026-10-27T23:40:42Z",
   "history": [
     {
       "state": "Pending",
       "time": "2026-10-27T04:15:30Z"
+    },
+    {
+      "state": "Closed",
+      "time": "2026-10-27T23:40:42Z"
     }
   ],
   "tag": "or"

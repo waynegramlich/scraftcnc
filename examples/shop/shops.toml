@@ -1,0 +1,17 @@
+# The example shop, written in place: the same shop as
+# `home_shop.toml`, with its machines in their own files.  The
+# `[[shops]]` table could instead be `shops = ["@home_shop.toml"]`.
+name = "Example shops"
+kind = "shops"
+language = "English"
+version = "0.0.1"
+
+[[shops]]
+name = "Home shop"
+machines = ["@shop_mill.toml", "@shop_router.toml"]
+tools = ["@tools.toml"]
+
+[shops.location]
+latitude = "37.37066 deg"
+longitude = "-122.04002 deg"
+address = "700 All American Way, Sunnyvale, CA 94086"

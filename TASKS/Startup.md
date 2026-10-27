@@ -1,7 +1,9 @@
-@1_Come_up_with_a_plan/Details.md
-@1_Come_up_with_a_plan/Context.md
 @2_Document_a_Shop/Details.md
 @2_Document_a_Shop/Context.md
-@2.1_Shop_Information/Details.md
-@2.1_Shop_Information/Context.md
-@3_Original_Roadmap/Details.md
+@2.2_Mounting/Details.md
+@2.3_Stock/Details.md
+@2.4_Materials_Speeds_and_Feeds/Details.md
+@2.5_Tool_Models/Details.md
+@1_Original_Roadmap/Summary.md
+@1.1_Come_up_with_a_plan/Summary.md
+@2.1_Shop_Information/Summary.md

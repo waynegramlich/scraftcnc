@@ -211,12 +211,99 @@ class TestSCCNC(unittest.TestCase):
         self.assertIn("G0 X0.375 Y0.5\n", gcode)
 
         # A hole too small for the tool is refused, and so is one too
-        # small for the lead-in.
+        # small for even the smallest leads; the leads shrink to fit
+        # in between.
         with self.assertRaises(ValueError):
             cnc.profile(square(0.2, 0.0), -0.1, 0.5, inside=True)
         with self.assertRaisesRegex(ValueError, "lead-in"):
-            cnc.profile(square(0.45, 0.0), -0.1, 0.5, inside=True)
+            cnc.profile(square(0.27, 0.0), -0.1, 0.5, inside=True)
+        cnc.profile(square(0.45, 0.0), -0.1, 0.5, inside=True)
         cnc.profile(square(0.55, 0.0), -0.1, 0.5, inside=True)
+
+    # Method `TestSCCNC.test_profile_stages()`:
+    def test_profile_stages(self) -> None:
+        """A rougher leaves the allowance; the end mill finishes it."""
+        cnc: SCCNC = milling()
+        allowance: float = cnc.machine.finish_allowance
+        plate: SCRoundPoly = square(1.0, 0.25)
+        full: SCRoundPoly = cnc.profile(plate, -0.5, 0.25, through=True)
+        start: int = len(cnc.commands)
+        rough: SCRoundPoly = cnc.profile(
+            plate, -0.5, 0.25, through=True, stage="rough"
+        )
+
+        # The rougher stays the allowance off the wall and above the
+        # bottom, so the part is not cut free.
+        self.assertAlmostEqual(
+            rough.corners[0].x - full.corners[0].x, -allowance
+        )
+        depths: list[float] = [
+            float(str(command["Z"]))
+            for command in cnc.commands[start:]
+            if command.get("G") == 1 and "X" not in command and "Z" in command
+        ]
+        self.assertAlmostEqual(min(depths), -0.5 + allowance)
+
+        # The finish goes down once, through, starting on the rougher's
+        # path, in the slot it cut.
+        start = len(cnc.commands)
+        finish: SCRoundPoly = cnc.profile(
+            plate, -0.5, 0.25, through=True, stage="finish"
+        )
+        self.assertEqual(finish.corners, full.corners)
+        plunges: list[float] = [
+            float(str(command["Z"]))
+            for command in cnc.commands[start:]
+            if command.get("G") == 1 and "X" not in command and "Z" in command
+        ]
+        self.assertEqual(plunges, [cnc.below(-0.5)])
+        entry: tuple[float, float] = cnc.profile_entry(
+            plate, cnc.cutter, stage="finish"
+        )
+        self.assertLess(
+            min(
+                distance_to(entry, segment)
+                for segment in SCLoop.from_poly(rough).segments
+            ),
+            1e-9,
+        )
+
+    # Method `TestSCCNC.test_pocket_stages()`:
+    def test_pocket_stages(self) -> None:
+        """A rougher stays off the walls and floor; the finish does not."""
+        cnc: SCCNC = milling()
+        allowance: float = cnc.machine.finish_allowance
+        pocket: SCRoundPoly = square(1.5, 0.25)
+        full: list[SCRing] = cnc.pocket(pocket, -0.25, 0.125)
+        rough: list[SCRing] = cnc.pocket(pocket, -0.25, 0.125, stage="rough")
+        finish: list[SCRing] = cnc.pocket(pocket, -0.25, 0.125, stage="finish")
+
+        # The outer rings: the rougher's are the allowance further in.
+        def width(roots: list[SCRing]) -> float:
+            xs: list[float] = [
+                segment.start[0] for segment in roots[0].loops[0].segments
+            ]
+            return max(xs) - min(xs)
+
+        self.assertAlmostEqual(width(full) - width(rough), 2.0 * allowance)
+        self.assertAlmostEqual(width(full), width(finish))
+        self.assertIn("Rough pocket", cnc.gcode())
+        self.assertIn("to Z-0.2)", cnc.gcode())
+        self.assertIn("Finish pocket", cnc.gcode())
+
+    # Method `TestSCCNC.test_rougher_for()`:
+    def test_rougher_for(self) -> None:
+        """The largest rougher no wider than the end mill, if any."""
+        rougher: SCTool = SCTool(
+            8, "Rougher", "roughing end mill", 0.25, 1200, 12.0, 4.0
+        )
+        wide: SCTool = SCTool(
+            9, "Wide", "roughing end mill", 0.5, 1200, 12.0, 4.0
+        )
+        mill: SCMachine = machine()
+        self.assertIsNone(mill.rougher_for(mill.tool(1)))
+        mill = machine(tools=(*mill.tools, rougher, wide))
+        self.assertIs(mill.rougher_for(mill.tool(1)), rougher)
 
     # Method `TestSCCNC.test_profile_errors()`:
     def test_profile_errors(self) -> None:

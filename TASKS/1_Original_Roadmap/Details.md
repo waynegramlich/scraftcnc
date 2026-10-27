@@ -1,4 +1,4 @@
-# 3 Original Roadmap
+# 1 Original Roadmap
 
 The plan that `README.md` held until 2026-10-26, when `README.md` was
 rewritten for people trying the code.  Steps 1, 2, 4, 5 and 6 are done

@@ -11,3 +11,5 @@ __pycache__/
 # Links to neighboring projects on the author's machine.
 solidcraft
 rs274
+# Notes on the catalog, kept out of version control.
+shars_catalog.md

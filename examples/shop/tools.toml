@@ -1,0 +1,196 @@
+# Example tools, from the Shars Tool 2026 catalog (pages below).  The
+# end mills go in R8 end mill holders; the drills in an ER32 chuck.
+# The speeds and feeds are the ones the demo has always used (1200
+# rpm), not recommendations.
+name = "Shop tools"
+kind = "tools"
+language = "English"
+version = "0.0.1"
+
+[[end_mills]]
+name = "1/4 in 2 flute carbide end mill"
+description = "Regular length, square end, uncoated"
+diameter = "1/4 in"
+shank = "1/4 in"
+length_of_cut = "3/4 in"
+overall_length = "2-1/2 in"
+flutes = 2
+end = "square"
+center_cutting = true
+material = "carbide"
+coating = "uncoated"
+manufacturer = "USA Made"
+vendor = "Shars Tool"
+vendor_pn = "415-0982"
+cost = "15.18 USD"
+acquired = 2026-10-27
+rpm = "1200 rpm"
+feed = "12 in/min"
+plunge = "6 in/min"
+
+[[end_mills]]
+name = "1/2 in 2 flute carbide end mill"
+description = "Regular length, square end, uncoated, for the router"
+diameter = "1/2 in"
+shank = "1/2 in"
+length_of_cut = "1 in"
+overall_length = "3 in"
+flutes = 2
+end = "square"
+center_cutting = true
+collet = "ER20"
+material = "carbide"
+coating = "uncoated"
+manufacturer = "USA Made"
+vendor = "Shars Tool"
+vendor_pn = "415-0998"
+cost = "47.02 USD"
+acquired = 2026-10-27
+rpm = "1200 rpm"
+feed = "12 in/min"
+plunge = "6 in/min"
+
+# Page 54: 2 flute HSS ball nose, regular length, Weldon shank.
+[[end_mills]]
+name = "1/4 in 2 flute HSS ball end mill"
+description = "Ball nose, for 3D surfaces and rounded slots"
+diameter = "1/4 in"
+shank = "3/8 in"
+length_of_cut = "1/2 in"
+overall_length = "2-5/16 in"
+flutes = 2
+end = "ball"
+center_cutting = true
+material = "HSS"
+grade = "M2"
+manufacturer = "Import"
+vendor = "Shars Tool"
+vendor_pn = "404-5952"
+cost = "10.15 USD"
+rpm = "1200 rpm"
+feed = "12 in/min"
+plunge = "4 in/min"
+
+# Page 65: M42 cobalt coarse tooth roughing end mill, Weldon shank.
+[[end_mills]]
+name = "1/4 in 4 flute cobalt roughing end mill"
+description = "Coarse tooth rougher, for clearing pockets fast"
+diameter = "1/4 in"
+shank = "3/8 in"
+length_of_cut = "3/4 in"
+overall_length = "2-1/2 in"
+flutes = 4
+end = "square"
+center_cutting = true
+roughing = true
+material = "cobalt"
+grade = "M42"
+manufacturer = "Import"
+vendor = "Shars Tool"
+vendor_pn = "404-9051"
+cost = "18.30 USD"
+rpm = "1200 rpm"
+feed = "12 in/min"
+plunge = "4 in/min"
+
+[[drills]]
+name = "15/64 in HSS jobber drill"
+description = "Entry holes for the 1/4 in end mill"
+diameter = "15/64 in"
+length_of_cut = "2-5/8 in"
+overall_length = "3-7/8 in"
+point_angle = "118 deg"
+collet = "ER32"
+material = "HSS"
+coating = "black oxide"
+manufacturer = "USA Made"
+vendor = "Shars Tool"
+vendor_pn = "415-7938"
+cost = "1.92 USD"
+rpm = "1200 rpm"
+feed = "4 in/min"
+plunge = "4 in/min"
+peck = "0.05 in"
+
+[[drills]]
+name = "1/8 in cobalt jobber drill"
+description = "Split point, for hard material"
+diameter = "1/8 in"
+length_of_cut = "1-5/8 in"
+overall_length = "2-3/4 in"
+point_angle = "135 deg"
+split_point = true
+collet = "ER32"
+material = "cobalt"
+grade = "M42"
+coating = "straw"
+manufacturer = "USA Made"
+vendor = "Shars Tool"
+vendor_pn = "415-8998"
+cost = "2.67 USD"
+rpm = "1200 rpm"
+feed = "4 in/min"
+plunge = "4 in/min"
+peck = "0.05 in"
+
+# Page 137: 2 flute single end carbide chamfer mill.
+[[chamfer_mills]]
+name = "1/8 in 90 deg carbide chamfer mill"
+description = "Bevels top edges at 45 deg"
+diameter = "1/8 in"
+tip_diameter = "0.020 in"
+angle = "90 deg"
+flutes = 2
+shank = "1/8 in"
+overall_length = "1-1/2 in"
+material = "carbide"
+coating = "uncoated"
+vendor = "Shars Tool"
+vendor_pn = "416-3509"
+cost = "14.93 USD"
+rpm = "1200 rpm"
+feed = "12 in/min"
+plunge = "4 in/min"
+
+# Page 60: 2 flute solid carbide corner rounding mill, unflared.
+[[corner_rounding_mills]]
+name = "1/16 in radius carbide corner rounding mill"
+description = "Rounds top edges over"
+radius = "0.0625 in"
+tip_diameter = "0.0469 in"
+flutes = 2
+shank = "3/16 in"
+overall_length = "2 in"
+material = "carbide"
+coating = "uncoated"
+manufacturer = "USA Made"
+vendor = "Shars Tool"
+vendor_pn = "417-1112"
+cost = "49.05 USD"
+rpm = "1200 rpm"
+feed = "12 in/min"
+plunge = "4 in/min"
+
+# Page 114 (the table starts on page 112): pointed double angle shank
+# cutter, which reaches under an edge to chamfer it from below.
+[[double_angle_cutters]]
+name = "1/4 in 90 deg double angle shank cutter"
+description = "Bottom (back) chamfers at 45 deg"
+diameter = "1/4 in"
+angle = "90 deg"
+width = "0.125 in"
+neck_diameter = "1/8 in"
+neck_length = "0.625 in"
+flutes = 4
+shank = "1/4 in"
+overall_length = "2-1/2 in"
+material = "carbide"
+coating = "uncoated"
+manufacturer = "USA Made"
+manufacturer_pn = "72603"
+vendor = "Shars Tool"
+vendor_pn = "436-4296"
+cost = "107.30 USD"
+rpm = "1200 rpm"
+feed = "12 in/min"
+plunge = "4 in/min"

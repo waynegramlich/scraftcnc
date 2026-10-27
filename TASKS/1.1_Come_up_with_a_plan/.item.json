@@ -1,7 +1,7 @@
 {
-  "state": "Open",
+  "state": "Closed",
   "created": "2026-10-25T23:32:09Z",
-  "updated": "2026-10-25T23:32:24Z",
+  "updated": "2026-10-27T23:40:42Z",
   "history": [
     {
       "state": "Pending",
@@ -10,6 +10,10 @@
     {
       "state": "Open",
       "time": "2026-10-25T23:32:24Z"
+    },
+    {
+      "state": "Closed",
+      "time": "2026-10-27T23:40:42Z"
     }
   ],
   "tag": "cuwp"

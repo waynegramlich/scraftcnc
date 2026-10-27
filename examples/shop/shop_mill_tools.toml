@@ -1,0 +1,15 @@
+# The tools loaded in the shop mill.
+name = "Shop mill tools"
+kind = "tool_table"
+language = "English"
+version = "0.0.1"
+
+[tools]
+1 = "1/4 in 2 flute carbide end mill"
+2 = "1/8 in cobalt jobber drill"
+4 = "15/64 in HSS jobber drill"
+5 = "1/8 in 90 deg carbide chamfer mill"
+6 = "1/16 in radius carbide corner rounding mill"
+7 = "1/4 in 2 flute HSS ball end mill"
+8 = "1/4 in 4 flute cobalt roughing end mill"
+9 = "1/4 in 90 deg double angle shank cutter"

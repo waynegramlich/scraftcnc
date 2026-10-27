@@ -58,6 +58,23 @@ RS274: TypeAlias = dict[str, float | int | str]
 # after the ring around it).
 CutMode: TypeAlias = Literal["ramp", "drilled", "lead", "plain"]
 
+# How much of a cut a pass makes: all of it, with one tool ("full"); or
+# with a roughing end mill that leaves the machine's `finish_allowance`
+# on the walls and floors ("rough"), and then an end mill that cuts
+# them to size at full depth in one pass ("finish").
+Stage: TypeAlias = Literal["full", "rough", "finish"]
+
+# How many times a profile's leads may be halved to fit (see
+# `_fitted_path()`).
+LEAD_HALVINGS: int = 3
+
+# The first words of a cut's comment, by stage ("P" or "p" follows).
+STAGE_WORDS: dict[Stage, str] = {
+    "full": "P",
+    "rough": "Rough p",
+    "finish": "Finish p",
+}
+
 # A chamfer bit's tip runs this far off the wall (beyond its own
 # radius), so that it does not rub the wall below the bevel.
 CHAMFER_CLEAR: float = 0.005
@@ -183,6 +200,37 @@ def _profile_path(
     if path.is_ccw() != inside:
         path = path.reversed()
     return path, _leads(SCLoop.from_poly(path), lead)
+
+
+# Function `_fitted_path()`:
+def _fitted_path(
+    poly: SCRoundPoly, inside: bool, offset: float, lead: float
+) -> tuple[SCRoundPoly, tuple[SCArc, list[SCSegment], SCArc]]:
+    """Return a profile's path, with leads small enough to fit.
+
+    The leads are halved (up to `LEAD_HALVINGS` times) until they do
+    not cross the path, as in a narrow hole.
+
+    Arguments:
+    * `poly` (`SCRoundPoly`): The outline.
+    * `inside` (`bool`): True to cut from inside the outline.
+    * `offset` (`float`): How far off the outline the tool's center is.
+    * `lead` (`float`): The largest radius for the leads.
+
+    Returns:
+    * (`SCRoundPoly`): The path (see `_profile_path()`).
+    * (`tuple[SCArc, list[SCSegment], SCArc]`): Its leads and loop.
+
+    Raises:
+    * `ValueError`: If even the smallest leads cross the path.
+    """
+    halving: int
+    for halving in range(LEAD_HALVINGS):
+        try:
+            return _profile_path(poly, inside, offset, lead / 2.0**halving)
+        except ValueError:
+            continue
+    return _profile_path(poly, inside, offset, lead / 2.0**LEAD_HALVINGS)
 
 
 # Function `_number()`:
@@ -1028,6 +1076,57 @@ class SCCNC:
         self.rapid(z=self.z_safe)
         return path
 
+    # Method `SCCNC._stage_depths()`:
+    def _stage_depths(
+        self, bottom: float, step: float, through: bool, stage: Stage
+    ) -> list[float]:
+        """Return the depths a stage of a cut goes to.
+
+        Arguments:
+        * `bottom` (`float`): The cut's bottom.
+        * `step` (`float`): The most to go down between depths.
+        * `through` (`bool`): True when `bottom` is the part's bottom.
+        * `stage` (`Stage`): The stage.
+
+        Returns:
+        * (`list[float]`):
+          The depths: down to `finish_allowance` above `bottom` when
+          roughing (never through, so the part is not cut free), only
+          the full depth when finishing, and every depth otherwise.
+        """
+        if stage == "rough":
+            return self._depths(bottom + self.machine.finish_allowance, step)
+        bottom = self.below(bottom, through)
+        if stage == "finish":
+            return [bottom]
+        return self._depths(bottom, step)
+
+    # Method `SCCNC._stage_offsets()`:
+    def _stage_offsets(
+        self, tool: SCTool, stage: Stage
+    ) -> tuple[float, float]:
+        """Return how far off an outline a profile goes, and its leads.
+
+        Arguments:
+        * `tool` (`SCTool`): The tool.
+        * `stage` (`Stage`): The stage.
+
+        Returns:
+        * (`tuple[float, float]`):
+          How far the tool's center is off the outline (its radius,
+          plus `finish_allowance` when roughing), and the radius of its
+          leads.  A finishing pass's leads start where the rougher's
+          center went (`finish_allowance` off the path), in the slot
+          it cut.
+        """
+        radius: float = tool.diameter / 2.0
+        allowance: float = self.machine.finish_allowance
+        if stage == "rough":
+            return radius + allowance, radius
+        if stage == "finish" and allowance > 0.0:
+            return radius, allowance / 2.0
+        return radius, radius
+
     # Method `SCCNC._depths()`:
     def _depths(self, bottom: float, step: float) -> list[float]:
         """Return the depths to cut at, from just below `z_top` down.
@@ -1088,6 +1187,7 @@ class SCCNC:
         *,
         inside: bool = False,
         through: bool = False,
+        stage: Stage = "full",
     ) -> SCRoundPoly:
         """Cut along a polygon's outline, from `z_top` down to `bottom`.
 
@@ -1116,6 +1216,10 @@ class SCCNC:
         * `through` (`bool`):
           True when `bottom` is the bottom of the part, so the cut goes
           the machine's `through_overcut` deeper (see `below()`).
+        * `stage` (`Stage`):
+          `"rough"` to leave the machine's `finish_allowance` on the
+          wall and floor (and not cut through), `"finish"` to cut them
+          to size in one pass at full depth, or `"full"`.
 
         Returns:
         * (`SCRoundPoly`): The path the tool's center followed.
@@ -1126,20 +1230,21 @@ class SCCNC:
           the tool cannot follow the outline.
         """
         # Plan the path and its leads.
-        bottom = self.below(bottom, through)
-        depths: list[float] = self._depths(bottom, step)
+        depths: list[float] = self._stage_depths(bottom, step, through, stage)
         path: SCRoundPoly
         lead_in: SCArc
         loop: list[SCSegment]
         lead_out: SCArc
-        radius: float = self.cutter.diameter / 2.0
-        path, (lead_in, loop, lead_out) = _profile_path(
-            poly, inside, radius, radius
+        path, (lead_in, loop, lead_out) = _fitted_path(
+            poly, inside, *self._stage_offsets(self.cutter, stage)
         )
 
         # Go over the lead-in's start, then down to just above the top.
         side: str = "inside" if inside else "outside"
-        self.comment(f"Profile {poly.name} {side} to Z{_number(bottom)}")
+        self.comment(
+            f"{STAGE_WORDS[stage]}rofile {poly.name} {side} "
+            f"to Z{_number(depths[-1])}"
+        )
         self.rapid(z=self.z_safe)
         self.rapid(x=lead_in.start[0], y=lead_in.start[1])
         self.rapid(z=self.z_top + self.clearance)
@@ -1154,7 +1259,12 @@ class SCCNC:
 
     # Method `SCCNC.profile_entry()`:
     def profile_entry(
-        self, poly: SCRoundPoly, tool: SCTool, *, inside: bool = False
+        self,
+        poly: SCRoundPoly,
+        tool: SCTool,
+        *,
+        inside: bool = False,
+        stage: Stage = "full",
     ) -> Point:
         """Return where a profile cut with a tool goes down.
 
@@ -1164,12 +1274,13 @@ class SCCNC:
         * `poly` (`SCRoundPoly`): The outline.
         * `tool` (`SCTool`): The tool that will cut it.
         * `inside` (`bool`): True to cut from inside the outline.
+        * `stage` (`Stage`): The stage of the cut (see `profile()`).
 
         Returns:
         * (`Point`): The start of the profile's lead-in.
         """
-        radius: float = tool.diameter / 2.0
-        return _profile_path(poly, inside, radius, radius)[1][0].start
+        offsets: tuple[float, float] = self._stage_offsets(tool, stage)
+        return _fitted_path(poly, inside, *offsets)[1][0].start
 
     # Method `SCCNC.pocket()`:
     # Each argument is part of saying what to cut, and the optional
@@ -1183,6 +1294,7 @@ class SCCNC:
         islands: Sequence[SCRoundPoly] = (),
         drilled: bool = False,
         through: bool = False,
+        stage: Stage = "full",
     ) -> list[SCRing]:
         """Clear the inside of a polygon, from `z_top` down to `bottom`.
 
@@ -1213,6 +1325,11 @@ class SCCNC:
         * `through` (`bool`):
           True when `bottom` is the bottom of the part, so the cut goes
           the machine's `through_overcut` deeper (see `below()`).
+        * `stage` (`Stage`):
+          `"rough"` to leave the machine's `finish_allowance` on the
+          walls, islands and floor, `"finish"` to cut every ring once
+          at full depth (going straight down into what the rougher
+          cleared), or `"full"`.
 
         Returns:
         * (`list[SCRing]`): The outermost rings (with the rest inside).
@@ -1224,12 +1341,16 @@ class SCCNC:
           not fit in the pocket.
         """
         # Plan the rings, then cut them.
-        bottom = self.below(bottom, through)
-        depths: list[float] = self._depths(bottom, step)
-        roots: list[SCRing] = self._plan(poly, islands, self.cutter.diameter)
+        depths: list[float] = self._stage_depths(bottom, step, through, stage)
+        roots: list[SCRing] = self._plan(
+            poly, islands, self.cutter.diameter, stage
+        )
         around: str = f" around {len(islands)} islands" if islands else ""
-        self.comment(f"Pocket {poly.name}{around} to Z{_number(bottom)}")
-        self._clear(roots, depths, drilled)
+        word: str = STAGE_WORDS[stage]
+        self.comment(
+            f"{word}ocket {poly.name}{around} to Z{_number(depths[-1])}"
+        )
+        self._clear(roots, depths, drilled or stage == "finish")
         return roots
 
     # Method `SCCNC._clear()`:
@@ -1265,6 +1386,7 @@ class SCCNC:
         poly: SCRoundPoly,
         islands: Sequence[SCRoundPoly],
         diameter: float,
+        stage: Stage = "full",
     ) -> list[SCRing]:
         """Plan the rings that clear a pocket with a tool.
 
@@ -1272,6 +1394,9 @@ class SCCNC:
         * `poly` (`SCRoundPoly`): The pocket's outline.
         * `islands` (`Sequence[SCRoundPoly]`): Outlines to leave.
         * `diameter` (`float`): The tool's diameter.
+        * `stage` (`Stage`):
+          `"rough"` to keep the machine's `finish_allowance` away from
+          the walls and islands.
 
         Returns:
         * (`list[SCRing]`): The outermost rings.
@@ -1305,6 +1430,12 @@ class SCCNC:
                     for second in other.segments
                 ):
                     raise ValueError(f"{loop.name} meets {other.name}")
+
+        # A rougher clears what is left once the walls and islands are
+        # moved in by the allowance.
+        allowance: float = self.machine.finish_allowance
+        if stage == "rough" and allowance > 0.0:
+            region = inset(region, allowance, poly.name)
         return plan_pocket(region, diameter, self.machine.stepover)
 
     # Method `SCCNC.pocket_entries()`:
@@ -1313,6 +1444,7 @@ class SCCNC:
         poly: SCRoundPoly,
         tool: SCTool,
         islands: Sequence[SCRoundPoly] = (),
+        stage: Stage = "full",
     ) -> list[Point]:
         """Return where a pocket cut with a tool goes down into it.
 
@@ -1324,13 +1456,14 @@ class SCCNC:
         * `poly` (`SCRoundPoly`): The pocket's outline.
         * `tool` (`SCTool`): The tool that will clear it.
         * `islands` (`Sequence[SCRoundPoly]`): Outlines to leave.
+        * `stage` (`Stage`): The stage of the cut (see `pocket()`).
 
         Returns:
         * (`list[Point]`): The points, in the order they are cut.
         """
         return [
             loop.segments[0].start
-            for root in self._plan(poly, islands, tool.diameter)
+            for root in self._plan(poly, islands, tool.diameter, stage)
             for ring, mode in cut_order(root, tool.diameter)
             if mode == "ramp"
             for loop in ring.loops

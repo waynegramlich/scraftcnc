@@ -1,96 +1,37 @@
 """Tests for `scmachine.py`: run `python3 -m unittest -v`."""
 
-import tempfile
 import unittest
 from pathlib import Path
 
-from scmachine import SCMachine, SCTool, load_machine
+from scmachine import SCMachine, SCTool
+from shops import cnc_machine, read
 from test_solidcraftcnc import machine
 
-# The project's own machine file.
-MACHINE_FILE: Path = Path(__file__).resolve().parent / "machine.toml"
+# The example shop.
+SHOP_FILE: Path = (
+    Path(__file__).resolve().parent / "examples/shop/home_shop.toml"
+)
 
 
 # Class `TestMachine`:
 class TestMachine(unittest.TestCase):
     """Machine preferences and tool tables."""
 
-    # Method `TestMachine.load()`:
-    def load(self, text: str) -> SCMachine:
-        """Load a machine file written from text.
-
-        Arguments:
-        * `text` (`str`): The file's contents.
-
-        Returns:
-        * (`SCMachine`): The machine.
-        """
-        with tempfile.TemporaryDirectory() as folder:
-            path: Path = Path(folder) / "machine.toml"
-            path.write_text(text, encoding="utf-8")
-            return load_machine(path)
-
-    # Method `TestMachine.test_project_file()`:
-    def test_project_file(self) -> None:
-        """The project's machine file loads, with its tools."""
-        mill: SCMachine = load_machine(MACHINE_FILE)
+    # Method `TestMachine.test_example_shop()`:
+    def test_example_shop(self) -> None:
+        """The example shop's mill, with its tools."""
+        mill: SCMachine = cnc_machine(read(SHOP_FILE), "Shop mill")
         self.assertEqual(mill.change_words(4), ["T04"])
         self.assertEqual(mill.tool(1).kind, "end mill")
         self.assertEqual(mill.drill_for(mill.tool(1)).number, 4)
         self.assertAlmostEqual(mill.through_overcut, 0.1)
         self.assertEqual(mill.tool(5).angle, 90.0)
         self.assertEqual(mill.tool(6).radius, 0.0625)
-
-    # Method `TestMachine.test_bad_files()`:
-    def test_bad_files(self) -> None:
-        """Bad files say what is wrong, and where."""
-        good: str = MACHINE_FILE.read_text(encoding="utf-8")
-        cases: list[tuple[str, str]] = [
-            ("not = [valid", "machine.toml"),
-            ("[[tools]]\nnumber = 1\n", "needs a"),
-            (good.replace('z_safe = "1 in"', 'z_safe = "high"'), "z_safe"),
-            (good.replace('z_safe = "1 in"', "z_safe = 1.0"), "needs a unit"),
-            (
-                good.replace('feed = "12 in/min"', 'feed = "12 in"'),
-                "wrong unit",
-            ),
-            (
-                good.replace('diameter = "0.25 in"', 'diameter = "0.25 ipm"'),
-                "wrong unit",
-            ),
-            (
-                good.replace('stepover = "90 %"', 'stepover = "0.9"'),
-                "stepover",
-            ),
-            (
-                good.replace('drill_cycle = "G83"', 'drill_cycle = "G99"'),
-                "drill",
-            ),
-            (good.replace("number = 2", "number = 1"), "not all different"),
-            (good.replace('rpm = "1200 rpm"', 'rpm = "0 rpm"', 1), "rpm"),
-            (good.replace('kind = "drill"', 'kind = "tap"', 1), "kind"),
-            (good.replace('name = "Shop mill"\n', ""), "name is missing"),
-        ]
-        text: str
-        expected: str
-        for text, expected in cases:
-            with self.assertRaisesRegex(ValueError, expected):
-                self.load(text)
-
-    # Method `TestMachine.test_units()`:
-    def test_units(self) -> None:
-        """Metric and other units are turned into inches."""
-        good: str = MACHINE_FILE.read_text(encoding="utf-8")
-        mill: SCMachine = self.load(
-            good.replace('diameter = "0.25 in"', 'diameter = "6.35 mm"')
-            .replace('feed = "12 in/min"', 'feed = "0.2 in/s"')
-            .replace('z_safe = "1 in"', 'z_safe = "2.54 cm"')
-        )
-        self.assertAlmostEqual(mill.tool(1).diameter, 0.25)
-        self.assertAlmostEqual(mill.tool(1).feed, 12.0)
-        self.assertAlmostEqual(mill.z_safe, 1.0)
-        self.assertAlmostEqual(mill.stepover, 0.9)
-        self.assertAlmostEqual(mill.ramp_angle, 3.0)
+        self.assertEqual(mill.named("1/8 in cobalt jobber drill").number, 2)
+        with self.assertRaises(KeyError):
+            mill.tool(3)
+        with self.assertRaises(KeyError):
+            mill.named("no such tool")
 
     # Method `TestMachine.test_preferences()`:
     def test_preferences(self) -> None:

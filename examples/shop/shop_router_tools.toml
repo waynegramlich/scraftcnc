@@ -1,0 +1,8 @@
+# The tools loaded in the shop router.
+name = "Shop router tools"
+kind = "tool_table"
+language = "English"
+version = "0.0.1"
+
+[tools]
+1 = "1/2 in 2 flute carbide end mill"

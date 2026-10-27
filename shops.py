@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import bisect
+import datetime
 import json
 import re
 import sys
@@ -36,9 +37,9 @@ import textwrap
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TypeAlias
+from typing import TypeAlias, cast
 
-from scmachine import ANGLE, FEED, FRACTION, LENGTH, MEASUREMENT, SPEED
+from scmachine import DrillCycle, SCMachine, SCTool, ToolKind
 
 # The format version that this module reads and describes.
 FORMAT_VERSION: str = "0.0.1"
@@ -46,10 +47,39 @@ FORMAT_VERSION: str = "0.0.1"
 # Where a value is in a file: its keys, and its indices in lists.
 KeyPath: TypeAlias = tuple[str | int, ...]
 
-# Units that `scmachine` does not have yet, in inches per second
-# squared and degrees per minute.
+# Every measurement in a shop file has a unit, such as "0.25 in" or
+# "6 mm": these are the units each kind of measurement takes, and what
+# each is in the units used inside (inches, inches per minute,
+# revolutions per minute, degrees, and fractions).
+LENGTH: dict[str, float] = {
+    "in": 1.0,
+    "inch": 1.0,
+    "inches": 1.0,
+    "ft": 12.0,
+    "mm": 1.0 / 25.4,
+    "cm": 10.0 / 25.4,
+}
+FEED: dict[str, float] = {
+    "in/min": 1.0,
+    "ipm": 1.0,
+    "in/s": 60.0,
+    "mm/min": 1.0 / 25.4,
+    "mm/s": 60.0 / 25.4,
+}
+SPEED: dict[str, float] = {"rpm": 1.0}
+ANGLE: dict[str, float] = {"deg": 1.0}
+FRACTION: dict[str, float] = {"%": 0.01}
+
+# Accelerations, in inches per second squared, and rotary feeds, in
+# degrees per minute.
 ACCELERATION: dict[str, float] = {"in/s^2": 1.0, "mm/s^2": 1.0 / 25.4}
 ROTARY_FEED: dict[str, float] = {"deg/min": 1.0, "deg/s": 60.0}
+
+# Money: a few common currencies, though any ISO 4217 code (three
+# capital letters) is taken.  Amounts are never converted between
+# currencies.
+MONEY: dict[str, float] = {"USD": 1.0, "CAD": 1.0, "EUR": 1.0, "GBP": 1.0}
+CURRENCY: re.Pattern[str] = re.compile(r"[A-Z]{3}")
 
 # The kinds of measurement, as `SCField.form` names them.
 UNITS: dict[str, dict[str, float]] = {
@@ -60,6 +90,7 @@ UNITS: dict[str, dict[str, float]] = {
     "angle": ANGLE,
     "rotary_feed": ROTARY_FEED,
     "fraction": FRACTION,
+    "money": MONEY,
 }
 
 # The forms of value that are not measurements.
@@ -69,13 +100,23 @@ FORMS: tuple[str, ...] = (
     "boolean",
     "choice",
     "version",
+    "date",
     "table",
     "list",
-    "tool_table",
+    "t_numbers",
 )
 
 # The widest line in `Shops.md`.
 MARKDOWN_WIDTH: int = 79
+
+# A measurement: a number, then its unit.  The number may be a
+# decimal (`0.5`, `1e-3`), a fraction (`1/2`), or a whole number and a
+# fraction joined by `-` (`1-1/2`), as catalogs in inches write them.
+MEASUREMENT: re.Pattern[str] = re.compile(
+    r"\s*([-+]?)"
+    r"(?:(?:(\d+)-)?(\d+)/(\d+)|((?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?))"
+    r"\s*(\S+)\s*"
+)
 
 # A bare TOML key, and a version.
 BARE_KEY: re.Pattern[str] = re.compile(r"[A-Za-z0-9_-]+")
@@ -93,14 +134,18 @@ class SCField:
       What its value is: a kind of measurement (a key of `UNITS`), or
       one of `FORMS`: `"table"` and `"list"` (of tables) take the kind
       named by `of`; `"choice"` is a string from `choices`;
-      `"tool_table"` maps T numbers to tool names.
+      `"t_numbers"` maps T numbers to tool names.
     * `meaning` (`str`): What it is, in Markdown.
     * `required` (`bool`): True if it must be there.
     * `of` (`str`): The kind of a `"table"` or `"list"`.
-    * `choices` (`tuple[str, ...]`): The strings a `"choice"` takes.
+    * `choices` (`tuple[str, ...]`):
+      The strings a `"choice"` takes, whatever their capitals.
+    * `open` (`bool`):
+      True if `choices` are only the common ones, so that a string
+      ending in `!` is taken without a check (`"HSK63!"`).
 
     Constructor:
-    * `SCField(key, form, meaning, required, of, choices)`
+    * `SCField(key, form, meaning, required, of, choices, open)`
     """
 
     # Constructor arguments:
@@ -110,6 +155,7 @@ class SCField:
     required: bool = field(init=True, default=False)
     of: str = field(init=True, default="")
     choices: tuple[str, ...] = field(init=True, default=())
+    open: bool = field(init=True, default=False)
 
     # Method `SCField.__post_init__()`:
     def __post_init__(self) -> None:
@@ -139,7 +185,9 @@ class SCField:
             shown = f"list of `{self.of}`"
         elif self.form == "choice":
             shown = "one of " + ", ".join(f"`{c}`" for c in self.choices)
-        elif self.form == "tool_table":
+            if self.open:
+                shown += ", or another ending in `!`"
+        elif self.form == "t_numbers":
             shown = "T number to tool name"
         return shown
 
@@ -190,13 +238,169 @@ HEADER: tuple[SCField, ...] = (
     ),
 )
 
+# The common spindle interfaces (a router's spindle may take ER
+# collets itself), collets and tool materials.
+INTERFACES: tuple[str, ...] = (
+    "R8",
+    "BT30",
+    "BT40",
+    "BT50",
+    "CAT30",
+    "CAT40",
+    "CAT50",
+    "NMTB30",
+    "NMTB40",
+    "HSK63A",
+    "ER11",
+    "ER16",
+    "ER20",
+    "ER25",
+    "ER32",
+    "ER40",
+)
+COLLETS: tuple[str, ...] = (
+    "ER8",
+    "ER11",
+    "ER16",
+    "ER20",
+    "ER25",
+    "ER32",
+    "ER40",
+    "ER50",
+    "R8",
+    "5C",
+)
+MATERIALS: tuple[str, ...] = (
+    "HSS",
+    "cobalt",
+    "carbide",
+    "cermet",
+    "ceramic",
+    "CBN",
+    "PCD",
+)
+
+# The kinds of tools, which a machine's `tool_table` names.
+TOOL_KINDS: tuple[str, ...] = (
+    "end_mill",
+    "drill",
+    "chamfer_mill",
+    "corner_rounding_mill",
+    "double_angle_cutter",
+)
+
+
+# Function `_tool_fields()`:
+def _tool_fields(*special: SCField) -> tuple[SCField, ...]:
+    """Return the keys of a kind of tool.
+
+    Arguments:
+    * `special` (`SCField`): The keys only this kind of tool has.
+
+    Returns:
+    * (`tuple[SCField, ...]`):
+      `special` (its sizes first), then what every kind of tool has:
+      its shank and length, what it is made of, where it came from,
+      and how to cut with it.
+    """
+    return (
+        SCField("description", "string", "What it is, in a few words."),
+        *special,
+        SCField("shank", "length", "The shank diameter, if not `diameter`."),
+        SCField("overall_length", "length", "Its whole length (OAL).", True),
+        SCField(
+            "material",
+            "choice",
+            "What it is made of.",
+            required=True,
+            choices=MATERIALS,
+            open=True,
+        ),
+        SCField("grade", "string", "The grade (`M2`, `M42`, ...)."),
+        SCField("coating", "string", "Its coating or finish (`AlTiN`, ...)."),
+        SCField("manufacturer", "string", "Who made it."),
+        SCField("manufacturer_pn", "string", "The maker's part number."),
+        SCField("vendor", "string", "Who sold it."),
+        SCField("vendor_pn", "string", "The vendor's part number."),
+        SCField("cost", "money", "What it cost."),
+        SCField("acquired", "date", "When it was bought (`2026-10-27`)."),
+        SCField("rpm", "speed", "The spindle speed to cut at."),
+        SCField("feed", "feed", "The feed to cut at."),
+        SCField("plunge", "feed", "The feed going straight down."),
+    )
+
+
+# Function `_size_fields()`:
+def _size_fields(*, length_of_cut: bool = True) -> tuple[SCField, ...]:
+    """Return the `diameter` and `length_of_cut` keys of a tool.
+
+    Arguments:
+    * `length_of_cut` (`bool`): False to leave out `length_of_cut`.
+
+    Returns:
+    * (`tuple[SCField, ...]`): The keys.
+    """
+    diameter: SCField = SCField(
+        "diameter", "length", "The cutting diameter.", True
+    )
+    if not length_of_cut:
+        return (diameter,)
+    return (
+        diameter,
+        SCField("length_of_cut", "length", "How deep it can cut (LOC).", True),
+    )
+
+
+# Function `_collet_field()`:
+def _collet_field(*, required: bool) -> SCField:
+    """Return the `collet` key of a kind of tool.
+
+    Arguments:
+    * `required` (`bool`):
+      True if the tool is always held in a collet (a drill).
+
+    Returns:
+    * (`SCField`): The key.
+    """
+    return SCField(
+        "collet",
+        "choice",
+        "The collet it is held in, if it is.",
+        required=required,
+        choices=COLLETS,
+        open=True,
+    )
+
+
 # Every kind, in the order `Shops.md` describes them.
 KINDS: dict[str, SCKind] = {
     kind.kind: kind
     for kind in (
         SCKind(
+            "shops",
+            "Every shop: the top of a description.  Each shop may be "
+            "written in place, or kept in its own file.",
+            (
+                SCField(
+                    "shops",
+                    "list",
+                    "The shops.",
+                    required=True,
+                    of="shop",
+                ),
+            ),
+            True,
+            """\
+name = "Example shops"
+kind = "shops"
+language = "English"
+version = "0.0.1"
+shops = ["@home_shop.toml"]
+""",
+        ),
+        SCKind(
             "shop",
-            "A shop: its name, where it is, and its machines.",
+            "A shop: its name, where it is, its machines and its tools.",
             (
                 SCField(
                     "location", "table", "Where the shop is.", of="location"
@@ -208,6 +412,12 @@ KINDS: dict[str, SCKind] = {
                     required=True,
                     of="machine",
                 ),
+                SCField(
+                    "tools",
+                    "list",
+                    "The tools on hand, shared by the machines.",
+                    of="tools",
+                ),
             ),
             True,
             """\
@@ -216,6 +426,7 @@ kind = "shop"
 language = "English"
 version = "0.0.1"
 machines = ["@shop_mill.toml"]
+tools = ["@tools.toml"]
 
 [location]
 latitude = "37.37066 deg"
@@ -281,8 +492,15 @@ address = "700 All American Way, Sunnyvale, CA 94086"
                 ),
                 SCField(
                     "tool_table",
-                    "tool_table",
-                    "The tools loaded, by T number (1 to 99).",
+                    "table",
+                    "The tools loaded.",
+                    of="tool_table",
+                ),
+                SCField(
+                    "preferences",
+                    "table",
+                    "How it is run.",
+                    of="preferences",
                 ),
             ),
             True,
@@ -293,10 +511,10 @@ language = "English"
 version = "0.0.1"
 machine = "mill"
 controller = "@linuxcnc.toml"
-tool_table = { 1 = "1/4 inch 2 flute end mill", 4 = "15/64 inch drill" }
+tool_table = "@shop_mill_tools.toml"
 
 [spindle]
-taper = "R8"
+interface = "R8"
 max_rpm = "5000 rpm"
 
 [[axes]]
@@ -365,7 +583,14 @@ t_slot_depth = "0.75 in"
             "spindle",
             "The spindle of a machine.",
             (
-                SCField("taper", "string", "Its taper (`R8`, `CAT40`, ...)."),
+                SCField(
+                    "interface",
+                    "choice",
+                    "What its tool holders fit.",
+                    required=True,
+                    choices=INTERFACES,
+                    open=True,
+                ),
                 SCField("min_rpm", "speed", "Its slowest speed."),
                 SCField("max_rpm", "speed", "Its fastest speed.", True),
                 SCField("reversible", "boolean", "True if it runs backwards."),
@@ -375,7 +600,7 @@ t_slot_depth = "0.75 in"
             ),
             False,
             """\
-taper = "R8"
+interface = "R8"
 min_rpm = "100 rpm"
 max_rpm = "5000 rpm"
 reversible = true
@@ -413,6 +638,352 @@ language = "English"
 version = "0.0.1"
 post_processor = "linuxcnc"
 tool_change = "T{number:02d} M6"
+""",
+        ),
+        SCKind(
+            "preferences",
+            "How a machine is run: heights, speeds and how pockets and "
+            "holes are cut.  (These are kept with the machine for now; "
+            "some may belong to the shop or to the job.)",
+            (
+                SCField(
+                    "z_safe",
+                    "length",
+                    "Above all of the hold down tooling.",
+                    True,
+                ),
+                SCField(
+                    "clearance",
+                    "length",
+                    "Rapids down stop this far above the work.",
+                    True,
+                ),
+                SCField(
+                    "tool_change_z",
+                    "length",
+                    "Rise here before every tool change.",
+                    True,
+                ),
+                SCField(
+                    "rapid_speed",
+                    "feed",
+                    "The rapid speed, for estimating run times.",
+                    True,
+                ),
+                SCField(
+                    "drill_cycle",
+                    "choice",
+                    "How holes are drilled (`moves`: no canned cycle).",
+                    required=True,
+                    choices=("G81", "G73", "G83", "moves"),
+                ),
+                SCField(
+                    "through_overcut",
+                    "fraction",
+                    "How much deeper a cut through the part goes, of its "
+                    "thickness.",
+                    True,
+                ),
+                SCField(
+                    "stepover",
+                    "fraction",
+                    "How far apart pocket rings are, of the tool's diameter.",
+                    True,
+                ),
+                SCField(
+                    "ramp_angle",
+                    "angle",
+                    "The steepest ramp into a pocket that is not drilled.",
+                    True,
+                ),
+                SCField(
+                    "finish_allowance",
+                    "length",
+                    "What a roughing end mill leaves on walls and floors "
+                    "for the end mill that finishes them.",
+                    True,
+                ),
+            ),
+            False,
+            """\
+z_safe = "1 in"
+clearance = "0.05 in"
+tool_change_z = "2 in"
+rapid_speed = "60 in/min"
+drill_cycle = "G83"
+through_overcut = "10 %"
+stepover = "90 %"
+ramp_angle = "3 deg"
+finish_allowance = "0.05 in"
+""",
+        ),
+        SCKind(
+            "tool_table",
+            "The tools loaded in one machine: T numbers (1 to 99) and "
+            "the names of the tools in them.  Each is unique: no T "
+            "number twice, and no tool twice, here or in any other "
+            "machine's tool table (a tool is in one machine at a time). "
+            " Tools are loaded and unloaded far more often than a "
+            "machine changes, so the tool table is usually a file of "
+            "its own.",
+            (
+                SCField(
+                    "tools",
+                    "t_numbers",
+                    "The tools, by T number.",
+                    required=True,
+                ),
+            ),
+            True,
+            """\
+name = "Shop mill tools"
+kind = "tool_table"
+language = "English"
+version = "0.0.1"
+
+[tools]
+1 = "1/4 in 2 flute carbide end mill"
+4 = "15/64 in HSS jobber drill"
+""",
+        ),
+        SCKind(
+            "tools",
+            "Tools: the bits that go in a holder in the spindle.  How "
+            "to cut with each (`rpm`, `feed`, `plunge`) is given with "
+            "the tool for now, until it can be worked out from the "
+            "material being cut.  Only "
+            "the bits are described, not their holders (a drill goes in "
+            "a collet; an end mill in a collet or an end mill holder of "
+            "its shank's size).  Tools are shared by machines, so they "
+            "are not listed by machine: a machine's `tool_table` names "
+            "the ones it has loaded, and every tool's `name` is unique "
+            "among all the tools (T numbers are only unique within one "
+            "machine).",
+            (
+                SCField("end_mills", "list", "The end mills.", of="end_mill"),
+                SCField("drills", "list", "The drills.", of="drill"),
+                SCField(
+                    "chamfer_mills",
+                    "list",
+                    "The chamfer mills.",
+                    of="chamfer_mill",
+                ),
+                SCField(
+                    "corner_rounding_mills",
+                    "list",
+                    "The corner rounding mills.",
+                    of="corner_rounding_mill",
+                ),
+                SCField(
+                    "double_angle_cutters",
+                    "list",
+                    "The double angle shank cutters.",
+                    of="double_angle_cutter",
+                ),
+            ),
+            True,
+            """\
+name = "Tools"
+kind = "tools"
+language = "English"
+version = "0.0.1"
+
+[[end_mills]]
+name = "1/4 in 2 flute carbide end mill"
+diameter = "1/4 in"
+length_of_cut = "3/4 in"
+overall_length = "2-1/2 in"
+flutes = 2
+end = "square"
+material = "carbide"
+
+[[drills]]
+name = "15/64 in HSS jobber drill"
+diameter = "15/64 in"
+length_of_cut = "2-5/8 in"
+overall_length = "3-7/8 in"
+point_angle = "118 deg"
+collet = "ER32"
+material = "HSS"
+""",
+        ),
+        SCKind(
+            "end_mill",
+            "An end mill: square, ball or bull nose (a square end with "
+            "rounded corners), and perhaps a rougher.",
+            _tool_fields(
+                *_size_fields(),
+                SCField("flutes", "integer", "How many flutes.", True),
+                SCField(
+                    "end",
+                    "choice",
+                    "The shape of its end.",
+                    required=True,
+                    choices=("square", "ball", "bull_nose"),
+                ),
+                SCField("corner_radius", "length", "A bull nose's corners."),
+                SCField(
+                    "center_cutting",
+                    "boolean",
+                    "True if it can plunge straight down.",
+                ),
+                SCField(
+                    "roughing",
+                    "boolean",
+                    "True for a rougher (serrated flutes).",
+                ),
+                _collet_field(required=False),
+            ),
+            True,
+            """\
+name = "1/2 in 2 flute carbide end mill"
+diameter = "1/2 in"
+length_of_cut = "1 in"
+overall_length = "3 in"
+flutes = 2
+end = "square"
+center_cutting = true
+material = "carbide"
+coating = "uncoated"
+vendor = "Shars Tool"
+vendor_pn = "415-0998"
+cost = "47.02 USD"
+acquired = 2026-10-27
+""",
+        ),
+        SCKind(
+            "drill",
+            "A twist drill.",
+            _tool_fields(
+                *_size_fields(),
+                SCField(
+                    "flutes", "integer", "How many flutes (2 if not given)."
+                ),
+                SCField("point_angle", "angle", "The included angle.", True),
+                _collet_field(required=True),
+                SCField(
+                    "split_point", "boolean", "True if it has a split point."
+                ),
+                SCField(
+                    "peck", "length", "How deep each peck goes (0 for none)."
+                ),
+            ),
+            True,
+            """\
+name = "1/8 in cobalt jobber drill"
+diameter = "1/8 in"
+length_of_cut = "1-5/8 in"
+overall_length = "2-3/4 in"
+point_angle = "135 deg"
+split_point = true
+collet = "ER32"
+material = "cobalt"
+grade = "M42"
+coating = "straw"
+vendor = "Shars Tool"
+vendor_pn = "415-8998"
+cost = "2.67 USD"
+""",
+        ),
+        SCKind(
+            "chamfer_mill",
+            "A chamfer mill (a V-bit), which bevels top edges.",
+            _tool_fields(
+                *_size_fields(length_of_cut=False),
+                SCField(
+                    "tip_diameter", "length", "The diameter at its tip.", True
+                ),
+                SCField(
+                    "angle",
+                    "angle",
+                    "The included angle (90 deg makes 45 deg bevels).",
+                    True,
+                ),
+                SCField("flutes", "integer", "How many flutes."),
+                _collet_field(required=False),
+            ),
+            True,
+            """\
+name = "1/8 in 90 deg carbide chamfer mill"
+diameter = "1/8 in"
+tip_diameter = "0.020 in"
+angle = "90 deg"
+flutes = 2
+overall_length = "1-1/2 in"
+material = "carbide"
+vendor = "Shars Tool"
+vendor_pn = "416-3509"
+""",
+        ),
+        SCKind(
+            "corner_rounding_mill",
+            "A corner rounding mill, which rounds top edges over to its "
+            "radius.  Its tip (a pilot) rides along the wall below.",
+            _tool_fields(
+                SCField(
+                    "radius", "length", "The radius it rounds edges to.", True
+                ),
+                SCField(
+                    "tip_diameter", "length", "The diameter at its tip.", True
+                ),
+                SCField("flutes", "integer", "How many flutes."),
+                _collet_field(required=False),
+            ),
+            True,
+            """\
+name = "1/16 in radius carbide corner rounding mill"
+radius = "0.0625 in"
+tip_diameter = "0.0469 in"
+flutes = 2
+shank = "3/16 in"
+overall_length = "2 in"
+material = "carbide"
+vendor = "Shars Tool"
+vendor_pn = "417-1112"
+""",
+        ),
+        SCKind(
+            "double_angle_cutter",
+            "A pointed double angle shank cutter: a cone above and a "
+            "cone below its widest point, on a thin neck, so it can "
+            "chamfer bottom edges (back chamfering) as well as top ones.",
+            _tool_fields(
+                *_size_fields(length_of_cut=False),
+                SCField(
+                    "angle",
+                    "angle",
+                    "The included angle of the two cones together.",
+                    True,
+                ),
+                SCField(
+                    "width",
+                    "length",
+                    "The height of the cutter (L2), point to point.",
+                    True,
+                ),
+                SCField("neck_diameter", "length", "The neck's diameter."),
+                SCField(
+                    "neck_length",
+                    "length",
+                    "How far below the shank the cutter reaches (L3).",
+                ),
+                SCField("flutes", "integer", "How many flutes."),
+                _collet_field(required=False),
+            ),
+            True,
+            """\
+name = "1/4 in 90 deg double angle shank cutter"
+diameter = "1/4 in"
+angle = "90 deg"
+width = "0.125 in"
+neck_diameter = "1/8 in"
+neck_length = "0.625 in"
+flutes = 4
+shank = "1/4 in"
+overall_length = "2-1/2 in"
+material = "carbide"
+vendor = "Shars Tool"
+vendor_pn = "436-4296"
 """,
         ),
     )
@@ -487,6 +1058,9 @@ Every measurement is a string of a number and its unit (`"0.25 in"`,
 wrong kind (a feed where a length belongs).  Plain counts (the number
 of T-slots) and yes/no facts (`true`/`false`) have no unit.
 
+The number may be a decimal (`"0.5 in"`), a fraction (`"1/2 in"`), or
+a whole number and a fraction joined by `-` (`"1-1/2 in"`).
+
 {units}
 
 ### Keys and Problems
@@ -494,6 +1068,10 @@ of T-slots) and yes/no facts (`true`/`false`) have no unit.
 * Keys are `snake_case`.
 * An unknown key is refused (a misspelled key is a mistake, not a
   comment).
+* A choice (`"one of ..."` in the tables) may be written in any
+  capitals (`"r8"` is `"R8"`).  Where a table says "or another ending
+  in `!`", the list is only the common ones, and a value ending in
+  `!` is taken without a check (`interface = "HSK100A!"`).
 * Every problem is reported with its file, line and key, e.g.
   `shop_mill.toml:12: spindle.max_rpm: "5000" needs a unit`.  Every
   problem found is reported, not only the first.
@@ -800,6 +1378,53 @@ def shown_path(path: KeyPath) -> str:
     return shown
 
 
+# Function `_measurement()`:
+def _measurement(value: object, units: dict[str, float]) -> tuple[float, str]:
+    """Return a measurement's value, or what is wrong with it.
+
+    Arguments:
+    * `value` (`object`): The value, from TOML.
+    * `units` (`dict[str, float]`): The units it may be in.
+
+    Returns:
+    * (`tuple[float, str]`):
+      Its value in the units used inside (as for `scmachine`) and
+      `""`, or `0.0` and the problem.
+    """
+    # It must be a string, of a number and a unit.
+    allowed: str = ", ".join(units)
+    if units is MONEY:
+        allowed += ", or any ISO 4217 code"
+    if not isinstance(value, str):
+        return 0.0, (
+            f"{value!r} needs a unit, as a string such as "
+            f'"{value} {next(iter(units))}" (it may be in {allowed})'
+        )
+    found: re.Match[str] | None = MEASUREMENT.fullmatch(value)
+    if found is None:
+        return 0.0, f"{value!r} is not a number and a unit"
+    sign, whole, numerator, denominator, decimal, unit = found.groups()
+    if units is MONEY and CURRENCY.fullmatch(unit):
+        units = {unit: 1.0}
+    if unit not in units:
+        return 0.0, (
+            f"{value!r}: {unit!r} is the wrong unit here "
+            f"(it may be in {allowed})"
+        )
+
+    # Work out the number: a decimal, or a fraction.
+    number: float
+    if decimal is not None:
+        number = float(decimal)
+    elif int(denominator) == 0:
+        return 0.0, f"{value!r} divides by zero"
+    else:
+        number = int(whole or "0") + int(numerator) / int(denominator)
+    if sign == "-":
+        number = -number
+    return number * units[unit], ""
+
+
 # Function `measurement_problem()`:
 def measurement_problem(value: object, units: dict[str, float]) -> str:
     """Return what is wrong with a measurement, if anything.
@@ -811,21 +1436,29 @@ def measurement_problem(value: object, units: dict[str, float]) -> str:
     Returns:
     * (`str`): The problem, or `""` if there is none.
     """
-    allowed: str = ", ".join(units)
-    if not isinstance(value, str):
-        return (
-            f"{value!r} needs a unit, as a string such as "
-            f'"{value} {next(iter(units))}" (it may be in {allowed})'
-        )
-    found: re.Match[str] | None = MEASUREMENT.fullmatch(value)
-    if found is None:
-        return f"{value!r} is not a number and a unit"
-    if found.group(2) not in units:
-        return (
-            f"{value!r}: {found.group(2)!r} is the wrong unit here "
-            f"(it may be in {allowed})"
-        )
-    return ""
+    return _measurement(value, units)[1]
+
+
+# Function `measure()`:
+def measure(value: object, units: dict[str, float]) -> float:
+    """Return a measurement in the units used inside.
+
+    Arguments:
+    * `value` (`object`): The value (such as `"1-1/2 in"`).
+    * `units` (`dict[str, float]`): The units it may be in.
+
+    Returns:
+    * (`float`): Its value (inches, inches per minute, ...).
+
+    Raises:
+    * `ValueError`: If it is not a measurement in one of `units`.
+    """
+    number: float
+    problem: str
+    number, problem = _measurement(value, units)
+    if problem:
+        raise ValueError(problem)
+    return number
 
 
 # Class `_Source`:
@@ -859,6 +1492,12 @@ class _Reader:
     * `reading` (`list[Path]`):
       The files being read, each named by the one before it, to find
       loops.
+    * `machine_tables` (`list[tuple[str, _Source, KeyPath, object]]`):
+      Every machine's name, where its `tool_table` is, and the table.
+    * `tool_uses` (`list[tuple[_Source, KeyPath, str]]`):
+      Every tool named in a `tool_table`: where, and its name.
+    * `tools` (`dict[str, tuple[_Source, KeyPath]]`):
+      Every tool read, by name: where it is.
 
     Constructor:
     * `_Reader(directory)`
@@ -872,7 +1511,16 @@ class _Reader:
         init=False, default_factory=dict
     )
     problems: list[str] = field(init=False, default_factory=list)
+    machine_tables: list[tuple[str, _Source, KeyPath, object]] = field(
+        init=False, default_factory=list
+    )
     reading: list[Path] = field(init=False, default_factory=list)
+    tool_uses: list[tuple[_Source, KeyPath, str]] = field(
+        init=False, default_factory=list
+    )
+    tools: dict[str, tuple[_Source, KeyPath]] = field(
+        init=False, default_factory=dict
+    )
 
     # Method `_Reader.problem()`:
     def problem(self, source: _Source, path: KeyPath, message: str) -> None:
@@ -1056,7 +1704,46 @@ class _Reader:
             self.problem(
                 source, path + ("kind",), f"a `{kind.kind}` belongs here"
             )
+
+        # Note where each tool is, so `tool_table`s can name it, and
+        # each machine's tool table, which no other machine may share.
+        if kind.kind in TOOL_KINDS:
+            self.name_tool(value.get("name"), path, source)
+        elif kind.kind == "machine" and "tool_table" in contents:
+            self.machine_tables.append(
+                (
+                    str(contents.get("name")),
+                    source,
+                    path + ("tool_table",),
+                    contents["tool_table"],
+                )
+            )
         return contents
+
+    # Method `_Reader.name_tool()`:
+    def name_tool(self, name: object, path: KeyPath, source: _Source) -> None:
+        """Note where a tool is, refusing a name already taken.
+
+        Arguments:
+        * `name` (`object`): Its `name` (checked already as a string).
+        * `path` (`KeyPath`): Where the tool is.
+        * `source` (`_Source`): The file it is in.
+        """
+        if not isinstance(name, str):
+            return
+        if name in self.tools:
+            other: _Source
+            where: KeyPath
+            other, where = self.tools[name]
+            line: int = locate(other.lines, where)
+            self.problem(
+                source,
+                path + ("name",),
+                f'"{name}" is also the name of the tool at '
+                f"{other.shown}:{line}",
+            )
+        else:
+            self.tools[name] = (source, path)
 
     # Method `_Reader.value()`:
     def value(
@@ -1088,11 +1775,57 @@ class _Reader:
                 for index, item in enumerate(value)
             ]
 
-        # Everything else is checked as it is.
+        # Everything else is checked as it is; the tools a
+        # `tool_table` names are checked once every file is read.
         problem: str = _scalar_problem(value, schema)
         if problem:
             self.problem(source, path, problem)
+        elif form == "choice" and isinstance(value, str):
+            value = _chosen(value, schema)
+        elif form == "t_numbers" and isinstance(value, dict):
+            for number, name in value.items():
+                self.tool_uses.append((source, path + (number,), name))
         return value
+
+    # Method `_Reader.check_tool_uses()`:
+    def check_tool_uses(self) -> None:
+        """Note every tool named in a tool table that was not read.
+
+        A tool is in one machine at a time, so a tool named twice (in
+        one tool table or two), and a tool table file named by two
+        machines, are noted as well.
+        """
+        # Each tool table belongs to one machine.
+        owners: dict[int, str] = {}
+        for machine, source, path, table in self.machine_tables:
+            if id(table) in owners:
+                self.problem(
+                    source,
+                    path,
+                    f'is also the tool table of "{owners[id(table)]}" '
+                    "(a tool is in one machine at a time)",
+                )
+            else:
+                owners[id(table)] = machine
+
+        # Each tool named is a tool, and is named once.
+        first: dict[str, tuple[_Source, KeyPath]] = {}
+        for source, path, name in self.tool_uses:
+            if name not in self.tools:
+                self.problem(source, path, f'no tool named "{name}"')
+            elif name in first:
+                other: _Source
+                where: KeyPath
+                other, where = first[name]
+                self.problem(
+                    source,
+                    path,
+                    f'"{name}" is also loaded at {other.shown}:'
+                    f"{locate(other.lines, where)} (a tool is in one "
+                    "place at a time)",
+                )
+            else:
+                first[name] = (source, path)
 
 
 # Function `_scalar_problem()`:
@@ -1118,9 +1851,32 @@ def _scalar_problem(value: object, schema: SCField) -> str:
     elif form == "boolean":
         if not isinstance(value, bool):
             problem = f"{value!r} is not `true` or `false`"
-    elif form == "tool_table":
-        problem = _tool_table_problem(value)
+    elif form == "date":
+        if not isinstance(value, datetime.date) or isinstance(
+            value, datetime.datetime
+        ):
+            problem = f"{value!r} is not a date (such as 2026-10-27)"
+    elif form == "t_numbers":
+        problem = _t_numbers_problem(value)
     return problem
+
+
+# Function `_chosen()`:
+def _chosen(value: str, schema: SCField) -> str:
+    """Return a choice as `schema` spells it.
+
+    Arguments:
+    * `value` (`str`): The choice, as written.
+    * `schema` (`SCField`): The `"choice"` it must be.
+
+    Returns:
+    * (`str`):
+      The choice as `choices` spells it, `value` itself if it ends in
+      `!` and the list is open, or `""` if it is not a choice.
+    """
+    if schema.open and value.endswith("!"):
+        return value
+    return next((c for c in schema.choices if c.lower() == value.lower()), "")
 
 
 # Function `_string_problem()`:
@@ -1138,10 +1894,14 @@ def _string_problem(value: object, schema: SCField) -> str:
     if not isinstance(value, str):
         return f"{value!r} is not a string"
 
-    # A choice is one of its choices.
-    if schema.form == "choice" and value not in schema.choices:
-        return f'"{value}" is not one of ' + ", ".join(
-            f'"{choice}"' for choice in schema.choices
+    # A choice is one of its choices (whatever its capitals), or ends
+    # in `!` if the list is open.
+    if schema.form == "choice" and not _chosen(value, schema):
+        also: str = ", or another ending in !" if schema.open else ""
+        return (
+            f'"{value}" is not one of '
+            + ", ".join(f'"{choice}"' for choice in schema.choices)
+            + also
         )
 
     # A version has the same major version, and no newer minor one.
@@ -1158,9 +1918,9 @@ def _string_problem(value: object, schema: SCField) -> str:
     return ""
 
 
-# Function `_tool_table_problem()`:
-def _tool_table_problem(value: object) -> str:
-    """Return what is wrong with a tool table.
+# Function `_t_numbers_problem()`:
+def _t_numbers_problem(value: object) -> str:
+    """Return what is wrong with a table of T numbers to tool names.
 
     Arguments:
     * `value` (`object`): The value.
@@ -1170,9 +1930,13 @@ def _tool_table_problem(value: object) -> str:
     """
     if not isinstance(value, dict):
         return f"{value!r} is not a table of T numbers to tool names"
+    numbers: set[int] = set()
     for number, name in value.items():
         if not number.isdigit() or not 1 <= int(number) <= 99:
             return f'"{number}" is not a T number (1 to 99)'
+        if int(number) in numbers:
+            return f"T{int(number)} is given twice"
+        numbers.add(int(number))
         if not isinstance(name, str):
             return f"T{number}: {name!r} is not a tool name"
     return ""
@@ -1181,6 +1945,9 @@ def _tool_table_problem(value: object) -> str:
 # Function `read()`:
 def read(file: Path) -> dict[str, object]:
     """Read and check a Nested TOML description.
+
+    The tools named in tool tables are checked only when the top file
+    is a `shop` or `shops`, which has the tools.
 
     Arguments:
     * `file` (`Path`):
@@ -1195,11 +1962,179 @@ def read(file: Path) -> dict[str, object]:
     Raises:
     * `SCShopError`: With every problem found.
     """
+    # Read every file.
     reader: _Reader = _Reader(file.parent)
     contents: dict[str, object] | None = reader.file(file, file.as_posix())
+
+    # A shop (or shops) has its tools, so its machines' tool tables
+    # can be checked; a machine read alone can not be.
+    if contents is not None and contents.get("kind") in ("shop", "shops"):
+        reader.check_tool_uses()
     if reader.problems or contents is None:
         raise SCShopError(reader.problems)
     return contents
+
+
+# Function `tool_number()`:
+def tool_number(machine: dict[str, object], tool: str) -> int:
+    """Return the T number of a tool loaded in a machine.
+
+    Arguments:
+    * `machine` (`dict[str, object]`): The machine, from `read()`.
+    * `tool` (`str`): The tool's name.
+
+    Returns:
+    * (`int`): Its T number.
+
+    Raises:
+    * `ValueError`: If the tool is not loaded in the machine.
+    """
+    table: object = machine.get("tool_table", {})
+    tools: object = table.get("tools", {}) if isinstance(table, dict) else {}
+    if isinstance(tools, dict):
+        for number, name in tools.items():
+            if name == tool:
+                return int(number)
+    raise ValueError(f'"{tool}" is not loaded in "{machine.get("name")}"')
+
+
+# Function `loaded_in()`:
+def loaded_in(shop: dict[str, object], tool: str) -> tuple[str, int] | None:
+    """Return which machine of a shop has a tool loaded, and where.
+
+    Arguments:
+    * `shop` (`dict[str, object]`): The shop, from `read()`.
+    * `tool` (`str`): The tool's name.
+
+    Returns:
+    * (`tuple[str, int] | None`):
+      The machine's name and the tool's T number, or `None` if no
+      machine has it loaded (a tool is in one machine at a time).
+    """
+    machines: object = shop.get("machines", [])
+    for machine in machines if isinstance(machines, list) else []:
+        try:
+            return str(machine.get("name")), tool_number(machine, tool)
+        except ValueError:
+            continue
+    return None
+
+
+# The CNC kind of each list of tools in a `tools` file.
+CNC_KINDS: dict[str, ToolKind] = {
+    "end_mills": "end mill",
+    "drills": "drill",
+    "chamfer_mills": "chamfer",
+    "corner_rounding_mills": "corner round",
+    "double_angle_cutters": "double angle",
+}
+
+
+# Function `cnc_machine()`:
+def cnc_machine(shop: dict[str, object], name: str) -> SCMachine:
+    """Return a machine of a shop, with its loaded tools, for `SCCNC`.
+
+    Arguments:
+    * `shop` (`dict[str, object]`): The shop, from `read()`.
+    * `name` (`str`): The machine's name.
+
+    Returns:
+    * (`SCMachine`): Its preferences and its tool table.
+
+    Raises:
+    * `ValueError`:
+      If the shop has no such machine, the machine has no
+      `preferences`, or a loaded tool has no `rpm`, `feed` or
+      `plunge`.
+    """
+    # Find the machine and its preferences.
+    machines: list[dict[str, object]] = cast(
+        list[dict[str, object]], shop.get("machines", [])
+    )
+    machine: dict[str, object] | None = next(
+        (m for m in machines if m.get("name") == name), None
+    )
+    if machine is None:
+        raise ValueError(f'no machine named "{name}" in "{shop.get("name")}"')
+    if "preferences" not in machine:
+        raise ValueError(f'"{name}" has no preferences')
+    preferences: dict[str, object] = cast(
+        dict[str, object], machine["preferences"]
+    )
+    controller: dict[str, object] = cast(
+        dict[str, object], machine["controller"]
+    )
+
+    # Every tool of the shop, by name, with its CNC kind.
+    tools: dict[str, tuple[ToolKind, dict[str, object]]] = {}
+    for tools_file in cast(list[dict[str, object]], shop.get("tools", [])):
+        for key, kind in CNC_KINDS.items():
+            for tool in cast(list[dict[str, object]], tools_file.get(key, [])):
+                tools[str(tool["name"])] = (kind, tool)
+
+    # The loaded tools, by T number.
+    table: dict[str, object] = cast(
+        dict[str, object], machine.get("tool_table", {"tools": {}})
+    )
+    loaded: dict[str, str] = cast(dict[str, str], table["tools"])
+    return SCMachine(
+        name=name,
+        z_safe=measure(preferences["z_safe"], LENGTH),
+        clearance=measure(preferences["clearance"], LENGTH),
+        tool_change_z=measure(preferences["tool_change_z"], LENGTH),
+        tool_change=str(controller.get("tool_change", "T{number:02d}")),
+        rapid_speed=measure(preferences["rapid_speed"], FEED),
+        drill_cycle=cast(DrillCycle, preferences["drill_cycle"]),
+        through_overcut=measure(preferences["through_overcut"], FRACTION),
+        stepover=measure(preferences["stepover"], FRACTION),
+        ramp_angle=measure(preferences["ramp_angle"], ANGLE),
+        finish_allowance=measure(preferences["finish_allowance"], LENGTH),
+        tools=tuple(
+            _cnc_tool(int(number), *tools[tool_name])
+            for number, tool_name in loaded.items()
+        ),
+    )
+
+
+# Function `_cnc_tool()`:
+def _cnc_tool(number: int, kind: ToolKind, tool: dict[str, object]) -> SCTool:
+    """Return a loaded tool, for `SCCNC`.
+
+    Arguments:
+    * `number` (`int`): Its T number.
+    * `kind` (`ToolKind`): Its CNC kind (from the list it is in).
+    * `tool` (`dict[str, object]`): The tool, from `read()`.
+
+    Returns:
+    * (`SCTool`): The tool.
+
+    Raises:
+    * `ValueError`: If it has no `rpm`, `feed` or `plunge`.
+    """
+    # How to cut with it must be given, for now.
+    name: str = str(tool["name"])
+    for key in ("rpm", "feed", "plunge"):
+        if key not in tool:
+            raise ValueError(f'"{name}" has no `{key}` to cut with')
+
+    # A bit that cuts along an edge is placed by its tip.
+    if kind == "end mill" and tool.get("end") == "ball":
+        kind = "ball end mill"
+    elif kind == "end mill" and tool.get("roughing") is True:
+        kind = "roughing end mill"
+    diameter: object = tool.get("tip_diameter", tool.get("diameter"))
+    return SCTool(
+        number=number,
+        name=name,
+        kind=kind,
+        diameter=measure(diameter, LENGTH),
+        rpm=measure(tool["rpm"], SPEED),
+        feed=measure(tool["feed"], FEED),
+        plunge=measure(tool["plunge"], FEED),
+        peck=measure(tool.get("peck", "0 in"), LENGTH),
+        angle=measure(tool.get("angle", "0 deg"), ANGLE),
+        radius=measure(tool.get("radius", "0 in"), LENGTH),
+    )
 
 
 # Function `_words()`:
@@ -1340,6 +2275,8 @@ def markdown() -> str:
     units: list[list[str]] = [["Measurement", "Units"]]
     for form, table in UNITS.items():
         shown: str = ", ".join(f"`{unit}`" for unit in table)
+        if table is MONEY:
+            shown += ", or any ISO 4217 code"
         units.append([form.replace("_", " "), shown])
     sections: list[str] = [
         INTRODUCTION.format(
@@ -1402,7 +2339,7 @@ def main(arguments: list[str]) -> int:
             status = 1
             continue
         if options.command == "json":
-            print(json.dumps(contents, indent=2))
+            print(json.dumps(contents, indent=2, default=str))
         else:
             print(f"{file.as_posix()}: OK")
     return status

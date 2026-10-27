@@ -36,3 +36,24 @@ Fab's shop model (`../Fab/FabShops.py`, `docs/FabShops.md`):
 Lessons: the bit/library split matches #26 in `T.cuwp`; FreeCAD's
 Path files were the pain point (poorly documented), so our own TOML
 with units is the better base.
+
+## 2026-10-27: Sub-tasks
+
+* `T.si~1.1` (Shop Information) closed: the files, reader, tools,
+  tool tables, preferences and the demo running from the shop.
+* `T.cuwp~2` and `T.or~3` closed; `T.ds` moved to 1 (the user's
+  choice: open work first).
+* New sub-tasks, with draft `Details.md`: `T.m~1.2` Mounting (with
+  bottom chamfers, tooling holes, tabs), `T.s~1.3` Stock,
+  `T.msaf~1.4` Materials Speeds and Feeds (and where preferences
+  belong), `T.tm~1.5` Tool Models.
+
+## 2026-10-27: Renumbered; where things stand
+
+* At the user's choice, history first: `T.or~1` (Original Roadmap)
+  with `T.cuwp~1.1` under it, then `T.ds~2` with `T.si~2.1` (closed)
+  and the Pending `T.m~2.2` Mounting, `T.s~2.3` Stock,
+  `T.msaf~2.4` Materials Speeds and Feeds, `T.tm~2.5` Tool Models.
+* Next session: the user picks which sub-task to open first, and may
+  rewrite the draft `Details.md` files.  The user commits and pushes
+  in git (including the removal of `machine.toml`).

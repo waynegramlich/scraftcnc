@@ -20,9 +20,10 @@ What it does today:
   drops into a hole instead of plunging; or a ramped entry.
 * Top edges beveled with a V-bit or rounded over with a corner
   rounding bit.
-* A machine and tool table in `machine.toml`, where every number
-  carries its unit (`"0.25 in"`, `"12 in/min"`), so inches and
-  millimeters can not be mixed up.
+* A shop described in TOML files (its machines, their tool tables
+  and the tools on hand, taken from a real catalog), where every
+  number carries its unit (`"1/4 in"`, `"12 in/min"`), so inches and
+  millimeters can not be mixed up.  `Shops.md` describes the files.
 * A tool path viewer: a self-contained HTML page that plays the path
   back in 3D.
 
@@ -117,8 +118,11 @@ Each step below needs a little more than the one before it.
   pockets, drilling, edge finishing).
 * `scgeometry.py`: outlines (`SCRoundPoly`, `SCLoop`) and the offsets
   that tool paths are made from.
-* `scmachine.py` and `machine.toml`: the machine, its preferences and
-  its tools.
+* `shops.py`, `Shops.md` and `examples/shop/`: the shop description
+  files, their reader (every problem reported at its file and line),
+  and the example shop that the demonstration uses.
+* `scmachine.py`: the machine and its tools as the G-code side sees
+  them.
 * `scplot.py` and `scplot_template.html`: the tool path viewer, and the
   tool path drawn as SolidCraft sketches.
 * `solidcraftcnc_demo.py`: the demonstration above.

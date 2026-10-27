@@ -1,0 +1,58 @@
+# An example of a 5 by 10 foot CNC router, sharing the mill's
+# controller file.  Its spindle takes ER20 collets itself.
+name = "Shop router"
+kind = "machine"
+language = "English"
+version = "0.0.1"
+machine = "router"
+controller = "@linuxcnc.toml"
+tool_table = "@shop_router_tools.toml"
+
+# How the router is run (guesses: it cuts through into a spoil board).
+[preferences]
+z_safe = "1 in"
+clearance = "0.05 in"
+tool_change_z = "3 in"
+rapid_speed = "600 in/min"
+drill_cycle = "G83"
+through_overcut = "2 %"
+stepover = "40 %"
+ramp_angle = "3 deg"
+finish_allowance = "0.05 in"
+
+[table]
+length = "10 ft"
+width = "5 ft"
+
+[spindle]
+interface = "ER20"
+min_rpm = "8000 rpm"
+max_rpm = "24000 rpm"
+reversible = false
+flood = false
+mist = false
+air = true
+
+[[axes]]
+letter = "X"
+travel = "10 ft"
+max_feed = "600 in/min"
+max_acceleration = "20 in/s^2"
+limit_switches = true
+brake = false
+
+[[axes]]
+letter = "Y"
+travel = "5 ft"
+max_feed = "600 in/min"
+max_acceleration = "20 in/s^2"
+limit_switches = true
+brake = false
+
+[[axes]]
+letter = "Z"
+travel = "6 in"
+max_feed = "300 in/min"
+max_acceleration = "20 in/s^2"
+limit_switches = true
+brake = false

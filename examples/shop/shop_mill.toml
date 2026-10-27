@@ -5,7 +5,19 @@ language = "English"
 version = "0.0.1"
 machine = "mill"
 controller = "@linuxcnc.toml"
-tool_table = { 1 = "1/4 inch 2 flute end mill", 4 = "15/64 inch drill" }
+tool_table = "@shop_mill_tools.toml"
+
+# How the mill is run.
+[preferences]
+z_safe = "1 in"
+clearance = "0.05 in"
+tool_change_z = "2 in"
+rapid_speed = "60 in/min"
+drill_cycle = "G83"
+through_overcut = "10 %"
+stepover = "90 %"
+ramp_angle = "3 deg"
+finish_allowance = "0.05 in"
 
 [table]
 length = "34 in"
@@ -16,7 +28,7 @@ t_slot_width = "0.625 in"
 t_slot_depth = "0.75 in"
 
 [spindle]
-taper = "R8"
+interface = "R8"
 min_rpm = "100 rpm"
 max_rpm = "5000 rpm"
 reversible = true
