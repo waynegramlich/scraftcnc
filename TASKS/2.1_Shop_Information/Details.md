@@ -78,11 +78,16 @@ their places are set here.
   axes, and acceleration (`in/s^2`, `mm/s^2`).  Plain counts (number
   of T-slots) and yes/no facts (`true`/`false`) have none.
 
-### Joining Files with `@` (Agreed)
+### Nested TOML: Joining Files with `@` (Agreed)
 
-A string `"@FILE_NAME"` stands for the contents of that file, in any
-place that takes a table or a list of them, so the same thing can be
-written in place or kept in its own file:
+"Nested TOML" is the name for a description kept in more than one
+`.toml` file.  A string `"@FILE_NAME"` stands for the contents of that
+file, in any place that takes a table or a list of them, so the same
+thing can be written in place or kept in its own file.  The reader
+reads every file and splices them together into one big data
+structure (plain JSON style dictionaries, lists, strings, numbers and
+booleans), which the CNC side digests without knowing how the files
+were split:
 
 ```toml
 # home_shop.toml
@@ -111,8 +116,9 @@ tool_table = { 1 = "1/4 inch 2 flute end mill", 4 = "15/64 inch drill" }
   missing file, a loop (a file that names itself, directly or not),
   and a file whose `kind` does not fit where it is named (e.g. a
   `tools` file in `machines`).
-* Each file is loaded once, however often it is named, so one tools
-  file can serve several machines (or shops).
+* Each file is read once, however often it is named, and its contents
+  are spliced in at every place that names it, so one tools file can
+  serve several machines (or shops).
 * Things refer to each other by name (a tool table names tools), so
   names must be unique within their kind; every problem names the
   file and the entry (e.g. `shop_mill.toml: tool_table.4: no tool
@@ -120,6 +126,22 @@ tool_table = { 1 = "1/4 inch 2 flute end mill", 4 = "15/64 inch drill" }
 * Why `@` in a value rather than an `include = [...]` key: the
   reference sits where its contents belong, so nothing has to say
   where an included file's contents go.
+
+### The Description: `Shops.md` (Agreed)
+
+One file, `Shops.md` (at the top level, beside `README.md`), describes
+the files; the user edits it:
+
+* It covers everything a shop can refer to, not only the shop itself,
+  since a tools or materials file can stand alone and be shared.
+* Its first section describes Nested TOML in general (the four header
+  keys, versions, `@` references, units, unknown keys, error
+  messages), so that it could later move to its own `Nested_TOML.md`.
+* Then one section per `kind`, headed by the `kind` value itself, each
+  listing its keys (type or kind of unit, required or not, meaning)
+  and ending with a short example.
+* It states the format version it describes, the same one the files
+  carry in `version`; a change to the format changes both together.
 
 ## The Code
 
