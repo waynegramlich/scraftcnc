@@ -1,0 +1,16 @@
+{
+  "state": "Open",
+  "created": "2026-10-28T00:03:54Z",
+  "updated": "2026-10-28T00:03:59Z",
+  "history": [
+    {
+      "state": "Pending",
+      "time": "2026-10-28T00:03:54Z"
+    },
+    {
+      "state": "Open",
+      "time": "2026-10-28T00:03:59Z"
+    }
+  ],
+  "tag": "s2"
+}

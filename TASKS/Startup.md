@@ -4,6 +4,8 @@
 @2.3_Stock/Details.md
 @2.4_Materials_Speeds_and_Feeds/Details.md
 @2.5_Tool_Models/Details.md
+@3_Simulation/Details.md
+@3_Simulation/Context.md
 @1_Original_Roadmap/Summary.md
 @1.1_Come_up_with_a_plan/Summary.md
 @2.1_Shop_Information/Summary.md
