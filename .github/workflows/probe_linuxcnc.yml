@@ -1,11 +1,13 @@
 # Install LinuxCNC's simulator (`linuxcnc-uspace`, Debian 13 Trixie)
 # on each kind of GitHub runner with `install_linuxcnc.py --yes`, as
 # a user would (with `--yes` running the commands it would ask the
-# user to run).  The jobs are independent: macOS on Apple Silicon has
-# no hypervisor on GitHub, so it runs Debian in QEMU's software
-# emulation and may take hours; the program prints the time on every
-# line and a progress line every 5 minutes, so a timeout still shows
-# how far it got.
+# user to run), then run the demonstration's G-code in it with
+# `demo_linuxcnc.py --yes` (AXIS on `Xvfb`, which it installs in the
+# target only for runs like these, with no screen).  The jobs are
+# independent: macOS on Apple Silicon has no hypervisor on GitHub, so
+# it runs Debian in QEMU's software emulation, which is slow; the
+# programs print the time on every line, so a timeout still shows
+# how far it got.  `demo_timeout` (minutes) limits the G-code's run.
 name: probe linuxcnc
 
 on:
@@ -22,13 +24,17 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            timeout: 60
+            timeout: 30
+            demo_timeout: 20
           - os: windows-latest
-            timeout: 60
+            timeout: 45
+            demo_timeout: 20
           - os: macos-15-intel
-            timeout: 90
+            timeout: 75
+            demo_timeout: 30
           - os: macos-latest
-            timeout: 355
+            timeout: 240
+            demo_timeout: 180
     runs-on: ${{ matrix.os }}
     timeout-minutes: ${{ matrix.timeout }}
     defaults:
@@ -38,6 +44,13 @@ jobs:
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
+
+      # `scraftpybind` goes next to the project, where its
+      # `scraftpybind.py` link points.
+      - name: Get scraftpybind
+        run: >-
+          git clone --depth 1
+          https://github.com/waynegramlich/scraftpybind.git ../scraftpybind
 
       - uses: actions/setup-python@v6
         with:
@@ -59,6 +72,11 @@ jobs:
 
       - name: install_linuxcnc.py --yes
         run: python -u install_linuxcnc.py --yes
+
+      - name: demo_linuxcnc.py --yes
+        env:
+          DEMO_TIMEOUT: ${{ matrix.demo_timeout }}
+        run: python -u demo_linuxcnc.py --yes --timeout "$DEMO_TIMEOUT"
 
       - name: Keep the QEMU VM's console log
         if: always() && runner.os == 'macOS'

@@ -5,10 +5,13 @@ The SolidCraft side of the simulation (`T.rlg~3.3`), split out of
 polls to listeners.  `SolidCraftDisplay` is such a listener: every
 tool of a shop's machine is modeled (`sctoolmodel`), hidden, in a
 SolidCraft session where `solidcraftcnc_demo.py` has modeled the part,
-and the one in the spindle is shown, following the position; behind
-it, the path it has taken is shown, sketched beforehand
-(`RevealTrace`; unless `--no-trace`).  SolidCraft's coordinates are
-the program's, in millimeters.
+and the one in the spindle is shown, following the position.  Each
+tool's planned path is drawn from the program before the run, as one
+hidden 3D sketch built with one batch (`probe_batch`), and only the
+path of the tool in the spindle is shown, whole (the user's choice,
+2026-10-28; an earlier `RevealTrace` showed the path line by line as
+the tool reached it, but took 48 s to set up).  SolidCraft's
+coordinates are the program's, in millimeters.
 
 It is used through `sim_linuxcnc.py`'s `--solidcraft PORT` (or
 `--solidcraft headless`), whose options `add_arguments()` adds:
@@ -16,7 +19,7 @@ It is used through `sim_linuxcnc.py`'s `--solidcraft PORT` (or
 ```
 distrobox enter lcnc -- linuxcnc lcnc_sim/shop_mill.ini &
 solidcraft --control 8080 &
-./solidcraftcnc_demo.py 8080 > demo.ngc
+./solidcraftcnc_demo.py --no-path 8080 > demo.ngc
 distrobox enter lcnc -- ./sim_linuxcnc.py demo.ngc --solidcraft 8080
 ```
 
@@ -27,14 +30,13 @@ stops the program.  Nothing here needs LinuxCNC, so it runs anywhere
 """
 
 import argparse
-import sys
-import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Protocol
 
-from scplot import Move, command_moves, draw_moves, read_gcode
+from probe_batch import path_steps, send_batch, sketch_steps
+from scplot import Move, command_moves, read_gcode
 from scraftpybind import (
     JSON,
     HeadlessTransport,
@@ -53,9 +55,6 @@ TOOL_COLOR: str = "#e07020"
 
 # A position: X, Y and Z (inches, program coordinates).
 Position = tuple[float, float, float]
-
-# The trace's sketches are named this, then their G-code lines.
-TRACE_NAME: str = "Trace"
 
 # A `solidcraft-cli` extracted from SolidCraft's AppImage, for
 # headless sessions (see `transport()`).
@@ -241,84 +240,71 @@ class ToolRack:  # pylint: disable=too-few-public-methods
             self.tools[number].move_to(position)
 
 
-# Class `RevealTrace`:
-# It keeps which sketches are shown between samples, so it is a class
-# with one method.
-class RevealTrace:  # pylint: disable=too-few-public-methods
-    """The planned path, shown in SolidCraft as the tool reaches it.
-
-    Drawing the path as the tool goes is slow, since every change to a
-    sketch makes SolidCraft (0.25) refresh the whole design, while
-    showing a hidden sketch is cheap (4 to 8 ms beside the demo's plate,
-    by `probe_reveal.py`).  So the path is drawn beforehand, a hidden
-    3D sketch for each G-code line that moves (`TRACE_NAME` and the
-    line: "Trace 27"), and each is shown when LinuxCNC's `motion_line`
-    reaches its line (a long move shows all at once, as it starts).
-    Sketch lines all look alike, so the planned path's own sketches
-    (`scplot.sketch_path()`) would hide it: every sketch is hidden
-    first, and they can be shown again from the browser.  The program
-    is taken to be in inches.
+# Class `PathRack`:
+class PathRack:  # pylint: disable=too-few-public-methods
+    """Each tool's planned path in SolidCraft; the one in use is shown.
 
     Attributes:
-    * `next` (`int`): The index in `sketches` of the first not shown.
-    * `sketches` (`list[tuple[int, str]]`): Each sketch's G-code line
-      (from 1, as `motion_line` counts) and name, in order.
+    * `current` (`int`): The T number whose path is shown (0 for none).
     * `solidcraft` (`SolidCraftPyBind`): The SolidCraft session.
+    * `sketches` (`dict[int, str]`): Each tool's sketch, by T number.
     """
 
-    # Method `RevealTrace.__init__()`:
-    def __init__(self, solidcraft: SolidCraftPyBind, program: Path) -> None:
-        """Hide every sketch, and draw the program's path, hidden.
+    # Method `PathRack.__init__()`:
+    def __init__(
+        self, solidcraft: SolidCraftPyBind, session: Transport, program: Path
+    ) -> None:
+        """Draw each tool's moves as a hidden 3D sketch (one batch each).
 
         Arguments:
-        * `solidcraft` (`SolidCraftPyBind`): The SolidCraft session.
-        * `program` (`Path`): The G-code file (as `SCCNC` writes it).
+        * `solidcraft` (`SolidCraftPyBind`):
+          The SolidCraft session.
+        * `session` (`Transport`): Its transport, for the batches.
+        * `program` (`Path`): The G-code file.
         """
         self.solidcraft: SolidCraftPyBind = solidcraft
-        self.next: int = 0
-        self.sketches: list[tuple[int, str]] = []
-        solidcraft.browser.visibility(visible=False, folder="sketches")
+        self.current: int = 0
+        self.sketches: dict[int, str] = {}
 
-        # Gather the moves by line, and draw each line's moves.
-        lines: dict[int, list[Move]] = {}
-        move: Move
-        for move in command_moves(
+        # Group the moves by the tool in the spindle, in program order.
+        moves: list[Move] = command_moves(
             read_gcode(program.read_text(encoding="utf-8"))
-        ):
-            lines.setdefault(move["line"] + 1, []).append(move)
-        line: int
-        moves: list[Move]
-        for line, moves in lines.items():
-            name: str = f"{TRACE_NAME} {line}"
-            solidcraft.sketch.create(plane="XY", name=name)
-            solidcraft.sketch.options(
-                sketch_3d=True,
-                show_points=False,
-                show_profile=False,
-                show_constraints=False,
-                show_dimensions=False,
-            )
-            draw_moves(solidcraft, moves, MM_PER_INCH)
-            solidcraft.sketch.finish()
-            solidcraft.browser.visibility(visible=False, items=[name])
-            self.sketches.append((line, name))
+        )
+        tools: dict[int, list[Move]] = {}
+        move: Move
+        for move in moves:
+            tools.setdefault(move["tool"], []).append(move)
 
-    # Method `RevealTrace.reveal()`:
-    def reveal(self, line: int) -> None:
-        """Show every sketch of the path up to a line, in one command.
+        # One batch per tool: its whole path, hidden.
+        number: int
+        for number, tool_moves in tools.items():
+            name: str = f"T{number:02d} path"
+            send_batch(
+                session,
+                sketch_steps(
+                    name, path_steps(tool_moves, MM_PER_INCH, False), True
+                ),
+            )
+            self.sketches[number] = name
+
+    # Method `PathRack.show()`:
+    def show(self, number: int) -> None:
+        """Show only the path of the tool in the spindle.
 
         Arguments:
-        * `line` (`int`): The G-code line being run (from 1).
+        * `number` (`int`): The T number of the tool in the spindle.
         """
-        names: list[str] = []
-        while (
-            self.next < len(self.sketches)
-            and self.sketches[self.next][0] <= line
-        ):
-            names.append(self.sketches[self.next][1])
-            self.next += 1
-        if names:
-            self.solidcraft.browser.visibility(visible=True, items=names)
+        if number == self.current:
+            return
+        if self.current in self.sketches:
+            self.solidcraft.browser.visibility(
+                visible=False, items=[self.sketches[self.current]]
+            )
+        self.current = number
+        if number in self.sketches:
+            self.solidcraft.browser.visibility(
+                visible=True, items=[self.sketches[number]]
+            )
 
 
 # Class `SolidCraftDisplay`:
@@ -326,10 +312,10 @@ class SolidCraftDisplay:
     """A `sim_linuxcnc.Listener` that shows the run in SolidCraft.
 
     Attributes:
+    * `paths` (`PathRack`): Each tool's path; the one in the spindle
+      is shown.
     * `rack` (`ToolRack`): The tools, whose one in the spindle
       follows the position.
-    * `trace` (`RevealTrace | None`): The path, shown as the tool
-      reaches it, if any.
     """
 
     # Method `SolidCraftDisplay.__init__()`:
@@ -337,29 +323,19 @@ class SolidCraftDisplay:
         self,
         solidcraft: SolidCraftPyBind,
         tools: dict[int, tuple[str, dict[str, object]]],
-        program: Path | None,
+        paths: PathRack,
     ) -> None:
-        """Model the tools, and draw the program's path (if any).
+        """Model the tools.
 
         Arguments:
         * `solidcraft` (`SolidCraftPyBind`):
           The SolidCraft session.
         * `tools` (`dict[int, tuple[str, dict[str, object]]]`):
           The tools, by T number (from `shops.loaded_tools()`).
-        * `program` (`Path | None`):
-          The G-code file whose path is traced, or `None` for no
-          trace.
+        * `paths` (`PathRack`): Each tool's path, drawn.
         """
         self.rack: ToolRack = ToolRack(solidcraft, tools)
-        self.trace: RevealTrace | None = None
-        if program is not None:
-            start: float = time.monotonic()
-            self.trace = RevealTrace(solidcraft, program)
-            print(
-                f"trace: {len(self.trace.sketches)} sketches in "
-                f"{time.monotonic() - start:.1f} s",
-                flush=True,
-            )
+        self.paths: PathRack = paths
 
     # Method `SolidCraftDisplay.sample()`:
     def sample(self, sample: Sample) -> None:
@@ -372,15 +348,12 @@ class SolidCraftDisplay:
         * `SolidCraftError` or `OSError`: If SolidCraft fails or stops
           answering.
         """
+        self.paths.show(sample.tool)
         self.rack.move_to(sample.tool, sample.position)
-        if self.trace is not None:
-            self.trace.reveal(sample.line)
 
     # Method `SolidCraftDisplay.finish()`:
     def finish(self) -> None:
-        """Show all of the path, when the program is done."""
-        if self.trace is not None:
-            self.trace.reveal(sys.maxsize)
+        """Do nothing: the last tool and its path stay shown."""
 
 
 # Function `add_arguments()`:
@@ -396,11 +369,6 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         default="",
         help="a SolidCraft GUI's control port (or `headless`), "
         "where a tool follows",
-    )
-    parser.add_argument(
-        "--no-trace",
-        action="store_true",
-        help="do not show the path in SolidCraft as the tool goes",
     )
 
 
@@ -438,9 +406,8 @@ def display(
 
     Arguments:
     * `options` (`argparse.Namespace`): The command line, with
-      `solidcraft` and `no_trace` (from `add_arguments()`), and
-      `shop` and `machine`.
-    * `program` (`Path`): The G-code file that runs.
+      `solidcraft` (from `add_arguments()`), `shop` and `machine`.
+    * `program` (`Path`): The G-code file, whose paths are drawn.
 
     Yields:
     * (`SolidCraftDisplay`): The display, to hand the samples to.
@@ -450,8 +417,9 @@ def display(
       there.
     """
     with transport(options.solidcraft) as session:
+        solidcraft: SolidCraftPyBind = SolidCraftPyBind(session)
         yield SolidCraftDisplay(
-            SolidCraftPyBind(session),
+            solidcraft,
             loaded_tools(read(options.shop), options.machine),
-            None if options.no_trace else program,
+            PathRack(solidcraft, session, program),
         )

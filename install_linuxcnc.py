@@ -30,14 +30,16 @@ runners).  Only the packages LinuxCNC needs are installed (`apt-get
 the number installed is printed.  The last steps check that `import
 linuxcnc` works, that the AXIS screen's Python modules load (with no
 display), and that LinuxCNC's realtime layer starts (`halrun`, as a
-user that is not root).  Long commands print the time on every line, and a
-progress line every few minutes:
+user that is not root).  Long commands print the time on every
+line, and a progress line every few minutes.  `demo_linuxcnc.py`
+then runs a program in LinuxCNC in the same target:
 
 ```
 ./install_linuxcnc.py                  # The `lcnc` box, on Linux.
 ./install_linuxcnc.py --box lcnc-test  # Another box.
 ./install_linuxcnc.py --yes            # Run the commands too.
 distrobox enter lcnc -- linuxcnc lcnc_sim/shop_mill.ini
+./demo_linuxcnc.py                     # Run the demo's G-code in it.
 ```
 """
 
@@ -1429,19 +1431,16 @@ def install(options: Options) -> int:
     return 0
 
 
-# Function `main()`:
-def main() -> int:
-    """Install LinuxCNC's simulator, as the command line asks.
+# Function `add_target_arguments()`:
+def add_target_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add the arguments that choose the target and how it is reached.
 
-    Returns:
-    * (`int`): The exit status.
+    `demo_linuxcnc.py` takes the same ones, so that it finds the
+    target this program made.
+
+    Arguments:
+    * `parser` (`argparse.ArgumentParser`): The parser to add them to.
     """
-    # Read the command line.
-    parser = argparse.ArgumentParser(
-        description="Install LinuxCNC's simulator in Debian Trixie: a"
-        " distrobox (Linux), WSL 2 (Windows), or a container or QEMU VM"
-        " (macOS)."
-    )
     parser.add_argument(
         "--box", default="lcnc", help="the box's name (default: lcnc)"
     )
@@ -1460,10 +1459,23 @@ def main() -> int:
         action="store_true",
         help="run the commands the user would be asked to (for tests)",
     )
-    arguments = parser.parse_args()
 
-    # Output that the console can not show (Windows) is replaced,
-    # not an error.
+
+# Function `target_options()`:
+def target_options(arguments: argparse.Namespace) -> Options:
+    """Return the options that `add_target_arguments()` read.
+
+    Output that the console can not show (Windows) is replaced from
+    now on, not an error, and `wsl.exe` is asked to print UTF-8.
+
+    Arguments:
+    * `arguments` (`argparse.Namespace`): The parsed command line.
+
+    Returns:
+    * (`Options`): The options, with the route chosen for this
+      computer unless `--route` named one.
+    """
+    # Output that the console can not show is replaced.
     for stream in (sys.stdout, sys.stderr):
         if isinstance(stream, io.TextIOWrapper):
             stream.reconfigure(errors="replace")
@@ -1478,12 +1490,29 @@ def main() -> int:
         if system == "Darwin"
         else "",
     )
-    options = Options(
+    return Options(
         route=route,
         box=arguments.box,
         distribution=arguments.distribution,
         yes=arguments.yes,
     )
+
+
+# Function `main()`:
+def main() -> int:
+    """Install LinuxCNC's simulator, as the command line asks.
+
+    Returns:
+    * (`int`): The exit status.
+    """
+    # Read the command line.
+    parser = argparse.ArgumentParser(
+        description="Install LinuxCNC's simulator in Debian Trixie: a"
+        " distrobox (Linux), WSL 2 (Windows), or a container or QEMU VM"
+        " (macOS)."
+    )
+    add_target_arguments(parser)
+    options = target_options(parser.parse_args())
 
     # Install it.
     try:

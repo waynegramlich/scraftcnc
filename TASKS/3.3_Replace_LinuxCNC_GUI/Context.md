@@ -561,3 +561,33 @@ numbers below are at `c1dee61`.
 * Left running: the GUI on 8080, design "Batch probe" (plate and
   the 10 tool sketches, shown).  Screenshots in the session
   scratchpad (`shots/after_build.png`, `flash_*.png`, `final.png`).
+
+## 2026-10-28: Decisions on the planned path
+
+* The user: show each tool's whole path (one sketch per tool, built
+  with one `engine.batch` each, as `probe_batch.py` does) in place
+  of `RevealTrace`'s line by line reveal; incremental is for another
+  day, if ever.  Color dropped for now (black is fine), so no sketch
+  color pull request to SolidCraft.
+
+## 2026-10-28: No incremental reveal (the user's decision)
+
+* The user has no further interest in revealing the tool path
+  incrementally.  Each tool's path is precomputed (one sketch per
+  tool, one `engine.batch` each) and shown all at once.  When
+  talking to LinuxCNC, only one path is shown at a time: the path of
+  the tool in the spindle (hide the old one, show the new one at a
+  tool change).  `RevealTrace` is to be replaced by this.
+
+## 2026-10-28: One tool's path at a time, built
+
+* `sim_solidcraft.PathRack`: the program's moves grouped by tool,
+  each a hidden 3D sketch `T04 path` (one batch each, `probe_batch`'s
+  `path_steps()`, `sketch_steps()`, `send_batch()`); `show()` hides
+  the old tool's and shows the new one's at a tool change.
+  `display()` now takes the program file (`sim_linuxcnc.py` passes
+  `program_file()`).  Headless on the demo: 5 sketches in 0.11 s.
+* `solidcraftcnc_demo.py --no-path`: models the plate without its own
+  path sketches, so only `PathRack`'s show.  Not yet run in the GUI.
+* Running the same design twice makes duplicate names (only the first
+  is shown or hidden); start a fresh design.

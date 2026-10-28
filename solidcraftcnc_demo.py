@@ -197,7 +197,7 @@ def demo_islands() -> list[SCRoundPoly]:
 
 
 # Function `model()`:
-def model(where: str, part: Part, cnc: SCCNC) -> int:
+def model(where: str, part: Part, cnc: SCCNC, *, path: bool = True) -> int:
     """Model a plate in SolidCraft, in inches.
 
     Arguments:
@@ -206,6 +206,8 @@ def model(where: str, part: Part, cnc: SCCNC) -> int:
     * `cnc` (`SCCNC`):
       The program, whose tool path is drawn beside the plate (which is
       made see-through so that the path inside it shows).
+    * `path` (`bool`): False to leave the tool path out (as when
+      `sim_solidcraft.py` draws it, one tool at a time).
 
     Returns:
     * (`int`): The number of closed profiles the sketches made (one per
@@ -260,7 +262,8 @@ def model(where: str, part: Part, cnc: SCCNC) -> int:
         _edges(solidcraft, part.edges, top * MM_PER_INCH)
 
         # Draw the tool path, and let it show through the plate.
-        sketch_path(solidcraft, cnc, MM_PER_INCH)
+        if path:
+            sketch_path(solidcraft, cnc, MM_PER_INCH)
         solidcraft.appearance.assign(
             bodies=[outlines[0].name], color="#9fb4c8", opacity=0.35
         )
@@ -422,12 +425,16 @@ def main() -> int:
     # Read the arguments.
     arguments: list[str] = sys.argv[1:]
     plot: Path | None = None
+    path: bool = "--no-path" not in arguments
+    if not path:
+        arguments.remove("--no-path")
     if arguments[:1] == ["--plot"] and len(arguments) >= 2:
         plot = Path(arguments[1])
         arguments = arguments[2:]
     if len(arguments) > 1 or arguments[:1] == ["--plot"]:
         print(
-            f"usage: {sys.argv[0]} [--plot FILE.html] [PORT|headless]",
+            f"usage: {sys.argv[0]} [--plot FILE.html] [--no-path] "
+            "[PORT|headless]",
             file=sys.stderr,
         )
         return 2
@@ -477,7 +484,7 @@ def main() -> int:
         )
         # A SolidCraft that is not there is reported in one line.
         try:
-            profiles: int = model(arguments[0], part, cnc)
+            profiles: int = model(arguments[0], part, cnc, path=path)
         except OSError as error:
             print(f"solidcraftcnc_demo.py: {error}", file=sys.stderr)
             return 1

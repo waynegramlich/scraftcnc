@@ -122,23 +122,51 @@ class TestPlot(unittest.TestCase):
                 "Profile Square outside to Z-0.1 cuts",
             ],
         )
+        self.assertEqual(len(fake.transport.batches), 2)
+        steps: list[dict[str, Any]] = fake.transport.batches[1]
+        commands: list[str] = [step["command"] for step in steps]
+        self.assertEqual(commands[:2], ["sketch.create", "sketch.options"])
+        self.assertEqual(commands[-1], "sketch.finish")
+        self.assertTrue(steps[1]["params"]["sketch_3d"])
         self.assertEqual(
-            [call[0] for call in fake.calls[:2]], ["create", "options"]
+            set(commands[2:-1]), {"sketch.line3d"}, "only 3D lines"
         )
-        self.assertEqual(fake.calls[1][1], {"sketch_3d": True})
 
-        # The cuts: the plunge and the sides are lines, the corners and
-        # leads are splines, all in millimeters.  The corners are the
-        # longest segments, so the cut starts in the middle of one,
-        # which makes 5 corner splines and 2 leads.
-        cuts: list[tuple[str, dict[str, Any]]] = fake.calls[
-            [call[0] for call in fake.calls].index("create", 1) :
-        ]
-        kinds: list[str] = [call[0] for call in cuts]
-        self.assertEqual(kinds.count("spline3d"), 7)
-        first: list[list[float]] = cuts[2][1]["points"]
+        # The cuts, in millimeters: down from above the part to the
+        # depth, then around (the corners as points along them).
+        first: list[list[float]] = steps[2]["params"]["points"]
         self.assertAlmostEqual(first[0][2], 0.05 * 25.4)
         self.assertAlmostEqual(first[1][2], -0.1 * 25.4)
+        self.assertGreater(len(first), 20)
+
+
+# Class `FakeTransport`:
+class FakeTransport:  # pylint: disable=too-few-public-methods
+    """Stands in for a GUI's transport, recording `engine.batch` steps.
+
+    Attributes:
+    * `batches` (`list[list[dict[str, Any]]]`): Each batch's steps.
+    """
+
+    # Method `FakeTransport.__init__()`:
+    def __init__(self) -> None:
+        """Start with no batches."""
+        self.batches: list[list[dict[str, Any]]] = []
+
+    # Method `FakeTransport.request()`:
+    def request(self, method: str, params: dict[str, Any]) -> Any:
+        """Record a batch, and answer that every step ran.
+
+        Arguments:
+        * `method` (`str`): The method (`engine.batch`).
+        * `params` (`dict[str, Any]`): Its parameters.
+
+        Returns:
+        * (`Any`): The reply: every step completed.
+        """
+        assert method == "engine.batch"
+        self.batches.append(params["commands"])
+        return {"completed": len(params["commands"])}
 
 
 # Class `FakeSolidCraft`:
@@ -151,6 +179,7 @@ class FakeSolidCraft:  # pylint: disable=too-few-public-methods
     * `calls` (`list[tuple[str, dict[str, Any]]]`): Each command's name
       and arguments.
     * `sketch` (`FakeSolidCraft`): Itself, for `solidcraft.sketch.X()`.
+    * `transport` (`FakeTransport`): Where batches go.
     """
 
     # Method `FakeSolidCraft.__init__()`:
@@ -158,6 +187,7 @@ class FakeSolidCraft:  # pylint: disable=too-few-public-methods
         """Start with no calls."""
         self.calls: list[tuple[str, dict[str, Any]]] = []
         self.sketch: FakeSolidCraft = self
+        self.transport: FakeTransport = FakeTransport()
 
     # Method `FakeSolidCraft.__getattr__()`:
     def __getattr__(self, name: str) -> Any:

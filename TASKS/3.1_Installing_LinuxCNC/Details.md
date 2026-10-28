@@ -28,5 +28,6 @@ For now, only find out where each stands; solve the problems later:
 
 ## Done When
 
-* The program installs LinuxCNC on Ubuntu from nothing, and the
-  status on macOS and Windows is written down.
+* LinuxCNC runs on every platform (Linux, Windows through WSL,
+  Intel macOS and Apple Silicon macOS), or it is known why it can
+  not on one (the user's bar, 2026-10-28).

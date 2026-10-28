@@ -4,9 +4,10 @@
 Part of the simulation's tracking (`T.tl~3.2`).  Closing LinuxCNC's
 AXIS window by hand asks "Do you really want to close LinuxCNC?", and
 killing AXIS with a signal makes the `linuxcnc` script show its error
-window (its `ErrorCheck`), both on the user's screen.  This asks AXIS
-to quit (`axis-remote --quit`), after which the `linuxcnc` script
-shuts the rest down in order, with no window:
+window (its `ErrorCheck`), both on the user's screen.  This asks the
+display to quit (`lcnc_panel.py` by `SIGTERM`, AXIS by `axis-remote
+--quit`), after which the `linuxcnc` script shuts the rest down in
+order, with no window:
 
 ```
 distrobox enter lcnc -- ./stop_linuxcnc.py
@@ -43,6 +44,7 @@ PROGRAMS: frozenset[str] = frozenset(
         "halui",
         "rtapi_app",
         "axis",
+        "lcnc_panel.py",
     }
 )
 
@@ -125,6 +127,25 @@ def quit_axis() -> bool:
     return answered == 0 and wait_gone(WAIT)
 
 
+# Function `quit_panel()`:
+def quit_panel() -> bool:
+    """Ask `lcnc_panel.py` to quit, and wait for LinuxCNC to shut down.
+
+    Returns:
+    * (`bool`): True when there was a panel and LinuxCNC is gone.
+    """
+    pid: int
+    found: bool = False
+    for pid in running():
+        words: list[bytes] = (
+            Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")
+        )
+        if any(word.endswith(b"lcnc_panel.py") for word in words[:2]):
+            os.kill(pid, signal.SIGTERM)
+            found = True
+    return found and wait_gone(WAIT)
+
+
 # Function `kill_and_clean()`:
 def kill_and_clean() -> None:
     """Kill every LinuxCNC program, and remove what they leave."""
@@ -169,7 +190,7 @@ def main() -> int:
     parser.add_argument(
         "--kill",
         action="store_true",
-        help="kill it and clean up, without asking AXIS to quit first",
+        help="kill it and clean up, without asking its display to quit",
     )
     options: argparse.Namespace = parser.parse_args()
 
@@ -183,7 +204,7 @@ def main() -> int:
         return 0
 
     # Gently first, unless told not to.
-    if not options.kill and quit_axis():
+    if not options.kill and (quit_panel() or quit_axis()):
         print("closed")
         return 0
     kill_and_clean()

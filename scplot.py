@@ -30,7 +30,7 @@ from scgeometry import SCRoundPoly, point_at
 from solidcraftcnc import RS274, SCCNC
 
 if TYPE_CHECKING:
-    from scraftpybind import SolidCraftPyBind
+    from scraftpybind import JSON, SolidCraftPyBind
 
 # The page the path is filled into.
 TEMPLATE: Path = Path(__file__).resolve().parent / "scplot_template.html"
@@ -40,6 +40,16 @@ ARC_STEP: float = math.radians(5.0)
 
 # A point in 3D, `[x, y, z]`.
 SpacePoint: TypeAlias = list[float]
+
+# One step of an `engine.batch` request: `{"command": ..., "params":
+# {...}}`.
+Step: TypeAlias = "dict[str, JSON]"
+
+# The most points `sketch.line3d` takes in one call.
+MAX_POINTS: int = 500
+
+# Points closer than this (millimeters) are the same point.
+SAME: float = 1e-6
 
 
 # Class `Move`:
@@ -419,8 +429,10 @@ def sketch_path(
     Each operation (the moves after each of the program's comments)
     gets two sketches, named after the comment: its cuts (`G1`, `G2`,
     `G3`) and its rapids (`G0`).  Straight moves that follow on from
-    each other are drawn as one 3D line; each arc (or helix) is a 3D
-    spline through points along it.  The path is the tool's center.
+    each other (arcs included, as points along them) are drawn as one
+    3D line.  Each sketch is built with one `engine.batch` request
+    (`send_batch()`), which the GUI runs in one frame, so it is fast
+    and sketch mode never shows.  The path is the tool's center.
 
     Arguments:
     * `solidcraft` (`SolidCraftPyBind`): Where to draw it.
@@ -453,62 +465,135 @@ def sketch_path(
         kind: str = "rapids" if move["g"] == 0 else "cuts"
         groups.setdefault(f"{title} {kind}", []).append(move)
 
-    # Draw each group in its own 3D sketch.
-    names: list[str] = []
+    # Draw each group in its own 3D sketch, with one request.
     name: str
     moves: list[Move]
     for name, moves in groups.items():
-        solidcraft.sketch.create(plane="XY", name=name)
-        solidcraft.sketch.options(sketch_3d=True)
-        draw_moves(solidcraft, moves, mm_per_unit)
-        solidcraft.sketch.finish()
-        names.append(name)
-    return names
+        send_batch(
+            solidcraft, sketch_steps(name, path_steps(moves, mm_per_unit))
+        )
+    return list(groups)
 
 
-# Function `draw_moves()`:
-def draw_moves(
-    solidcraft: "SolidCraftPyBind", moves: list[Move], mm_per_unit: float
-) -> None:
-    """Draw moves into the open 3D sketch.
+# Function `path_steps()`:
+def path_steps(moves: Sequence[Move], mm_per_unit: float) -> list[Step]:
+    """Return the `sketch.line3d` steps that draw moves.
+
+    Moves that follow on from each other make one polyline, broken
+    into calls of at most `MAX_POINTS` points that share their ends; a
+    jump starts a new one.  Points that repeat the one before are left
+    out.
 
     Arguments:
-    * `solidcraft` (`SolidCraftPyBind`): Where to draw them.
-    * `moves` (`list[Move]`): The moves, in order.
+    * `moves` (`Sequence[Move]`): The moves, in order.
     * `mm_per_unit` (`float`): The scale to millimeters.
+
+    Returns:
+    * (`list[Step]`): The steps, for an open 3D sketch.
     """
-
-    # Function `mm()`:
-    def mm(point: SpacePoint) -> SpacePoint:
-        """Return a point in millimeters.
-
-        Arguments:
-        * `point` (`SpacePoint`): The point in the program's units.
-
-        Returns:
-        * (`SpacePoint`): The point in millimeters.
-        """
-        return [value * mm_per_unit for value in point]
-
-    # Gather straight moves that follow on from each other into one
-    # line; draw each arc as a spline.
+    steps: list[Step] = []
     run: list[SpacePoint] = []
+
+    # Function `flush()`:
+    def flush() -> None:
+        """Add steps for the polyline so far, and start a new one."""
+        start: int = 0
+        while start < len(run) - 1:
+            piece: list[SpacePoint] = run[start : start + MAX_POINTS]
+            steps.append(
+                {"command": "sketch.line3d", "params": {"points": piece}}
+            )
+            start += MAX_POINTS - 1
+        run.clear()
+
+    # Add each move to the polyline, or start a new one where it jumps.
     move: Move
     for move in moves:
-        if move["g"] in (0, 1) and (not run or run[-1] == move["pts"][0]):
-            run += move["pts"][1:] if run else move["pts"]
-            continue
-        if len(run) >= 2:
-            solidcraft.sketch.line3d(points=[mm(point) for point in run])
-        run = []
-        if move["g"] in (0, 1):
-            run = list(move["pts"])
-        else:
-            solidcraft.sketch.spline3d(
-                points=[mm(point) for point in move["pts"]]
-            )
-    if len(run) >= 2:
-        solidcraft.sketch.line3d(points=[mm(point) for point in run])
+        points: list[SpacePoint] = [
+            [value * mm_per_unit for value in point] for point in move["pts"]
+        ]
+        if run and math.dist(run[-1], points[0]) >= SAME:
+            flush()
+        point: SpacePoint
+        for point in points:
+            if not run or math.dist(run[-1], point) >= SAME:
+                run.append(point)
+    flush()
+    return steps
+
+
+# Function `sketch_steps()`:
+def sketch_steps(name: str, drawing: list[Step]) -> list[Step]:
+    """Return the steps of one batch: a whole 3D sketch.
+
+    Arguments:
+    * `name` (`str`): The sketch's name.
+    * `drawing` (`list[Step]`): Its drawing steps (`path_steps()`).
+
+    Returns:
+    * (`list[Step]`): Create, options (3D; points, profile,
+      constraints and dimensions not shown), the drawing, finish.
+    """
+    return [
+        {"command": "sketch.create", "params": {"plane": "XY", "name": name}},
+        {
+            "command": "sketch.options",
+            "params": {
+                "sketch_3d": True,
+                "show_points": False,
+                "show_profile": False,
+                "show_constraints": False,
+                "show_dimensions": False,
+            },
+        },
+        *drawing,
+        {"command": "sketch.finish", "params": {}},
+    ]
+
+
+# Function `send_batch()`:
+def send_batch(solidcraft: "SolidCraftPyBind", steps: list[Step]) -> None:
+    """Run steps in SolidCraft as one batch, with no rollback.
+
+    A GUI takes `engine.batch` and runs the steps in one frame; a
+    headless `solidcraft-cli` has no `engine.batch`, but its MCP server
+    has a `batch` tool that takes the same steps.
+
+    Arguments:
+    * `solidcraft` (`SolidCraftPyBind`): The SolidCraft session.
+    * `steps` (`list[Step]`): The steps.
+
+    Raises:
+    * `SolidCraftError`: If a step failed (or the batch was refused).
+    """
+    # Imported here, so the viewer needs no `scraftpybind`.
+    # pylint: disable-next=import-outside-toplevel
+    from scraftpybind import HeadlessTransport, SolidCraftError
+
+    # The GUI's `engine.batch`, or the headless MCP `batch` tool.
+    params: dict[str, JSON] = {"commands": steps, "rollback": False}
+    transport = solidcraft.transport
+    reply: object
+    if isinstance(transport, HeadlessTransport):
+        if transport.process is None:
+            transport.start()
+        result = transport.call(
+            "tools/call", {"name": "batch", "arguments": params}
+        )
+        assert isinstance(result, dict)
+        content = result["content"]
+        assert isinstance(content, list) and isinstance(content[0], dict)
+        reply = json.loads(str(content[0]["text"]))
+    else:
+        reply = transport.request("engine.batch", params)
+
+    # Every step must have run.
+    if (
+        not isinstance(reply, dict)
+        or "failed" in reply
+        or reply.get("completed") != len(steps)
+    ):
+        raise SolidCraftError("engine.batch", str(reply)[:2000], False, False)
 
 
 # Function `tube_path()`:

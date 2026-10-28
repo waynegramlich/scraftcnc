@@ -18,13 +18,13 @@ The one listener so far is `sim_solidcraft.py`'s `SolidCraftDisplay`
 (`T.rlg~3.3`), turned on by `--solidcraft PORT` (or `headless`):
 every tool of the machine is modeled in SolidCraft, where
 `solidcraftcnc_demo.py` has modeled the part, and the one in the
-spindle follows the position, with the path traced behind it (unless
-`--no-trace`):
+spindle follows the position; the whole planned path is the
+demo's own sketches:
 
 ```
 distrobox enter lcnc -- linuxcnc lcnc_sim/shop_mill.ini &
 solidcraft --control 8080 &
-./solidcraftcnc_demo.py 8080 > demo.ngc
+./solidcraftcnc_demo.py --no-path 8080 > demo.ngc
 distrobox enter lcnc -- ./sim_linuxcnc.py demo.ngc --solidcraft 8080
 distrobox enter lcnc -- ./stop_linuxcnc.py    # Close LinuxCNC quietly.
 ```

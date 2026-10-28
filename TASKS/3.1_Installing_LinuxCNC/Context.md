@@ -229,3 +229,52 @@ Moved from `T.s2~3`'s `Context.md` on 2026-10-28, when it was split.
   goes through `/usr/bin/env PATH=...` (`WSL_ENV`).
 * On every passing runner: `import linuxcnc`, the AXIS modules and
   `halrun` (as a user who is not root) all pass.
+
+## 2026-10-28: Probe run 40734286264 (2d88d02): all four pass
+
+* With the WSL `PATH` fix, all four runners install LinuxCNC and
+  pass `import linuxcnc`, the AXIS modules and `halrun`:
+  `ubuntu-latest` 1.7 min, `windows-latest` (WSL 2) 5.4 min,
+  `macos-latest` (QEMU, software emulation) 13.7 min,
+  `macos-15-intel` (colima) 19.5 min.
+* Not yet shown: LinuxCNC running a program on each (the user's bar
+  for 3.1: "runs on all platforms, or we know why not").
+
+## 2026-10-28: Running a program on every runner
+
+* `demo_linuxcnc.py` (same target arguments as `install_linuxcnc.py`,
+  now shared through `add_target_arguments()` and
+  `target_options()`): installs `xvfb` in the target if missing
+  (`ask_user()`, so `--yes` runs it; only for CI, since a desktop
+  has a display: `--display :0`), puts the project in the target
+  (a box sees it in place; others get a `tar` copy in
+  `~/scraftcnc_demo` through `send_file()`, `\r\n` made `\n`, and a
+  Windows checkout's text-file symlink replaced by its file), then
+  runs itself with `--inside` there as the non-root user: writes
+  `demo.ngc`, `Xvfb -displayfd 1`, `linuxcnc
+  lcnc_sim/shop_mill.ini`, waits for `axis-remote --ping`, runs
+  `sim_linuxcnc.py demo.ngc --speed 10` (with a time limit), then
+  `stop_linuxcnc.py`, and checks nothing is left.  One exec session
+  holds it all, so no background process must outlive a `wsl.exe`,
+  `docker exec` or `ssh`.  "Unexpected realtime delay" lines are
+  counted, not failed.
+* Local test on a throwaway `lcnc-demo` box (the `lcnc` box has no
+  `xvfb`, and its packages stay as they are).
+
+## 2026-10-28: Parked
+
+* The agent proving the demo runs on every runner was stopped by the
+  user (about 20-25 minutes, ~175k tokens; "an error").  Its work is
+  on disk, not staged, not run by the checkers since:
+  `demo_linuxcnc.py`, `test_demo_linuxcnc.py`, changes to
+  `install_linuxcnc.py` (shared target arguments) and
+  `probe_linuxcnc.yml`.  Its local test on a throwaway `lcnc-demo`
+  box ran the demo to the end; the box is removed.  Parked until at
+  least the afternoon (the user's token budget); then 5 minute
+  rounds.
+
+## 2026-10-28: Suspended
+
+* The user: good enough for now; back to it in a day or so.  Still
+  open: `demo_linuxcnc.py` on the four runners (on disk, unstaged,
+  checkers not run since the agent was stopped).
