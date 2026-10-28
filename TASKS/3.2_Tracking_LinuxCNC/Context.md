@@ -173,3 +173,23 @@ Moved from `T.s2~3`'s `Context.md` on 2026-10-28, when it was split.
   `B ... SHMEM` lines of `/usr/share/linuxcnc/linuxcnc.nml`); after
   `ipcrm -M` of those and removing the lock, `linuxcnc
   lcnc_sim/shop_mill.ini` started cleanly, no dialog.
+* `stop_linuxcnc.py` (in the box: `distrobox enter lcnc --
+  ./stop_linuxcnc.py`): `axis-remote --quit`, then waits for every
+  LinuxCNC program to go; if that fails (or `--kill`), `SIGKILL` to
+  them all, `halrun -U`, `ipcrm -M` of keys 100 and 1001-1005, and
+  the lock removed.  With nothing running it cleans up a stale lock.
+  Checked: `--kill` 3.6 s, then a clean start (no dialog) and a 20 s
+  run; the gentle way "closed" in 1.9 s, no window; a second call
+  "not running".  LinuxCNC is left stopped cleanly (10:17).
+* `T.tl~3.2` now looks done: the demo runs through with real tool
+  lengths and right work positions, the SolidCraft side is a
+  listener in `sim_solidcraft.py`, and LinuxCNC closes quietly.
+  Left as a finding for later: the tool change height (above).
+
+## 2026-10-28: Tool change height left alone (the user's call)
+
+* With real tool lengths, a change at work Z2 leaves a longer tool's
+  tip lower (T4: work Z -1.875).  `G53 G0 Z0` before `T.. M6` was
+  suggested; the user declined: machine Z0 depends on where it was
+  set, `z_safe` is the only sound height but may not be known.
+  Nothing changed for now.

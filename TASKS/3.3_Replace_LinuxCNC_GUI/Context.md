@@ -517,3 +517,47 @@ numbers below are at `c1dee61`.
   kernel PR (a `color` sketch option: `SketchView`, `sketch.options`
   params and schema, `view.rs` wire colour, a format pending file,
   an engine test, a screenshot; perhaps 80-150 lines) would give it.
+
+## 2026-10-28: The planned path as one batch per tool sketch
+
+* `probe_batch.py` (with `test_probe_batch.py`, 6 tests): reads the
+  G-code (`read_gcode()`, `command_moves()`), groups moves by tool
+  (`T08 cuts`, `T08 rapids`; `--mixed` keeps them together), and
+  builds each group's 3D sketch with ONE batch: create, options
+  (3D, points/profile/constraints/dimensions off), a `line3d` per
+  continuous polyline of at most 500 points (split points shared),
+  finish, `--hide` a visibility step.  `--arcs`: planar arcs as
+  `sketch.arc3d` (start, middle point, end; a circle as two),
+  helices as points.  `--plate` models the demo plate in the same
+  session (the demo's `main()` with its `sketch_path` and `connect`
+  swapped out), `--toggle` times hiding and showing each sketch.
+* Headless has no `engine.batch` method, but `solidcraft-cli`'s MCP
+  server has a `batch` tool (`tools/call`, name `batch`, same
+  `commands`/`rollback`/`timings`); it runs the steps one by one
+  in its process.  Reply: `ok`, `completed`, `results`, `timings`,
+  `total_ms`.  `sketch.arc3d` takes `start`, `through`, `end`.
+* Headless (0.25.1), with the plate: 10 sketches, 68 `line3d`
+  steps, 4456 points, 4388 wires (= the demo's 4388 pieces) in
+  0.25 s; biggest, T08 cuts (12 steps, 2246 points): 70 ms.
+  `--mixed`: 5 sketches, 12 steps, 0.14 s.  `--arcs`: 429 steps,
+  567 wires, 0.45 s: each step costs about 1 ms, so many points
+  in few `line3d` steps are cheaper than exact arcs.
+* GUI (0.25.1, fresh design, plate first: 5.8 s): the same 10
+  sketches, 4388 wires, in 0.27 s; a batch 5-68 ms (T08 cuts, 2246
+  points, 68 ms, 41 ms inside SolidCraft).  `--toggle`: hiding a
+  sketch 13.5 ms (max 18), showing 13.1 ms (max 17).  Against
+  `RevealTrace`'s 558 sketches in 48 s, about 180 times faster.
+  The user closed the GUI after (it looked idle); screenshots of
+  that run failed (a shell variable lost in a background job).
+* GUI restarted (10:25): the plate and the 10 sketches again, 0.26
+  s; hide 13.9 ms, show 13.7 ms.  Flash check: 12 builds in a row
+  (`--keep --hide`, a "Flash test" design) with 33 screenshots
+  meanwhile: the toolbar stayed on the Model tab in all 33, no
+  sketch palette (a batch runs in one frame, so sketch mode is
+  never drawn).  But each repeat took longer (0.25, 0.52, ... 2.3
+  s by the 12th, 120 sketches and 52,656 wires in the design): the
+  per step refresh grows with the wires already there.  Duplicate
+  sketch names: `browser.visibility` by name hit only the first.
+* Left running: the GUI on 8080, design "Batch probe" (plate and
+  the 10 tool sketches, shown).  Screenshots in the session
+  scratchpad (`shots/after_build.png`, `flash_*.png`, `final.png`).

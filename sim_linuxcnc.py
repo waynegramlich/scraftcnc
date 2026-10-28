@@ -26,6 +26,7 @@ distrobox enter lcnc -- linuxcnc lcnc_sim/shop_mill.ini &
 solidcraft --control 8080 &
 ./solidcraftcnc_demo.py 8080 > demo.ngc
 distrobox enter lcnc -- ./sim_linuxcnc.py demo.ngc --solidcraft 8080
+distrobox enter lcnc -- ./stop_linuxcnc.py    # Close LinuxCNC quietly.
 ```
 
 `lcnc_sim/shop_mill.ini` simulates the example shop's mill.  The

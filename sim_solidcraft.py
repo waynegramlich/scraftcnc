@@ -1,4 +1,4 @@
-"""Show a running program in SolidCraft: the tool, and the path behind it.
+"""Show a running program in SolidCraft: the tool and its path.
 
 The SolidCraft side of the simulation (`T.rlg~3.3`), split out of
 `sim_linuxcnc.py`, which drives LinuxCNC and hands each position it
