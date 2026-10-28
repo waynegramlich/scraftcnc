@@ -6,6 +6,11 @@
 @2.5_Tool_Models/Details.md
 @3_Simulation/Details.md
 @3_Simulation/Context.md
+@3.1_Installing_LinuxCNC/Details.md
+@3.1_Installing_LinuxCNC/Context.md
+@3.2_Tracking_LinuxCNC/Details.md
+@3.3_Replace_LinuxCNC_GUI/Details.md
+@3.3_Replace_LinuxCNC_GUI/Context.md
 @1_Original_Roadmap/Summary.md
 @1.1_Come_up_with_a_plan/Summary.md
 @2.1_Shop_Information/Summary.md

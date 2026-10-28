@@ -1,0 +1,253 @@
+# Probe whether LinuxCNC's simulator (`linuxcnc-uspace`, Debian 13
+# Trixie packages from linuxcnc.org) installs and imports on GitHub's
+# runners: macOS through `podman machine` (or `colima`), Windows
+# through WSL, and Ubuntu (the control) through `distrobox`.  Every
+# step keeps going after a failure; each job ends with a STATUS line
+# (also in the run's summary).  `lcnc_sim/probe_install.sh` does the
+# install inside Debian.
+name: probe linuxcnc
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  macos:
+    name: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Facts
+        run: |
+          sw_vers || true
+          uname -m
+          sysctl -n machdep.cpu.brand_string || true
+          sysctl hw.model hw.ncpu hw.memsize || true
+          echo "hv_support=$(sysctl -n kern.hv_support 2>&1)" |
+            tee -a "$GITHUB_WORKSPACE/facts.txt"
+
+      - name: Install podman
+        id: brew
+        continue-on-error: true
+        timeout-minutes: 15
+        run: |
+          brew install podman
+          podman --version
+
+      - name: Start podman machine
+        id: machine
+        if: steps.brew.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 15
+        run: |
+          podman machine init --cpus 2 --memory 4096 --disk-size 30
+          podman machine start
+          podman info --format '{{.Host.Arch}} {{.Host.OS}}'
+
+      - name: Why podman machine failed
+        if: steps.machine.outcome == 'failure'
+        continue-on-error: true
+        run: |
+          podman machine list || true
+          podman machine inspect || true
+          find "$HOME/.local/share/containers/podman/machine" \
+              "$HOME/.config/containers/podman/machine" \
+              -maxdepth 3 -print 2>/dev/null || true
+          find "$HOME/.local/share/containers/podman/machine" "$TMPDIR" \
+              -maxdepth 3 -name '*.log' \
+              -exec sh -c 'echo "=== $1"; tail -n 40 "$1"' _ {} \; \
+              2>/dev/null || true
+
+      - name: Probe in podman
+        id: podman_probe
+        if: steps.machine.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 25
+        run: |
+          podman run -d --name lcnc docker.io/library/debian:trixie \
+              sleep infinity
+          podman cp lcnc_sim/probe_install.sh lcnc:/probe_install.sh
+          podman exec lcnc bash /probe_install.sh 2>&1 |
+            tee "$GITHUB_WORKSPACE/probe.log"
+
+      - name: Start colima (the alternative)
+        id: colima
+        if: steps.machine.outcome != 'success'
+        continue-on-error: true
+        timeout-minutes: 15
+        run: |
+          brew install colima docker
+          colima start --cpu 2 --memory 4 2>&1 |
+            tee "$GITHUB_WORKSPACE/colima.log"
+          docker info --format '{{.Architecture}} {{.OperatingSystem}}'
+
+      - name: Probe in colima
+        id: colima_probe
+        if: steps.colima.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 20
+        run: |
+          docker run -d --name lcnc docker.io/library/debian:trixie \
+              sleep infinity
+          docker cp lcnc_sim/probe_install.sh lcnc:/probe_install.sh
+          docker exec lcnc bash /probe_install.sh 2>&1 |
+            tee "$GITHUB_WORKSPACE/probe.log"
+
+      - name: Status
+        if: always()
+        env:
+          RUNNER: ${{ matrix.os }}
+          BREW: ${{ steps.brew.outcome }}
+          MACHINE: ${{ steps.machine.outcome }}
+          PODMAN_PROBE: ${{ steps.podman_probe.outcome }}
+          COLIMA: ${{ steps.colima.outcome }}
+          COLIMA_PROBE: ${{ steps.colima_probe.outcome }}
+        run: |
+          result=$(grep -h '^PROBE RESULT' probe.log 2>/dev/null | tail -1)
+          facts=$(tr '\n' ' ' < facts.txt 2>/dev/null || true)
+          line="STATUS $RUNNER: ${facts}brew=$BREW machine=$MACHINE"
+          line="$line podman_probe=${PODMAN_PROBE:-skipped}"
+          line="$line colima=${COLIMA:-skipped}"
+          line="$line colima_probe=${COLIMA_PROBE:-skipped}"
+          line="$line | ${result:-no probe result}"
+          echo "$line"
+          echo "$line" >> "$GITHUB_STEP_SUMMARY"
+
+  windows:
+    name: windows-latest
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Facts
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $env:WSL_UTF8 = "1"
+          Get-ComputerInfo -Property OsName, OsVersion, HyperV* |
+            Format-List
+          wsl --version
+          wsl --status
+
+      - name: Set up WSL 2 with Debian 13
+        id: wsl2
+        continue-on-error: true
+        timeout-minutes: 15
+        uses: Vampire/setup-wsl@v7
+        with:
+          distribution: Debian-13
+          wsl-version: 2
+
+      - name: Set up WSL 1 with Debian 13 (WSL 2 failed)
+        id: wsl1
+        if: steps.wsl2.outcome == 'failure'
+        continue-on-error: true
+        timeout-minutes: 15
+        uses: Vampire/setup-wsl@v7
+        with:
+          distribution: Debian-13
+          wsl-version: 1
+
+      - name: WSL version in use
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $env:WSL_UTF8 = "1"
+          wsl -l -v
+          wsl -l -v | Out-File -Encoding utf8 wsl_list.txt
+
+      - name: Probe in WSL
+        id: probe
+        if: steps.wsl2.outcome == 'success' || steps.wsl1.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 25
+        shell: wsl-bash -u root {0}
+        run: |
+          set -o pipefail
+          uname -a
+          tr -d '\r' < lcnc_sim/probe_install.sh > /tmp/probe_install.sh
+          bash /tmp/probe_install.sh 2>&1 | tee probe.log
+
+      - name: Status
+        if: always()
+        env:
+          WSL2: ${{ steps.wsl2.outcome }}
+          WSL1: ${{ steps.wsl1.outcome }}
+          PROBE: ${{ steps.probe.outcome }}
+        run: |
+          result=$(grep -h '^PROBE RESULT' probe.log 2>/dev/null | tail -1)
+          line="STATUS windows-latest: wsl2=$WSL2 wsl1=${WSL1:-skipped}"
+          line="$line probe=${PROBE:-skipped}"
+          line="$line | ${result:-no probe result}"
+          echo "$line"
+          echo "$line" >> "$GITHUB_STEP_SUMMARY"
+
+  ubuntu:
+    name: ubuntu-latest
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Install podman and distrobox
+        id: apt
+        continue-on-error: true
+        timeout-minutes: 10
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman distrobox
+          podman --version
+          distrobox --version
+
+      - name: Create the box
+        id: box
+        if: steps.apt.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 10
+        run: |
+          distrobox create --yes --name lcnc \
+              --image docker.io/library/debian:trixie
+          distrobox enter lcnc -- cat /etc/os-release < /dev/null
+
+      - name: Probe in the box
+        id: probe
+        if: steps.box.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 25
+        run: |
+          distrobox enter lcnc -- \
+              sudo bash "$GITHUB_WORKSPACE/lcnc_sim/probe_install.sh" \
+              < /dev/null 2>&1 | tee "$GITHUB_WORKSPACE/probe.log"
+
+      - name: Status
+        if: always()
+        env:
+          APT: ${{ steps.apt.outcome }}
+          BOX: ${{ steps.box.outcome }}
+          PROBE: ${{ steps.probe.outcome }}
+        run: |
+          result=$(grep -h '^PROBE RESULT' probe.log 2>/dev/null | tail -1)
+          line="STATUS ubuntu-latest: apt=$APT box=${BOX:-skipped}"
+          line="$line probe=${PROBE:-skipped}"
+          line="$line | ${result:-no probe result}"
+          echo "$line"
+          echo "$line" >> "$GITHUB_STEP_SUMMARY"

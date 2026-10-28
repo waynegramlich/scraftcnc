@@ -1,0 +1,99 @@
+# LLM Agent Context Log
+
+Moved from `T.s2~3`'s `Context.md` on 2026-10-28, when it was split.
+
+## 2026-10-27: Step 3 done: driving LinuxCNC from Python
+
+* In the box, `linuxcnc.command()`: `state(STATE_ESTOP_RESET)`,
+  `state(STATE_ON)`, `mode(MODE_MANUAL)`, `teleop_enable(False)`,
+  `home(-1)` (all joints, by `HOME_SEQUENCE`; wait on
+  `stat.homed`), `mode(MODE_AUTO)`, `program_open(PATH)`,
+  `auto(AUTO_RUN, 0)`; call `wait_complete()` after each.  Messages
+  come from `linuxcnc.error_channel().poll()`.
+* Polling `linuxcnc.stat()` at 20 Hz: `actual_position[:3]`,
+  `motion_line` (the G-code line being run) and `interp_state`
+  (`INTERP_IDLE` at the end).  The sample `axis.ngc` ran in 129.5 s,
+  2579 samples (19.9 Hz), positions in inches.
+* `actual_position` is in machine coordinates; the work position
+  needs `g5x_offset`, `g92_offset` and `tool_offset` taken off (all
+  zero in the sample sim, not yet checked against our G-code).
+
+## 2026-10-27: The scripts, saved
+
+* `sim_move.py` (steps 1's two scratch scripts in one: `--method
+  pending|captured|solid`, `--step`, `--interval`, `--trips`,
+  `--report`) and `sim_linuxcnc.py` (step 3; runs in the box:
+  `distrobox enter lcnc -- ./sim_linuxcnc.py [PROGRAM] [--out
+  FILE]`).  Checkers clean; no unit tests (both need SolidCraft or
+  LinuxCNC).  Not named `*_test.py`, which would make them test
+  suites under the Python Coding Rules.
+* Homing trap: `home(-1)` on an already homed sim machine unhomes it
+  first, and then X and Z (`HOME_IS_SHARED`) refuse with "Cannot
+  home while shared home switch is closed" wherever the last program
+  left them; only restarting LinuxCNC cleared it.  `sim_linuxcnc.py`
+  now skips homing when every joint is homed (checked: two runs in a
+  row, 129 s each).
+* Closing LinuxCNC from a script (Claude's `pkill -TERM` of the
+  `axis` process) pops up a close window on the user's screen, which
+  the user has to dismiss.  Avoid it: leave LinuxCNC running (the
+  scripts no longer need a restart), or find a quiet way to close it
+  (`axis-remote --quit` in the box is a guess, not yet tried).
+
+## 2026-10-27: Step 4 begins: the demo's G-code in LinuxCNC
+
+* `command.program_open(PATH)` and `auto(AUTO_RUN, 0)` run any file
+  (`sim_linuxcnc.py PROGRAM` already does).  The demo's G-code
+  already has feeds and speeds (per tool `F`/`S` from the tools
+  files), so `T.msaf~2.4` is not in the way.
+* Two things it needed (tried with a scratch script; not yet in
+  `sim_linuxcnc.py`):
+  * A work offset: the program goes to Z2, above the sim's Z soft
+    limit (+0.12, machine).  MDI `G20 G10 L2 P1 X0 Y0 Z-2.5`
+    (`mode(MODE_MDI)`, `mdi(...)`); without the `G20` it was taken
+    as millimeters.  Work position = `actual_position` minus
+    `g5x_offset` (and `g92_offset`, `tool_offset`).
+  * Its tools in the tool table: "Requested tool 8 not found in the
+    tool table" stopped it.  `~/linuxcnc/configs/sim/axis/sim.tbl`
+    now lists the shop mill's T1-T9 (Z0, diameters from
+    `tools.toml`; the original is `sim.tbl.orig`), and
+    `command.load_tool_table()` reloads it without a restart.
+* Then 90 s ran cleanly: the G83 pecks at 4 in/min, then T8
+  roughing at 12 in/min, Z at work -0.1.  The run is real time
+  (about 19.6 minutes in all).
+* Our `tool_change` (`T{number:02d}`) writes `T08` with no `M6`, so
+  LinuxCNC only prepares the tool (`pocket_prepped`) and
+  `tool_in_spindle` stays 0: no tool change, no length offset
+  (`G43`).  A LinuxCNC post would write `T8 M6` (and `G43 H8`), but
+  in this sim `M6` opens AXIS's manual tool change window, unless
+  the HAL wires `iocontrol.0.tool-change` straight to
+  `tool-changed`.
+
+## 2026-10-27: The demo runs in the shop mill simulator
+
+* `lcnc_sim/shop_mill.ini` (in the project): the example shop mill's
+  travel (X 0-18, Y 0-9, Z -16-0 in, machine), feeds (110 in/min, Z
+  90) and acceleration (10 in/s^2); homing at once wherever it is
+  (`HOME_SEARCH_VEL = 0`, no simulated home switches, so no homing
+  trap); no `axis_manualtoolchange.hal` (`core_sim.hal` already loops
+  `iocontrol.0.tool-change` to `tool-changed`, so `M6` needs no
+  click); `MAX_FEED_OVERRIDE = 10`; no position file.  Started with
+  `distrobox enter lcnc -- linuxcnc lcnc_sim/shop_mill.ini`.
+* `examples/shop/linuxcnc.toml`: `tool_change = "T{number:02d} M6
+  G43 H{number:02d}"` (the user agreed to real tool changes);
+  `test_shops.py` and `test_scmachine.py` updated.
+* `sim_linuxcnc.py`: writes the shop machine's tool table over the
+  INI file's `TOOL_TABLE` and reloads it (`--shop`, `--machine`;
+  lengths Z0); sets G54 by MDI (`--origin X Y Z`, default 4 3 -6,
+  machine inches); feed override (`--speed`); samples are in work
+  coordinates (machine less `g5x_offset`, `g92_offset`,
+  `tool_offset`).  The user stressed that setting the origin is a
+  big deal on a real machine.
+* `./solidcraftcnc_demo.py > demo.ngc`, then `distrobox enter lcnc
+  -- ./sim_linuxcnc.py demo.ngc --speed 5`: 362.8 s (vs 19.6 min at
+  1x; rapids stay at 110 in/min), 7231 samples, no errors.
+* Next: the SolidCraft side (a tool stand-in moved to each sample).
+* The user: the run does the peck drilling first, which is boring to
+  watch.  Ideas for later: start at a later line (LinuxCNC's run
+  from line, `auto(AUTO_RUN, LINE)`), or a higher `--speed` for the
+  drilling.
+
