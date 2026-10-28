@@ -11,6 +11,11 @@ sketches beside the part (two for each operation: its cuts and its
 rapids, which can be shown and hidden separately).  SolidCraft cannot
 color sketch lines, so `tube_path()` draws each move as a thin tube (a
 body), which can be: rapids one color and cuts another, see-through.
+
+`read_gcode()` reads the G-code text an `SCCNC` writes back into its
+commands, and `command_moves()` finds their moves, so a program can be
+drawn from its file (`draw_moves()` draws moves into an open 3D
+sketch).
 """
 
 import html
@@ -57,9 +62,59 @@ class Move(TypedDict):
     tool: int
 
 
+# Function `read_gcode()`:
+def read_gcode(text: str) -> list[RS274]:
+    """Read G-code text, as `SCCNC.gcode()` writes it, into commands.
+
+    Each line is one command: a comment (a line in parentheses), or
+    words, each a letter and a number (an `int` when it has no point
+    or exponent, like `G0` or `T08`, else a `float`).  It reads only
+    what `SCCNC` writes: a letter used twice on a line keeps its last
+    value, and comments within a line are not looked for.
+
+    Arguments:
+    * `text` (`str`): The G-code.
+
+    Returns:
+    * (`list[RS274]`): One command per line, in order.
+    """
+    commands: list[RS274] = []
+    line: str
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith("(") and line.endswith(")"):
+            commands.append({"comment": line[1:-1]})
+            continue
+        command: RS274 = {}
+        word: str
+        for word in line.split():
+            number: str = word[1:]
+            command[word[0].upper()] = (
+                float(number)
+                if any(mark in number for mark in ".eE")
+                else int(number)
+            )
+        commands.append(command)
+    return commands
+
+
 # Function `path_moves()`:
 def path_moves(cnc: SCCNC) -> list[Move]:
     """Return the program's moves as lines through 3D points.
+
+    Arguments:
+    * `cnc` (`SCCNC`): The program.
+
+    Returns:
+    * (`list[Move]`): Each move's `G` code, line, points, feed and tool
+      (see `command_moves()`).
+    """
+    return command_moves(cnc.commands)
+
+
+# Function `command_moves()`:
+def command_moves(commands: Sequence[RS274]) -> list[Move]:
+    """Return the moves of a program's commands as lines through points.
 
     Moves before every axis has a position are left out, since where
     they start is not known.  A canned drilling cycle (`G81`, `G73`,
@@ -68,7 +123,7 @@ def path_moves(cnc: SCCNC) -> list[Move]:
     rapid back up to where the cycle started (`G98`).
 
     Arguments:
-    * `cnc` (`SCCNC`): The program.
+    * `commands` (`Sequence[RS274]`): The program's commands.
 
     Returns:
     * (`list[Move]`): Each move's `G` code, line, points, feed and tool.
@@ -76,7 +131,7 @@ def path_moves(cnc: SCCNC) -> list[Move]:
     moves: list[Move] = []
     state: _State = _State()
     line: int
-    for line, command in enumerate(cnc.commands):
+    for line, command in enumerate(commands):
         # Follow the modal words: the feed, the tool, the cycle.
         feed: float | int | str | None = command.get("F")
         if isinstance(feed, (int, float)):
@@ -405,14 +460,14 @@ def sketch_path(
     for name, moves in groups.items():
         solidcraft.sketch.create(plane="XY", name=name)
         solidcraft.sketch.options(sketch_3d=True)
-        _draw(solidcraft, moves, mm_per_unit)
+        draw_moves(solidcraft, moves, mm_per_unit)
         solidcraft.sketch.finish()
         names.append(name)
     return names
 
 
-# Function `_draw()`:
-def _draw(
+# Function `draw_moves()`:
+def draw_moves(
     solidcraft: "SolidCraftPyBind", moves: list[Move], mm_per_unit: float
 ) -> None:
     """Draw moves into the open 3D sketch.

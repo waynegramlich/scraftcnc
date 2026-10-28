@@ -2030,6 +2030,67 @@ CNC_KINDS: dict[str, ToolKind] = {
 }
 
 
+# Function `_machine()`:
+def _machine(shop: dict[str, object], name: str) -> dict[str, object]:
+    """Return a machine of a shop.
+
+    Arguments:
+    * `shop` (`dict[str, object]`): The shop, from `read()`.
+    * `name` (`str`): The machine's name.
+
+    Returns:
+    * (`dict[str, object]`): The machine, from `read()`.
+
+    Raises:
+    * `ValueError`: If the shop has no such machine.
+    """
+    machines: list[dict[str, object]] = cast(
+        list[dict[str, object]], shop.get("machines", [])
+    )
+    machine: dict[str, object] | None = next(
+        (m for m in machines if m.get("name") == name), None
+    )
+    if machine is None:
+        raise ValueError(f'no machine named "{name}" in "{shop.get("name")}"')
+    return machine
+
+
+# Function `loaded_tools()`:
+def loaded_tools(
+    shop: dict[str, object], name: str
+) -> dict[int, tuple[str, dict[str, object]]]:
+    """Return the tools loaded in a machine of a shop, by T number.
+
+    Arguments:
+    * `shop` (`dict[str, object]`): The shop, from `read()`.
+    * `name` (`str`): The machine's name.
+
+    Returns:
+    * (`dict[int, tuple[str, dict[str, object]]]`): Each tool's list
+      in the tools files (a key of `CNC_KINDS`, such as `"drills"`),
+      and its description, from `read()`.
+
+    Raises:
+    * `ValueError`: If the shop has no such machine.
+    """
+    # Every tool of the shop, by name, with the list it is in.
+    tools: dict[str, tuple[str, dict[str, object]]] = {}
+    for tools_file in cast(list[dict[str, object]], shop.get("tools", [])):
+        for key in CNC_KINDS:
+            for tool in cast(list[dict[str, object]], tools_file.get(key, [])):
+                tools[str(tool["name"])] = (key, tool)
+
+    # The loaded tools, by T number.
+    table: dict[str, object] = cast(
+        dict[str, object],
+        _machine(shop, name).get("tool_table", {"tools": {}}),
+    )
+    loaded: dict[str, str] = cast(dict[str, str], table["tools"])
+    return {
+        int(number): tools[tool_name] for number, tool_name in loaded.items()
+    }
+
+
 # Function `cnc_machine()`:
 def cnc_machine(shop: dict[str, object], name: str) -> SCMachine:
     """Return a machine of a shop, with its loaded tools, for `SCCNC`.
@@ -2048,14 +2109,7 @@ def cnc_machine(shop: dict[str, object], name: str) -> SCMachine:
       `plunge`.
     """
     # Find the machine and its preferences.
-    machines: list[dict[str, object]] = cast(
-        list[dict[str, object]], shop.get("machines", [])
-    )
-    machine: dict[str, object] | None = next(
-        (m for m in machines if m.get("name") == name), None
-    )
-    if machine is None:
-        raise ValueError(f'no machine named "{name}" in "{shop.get("name")}"')
+    machine: dict[str, object] = _machine(shop, name)
     if "preferences" not in machine:
         raise ValueError(f'"{name}" has no preferences')
     preferences: dict[str, object] = cast(
@@ -2065,18 +2119,7 @@ def cnc_machine(shop: dict[str, object], name: str) -> SCMachine:
         dict[str, object], machine["controller"]
     )
 
-    # Every tool of the shop, by name, with its CNC kind.
-    tools: dict[str, tuple[ToolKind, dict[str, object]]] = {}
-    for tools_file in cast(list[dict[str, object]], shop.get("tools", [])):
-        for key, kind in CNC_KINDS.items():
-            for tool in cast(list[dict[str, object]], tools_file.get(key, [])):
-                tools[str(tool["name"])] = (kind, tool)
-
-    # The loaded tools, by T number.
-    table: dict[str, object] = cast(
-        dict[str, object], machine.get("tool_table", {"tools": {}})
-    )
-    loaded: dict[str, str] = cast(dict[str, str], table["tools"])
+    # The machine, with its loaded tools.
     return SCMachine(
         name=name,
         z_safe=measure(preferences["z_safe"], LENGTH),
@@ -2090,8 +2133,8 @@ def cnc_machine(shop: dict[str, object], name: str) -> SCMachine:
         ramp_angle=measure(preferences["ramp_angle"], ANGLE),
         finish_allowance=measure(preferences["finish_allowance"], LENGTH),
         tools=tuple(
-            _cnc_tool(int(number), *tools[tool_name])
-            for number, tool_name in loaded.items()
+            _cnc_tool(number, CNC_KINDS[key], tool)
+            for number, (key, tool) in loaded_tools(shop, name).items()
         ),
     )
 

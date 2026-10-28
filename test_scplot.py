@@ -7,7 +7,13 @@ import unittest
 from typing import Any, cast
 
 from scgeometry import SCArc
-from scplot import path_moves, plot_html, sketch_path
+from scplot import (
+    command_moves,
+    path_moves,
+    plot_html,
+    read_gcode,
+    sketch_path,
+)
 from solidcraftcnc import SCCNC
 from test_scgeometry import square
 from test_solidcraftcnc import milling
@@ -53,6 +59,37 @@ class TestPlot(unittest.TestCase):
         self.assertEqual(holes[1]["pts"], [[2.0, 1.0, 0.05], [2.0, 1.0, -0.2]])
         self.assertEqual((holes[1]["f"], holes[1]["tool"]), (4.0, 2))
         self.assertEqual(moves[-1]["pts"][-1], [2.0, 1.0, 1.0])
+
+    # Method `TestPlot.test_read_gcode()`:
+    def test_read_gcode(self) -> None:
+        """A program's G-code reads back into the same moves."""
+        cnc: SCCNC = milling()
+        cnc.change_tool(2)
+        cnc.rapid(x=0.0, y=0.0)
+        cnc.drill([(1.0, 1.0), (2.0, 1.0)], -0.2)
+        cnc.change_tool(1)
+        cnc.rapid(x=1.0, y=0.0)
+        cnc.linear(z=-0.1)
+        cnc.arc(
+            SCArc((1.0, 0.0), (0.0, 1.0), (0.0, 0.0), 1.0, math.pi / 2),
+            z=-0.2,
+        )
+        commands = read_gcode(cnc.gcode())
+        self.assertEqual(len(commands), len(cnc.commands))
+        self.assertEqual(commands[0], {"comment": cnc.name})
+        expected = path_moves(cnc)
+        moves = command_moves(commands)
+        self.assertEqual(len(moves), len(expected))
+        for move, want in zip(moves, expected):
+            self.assertEqual(
+                (move["g"], move["line"], move["tool"]),
+                (want["g"], want["line"], want["tool"]),
+            )
+            self.assertAlmostEqual(move["f"], want["f"])
+            self.assertEqual(len(move["pts"]), len(want["pts"]))
+            for point, want_point in zip(move["pts"], want["pts"]):
+                for value, want_value in zip(point, want_point):
+                    self.assertAlmostEqual(value, want_value, places=3)
 
     # Method `TestPlot.test_page()`:
     def test_page(self) -> None:
