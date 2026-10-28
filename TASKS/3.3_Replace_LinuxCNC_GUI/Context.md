@@ -27,6 +27,15 @@ Moved from `T.s2~3`'s `Context.md` on 2026-10-28, when it was split.
   `../solidcraft/solidcraft` (the AppImage), and `solidcraft-cli` is
   in `../solidcraft/squashfs-root/usr/bin/`.
 
+## 2026-10-27: Moved here from `T.tl~3.2` (2026-10-28)
+
+* `sim_move.py` (step 1's two scratch scripts in one: `--method
+  pending|captured|solid`, `--step`, `--interval`, `--trips`,
+  `--report`).  Checkers clean; no unit tests (it needs
+  SolidCraft).
+* After the demo first ran in the shop mill simulator, the next step
+  was the SolidCraft side: a tool stand-in moved to each sample.
+
 ## 2026-10-27: Step 4: the tool follows in SolidCraft
 
 * `occurrence.move` with `matrix` is relative too (two identical
@@ -397,3 +406,114 @@ Moved from `T.s2~3`'s `Context.md` on 2026-10-28, when it was split.
   in the `lcnc` box.  A killed SolidCraft leaves recovery files and
   pid files (see above) to clear before the next start; closing
   LinuxCNC pops up a window.
+
+## 2026-10-28: Exploring STEP wire import
+
+Research only (no builds).  `../solidcraft_src/` fetched to `c1dee61`
+(2026-10-28T16:59Z, about 50 commits past `b0c8c46`; upstream had
+force-pushed `main`); none touch STEP or 3D sketch wires.  Line
+numbers below are at `c1dee61`.
+
+* Blocker: STEP import is in `crates/kernel/`, and kernel work is
+  paused (`CONTRIBUTING.md:20-27`, pinned issue #3992, 2026-10-21):
+  "please don't open new issues, pull requests or discussions about
+  ... STEP/IGES import and export, or anything else that changes
+  `crates/kernel/`" (they go to `solidcore`, a new kernel).  The
+  Part 21 parser and curve reader are `pub(crate)`
+  (`step_in/mod.rs:11-12`), so a curve import can not live in
+  `crates/io` without a kernel change.  So: no STEP PR for now.
+* Upstream search (`gh`): no issue or PR on GEOMETRIC_CURVE_SET,
+  wireframe STEP or tool path import.  Related: #7832 (3D lines as
+  model geometry, triage: use 3D sketch lines), #7831 (free 3D
+  splines), #8040/#8035 (3D sketch buttons), CAM RFC #1153 and its
+  PRs (#5751 CAM core, #2881 `cam.*` commands, #4158, #2627 stock
+  simulation; none shows a path in the viewport yet).  No sketch
+  line colour issue.
+* Contribution rules: issue first for anything bigger than a bug
+  fix, claim it with a draft PR (`claim: #N`, lowest PR wins), one
+  topic, `cargo xtask ci` before every push, a `Changes a default:`
+  line, real screenshots (agents capture them), design format
+  changes as one file in `crates/doc/src/format/pending/`, new UI
+  strings in `assets/locales/pending/`, regression tests in the
+  area's existing test file.  Licence MIT OR Apache-2.0 (no CLA or
+  sign-off).  AI help is welcome ("much of SolidCraft ... was
+  written by AI coding agents (Claude)"); `AGENTS.md` routes agents
+  to `skills/`.  No GPL code may be read for it (FreeCAD, ...).
+* How STEP import works:
+  * Commands: `file.insert_step` (`path`, `name?`, `up?: z|y`,
+    `names?: auto|solid|product|instance`, `matrix?`, `tolerance?`;
+    `crates/engine/src/cmd/file.rs:31-34`, `insert_step()`
+    250-271) and `doc.open` of a `.step` (a new design, 273-).
+  * `add_step()` (`file.rs:144-164`) -> `read_step()` (119-122) ->
+    `solidcraft_io::step_import_feature_named()`
+    (`crates/io/src/lib.rs:227-261`): size check, IGES / native CAD
+    restated as STEP, `kernel::step_import_shared()`, names; makes
+    `FeatureKind::Import { file, step: Arc<str>, components, skip }`
+    (`crates/doc/src/document.rs:1743-1757`), put in a new
+    component by `add_in_component()` (`cmd/file_import.rs:237`).
+  * The STEP text is the feature: saved compressed in the design
+    (`io/src/design.rs:260-264`), re-read on every evaluation
+    (`doc/src/eval.rs:7897-7912`, through a 4 entry cache keyed by
+    the text, `step_in/mod.rs:1168-1200`).
+  * Kernel: `StepReading::with_workers()` (`mod.rs:1236-1290`)
+    collects only MANIFOLD_SOLID_BREP, BREP_WITH_VOIDS,
+    FACETED_BREP, SHELL_BASED_SURFACE_MODEL (1249, 1272, and
+    `rep_bodies()` 683); any other item is skipped silently
+    (`_ => {}`, ~736), so curves give no warning.  A file with no
+    solids fails: "STEP import: no bodies (the file has no
+    solids)" (1316-1322).  Warnings that do exist come back in the
+    command's `warnings` and the first 3 as the feature's warning.
+  * `step_in/geom.rs:354-420` reads LINE, CIRCLE, B-splines,
+    POLYLINE (403) and TRIMMED_CURVE (419, basis only, trims
+    ignored), but only as edge geometry for faces.
+* 3D sketch wires: `Sketch.wires: Vec<Wire>`
+  (`crates/sketch/src/model.rs:731-732`); `Wire` (`wire.rs:49-66`):
+  `id`, `pts` (polyline), `space` (World/Component), `link`, `fit`
+  (drawn points: 1 point, 2 line, more a spline), `arc` (exact
+  `WireArc`).  Reference geometry: not in profiles or the solver.
+  Limits: 500 points a `sketch.line3d`/`spline3d` call
+  (`MAX_FIT_POINTS`, wire.rs:68), 100,000 points a wire, 20,000
+  wires and 1,000,000 points a sketch (`wire_budget()`, 223-234).
+  `sketch.line3d` makes one wire per segment of its points
+  (`cmd/sketch_3d.rs:103-111`); `sketch.arc3d` an exact arc
+  (start, through, end; 125-140).  Both in our 0.25.1.
+* No other wire object: `FeatureKind` has no curve or wire body;
+  construction axes and points only.  Motion traces
+  (`doc/src/motion.rs:21-29`) write a wire into a sketch too.  DXF
+  import is 2D only (`io/src/dxf.rs:223-238` keeps X, Y of a
+  POLYLINE's VERTEX; Z dropped), into a planar sketch.
+  `component.insert_design` brings solid bodies only
+  (`cmd/component_link.rs:32-36`); `sketch.paste` is a session
+  clipboard.
+* Colour and visibility: appearances are by body, face and
+  component only (`doc/src/appearance.rs:117-126`).  A wire's colour
+  is fixed by state (`engine/src/view.rs:388-398`): drawn and
+  active `sketch`, drawn and finished `sketch_done` (black),
+  included `sketch_projected` (purple).  `SketchView` has no colour
+  (`sketch/src/model.rs`).  Hiding is per sketch
+  (`browser.visibility`, `view.rs:812`), not per wire.  The viewport
+  passes a colour that is not a theme token straight through
+  (`ui-egui/src/viewport.rs:501-519`, `rgba(c)`), so a per sketch
+  colour would be easy to draw.
+* If the kernel pause ends, the smallest STEP design: in
+  `StepReading`, collect GEOMETRIC_CURVE_SET / GEOMETRIC_SET items
+  (and wireframe reps) as polylines (sampled with
+  `geom::curve()`), returned in `StepImport.wires`; the Import
+  feature turns them into a 3D sketch per curve set (no new body
+  kind, so no render, pick or export change).  About 200-400 lines
+  plus tests (`step_in/tests.rs`, an engine test); risks: a curve
+  only file must stop being an error, a sketch made by an import is
+  a second feature (undo, delete, reorder), STEP export does not
+  write wires back.  A wire body kind instead would touch render,
+  selection, export and the format: far bigger.
+* Quicker route, no PR: one `engine.batch` per tool: `sketch.create`
+  (XY), `sketch.options` (`sketch_3d: true`, points off), a
+  `sketch.line3d` per run of up to 500 points (and `sketch.arc3d`
+  for exact arcs), `sketch.finish`, maybe `browser.visibility`.  The
+  demo's whole path (4388 pieces) is about 10 `line3d` steps; one
+  request a tool, so likely well under a second each (earlier: 45
+  ms for a one line sketch in a batch).  Same result as a STEP
+  import, today.  Colour per tool is the one gap: a small non
+  kernel PR (a `color` sketch option: `SketchView`, `sketch.options`
+  params and schema, `view.rs` wire colour, a format pending file,
+  an engine test, a screenshot; perhaps 80-150 lines) would give it.

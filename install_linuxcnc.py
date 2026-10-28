@@ -85,6 +85,14 @@ CONFIGS: str = "linuxcnc/configs"
 # Debian's package sources, changed when an older Debian is upgraded.
 SOURCES: str = "/etc/apt/sources.list /etc/apt/sources.list.d/*"
 
+# `wsl.exe --exec` runs a command with no login shell, so root's
+# `PATH` lacks `/usr/sbin` (where `useradd` is); every WSL command
+# gets Debian's own `PATH`.
+WSL_ENV: tuple[str, ...] = (
+    "/usr/bin/env",
+    "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+)
+
 # The user (not root) made in a container or WSL, and the container's
 # name.
 USER: str = "lcnc"
@@ -1169,8 +1177,8 @@ def wsl_steps(options: Options) -> tuple[Target, list[Step]]:
     name = options.distribution
     target = Target(
         name=f"WSL's {name}",
-        root=("wsl.exe", "-d", name, "-u", "root", "--exec"),
-        user=("wsl.exe", "-d", name, "-u", USER, "--exec"),
+        root=("wsl.exe", "-d", name, "-u", "root", "--exec", *WSL_ENV),
+        user=("wsl.exe", "-d", name, "-u", USER, "--exec", *WSL_ENV),
         home=f"/home/{USER}",
         joined=False,
         shares_home=False,

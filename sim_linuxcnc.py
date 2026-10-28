@@ -1,41 +1,48 @@
 #!/usr/bin/env python3
 """Run a program in the LinuxCNC simulator and poll the tool position.
 
-The simulation (`T.s2~3`).  It takes a running LinuxCNC out of
-E-stop, turns it on and homes it, gives it the tool table of a shop's
-machine (`--shop`, `--machine`), sets the work origin (`--origin`, the
-machine coordinates of the program's zero, as G54), runs a program
-(the one it has loaded, or `PROGRAM`) at a feed override
-(`--speed`), and polls the position 20 times a second, printing a
-line every second and writing every sample (time, G-code line, X, Y,
-Z) to `--out`.  With `--solidcraft PORT`, every tool of the machine is
-modeled (`sctoolmodel`) in a SolidCraft GUI, where
+The tracking side of the simulation (`T.tl~3.2`).  It takes a running
+LinuxCNC out of E-stop, turns it on and homes it, gives it the tool
+table of a shop's machine (`--shop`, `--machine`; each tool's length
+is its overall length), sets the work origin (`--origin`, the machine
+coordinates of the program's zero for a tool of no length, as G54),
+runs a program (the one it has loaded, or `PROGRAM`) at a feed
+override (`--speed`, 10 times the programmed feeds by default; rapids
+stay at the machine's), and polls the position 20 times a second,
+printing a line every second and writing every sample (time, G-code
+line, X, Y, Z) to `--out`.  Each sample (a `Sample`, which also has
+the tool in the spindle) is handed to listeners (`Listener`); when one
+fails, or on Ctrl-C, the program is stopped.
+
+The one listener so far is `sim_solidcraft.py`'s `SolidCraftDisplay`
+(`T.rlg~3.3`), turned on by `--solidcraft PORT` (or `headless`):
+every tool of the machine is modeled in SolidCraft, where
 `solidcraftcnc_demo.py` has modeled the part, and the one in the
-spindle is shown, following the position; behind it, the path it has
-taken is shown, sketched beforehand (`RevealTrace`; unless
-`--no-trace`).  SolidCraft's coordinates are the program's, in
-millimeters:
+spindle follows the position, with the path traced behind it (unless
+`--no-trace`):
 
 ```
 distrobox enter lcnc -- linuxcnc lcnc_sim/shop_mill.ini &
 solidcraft --control 8080 &
 ./solidcraftcnc_demo.py 8080 > demo.ngc
-distrobox enter lcnc -- ./sim_linuxcnc.py demo.ngc --speed 5 \
-    --solidcraft 8080
+distrobox enter lcnc -- ./sim_linuxcnc.py demo.ngc --solidcraft 8080
 ```
 
 `lcnc_sim/shop_mill.ini` simulates the example shop's mill.  The
 `linuxcnc` module comes with LinuxCNC, which is installed only in the
 `lcnc` Debian Trixie box (see `TASKS/3_Simulation/Context.md`), so
-this runs there.  The positions are work coordinates (the program's),
-in the machine's units.
+this runs there.  The positions are work coordinates (the program's,
+of the tool's tip), in the machine's units.
 """
 
 import argparse
 import sys
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field
+from operator import methodcaller
 from pathlib import Path
+from typing import Protocol
 
 # The `linuxcnc` module has no type hints, so it is `Any` to `mypy`,
 # and it is only in the `lcnc` box, so the checkers on the host do
@@ -43,13 +50,17 @@ from pathlib import Path
 # pylint: disable-next=import-error
 import linuxcnc  # type: ignore[import-not-found]
 
-from scplot import Move, command_moves, draw_moves, read_gcode
-from scraftpybind import JSON, SolidCraftError, SolidCraftPyBind, connect
-from sctoolmodel import model, profile
-from shops import cnc_machine, loaded_tools, read
+import sim_solidcraft
+from scraftpybind import SolidCraftError
+from shops import LENGTH, cnc_machine, loaded_tools, measure, read
 
 # How often to poll (seconds).
 POLL: float = 0.05
+
+# The feed override, by default: as fast as `lcnc_sim/shop_mill.ini`
+# allows (its `MAX_FEED_OVERRIDE`), which is pleasant to watch (the
+# demo takes about 5 minutes instead of 20).
+SPEED: float = 10.0
 
 # The shop and machine whose tools are loaded, by default.
 SHOP_FILE: Path = (
@@ -60,248 +71,71 @@ MACHINE: str = "Shop mill"
 # The machine coordinates (inches) of the program's zero, by default:
 # well inside `lcnc_sim/shop_mill.ini`'s travel (X 0 to 18, Y 0 to 9,
 # Z -16 to 0), with room above the work for a 2 inch tool change
-# height.
+# height with the longest tool (3-7/8 in).
 ORIGIN: tuple[float, float, float] = (4.0, 3.0, -6.0)
-
-# SolidCraft's coordinates are millimeters.
-MM_PER_INCH: float = 25.4
-
-# The tools' color in SolidCraft.
-TOOL_COLOR: str = "#e07020"
 
 # A position: X, Y and Z (inches, program coordinates).
 Position = tuple[float, float, float]
 
-# The trace's sketches are named this, then their G-code lines.
-TRACE_NAME: str = "Trace"
 
-
-# Class `ToolModel`:
-# It keeps the last position between moves, so it is a class with
-# one method.
-class ToolModel:  # pylint: disable=too-few-public-methods
-    """One tool in SolidCraft, made from its description in the shop.
-
-    Its tip starts at the program's zero.  SolidCraft moves a
-    component only by a step from where it is, so the position it was
-    last sent to is kept, and each move sends the difference; a move
-    is sent only when the tool has moved.
+# Class `Sample`:
+@dataclass(frozen=True, slots=True)
+class Sample:
+    """One poll of LinuxCNC: where the tool was, and when.
 
     Attributes:
-    * `body` (`str`): Its body.
-    * `occurrence` (`str`): Its component's occurrence.
-    * `position` (`Position`): Where its tip was last sent.
-    * `solidcraft` (`SolidCraftPyBind`): The SolidCraft session.
+    * `time` (`float`): Seconds since the program started.
+    * `line` (`int`): The G-code line being run (`motion_line`,
+      from 1).
+    * `position` (`Position`): The tool tip's X, Y and Z (work
+      coordinates, in the machine's units).
+    * `tool` (`int`): The T number of the tool in the spindle (0 for
+      none).
+
+    Constructor:
+    * `Sample(time, line, position, tool)`
     """
 
-    # Method `ToolModel.__init__()`:
-    def __init__(
-        self,
-        solidcraft: SolidCraftPyBind,
-        number: int,
-        tool: tuple[str, dict[str, object]],
-    ) -> None:
-        """Model the tool, as a component of its own, hidden.
+    # Constructor arguments:
+    time: float = field(init=True)
+    line: int = field(init=True)
+    position: Position = field(init=True)
+    tool: int = field(init=True)
 
-        Arguments:
-        * `solidcraft` (`SolidCraftPyBind`):
-          The SolidCraft session.
-        * `number` (`int`):
-          Its T number, which names it (`T1`, ...).
-        * `tool` (`tuple[str, dict[str, object]]`):
-          Its list in the tools file, and its description (from
-          `shops.loaded_tools()`).
+    # Method `Sample.text()`:
+    def text(self) -> str:
+        """Return the sample as a line of `--out` (no tool).
+
+        Returns:
+        * (`str`): Time, line, X, Y and Z, in columns.
         """
-        # The tool, standing on its tip at the program's zero.
-        self.solidcraft: SolidCraftPyBind = solidcraft
-        self.position: Position = (0.0, 0.0, 0.0)
-        self.body: str = model(solidcraft, f"T{number}", profile(*tool))
-        solidcraft.appearance.assign(bodies=[self.body], color=TOOL_COLOR)
-
-        # Make it a component, find its occurrence by name, and unground
-        # it (a design's first component is grounded, and can not move).
-        made: JSON = solidcraft.component.from_bodies(bodies=[self.body])
-        assert isinstance(made, dict) and isinstance(made["components"], list)
-        component: JSON = made["components"][0]
-        assert isinstance(component, dict)
-        listed: JSON = solidcraft.component.list(compact=True)
-        assert isinstance(listed, dict) and isinstance(
-            listed["components"], list
-        )
-        self.occurrence: str = next(
-            str(occurrence["name"])
-            for entry in listed["components"]
-            if isinstance(entry, dict)
-            and entry["id"] == component["component"]
-            and isinstance(entry["occurrences"], list)
-            for occurrence in entry["occurrences"]
-            if isinstance(occurrence, dict)
-        )
-        solidcraft.occurrence.ground(
-            occurrence=self.occurrence, grounded=False
-        )
-        solidcraft.browser.visibility(visible=False, items=[self.body])
-
-    # Method `ToolModel.move_to()`:
-    def move_to(self, position: Position) -> None:
-        """Move the tip to a position, if it is not there already.
-
-        Arguments:
-        * `position` (`Position`): Where the tip goes.
-        """
-        if position == self.position:
-            return
-        dx, dy, dz = (
-            (new - old) * MM_PER_INCH
-            for new, old in zip(position, self.position, strict=True)
-        )
-        self.solidcraft.occurrence.move(
-            occurrence=self.occurrence,
-            space="world",
-            translate=(dx, dy, dz),
-            capture=False,
-        )
-        self.position = position
+        x, y, z = self.position
+        return f"{self.time:8.3f} {self.line:5d} {x:9.4f} {y:9.4f} {z:9.4f}"
 
 
-# Class `ToolRack`:
-# It keeps the tool shown between moves, so it is a class with one
-# method.
-class ToolRack:  # pylint: disable=too-few-public-methods
-    """Every tool of a machine in SolidCraft; the one in use is shown.
+# Class `Listener`:
+class Listener(Protocol):
+    """Something that follows the samples (such as a display).
 
-    Attributes:
-    * `current` (`int`): The T number of the tool shown (0 for none).
-    * `solidcraft` (`SolidCraftPyBind`): The SolidCraft session.
-    * `tools` (`dict[int, ToolModel]`): The tools, by T number.
+    An exception from either method stops the program.
     """
 
-    # Method `ToolRack.__init__()`:
-    def __init__(
-        self,
-        solidcraft: SolidCraftPyBind,
-        tools: dict[int, tuple[str, dict[str, object]]],
-    ) -> None:
-        """Model every tool, hidden.
+    # Method `Listener.sample()`:
+    def sample(self, sample: Sample) -> None:
+        """Take one sample.
 
         Arguments:
-        * `solidcraft` (`SolidCraftPyBind`):
-          The SolidCraft session.
-        * `tools` (`dict[int, tuple[str, dict[str, object]]]`):
-          The tools, by T number (from `shops.loaded_tools()`).
+        * `sample` (`Sample`): The sample.
         """
-        self.solidcraft: SolidCraftPyBind = solidcraft
-        self.current: int = 0
-        self.tools: dict[int, ToolModel] = {
-            number: ToolModel(solidcraft, number, tool)
-            for number, tool in sorted(tools.items())
-        }
 
-    # Method `ToolRack.move_to()`:
-    def move_to(self, number: int, position: Position) -> None:
-        """Show the tool in the spindle, at a position.
-
-        Arguments:
-        * `number` (`int`):
-          The T number of the tool in the spindle (0 for none, or
-          one the rack does not have, which shows none).
-        * `position` (`Position`): Where its tip is.
-        """
-        # On a tool change, hide the old tool, and move the new one
-        # into place before showing it.
-        if number != self.current:
-            if self.current in self.tools:
-                self.solidcraft.browser.visibility(
-                    visible=False, items=[self.tools[self.current].body]
-                )
-            self.current = number
-            if number in self.tools:
-                self.tools[number].move_to(position)
-                self.solidcraft.browser.visibility(
-                    visible=True, items=[self.tools[number].body]
-                )
-        if number in self.tools:
-            self.tools[number].move_to(position)
+    # Method `Listener.finish()`:
+    def finish(self) -> None:
+        """Take the end of the program (after its last sample)."""
 
 
-# Class `RevealTrace`:
-# It keeps which sketches are shown between samples, so it is a class
-# with one method.
-class RevealTrace:  # pylint: disable=too-few-public-methods
-    """The planned path, shown in SolidCraft as the tool reaches it.
-
-    Drawing the path as the tool goes is slow, since every change to a
-    sketch makes SolidCraft (0.25) refresh the whole design, while
-    showing a hidden sketch is cheap (4 to 8 ms beside the demo's plate,
-    by `probe_reveal.py`).  So the path is drawn beforehand, a hidden
-    3D sketch for each G-code line that moves (`TRACE_NAME` and the
-    line: "Trace 27"), and each is shown when LinuxCNC's `motion_line`
-    reaches its line (a long move shows all at once, as it starts).
-    Sketch lines all look alike, so the planned path's own sketches
-    (`scplot.sketch_path()`) would hide it: every sketch is hidden
-    first, and they can be shown again from the browser.  The program
-    is taken to be in inches.
-
-    Attributes:
-    * `next` (`int`): The index in `sketches` of the first not shown.
-    * `sketches` (`list[tuple[int, str]]`): Each sketch's G-code line
-      (from 1, as `motion_line` counts) and name, in order.
-    * `solidcraft` (`SolidCraftPyBind`): The SolidCraft session.
-    """
-
-    # Method `RevealTrace.__init__()`:
-    def __init__(self, solidcraft: SolidCraftPyBind, program: Path) -> None:
-        """Hide every sketch, and draw the program's path, hidden.
-
-        Arguments:
-        * `solidcraft` (`SolidCraftPyBind`): The SolidCraft session.
-        * `program` (`Path`): The G-code file (as `SCCNC` writes it).
-        """
-        self.solidcraft: SolidCraftPyBind = solidcraft
-        self.next: int = 0
-        self.sketches: list[tuple[int, str]] = []
-        solidcraft.browser.visibility(visible=False, folder="sketches")
-
-        # Gather the moves by line, and draw each line's moves.
-        lines: dict[int, list[Move]] = {}
-        move: Move
-        for move in command_moves(
-            read_gcode(program.read_text(encoding="utf-8"))
-        ):
-            lines.setdefault(move["line"] + 1, []).append(move)
-        line: int
-        moves: list[Move]
-        for line, moves in lines.items():
-            name: str = f"{TRACE_NAME} {line}"
-            solidcraft.sketch.create(plane="XY", name=name)
-            solidcraft.sketch.options(
-                sketch_3d=True,
-                show_points=False,
-                show_profile=False,
-                show_constraints=False,
-                show_dimensions=False,
-            )
-            draw_moves(solidcraft, moves, MM_PER_INCH)
-            solidcraft.sketch.finish()
-            solidcraft.browser.visibility(visible=False, items=[name])
-            self.sketches.append((line, name))
-
-    # Method `RevealTrace.reveal()`:
-    def reveal(self, line: int) -> None:
-        """Show every sketch of the path up to a line, in one command.
-
-        Arguments:
-        * `line` (`int`): The G-code line being run (from 1).
-        """
-        names: list[str] = []
-        while (
-            self.next < len(self.sketches)
-            and self.sketches[self.next][0] <= line
-        ):
-            names.append(self.sketches[self.next][1])
-            self.next += 1
-        if names:
-            self.solidcraft.browser.visibility(visible=True, items=names)
+# Class `ListenerFailed`:
+class ListenerFailed(Exception):
+    """A listener failed, so the program was stopped."""
 
 
 # Class `Simulator`:
@@ -390,7 +224,9 @@ class Simulator:
         """Give LinuxCNC the tool table of a shop's machine.
 
         It is written over the tool table file named in LinuxCNC's
-        INI file, and read back in.  Tool lengths are all zero.
+        INI file, and read back in.  Each tool's length (its `Z`,
+        which `G43` takes off) is its overall length from the tools
+        files.
 
         Arguments:
         * `shop` (`Path`):
@@ -408,11 +244,20 @@ class Simulator:
             linuxcnc.ini(str(ini_file)).find("EMCIO", "TOOL_TABLE")
         )
 
-        # Write it, and read it back in.
+        # Write it, and read it back in.  The real length (the gauge
+        # length) is how far the tip sticks out of the spindle, which
+        # depends on the holder and on how far the tool sticks out of
+        # it; the shop files do not have those yet, so the tool's
+        # overall length stands in for it.
+        described: dict[str, object] = read(shop)
+        lengths: dict[int, float] = {
+            number: measure(tool["overall_length"], LENGTH)
+            for number, (_, tool) in loaded_tools(described, machine).items()
+        }
         lines: list[str] = [
-            f"T{tool.number} P{tool.number} Z0 D{tool.diameter:.4f} "
-            f";{tool.name}"
-            for tool in cnc_machine(read(shop), machine).tools
+            f"T{tool.number} P{tool.number} Z{lengths[tool.number]:.4f} "
+            f"D{tool.diameter:.4f} ;{tool.name}"
+            for tool in cnc_machine(described, machine).tools
         ]
         table.write_text("\n".join(lines) + "\n", encoding="utf-8")
         self.command.load_tool_table()
@@ -484,26 +329,24 @@ class Simulator:
         return (x, y, z)
 
     # Method `Simulator.follow()`:
-    def follow(
-        self, out: Path, rack: ToolRack | None, trace: RevealTrace | None
-    ) -> int:
+    def follow(self, out: Path, listeners: Sequence[Listener]) -> int:
         """Poll the position until the program ends.
 
         The polls keep to a fixed schedule, so that the time each one
-        takes (moving the tool in SolidCraft can take 50 ms) does not
-        slow them down; a late poll is not made up.
+        takes (a listener moving the tool in SolidCraft can take
+        50 ms) does not slow them down; a late poll is not made up.
 
         Arguments:
         * `out` (`Path`):
           The file every sample is written to.
-        * `rack` (`ToolRack | None`):
-          The tools in SolidCraft, whose one in the spindle follows
-          the position, if any.
-        * `trace` (`RevealTrace | None`):
-          The path shown in SolidCraft as the tool reaches it, if any.
+        * `listeners` (`Sequence[Listener]`):
+          What each sample is handed to, in order.
 
         Returns:
         * (`int`): The number of samples.
+
+        Raises:
+        * `ListenerFailed`: If a listener raised an exception.
         """
         # Let the interpreter leave its idle state first.
         start: float = time.monotonic()
@@ -514,50 +357,64 @@ class Simulator:
             while True:
                 # Write a sample, and print one each second.
                 self.stat.poll()
-                now: float = time.monotonic() - start
-                line: int = self.stat.motion_line
-                x, y, z = self.work_position()
-                sample: str = (
-                    f"{now:8.3f} {line:5d} {x:9.4f} {y:9.4f} {z:9.4f}"
+                sample: Sample = Sample(
+                    time.monotonic() - start,
+                    self.stat.motion_line,
+                    self.work_position(),
+                    self.stat.tool_in_spindle,
                 )
-                samples_file.write(sample + "\n")
+                samples_file.write(sample.text() + "\n")
                 samples += 1
                 if samples % round(1.0 / POLL) == 0:
-                    print(sample, flush=True)
-                if rack is not None:
-                    rack.move_to(self.stat.tool_in_spindle, (x, y, z))
-                if trace is not None:
-                    trace.reveal(line)
+                    print(sample.text(), flush=True)
+                _tell(listeners, methodcaller("sample", sample))
 
-                # Stop when the program is done, showing all its path.
+                # Stop when the program is done, and say so.
                 self.report_errors()
                 if self.stat.interp_state == linuxcnc.INTERP_IDLE:
-                    if trace is not None:
-                        trace.reveal(sys.maxsize)
+                    _tell(listeners, methodcaller("finish"))
                     return samples
                 tick = max(tick + POLL, time.monotonic())
                 time.sleep(max(0.0, tick - time.monotonic()))
 
 
+# Function `_tell()`:
+def _tell(
+    listeners: Sequence[Listener], call: Callable[[Listener], None]
+) -> None:
+    """Call each listener, turning its failure into `ListenerFailed`.
+
+    Arguments:
+    * `listeners` (`Sequence[Listener]`): The listeners.
+    * `call` (`Callable[[Listener], None]`): What to call on each.
+
+    Raises:
+    * `ListenerFailed`: If a listener raised an exception (any kind,
+      since whatever it is, the program must stop).
+    """
+    for listener in listeners:
+        try:
+            call(listener)
+        except Exception as error:  # pylint: disable=broad-exception-caught
+            raise ListenerFailed(
+                f"{type(listener).__name__} failed "
+                f"({type(error).__name__}: {error})"
+            ) from error
+
+
 # Function `run()`:
-def run(
-    options: argparse.Namespace,
-    rack: ToolRack | None,
-    trace: RevealTrace | None,
-) -> int:
+def run(options: argparse.Namespace, listeners: Sequence[Listener]) -> int:
     """Set the simulator up, run the program and follow it.
 
-    When SolidCraft fails or stops answering (as when its window is
-    closed), or on Ctrl-C, the program is stopped.
+    When a listener fails (as `sim_solidcraft.SolidCraftDisplay` does
+    when SolidCraft stops answering, or its window is closed), when the
+    samples can not be written, or on Ctrl-C, the program is stopped.
 
     Arguments:
     * `options` (`argparse.Namespace`):
       The command line arguments.
-    * `rack` (`ToolRack | None`):
-      The tools in SolidCraft, whose one in the spindle follows the
-      position, if any.
-    * `trace` (`RevealTrace | None`):
-      The path shown in SolidCraft as the tool reaches it, if any.
+    * `listeners` (`Sequence[Listener]`):
+      What each sample is handed to.
 
     Returns:
     * (`int`): The exit status.
@@ -569,18 +426,15 @@ def run(
     print("running", simulator.start(options.program, options.speed))
     start: float = time.monotonic()
 
-    # Closing SolidCraft (or Ctrl-C) stops the program too.
+    # A failed listener (or Ctrl-C) stops the program too.
     try:
-        samples: int = simulator.follow(options.out, rack, trace)
-    except (SolidCraftError, OSError, KeyboardInterrupt) as error:
+        samples: int = simulator.follow(options.out, listeners)
+    except (ListenerFailed, OSError, KeyboardInterrupt) as error:
         simulator.stop()
         why: str = (
             "interrupted"
             if isinstance(error, KeyboardInterrupt)
-            else (
-                "SolidCraft failed or stopped answering "
-                f"({type(error).__name__}: {error})"
-            )
+            else str(error)
         )
         print(f"{why}: the program is stopped", file=sys.stderr)
         return 1
@@ -643,8 +497,9 @@ def main() -> int:
     parser.add_argument(
         "--speed",
         type=float,
-        default=1.0,
-        help="feed override (default: 1; at most 10 in shop_mill.ini)",
+        default=SPEED,
+        help="feed override (default: %(default)s, the most "
+        "shop_mill.ini allows; 1 for the programmed feeds)",
     )
     parser.add_argument(
         "--shop",
@@ -657,41 +512,18 @@ def main() -> int:
         default=MACHINE,
         help="that machine's name (default: %(default)s)",
     )
-    parser.add_argument(
-        "--solidcraft",
-        metavar="PORT",
-        default="",
-        help="a SolidCraft GUI's control port, where a tool follows",
-    )
-    parser.add_argument(
-        "--no-trace",
-        action="store_true",
-        help="do not show the path in SolidCraft as the tool goes",
-    )
+    sim_solidcraft.add_arguments(parser)
     options: argparse.Namespace = parser.parse_args()
 
-    # Run it, with a tool in SolidCraft if asked to.  A LinuxCNC or a
+    # Run it, with the tool in SolidCraft if asked to.  A LinuxCNC or a
     # SolidCraft that is not there is reported in one line.
     try:
         if not options.solidcraft:
-            return run(options, None, None)
-        with connect(options.solidcraft) as transport:
-            solidcraft: SolidCraftPyBind = SolidCraftPyBind(transport)
-            rack: ToolRack = ToolRack(
-                solidcraft, loaded_tools(read(options.shop), options.machine)
-            )
-            if options.no_trace:
-                return run(options, rack, None)
-            start: float = time.monotonic()
-            trace: RevealTrace = RevealTrace(
-                solidcraft, program_file(options.program)
-            )
-            print(
-                f"trace: {len(trace.sketches)} sketches in "
-                f"{time.monotonic() - start:.1f} s",
-                flush=True,
-            )
-            return run(options, rack, trace)
+            return run(options, [])
+        with sim_solidcraft.display(
+            options, program_file(options.program)
+        ) as display:
+            return run(options, [display])
     except (
         linuxcnc.error,
         SolidCraftError,

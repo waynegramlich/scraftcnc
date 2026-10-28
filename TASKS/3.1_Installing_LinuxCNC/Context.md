@@ -212,3 +212,20 @@ Moved from `T.s2~3`'s `Context.md` on 2026-10-28, when it was split.
   many packages `apt-get` installed (`dpkg-query` before and after).
 * Local `lcnc` box: 10/10 "already done".  Tests 15 (all 105 pass);
   checkers clean.
+
+## 2026-10-28: Probe run 40730774714 (561325d, all routes Python)
+
+* `ubuntu-latest` (distrobox): pass, about 2 min; apt installed 454
+  packages (`--no-install-recommends`).
+* `macos-15-intel` (colima): pass, 15.5 min (colima VM 4 min);
+  626 packages.
+* `macos-latest` (QEMU, software emulation, `kern.hv_support` 0):
+  pass, 13.5 min (VM booted in 1.4 min, install 11 min); 544
+  packages.  Far under the 6 hour limit.
+* `windows-latest` (WSL 2, Debian): WSL 2 came up, then step 2
+  failed: `wsl.exe -u root --exec useradd ...` gave "execvpe(useradd)
+  failed: No such file or directory" (`--exec` has no login shell,
+  so no `/usr/sbin` on root's `PATH`).  Fixed: every WSL command
+  goes through `/usr/bin/env PATH=...` (`WSL_ENV`).
+* On every passing runner: `import linuxcnc`, the AXIS modules and
+  `halrun` (as a user who is not root) all pass.

@@ -20,13 +20,12 @@ Moved from `T.s2~3`'s `Context.md` on 2026-10-28, when it was split.
 
 ## 2026-10-27: The scripts, saved
 
-* `sim_move.py` (steps 1's two scratch scripts in one: `--method
-  pending|captured|solid`, `--step`, `--interval`, `--trips`,
-  `--report`) and `sim_linuxcnc.py` (step 3; runs in the box:
-  `distrobox enter lcnc -- ./sim_linuxcnc.py [PROGRAM] [--out
-  FILE]`).  Checkers clean; no unit tests (both need SolidCraft or
-  LinuxCNC).  Not named `*_test.py`, which would make them test
-  suites under the Python Coding Rules.
+* `sim_linuxcnc.py` (step 3; runs in the box: `distrobox enter
+  lcnc -- ./sim_linuxcnc.py [PROGRAM] [--out FILE]`).  Checkers
+  clean; no unit tests (it needs LinuxCNC).  Not named
+  `*_test.py`, which would make it a test suite under the Python
+  Coding Rules.  (`sim_move.py`, saved at the same time, is
+  `T.rlg~3.3`'s.)
 * Homing trap: `home(-1)` on an already homed sim machine unhomes it
   first, and then X and Z (`HOME_IS_SHARED`) refuse with "Cannot
   home while shared home switch is closed" wherever the last program
@@ -45,8 +44,8 @@ Moved from `T.s2~3`'s `Context.md` on 2026-10-28, when it was split.
   (`sim_linuxcnc.py PROGRAM` already does).  The demo's G-code
   already has feeds and speeds (per tool `F`/`S` from the tools
   files), so `T.msaf~2.4` is not in the way.
-* Two things it needed (tried with a scratch script; not yet in
-  `sim_linuxcnc.py`):
+* Two things it needed (tried with a scratch script first; added to
+  `sim_linuxcnc.py` the same evening, see below):
   * A work offset: the program goes to Z2, above the sim's Z soft
     limit (+0.12, machine).  MDI `G20 G10 L2 P1 X0 Y0 Z-2.5`
     (`mode(MODE_MDI)`, `mdi(...)`); without the `G20` it was taken
@@ -91,9 +90,86 @@ Moved from `T.s2~3`'s `Context.md` on 2026-10-28, when it was split.
 * `./solidcraftcnc_demo.py > demo.ngc`, then `distrobox enter lcnc
   -- ./sim_linuxcnc.py demo.ngc --speed 5`: 362.8 s (vs 19.6 min at
   1x; rapids stay at 110 in/min), 7231 samples, no errors.
-* Next: the SolidCraft side (a tool stand-in moved to each sample).
 * The user: the run does the peck drilling first, which is boring to
   watch.  Ideas for later: start at a later line (LinuxCNC's run
   from line, `auto(AUTO_RUN, LINE)`), or a higher `--speed` for the
   drilling.
 
+
+## 2026-10-28: Split, real tool lengths (a forked agent)
+
+* The user's #5: `sim_linuxcnc.py` only drives and polls LinuxCNC;
+  each poll is a `Sample` (time, line, position, tool) handed to
+  `Listener`s (`sample()`, `finish()`); any exception from one is
+  `ListenerFailed` and stops the program (as SolidCraft going away
+  did).  `ToolModel`, `ToolRack`, `RevealTrace` moved to
+  `sim_solidcraft.py` (`T.rlg~3.3`), whose `SolidCraftDisplay` is a
+  listener; `add_arguments()` adds `--solidcraft`/`--no-trace`, so
+  the command line is unchanged; `--solidcraft headless` now works
+  (extracted `solidcraft-cli`).  It needs no `linuxcnc` module.
+  Host check, headless, fake samples: 558 trace sketches in 6.5 s.
+* The user's #8: the tool table's Z is each tool's `overall_length`
+  (gauge length really depends on holder and stick out; not in the
+  shop files yet).  Longest is the 15/64 drill, 3-7/8 in: at the
+  default origin Z -6, work Z2 is machine Z -0.125, just inside.
+* Live, no SolidCraft: `./sim_linuxcnc.py demo.ngc --speed 10`
+  (split code, real lengths) ran through: 5895 samples in 294.9 s,
+  no errors; the table had Z2.5000 for T1 ... Z3.8750 for T4.
+* The user's #6, checked: every sample after line 14 lies within
+  0.001 in of `command_moves()`'s path for its line (5573 samples),
+  except at tool changes: `motion_line` stays on the `G0 Z2` before
+  `T.. M6 G43 H..`, and the tip's work Z jumps by the length
+  difference (T4 -> T8: Z 3.375 = 2 + 3.875 - 2.5; T8 -> T5: +1.0),
+  which is right: the spindle stays put, the tool is shorter.  Line
+  14 (the first G83 hole) is off since `command_moves()` skips moves
+  before X and Y are known.  So `tool_offset` is taken off right.
+* MDI probe (scratchpad `offset_probe.py`): tip at `G0 Z0` reads
+  work Z 0 for T1 (machine -3.5), T4 (-2.125) and T5 (-4.5): machine
+  = -6 + length.  `G92 X0 Y0 Z0` at X1 Y1 Z1 then `G0 X0.5 Y0.25
+  Z0.5` reads 0.5 0.25 0.5 (g92_offset 1 1 1); `G92.1` clears it.
+  Our G-code never uses G92.
+* Found: the tool change height is work Z2, so with real lengths the
+  new tool's tip lands lower by its extra length.  The first change
+  (no tool, then T4 at 3-7/8 in) puts the tip at work Z -1.875,
+  below the part top (here off to the side, at machine X0 Y0).  A
+  real post would go to machine Z0 first (`G53 G0 Z0`) before
+  `T.. M6`.  Not changed (a `SCCNC`/`tool_change` question).
+* At the user's word (through the coordinator), `--speed` now
+  defaults to 10 (`SPEED`, the INI file's `MAX_FEED_OVERRIDE`).
+* `--solidcraft headless` from the `lcnc` box: the `solidcraft-cli`
+  on the `PATH` is the AppImage's wrapper (`~/.local/bin`, written
+  2026-10-27 20:19), which needs FUSE: "No suitable fusermount binary
+  found" (the box has none), seen as a JSON error.  So
+  `sim_solidcraft.transport()` now always prefers the extracted
+  `solidcraft/squashfs-root/usr/bin/solidcraft-cli`.  Then: trace
+  558 sketches in 6.5 s, 751 samples in about 38 s (Ctrl-C by
+  `timeout -s INT 45` in the box: "interrupted: the program is
+  stopped").  Killing the `solidcraft-cli` mid-run: "SolidCraftDisplay
+  failed (ConnectionError: ...): the program is stopped".  Nothing
+  left running either time.
+* The user's #9 (quiet close).  The box shares the host's process
+  and IPC namespaces (its processes and `ipcs -m` show on the host).
+  Running LinuxCNC is: `linuxcnc` (the bash script, parent of
+  `axis`), `linuxcncsvr`, `io`, `halui`, `rtapi_app`, `milltask`,
+  `axis`; 8 shared memory segments of its own; `/tmp/linuxcnc.lock`.
+* Why yesterday's `pkill -TERM axis` popped a window: the script runs
+  the display in the foreground, then `Cleanup`; its `EXIT` trap
+  (`ErrorCheck`) shows `show_errors.tcl` (a wish window) whenever the
+  display exits non-zero (and AXIS's own close button asks "Do you
+  really want to close LinuxCNC?").
+* `distrobox enter lcnc -- axis-remote --quit` (AXIS's remote
+  `destroy`, no question): in under 2 s every process gone, its 8
+  segments removed (2 others, not LinuxCNC's, stay), lock removed,
+  no window, `linuxcnc` exit 0.  Quiet and clean.
+* `kill -9` of all seven at once: no window (the script's trap
+  can not run), but it leaves `/tmp/linuxcnc.lock` and LinuxCNC's 8
+  segments (nattch 0).  The next `linuxcnc` (no tty, `DISPLAY` set)
+  then pops up a wish dialog "LinuxCNC is still running.  Restart
+  it?" (seen at 10:14; the user answered it: Yes, and it cleaned up
+  and started).  So `kill -9` alone is not quiet.
+* `kill -9`, then `halrun -U` (in the box; "Waited 3 seconds for
+  master.  giving up.", 2.6 s) removes the HAL segments (keys
+  0x48414c32, 0x48484c34) but not 0x64 nor the NML ones (1001-1005,
+  `B ... SHMEM` lines of `/usr/share/linuxcnc/linuxcnc.nml`); after
+  `ipcrm -M` of those and removing the lock, `linuxcnc
+  lcnc_sim/shop_mill.ini` started cleanly, no dialog.

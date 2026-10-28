@@ -10,7 +10,12 @@ has a CNC controller to talk to:
 * Load and run a program (e.g. the demo's G-code), with a feed
   override, and stop it cleanly (errors, Ctrl-C).
 * Poll the tool's position (work coordinates), the G-code line being
-  run and the tool in the spindle, at about 20 Hz.
+  run and the tool in the spindle, at about 20 Hz, and hand each
+  sample to listeners (such as `sim_solidcraft.py`'s display, which
+  is `T.rlg~3.3`'s); a failing listener stops the program.
+* Tool lengths in the tool table (`G43`), with the work position
+  still the tool tip's.
+* Close LinuxCNC without a window popping up (`stop_linuxcnc.py`).
 
 ## Done When
 
