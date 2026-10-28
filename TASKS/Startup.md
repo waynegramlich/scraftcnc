@@ -1,8 +1,9 @@
 @2_Document_a_Shop/Details.md
 @2_Document_a_Shop/Context.md
-@2.2_Mounting/Details.md
-@2.3_Stock/Details.md
-@2.4_Materials_Speeds_and_Feeds/Details.md
+@2.1_Materials_Speeds_and_Feeds/Details.md
+@2.1_Materials_Speeds_and_Feeds/Context.md
+@2.3_Mounting/Details.md
+@2.4_Stock_Models/Details.md
 @2.5_Tool_Models/Details.md
 @3_Simulation/Details.md
 @3_Simulation/Context.md
@@ -12,4 +13,4 @@
 @3.2_Tracking_LinuxCNC/Summary.md
 @1_Original_Roadmap/Summary.md
 @1.1_Come_up_with_a_plan/Summary.md
-@2.1_Shop_Information/Summary.md
+@2.2_Shop_Information/Summary.md

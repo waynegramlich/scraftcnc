@@ -1,4 +1,4 @@
-# 2.2 Mounting
+# 2.3 Mounting
 
 How the stock is held on the machine (draft by Claude from the user's
 description, 2026-10-27; the user's to revise).

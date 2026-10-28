@@ -1,4 +1,4 @@
-# 2.1 Shop Information
+# 2.2 Shop Information
 
 The first step of `T.ds~2` (Document a Shop): a shop described in
 TOML files, ported from `../Fab/FabShops.py` (2022), with a loader

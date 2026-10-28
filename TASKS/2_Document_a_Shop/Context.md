@@ -44,7 +44,7 @@ with units is the better base.
 * `T.cuwp~2` and `T.or~3` closed; `T.ds` moved to 1 (the user's
   choice: open work first).
 * New sub-tasks, with draft `Details.md`: `T.m~1.2` Mounting (with
-  bottom chamfers, tooling holes, tabs), `T.s~1.3` Stock,
+  bottom chamfers, tooling holes, tabs), `T.sm~1.3` Stock,
   `T.msaf~1.4` Materials Speeds and Feeds (and where preferences
   belong), `T.tm~1.5` Tool Models.
 
@@ -52,7 +52,7 @@ with units is the better base.
 
 * At the user's choice, history first: `T.or~1` (Original Roadmap)
   with `T.cuwp~1.1` under it, then `T.ds~2` with `T.si~2.1` (closed)
-  and the Pending `T.m~2.2` Mounting, `T.s~2.3` Stock,
+  and the Pending `T.m~2.2` Mounting, `T.sm~2.3` Stock,
   `T.msaf~2.4` Materials Speeds and Feeds, `T.tm~2.5` Tool Models.
 * Next session: the user picks which sub-task to open first, and may
   rewrite the draft `Details.md` files.  The user commits and pushes

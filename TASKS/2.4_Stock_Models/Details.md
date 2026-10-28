@@ -1,4 +1,4 @@
-# 2.3 Stock
+# 2.4 Stock Models
 
 The raw material on hand (draft by Claude, 2026-10-27; the user's to
 revise).
