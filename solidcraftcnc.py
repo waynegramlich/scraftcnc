@@ -94,6 +94,13 @@ REACH_MARGIN: float = 1e-4
 # ramped into instead.
 SMALL_RING: float = 2.0
 
+# The feed along an arc is scaled so that the cutting edge, not the
+# tool's center, moves at the tool's feed, but never by less than
+# `ARC_FEED_MIN` or more than `ARC_FEED_MAX` (a sharp corner would
+# otherwise call for a feed near zero, or without limit).
+ARC_FEED_MIN: float = 0.25
+ARC_FEED_MAX: float = 2.0
+
 
 # Function `_leads()`:
 def _leads(
@@ -851,18 +858,43 @@ class SCCNC:
         self._move(1, (x, y, z))
 
     # Method `SCCNC.arc()`:
-    def arc(self, arc: SCArc, z: float | None = None) -> None:
+    def arc(
+        self, arc: SCArc, z: float | None = None, *, edge: bool = False
+    ) -> None:
         """Cut along an XY arc at the tool's feed (`G2` or `G3`).
 
         The tool must already be at the arc's start.  With `z`, it goes
         down (or up) as it goes around (a helix).
 
+        With `edge`, the arc cuts a wall climb milled (the material on
+        the tool's right, with the spindle turning clockwise), and the
+        feed is scaled so that the cutting edge moves at the tool's
+        feed, keeping the chip load the same.  Turning right (`G2`),
+        the material is inside the curve, the edge goes around a
+        smaller circle than the center and the feed goes up; turning
+        left (`G3`), it goes down.
+
         Arguments:
         * `arc` (`SCArc`): The arc.
         * `z` (`float | None`): The Z to end at, or `None` to stay.
+        * `edge` (`bool`): True to scale the feed for the cutting edge.
         """
+        # Scale the feed by the center's radius over the edge's.
+        feed: float | None = None
+        if edge:
+            tool_radius: float = self.cutter.diameter / 2.0
+            edge_radius: float = arc.radius + (
+                tool_radius if arc.sweep > 0.0 else -tool_radius
+            )
+            scale: float = ARC_FEED_MAX
+            if edge_radius > EPSILON:
+                scale = min(arc.radius / edge_radius, ARC_FEED_MAX)
+            feed = self.cutter.feed * max(scale, ARC_FEED_MIN)
         self._move(
-            3 if arc.sweep > 0.0 else 2, (arc.end[0], arc.end[1], z), arc
+            3 if arc.sweep > 0.0 else 2,
+            (arc.end[0], arc.end[1], z),
+            arc,
+            feed,
         )
 
     # Method `SCCNC.plunge()`:
@@ -1171,7 +1203,7 @@ class SCCNC:
             if isinstance(segment, SCLine):
                 self.linear(x=segment.end[0], y=segment.end[1])
             else:
-                self.arc(segment)
+                self.arc(segment, edge=True)
             spur: SCLine
             for spur in spurs:
                 if math.dist(spur.start, segment.end) <= JOIN:

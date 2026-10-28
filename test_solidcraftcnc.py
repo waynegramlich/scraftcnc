@@ -147,6 +147,34 @@ class TestSCCNC(unittest.TestCase):
         cnc.arc(SCArc((1.0, 0.0), (1.0, 0.0), (0.0, 0.0), 1.0, -2 * math.pi))
         self.assertEqual(cnc.gcode().splitlines()[-1], "G2 I-1 J0 F12")
 
+    # Method `TestSCCNC.test_arc_edge_feed()`:
+    def test_arc_edge_feed(self) -> None:
+        """Arcs cutting a wall feed so the cutting edge keeps the feed."""
+        # The milling tool has a 1/4 in diameter and a 12 in/min feed.
+        cnc: SCCNC = milling()
+        cnc.rapid(x=0.5, y=0.0)
+
+        # Turning right around 0.5 in, the edge is on 0.375 in: faster.
+        cnc.arc(
+            SCArc((0.5, 0.0), (0.0, -0.5), (0.0, 0.0), 0.5, -math.pi / 2),
+            edge=True,
+        )
+        self.assertEqual(cnc.gcode().splitlines()[-1][-3:], "F16")
+
+        # Turning left around 0.375 in, the edge is on 0.5 in: slower.
+        cnc.arc(
+            SCArc((0.0, -0.5), (0.375, -0.5), (0.1875, -0.5), 0.1875, 3.0),
+            edge=True,
+        )
+        self.assertIn("F7.2", cnc.gcode().splitlines()[-1])
+
+        # A sharp corner (an edge radius of 0) is held to the limit.
+        cnc.arc(
+            SCArc((0.375, -0.5), (0.5, -0.5), (0.4375, -0.5), 0.0625, -3.0),
+            edge=True,
+        )
+        self.assertIn("F24", cnc.gcode().splitlines()[-1])
+
     # Method `TestSCCNC.test_profile_outside()`:
     def test_profile_outside(self) -> None:
         """Outside a polygon, the tool climb mills clockwise."""
@@ -157,7 +185,10 @@ class TestSCCNC(unittest.TestCase):
 
         # The lead-in starts a tool diameter left of the middle of the
         # first (longest) edge, going up the left side.
-        # It goes down at the plunge feed, and cuts at the feed.
+        # It goes down at the plunge feed and leads in at half the feed
+        # (turning left, the edge goes around twice the tool center's
+        # radius), cuts at the feed, and half again faster around the
+        # corners (turning right).
         lines: list[str] = cnc.gcode().splitlines()
         self.assertEqual(
             lines[10:18],
@@ -167,9 +198,9 @@ class TestSCCNC(unittest.TestCase):
                 "G0 X-0.375 Y1",
                 "G0 Z0.05",
                 "G1 Z-0.1 F6",
-                "G3 X-0.125 I0.125 J0 F12",
-                "G1 Y1.75",
-                "G2 X0.25 Y2.125 I0.375 J0",
+                "G3 X-0.125 I0.125 J0",
+                "G1 Y1.75 F12",
+                "G2 X0.25 Y2.125 I0.375 J0 F18",
             ],
         )
 
@@ -177,14 +208,14 @@ class TestSCCNC(unittest.TestCase):
         # goes back to where the lead-in started.
         self.assertEqual(
             lines[24:27],
-            ["G1 Y1", "G3 X-0.375 I-0.125 J0", "G1 Z-0.2 F6"],
+            ["G1 Y1 F12", "G3 X-0.375 I-0.125 J0 F6", "G1 Z-0.2"],
         )
 
         # Three passes (0.3 deep, at most 0.125 each), four corners and
         # two leads each.
         self.assertEqual(
             [line for line in lines if line.startswith("G1 Z")],
-            ["G1 Z-0.1 F6", "G1 Z-0.2 F6", "G1 Z-0.3 F6"],
+            ["G1 Z-0.1 F6", "G1 Z-0.2", "G1 Z-0.3"],
         )
         self.assertEqual(
             len([line for line in lines if line.startswith("G2 ")]), 12
@@ -758,7 +789,7 @@ class TestEdges(unittest.TestCase):
             for line in cnc.gcode().splitlines()
             if line.startswith("G1 Z")
         ]
-        self.assertEqual(depths[-1], "G1 Z-0.55 F6")
+        self.assertEqual(depths[-1], "G1 Z-0.55")
         cnc.change_tool(2)
         cnc.drill([(0.0, 0.0)], -0.5, through=True)
         self.assertIn(" Z-0.55 R", cnc.gcode())
