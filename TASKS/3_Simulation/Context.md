@@ -12,3 +12,28 @@
   * `T.rlg~3.3` Replace LinuxCNC GUI (the tool and the trace in
     SolidCraft: `ToolRack`, `RevealTrace`, `probe_reveal.py`, the
     SolidCraft timings and the `engine.batch` findings).
+
+## 2026-10-28: `T.rlg~3.3` and `T.mlcp~3.4` closed
+
+* The panel (`lcnc_panel.py`) drives LinuxCNC and SolidCraft follows
+  through `sim_linuxcnc.py --watch`; the user: "It was perfect."
+  Both closed; their summaries say what was done.
+* To bring it all up again (the `lcnc` box entered once first):
+
+  ```
+  solidcraft --control 8080 &
+  ./solidcraftcnc_demo.py --no-path --opaque 8080 > demo.ngc
+  distrobox enter lcnc -- linuxcnc lcnc_sim/shop_mill.ini &
+  echo "open $PWD/demo.ngc" | nc -q 1 127.0.0.1 5007
+  distrobox enter lcnc -- ./sim_linuxcnc.py --watch demo.ngc \
+      --solidcraft 8080
+  ```
+
+  A second run wants a fresh design (`file.new`), or the sketch
+  names clash.  Started from Claude's background shell, the windows
+  were hard for the user to find.
+* Left: `T.il~3.1` (Suspended): `demo_linuxcnc.py` still waits for
+  AXIS, and the other platforms.  `T.s2` stays Open until it is
+  settled.
+* Session start check (2026-10-28): flake8 7.4.1 (7.5.0 out) and
+  mypy 2.4.0 (2.4.1 out); not updated, the user not yet asked.
