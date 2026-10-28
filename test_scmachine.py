@@ -21,7 +21,7 @@ class TestMachine(unittest.TestCase):
     def test_example_shop(self) -> None:
         """The example shop's mill, with its tools."""
         mill: SCMachine = cnc_machine(read(SHOP_FILE), "Shop mill")
-        self.assertEqual(mill.change_words(4), ["T04"])
+        self.assertEqual(mill.change_words(4), ["T04", "M6", "G43", "H04"])
         self.assertEqual(mill.tool(1).kind, "end mill")
         self.assertEqual(mill.drill_for(mill.tool(1)).number, 4)
         self.assertAlmostEqual(mill.through_overcut, 0.1)

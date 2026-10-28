@@ -443,7 +443,9 @@ class TestCNCMachine(CopiedShop):
         """A shop's machine, with its loaded tools, for the CNC side."""
         shop = shops.read(EXAMPLES / "home_shop.toml")
         mill = shops.cnc_machine(shop, "Shop mill")
-        self.assertEqual(mill.tool_change, "T{number:02d}")
+        self.assertEqual(
+            mill.tool_change, "T{number:02d} M6 G43 H{number:02d}"
+        )
         self.assertEqual(mill.drill_cycle, "G83")
         self.assertAlmostEqual(mill.stepover, 0.9)
         kinds = {tool.number: tool.kind for tool in mill.tools}

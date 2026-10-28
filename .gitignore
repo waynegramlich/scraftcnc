@@ -14,3 +14,10 @@ solidcraft
 rs274
 # Notes on the catalog, kept out of version control.
 shars_catalog.md
+# What the LinuxCNC simulator writes as it runs.
+lcnc_sim/*.var
+lcnc_sim/*.var.bak
+sim_positions.txt
+# What the demonstration writes (see README.md).
+demo.ngc
+demo.html
