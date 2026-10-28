@@ -58,9 +58,8 @@ from shops import LENGTH, cnc_machine, loaded_tools, measure, read
 # How often to poll (seconds).
 POLL: float = 0.05
 
-# The feed override, by default: as fast as `lcnc_sim/shop_mill.ini`
-# allows (its `MAX_FEED_OVERRIDE`), which is pleasant to watch (the
-# demo takes about 5 minutes instead of 20).
+# The feed override, by default: 10 times, which is pleasant to watch
+# (`lcnc_sim/shop_mill.ini` allows up to 100, its `MAX_FEED_OVERRIDE`).
 SPEED: float = 10.0
 
 # The shop and machine whose tools are loaded, by default.

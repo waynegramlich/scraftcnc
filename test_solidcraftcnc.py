@@ -96,7 +96,7 @@ class TestSCCNC(unittest.TestCase):
         self.assertEqual(
             cnc.gcode(),
             "(Test)\nG20\nG90\nG17\nG94\nG0 Z1\n"
-            "(Tool 1: End mill)\nG0 Z2\nT01\nM3 S1200\n",
+            "(Tool 1: End mill)\nG0 Z2\nT01 (End mill)\nM3 S1200\n",
         )
         self.assertEqual(cnc.cutter.diameter, 0.25)
 
@@ -105,11 +105,11 @@ class TestSCCNC(unittest.TestCase):
         cnc.change_tool(2)
         self.assertEqual(
             cnc.gcode().splitlines()[10:],
-            ["(Tool 2: Drill)", "M5", "T02", "M3 S1200"],
+            ["(Tool 2: Drill)", "M5", "T02 (Drill)", "M3 S1200"],
         )
         other: SCCNC = SCCNC("Test", machine(tool_change="T{number:02d} M06"))
         other.change_tool(3)
-        self.assertIn("T03 M06\n", other.gcode())
+        self.assertIn("T03 M06 (Small drill)\n", other.gcode())
         with self.assertRaises(KeyError):
             other.change_tool(9)
 

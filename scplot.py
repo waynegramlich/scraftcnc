@@ -80,7 +80,8 @@ def read_gcode(text: str) -> list[RS274]:
     words, each a letter and a number (an `int` when it has no point
     or exponent, like `G0` or `T08`, else a `float`).  It reads only
     what `SCCNC` writes: a letter used twice on a line keeps its last
-    value, and comments within a line are not looked for.
+    value, and a comment after the words (as on a tool change) is its
+    `note`.
 
     Arguments:
     * `text` (`str`): The G-code.
@@ -96,6 +97,9 @@ def read_gcode(text: str) -> list[RS274]:
             commands.append({"comment": line[1:-1]})
             continue
         command: RS274 = {}
+        if line.endswith(")") and "(" in line:
+            line, _, note = line.partition("(")
+            command["note"] = note[:-1]
         word: str
         for word in line.split():
             number: str = word[1:]

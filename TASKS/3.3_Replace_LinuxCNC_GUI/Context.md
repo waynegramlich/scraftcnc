@@ -591,3 +591,9 @@ numbers below are at `c1dee61`.
   path sketches, so only `PathRack`'s show.  Not yet run in the GUI.
 * Running the same design twice makes duplicate names (only the first
   is shown or hidden); start a fresh design.
+* The user is fine with paths computed ahead of the running one, so
+  `PathRack` now draws the first tool's path before the run and the
+  next tool's when a tool goes into the spindle (headless: 4, then
+  8, 1, 5, 6 one ahead).
+* Not yet watched in the GUI: `PathRack` (one tool's path at a time,
+  drawn one tool ahead) with `solidcraftcnc_demo.py --no-path`.

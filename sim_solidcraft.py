@@ -6,11 +6,11 @@ polls to listeners.  `SolidCraftDisplay` is such a listener: every
 tool of a shop's machine is modeled (`sctoolmodel`), hidden, in a
 SolidCraft session where `solidcraftcnc_demo.py` has modeled the part,
 and the one in the spindle is shown, following the position.  Each
-tool's planned path is drawn from the program before the run, as one
-hidden 3D sketch built with one batch (`probe_batch`), and only the
-path of the tool in the spindle is shown, whole (the user's choice,
-2026-10-28; an earlier `RevealTrace` showed the path line by line as
-the tool reached it, but took 48 s to set up).  SolidCraft's
+tool's planned path is drawn from the program, one tool ahead of the
+run, as a hidden 3D sketch built with one batch (`probe_batch`), and
+only the path of the tool in the spindle is shown, whole (the user's
+choice, 2026-10-28; an earlier `RevealTrace` showed the path line by
+line as the tool reached it, but took 48 s to set up).  SolidCraft's
 coordinates are the program's, in millimeters.
 
 It is used through `sim_linuxcnc.py`'s `--solidcraft PORT` (or
@@ -244,17 +244,25 @@ class ToolRack:  # pylint: disable=too-few-public-methods
 class PathRack:  # pylint: disable=too-few-public-methods
     """Each tool's planned path in SolidCraft; the one in use is shown.
 
+    A path is drawn one tool ahead of the run: the first tool's before
+    it starts, and the next tool's when a tool goes into the spindle,
+    so no tool change waits for a drawing.
+
     Attributes:
     * `current` (`int`): The T number whose path is shown (0 for none).
+    * `moves` (`dict[int, list[Move]]`): Each tool's moves, by T
+      number, in the order the tools are first used.
+    * `session` (`Transport`): The transport, for the batches.
+    * `sketches` (`dict[int, str]`): Each drawn path's sketch, by T
+      number.
     * `solidcraft` (`SolidCraftPyBind`): The SolidCraft session.
-    * `sketches` (`dict[int, str]`): Each tool's sketch, by T number.
     """
 
     # Method `PathRack.__init__()`:
     def __init__(
         self, solidcraft: SolidCraftPyBind, session: Transport, program: Path
     ) -> None:
-        """Draw each tool's moves as a hidden 3D sketch (one batch each).
+        """Group the moves by tool, and draw the first tool's path.
 
         Arguments:
         * `solidcraft` (`SolidCraftPyBind`):
@@ -263,6 +271,7 @@ class PathRack:  # pylint: disable=too-few-public-methods
         * `program` (`Path`): The G-code file.
         """
         self.solidcraft: SolidCraftPyBind = solidcraft
+        self.session: Transport = session
         self.current: int = 0
         self.sketches: dict[int, str] = {}
 
@@ -270,22 +279,33 @@ class PathRack:  # pylint: disable=too-few-public-methods
         moves: list[Move] = command_moves(
             read_gcode(program.read_text(encoding="utf-8"))
         )
-        tools: dict[int, list[Move]] = {}
+        self.moves: dict[int, list[Move]] = {}
         move: Move
         for move in moves:
-            tools.setdefault(move["tool"], []).append(move)
+            self.moves.setdefault(move["tool"], []).append(move)
 
-        # One batch per tool: its whole path, hidden.
-        number: int
-        for number, tool_moves in tools.items():
-            name: str = f"T{number:02d} path"
-            send_batch(
-                session,
-                sketch_steps(
-                    name, path_steps(tool_moves, MM_PER_INCH, False), True
-                ),
-            )
-            self.sketches[number] = name
+        # The first tool's path, ready for the start.
+        if self.moves:
+            self.draw(next(iter(self.moves)))
+
+    # Method `PathRack.draw()`:
+    def draw(self, number: int) -> None:
+        """Draw a tool's whole path as a hidden 3D sketch (one batch).
+
+        Arguments:
+        * `number` (`int`): The T number; nothing is done when its
+          path is drawn already, or it has no moves.
+        """
+        if number in self.sketches or number not in self.moves:
+            return
+        name: str = f"T{number:02d} path"
+        send_batch(
+            self.session,
+            sketch_steps(
+                name, path_steps(self.moves[number], MM_PER_INCH, False), True
+            ),
+        )
+        self.sketches[number] = name
 
     # Method `PathRack.show()`:
     def show(self, number: int) -> None:
@@ -301,10 +321,16 @@ class PathRack:  # pylint: disable=too-few-public-methods
                 visible=False, items=[self.sketches[self.current]]
             )
         self.current = number
+        self.draw(number)
         if number in self.sketches:
             self.solidcraft.browser.visibility(
                 visible=True, items=[self.sketches[number]]
             )
+
+        # The next tool's path, drawn now, while this tool cuts.
+        order: list[int] = list(self.moves)
+        if number in order and order.index(number) + 1 < len(order):
+            self.draw(order[order.index(number) + 1])
 
 
 # Class `SolidCraftDisplay`:

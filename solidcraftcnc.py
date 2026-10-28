@@ -48,7 +48,9 @@ from scgeometry import (
 from scmachine import SCMachine, SCTool
 
 # One RS-274 command: its words, in order, keyed by letter (e.g.
-# `{"G": 1, "X": 10.0}`).  The key `comment` holds a comment's text.
+# `{"G": 1, "X": 10.0}`).  The key `comment` holds a comment line's
+# text, and `note` a comment at the end of a line of words (e.g. the
+# tool's name on its tool change).
 RS274: TypeAlias = dict[str, float | int | str]
 
 # How a pocket's ring is cut at each depth: ramped down into along
@@ -713,12 +715,12 @@ class SCCNC:
         self.rapid(z=self.machine.tool_change_z)
         if self.tool is not None:
             self.add({"M": 5})
-        self.add(
-            {
-                word[0].upper(): word[1:]
-                for word in self.machine.change_words(number)
-            }
-        )
+        change: RS274 = {
+            word[0].upper(): word[1:]
+            for word in self.machine.change_words(number)
+        }
+        change["note"] = tool.name
+        self.add(change)
         self.tool = tool
         self.add({"M": 3, "S": tool.rpm})
         return tool
@@ -1648,11 +1650,15 @@ class SCCNC:
             letter: str
             value: float | int | str
             for letter, value in command.items():
+                if letter == "note":
+                    continue
                 if isinstance(value, str):
                     words.append(f"{letter}{value}")
                 elif letter in "GM":
                     words.append(f"{letter}{value:g}")
                 else:
                     words.append(f"{letter}{_number(value)}")
+            if "note" in command:
+                words.append(f"({command['note']})")
             lines.append(" ".join(words))
         return "".join(f"{line}\n" for line in lines)
