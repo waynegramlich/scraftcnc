@@ -1,7 +1,7 @@
 {
-  "state": "Open",
+  "state": "Closed",
   "created": "2026-10-28T14:15:46Z",
-  "updated": "2026-10-28T14:16:21Z",
+  "updated": "2026-10-28T21:20:05Z",
   "history": [
     {
       "state": "Pending",
@@ -10,6 +10,10 @@
     {
       "state": "Open",
       "time": "2026-10-28T14:16:21Z"
+    },
+    {
+      "state": "Closed",
+      "time": "2026-10-28T21:20:05Z"
     }
   ],
   "tag": "rlg"

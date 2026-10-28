@@ -597,3 +597,25 @@ numbers below are at `c1dee61`.
   8, 1, 5, 6 one ahead).
 * Not yet watched in the GUI: `PathRack` (one tool's path at a time,
   drawn one tool ahead) with `solidcraftcnc_demo.py --no-path`.
+
+## 2026-10-28: SolidCraft following `lcnc_panel.py`
+
+* `sim_linuxcnc.py --watch`: sends LinuxCNC nothing (no homing,
+  tools, origin or start; the panel does those) and hands every
+  20 Hz poll to the listeners until Ctrl-C; a failed listener stops
+  the program.  A line every 10 s.  Checkers clean.
+* First live setup (14:08): SolidCraft GUI on 8080 (stale
+  `current.pid` cleared), `linuxcnc lcnc_sim/shop_mill.ini` (the
+  panel, port 5007), the plate by `solidcraftcnc_demo.py --no-path
+  8080` (6 s), `demo.ngc` opened through the port, then
+  `sim_linuxcnc.py --watch demo.ngc --solidcraft 8080` (tools and
+  the T04 path drawn, hidden, until a tool is in the spindle).  The
+  user presses Start.
+* The user, after the first panel run: "99% Perfect"; asked for an
+  opaque plate.  `solidcraftcnc_demo.py --opaque` (opacity 1.0, not
+  0.35).  Second run set up at 14:13 in a fresh design ("Panel run
+  2", `file.new`), LinuxCNC and the watcher restarted.
+* Trap: `pkill -f "sim_linuxcnc.py --watch"` also matched the shell
+  running it (its command line holds the pattern) and killed it.
+* The user, after the second run: "It was perfect."  Closed at the
+  user's word, with `T.mlcp~3.4`.

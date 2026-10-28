@@ -19,7 +19,7 @@ It is used through `sim_linuxcnc.py`'s `--solidcraft PORT` (or
 ```
 distrobox enter lcnc -- linuxcnc lcnc_sim/shop_mill.ini &
 solidcraft --control 8080 &
-./solidcraftcnc_demo.py --no-path 8080 > demo.ngc
+./solidcraftcnc_demo.py --no-path --opaque 8080 > demo.ngc
 distrobox enter lcnc -- ./sim_linuxcnc.py demo.ngc --solidcraft 8080
 ```
 

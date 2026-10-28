@@ -197,7 +197,15 @@ def demo_islands() -> list[SCRoundPoly]:
 
 
 # Function `model()`:
-def model(where: str, part: Part, cnc: SCCNC, *, path: bool = True) -> int:
+# Its options and the steps of one SolidCraft session make many locals.
+def model(  # pylint: disable=too-many-locals
+    where: str,
+    part: Part,
+    cnc: SCCNC,
+    *,
+    path: bool = True,
+    opaque: bool = False,
+) -> int:
     """Model a plate in SolidCraft, in inches.
 
     Arguments:
@@ -208,6 +216,8 @@ def model(where: str, part: Part, cnc: SCCNC, *, path: bool = True) -> int:
       made see-through so that the path inside it shows).
     * `path` (`bool`): False to leave the tool path out (as when
       `sim_solidcraft.py` draws it, one tool at a time).
+    * `opaque` (`bool`): True to leave the plate solid, not
+      see-through (as when a tool is watched cutting its surface).
 
     Returns:
     * (`int`): The number of closed profiles the sketches made (one per
@@ -265,7 +275,9 @@ def model(where: str, part: Part, cnc: SCCNC, *, path: bool = True) -> int:
         if path:
             sketch_path(solidcraft, cnc, MM_PER_INCH)
         solidcraft.appearance.assign(
-            bodies=[outlines[0].name], color="#9fb4c8", opacity=0.35
+            bodies=[outlines[0].name],
+            color="#9fb4c8",
+            opacity=1.0 if opaque else 0.35,
         )
         solidcraft.view.apply(view="iso")
     assert isinstance(finished, dict) and isinstance(cut, dict)
@@ -428,12 +440,15 @@ def main() -> int:
     path: bool = "--no-path" not in arguments
     if not path:
         arguments.remove("--no-path")
+    opaque: bool = "--opaque" in arguments
+    if opaque:
+        arguments.remove("--opaque")
     if arguments[:1] == ["--plot"] and len(arguments) >= 2:
         plot = Path(arguments[1])
         arguments = arguments[2:]
     if len(arguments) > 1 or arguments[:1] == ["--plot"]:
         print(
-            f"usage: {sys.argv[0]} [--plot FILE.html] [--no-path] "
+            f"usage: {sys.argv[0]} [--plot FILE.html] [--no-path] [--opaque] "
             "[PORT|headless]",
             file=sys.stderr,
         )
@@ -484,7 +499,9 @@ def main() -> int:
         )
         # A SolidCraft that is not there is reported in one line.
         try:
-            profiles: int = model(arguments[0], part, cnc, path=path)
+            profiles: int = model(
+                arguments[0], part, cnc, path=path, opaque=opaque
+            )
         except OSError as error:
             print(f"solidcraftcnc_demo.py: {error}", file=sys.stderr)
             return 1

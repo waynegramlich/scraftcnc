@@ -24,9 +24,19 @@ demo's own sketches:
 ```
 distrobox enter lcnc -- linuxcnc lcnc_sim/shop_mill.ini &
 solidcraft --control 8080 &
-./solidcraftcnc_demo.py --no-path 8080 > demo.ngc
+./solidcraftcnc_demo.py --no-path --opaque 8080 > demo.ngc
 distrobox enter lcnc -- ./sim_linuxcnc.py demo.ngc --solidcraft 8080
 distrobox enter lcnc -- ./stop_linuxcnc.py    # Close LinuxCNC quietly.
+```
+
+With `--watch`, it sends LinuxCNC nothing and only follows what
+LinuxCNC's display runs (`lcnc_panel.py`, which `shop_mill.ini`
+starts in place of AXIS), until Ctrl-C; the program whose paths are
+drawn is the one named, or else the one the panel has open:
+
+```
+distrobox enter lcnc -- ./sim_linuxcnc.py --watch demo.ngc \
+    --solidcraft 8080
 ```
 
 `lcnc_sim/shop_mill.ini` simulates the example shop's mill.  The
@@ -377,6 +387,72 @@ class Simulator:
                 tick = max(tick + POLL, time.monotonic())
                 time.sleep(max(0.0, tick - time.monotonic()))
 
+    # Method `Simulator.watch()`:
+    def watch(self, listeners: Sequence[Listener]) -> int:
+        """Poll the position for ever, while something else drives.
+
+        Nothing is sent to LinuxCNC: the program is opened, started,
+        paused and stopped by its display (`lcnc_panel.py`), and this
+        only hands each poll to the listeners, on the same fixed
+        schedule as `follow()`, until Ctrl-C or a listener fails.
+
+        Arguments:
+        * `listeners` (`Sequence[Listener]`):
+          What each sample is handed to, in order.
+
+        Returns:
+        * (`int`): The number of samples (only on a `KeyboardInterrupt`
+          caught by the caller, so never in practice).
+
+        Raises:
+        * `ListenerFailed`: If a listener raised an exception.
+        """
+        start: float = time.monotonic()
+        tick: float = start
+        samples: int = 0
+        while True:
+            self.stat.poll()
+            sample: Sample = Sample(
+                time.monotonic() - start,
+                self.stat.motion_line,
+                self.work_position(),
+                self.stat.tool_in_spindle,
+            )
+            samples += 1
+            if samples % round(10.0 / POLL) == 0:
+                print(sample.text(), f"T{sample.tool}", flush=True)
+            _tell(listeners, methodcaller("sample", sample))
+            tick = max(tick + POLL, time.monotonic())
+            time.sleep(max(0.0, tick - time.monotonic()))
+
+
+# Function `watch()`:
+def watch(listeners: Sequence[Listener]) -> int:
+    """Follow whatever LinuxCNC's display runs, until Ctrl-C.
+
+    When a listener fails (SolidCraft closed, say), the program is
+    stopped, since nobody could then see what it does.
+
+    Arguments:
+    * `listeners` (`Sequence[Listener]`):
+      What each sample is handed to.
+
+    Returns:
+    * (`int`): The exit status.
+    """
+    simulator: Simulator = Simulator()
+    print("watching (Ctrl-C to stop)", flush=True)
+    try:
+        simulator.watch(listeners)
+    except KeyboardInterrupt:
+        print("done watching")
+        return 0
+    except ListenerFailed as error:
+        simulator.stop()
+        print(f"{error}: the program is stopped", file=sys.stderr)
+        return 1
+    return 0
+
 
 # Function `_tell()`:
 def _tell(
@@ -512,18 +588,27 @@ def main() -> int:
         default=MACHINE,
         help="that machine's name (default: %(default)s)",
     )
+    parser.add_argument(
+        "--watch",
+        action="store_true",
+        help="only follow what LinuxCNC's display (lcnc_panel.py) runs: "
+        "no homing, tools, origin or start",
+    )
     sim_solidcraft.add_arguments(parser)
     options: argparse.Namespace = parser.parse_args()
 
     # Run it, with the tool in SolidCraft if asked to.  A LinuxCNC or a
     # SolidCraft that is not there is reported in one line.
+    go: Callable[[Sequence[Listener]], int] = (
+        watch if options.watch else lambda found: run(options, found)
+    )
     try:
         if not options.solidcraft:
-            return run(options, [])
+            return go([])
         with sim_solidcraft.display(
             options, program_file(options.program)
         ) as display:
-            return run(options, [display])
+            return go([display])
     except (
         linuxcnc.error,
         SolidCraftError,

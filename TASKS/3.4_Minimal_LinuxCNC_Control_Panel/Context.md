@@ -139,3 +139,10 @@
 * Suspended at the user's word (2026-10-28): "pretty workable".
   Open: the slider's top (10x, or 100x, which the faster mill allows);
   `demo_linuxcnc.py` still waits for AXIS (`T.il~3.1`).
+
+## 2026-10-28: Driving SolidCraft; closed
+
+* The panel drove two whole runs of the demo with SolidCraft
+  following through `sim_linuxcnc.py --watch` (`T.rlg~3.3`); the
+  user: "99% Perfect", then (with an opaque plate) "It was perfect."
+  Closed at the user's word, with `T.rlg~3.3`.
