@@ -9,6 +9,7 @@
 @3.1_Installing_LinuxCNC/Details.md
 @3.1_Installing_LinuxCNC/Context.md
 @3.2_Tracking_LinuxCNC/Details.md
+@3.2_Tracking_LinuxCNC/Context.md
 @3.3_Replace_LinuxCNC_GUI/Details.md
 @3.3_Replace_LinuxCNC_GUI/Context.md
 @1_Original_Roadmap/Summary.md

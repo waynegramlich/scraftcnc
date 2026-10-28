@@ -93,3 +93,122 @@ Moved from `T.s2~3`'s `Context.md` on 2026-10-28, when it was split.
   `test_install_linuxcnc.py`: 5 offline tests; all 95 pass.
 * Next: a background agent runs it on a throwaway `lcnc-test` box
   (removed after).
+
+## 2026-10-28: Throwaway box test
+
+* `./install_linuxcnc.py --box lcnc-test < /dev/null` from no box
+  (07:51-07:59): exit 0 in 7 min 52 s, nothing asked of the user.
+  [1/6] already done (host tools); [2/6] box made and set up, about
+  2 min; [3/6] newest `linuxcnc-uspace` 1:2.9.10 for amd64, 25 MB
+  `.deb` downloaded to `~/.cache/scraftcnc/`, 614 packages, about
+  6 min; [4/6] `chmod u-s` done; [5/6] already done (the box shares
+  the real home, where the `lcnc` samples are); [6/6] already done
+  (only a check; passes once 3 is in).
+* So on this machine only steps 2-4 could be shown "done"; steps 1
+  and 5 doing their work is not yet tested from nothing.
+* Harmless noise in the apt output: `fchownat() of /dev/...`,
+  `apparmor_parser ... Access denied`, `invoke-rc.d` refusals, and
+  an initramfs for the RT kernel in the box's `/boot`.
+* Second run: all six "already done", exit 0, 0.9 s.  In the box
+  `import linuxcnc` worked (Python 3.13) and `rtapi_app` was 0755.
+* No fixes needed.  Load peak 2.12 (1 minute average, sampled every
+  30 s).
+* `distrobox rm --force lcnc-test` (it removes a home only with
+  `--rm-home`): gone (`podman container exists` false); only `lcnc`
+  left.  The `.deb` and the `debian:trixie` image kept.  No
+  leftover processes.
+
+## 2026-10-28: Runner probes
+
+* `.github/workflows/probe_linuxcnc.yml` (by hand only) with
+  `lcnc_sim/probe_install.sh` (runs as root in Debian: the newest
+  `linuxcnc-uspace` from the `binary-ARCH/Packages` index, SHA256
+  checked, `apt-get install ./FILE`, `import linuxcnc`, `halrun`).
+* Run 40710822308 (commit 0f544d4), newest package 1:2.9.10:
+  * `ubuntu-latest`: works.  podman 5.7.0, distrobox 1.8.2.4, a
+    `debian:trixie` box; install and import ok (Python 3.13.5).
+  * `windows-latest`: works, on WSL 2 (not only WSL 1).  WSL
+    3.0.3.0, kernel 6.18.54.1; `Vampire/setup-wsl@v7` with
+    `Debian-13` (already Trixie), the `.deb` straight in, no
+    container; install about 5 1/2 min, import ok.
+  * `macos-latest` (Apple Silicon): fails, no VM can start.
+    `kern.hv_support` is 0 (no nested virtualization): podman
+    (Homebrew) `machine init` ok, `machine start` "vfkit exited
+    unexpectedly with exit code 1"; `colima` (lima, `vz`) fails too.
+  * `macos-15-intel` (Macmini, i7-8700B): `kern.hv_support` 1.
+    `brew install podman` fails ("no bottle available": Homebrew
+    has no Intel podman for macOS 15, and podman 6.1.4 ships an
+    arm64 installer only; 5.8.9 still has `amd64`/`universal`).
+    `colima` (lima, `vz`, Ubuntu 24.04 VM, Docker) starts in about
+    4 1/2 min, and a `debian:trixie` container installs (about 9
+    min, the RT kernel's initramfs included) and imports: works.
+  * The `halrun` check was wrong everywhere: as root, `rtapi_app`
+    says "Refusing to run as root without fallback UID specified"
+    and `halrun` still exits 0.  Fixed (run as `sudo`'s user or a
+    new `probe` user, check that the thread exists); the Status step
+    also failed when there was no `probe.log` (fixed).  Intel now
+    also tries podman 5.8.9's installer.  Waiting for the user's
+    commit to rerun.
+
+## 2026-10-28: One program for every OS (the user's decisions)
+
+* No native macOS port and no self-hosted runner.  Goal: all four
+  runners green with `install_linuxcnc.py --yes`.
+* `install_linuxcnc.py` now picks a route (`choose_route()`;
+  `--route` overrides) and builds a `Target` (prefixes that run a
+  command in it as root or as the user), then the same 7 steps in
+  every target: a user who is not root, Debian Trixie (an older one
+  upgraded), `linuxcnc-uspace` (newest, SHA256 checked, sent in
+  through standard input unless the home is shared), `rtapi_app`
+  not setuid, sample configurations, `import linuxcnc`, and
+  `halrun` as that user (thread listed, nothing "failed"; skipped
+  when `rtapi_app` is running, since `halrun` would stop it).
+  * Linux: the `distrobox` box, as before.  Commands now go in by
+    `podman exec` (root, or the user with `-w HOME`):
+    `distrobox enter` passes its command through `eval`, which
+    broke quoted arguments (`sh -c '...'`).
+  * Windows: WSL 2 with `Debian` (`wsl.exe --install -d Debian
+    --no-launch --web-download` through `ask_user()`; WSL 1 is
+    converted with `--set-version`); commands by `wsl.exe -d Debian
+    -u root|lcnc --exec`, with `WSL_UTF8=1`; a `lcnc` user.
+  * macOS with `kern.hv_support` 1: Apple Silicon `brew install
+    podman`, `podman machine init/start`; Intel `brew install colima
+    docker`, `colima start`; then a `debian:trixie` container `lcnc`
+    (`sleep infinity`) with a `lcnc` user.
+  * macOS with 0: `brew install qemu`; Debian's
+    `debian-13-genericcloud-ARCH.qcow2` (SHA512SUMS checked); a 20G
+    overlay disk, an ed25519 key and a cloud-init NoCloud seed ISO
+    (`hdiutil makehybrid`, label `cidata`) in `~/.cache/scraftcnc/
+    vm/`; `qemu-system-aarch64 -accel tcg,thread=multi -cpu
+    max,pauth-impdef=on` (`hvf` when there is one), daemonized, `ssh`
+    on 127.0.0.1:2222 as `debian`; waits up to 45 min for `ssh`.
+    No container: the VM is Debian Trixie itself.
+* `--yes` runs what `ask_user()` would ask for.  `run()` prints every
+  output line with the time and, every 5 minutes, a progress line
+  (minutes, lines, `apt` packages set up), so a 6 hour timeout on
+  the emulated job still shows how far it got.
+* Checked locally on the `lcnc` box: all 9 steps "already done",
+  `halrun` really run (thread listed).  14 offline tests.
+* `probe_linuxcnc.yml` now runs `python -u install_linuxcnc.py
+  --yes` on the four runners (one matrix, `fail-fast: false`;
+  timeouts 60, 60, 90 and 355 minutes for `macos-latest`), and keeps
+  the VM's console log as an artifact; `lcnc_sim/probe_install.sh`
+  retired.
+
+## 2026-10-28: Only the needed packages
+
+* The user: `apt-get install -y --no-install-recommends` on every
+  route.  Left out: the docs, `librsvg2-dev`, `x11-xserver-utils`,
+  `hostmot2-firmware-all`, the RT kernel (and its initramfs),
+  `python3-pil`, `python3-pil.imagetk`.
+* Checked in the `lcnc` box (read only): `/usr/bin/axis` and
+  LinuxCNC's Python modules use neither `PIL` nor `xset`; the sample
+  configurations and `axis` belong to `linuxcnc-uspace`.  So no
+  Recommends is added back.
+* New step 8 (of 8 common ones): the AXIS screen's modules import
+  with no `DISPLAY` (`tkinter`, `OpenGL.GL/GLU`, `gcode`, `rs274.*`,
+  `hershey`, `propertywindow`, `nf`, `bwidget`, `glnav`, `hal`,
+  `linuxcnc`); all load in the `lcnc` box.  The installer prints how
+  many packages `apt-get` installed (`dpkg-query` before and after).
+* Local `lcnc` box: 10/10 "already done".  Tests 15 (all 105 pass);
+  checkers clean.
