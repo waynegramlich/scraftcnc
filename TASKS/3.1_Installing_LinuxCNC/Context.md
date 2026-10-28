@@ -278,3 +278,32 @@ Moved from `T.s2~3`'s `Context.md` on 2026-10-28, when it was split.
 * The user: good enough for now; back to it in a day or so.  Still
   open: `demo_linuxcnc.py` on the four runners (on disk, unstaged,
   checkers not run since the agent was stopped).
+
+## 2026-10-28: Installing the backend only (research, not tried)
+
+* With `lcnc_panel.py` in place of AXIS, the GUI packages are not
+  needed.  Measured in the `lcnc` box: 2412 MB in 941 packages;
+  `linuxcnc-uspace`'s hard `Depends` closure is 1850 MB (788
+  packages: Qt5 with WebEngine, VTK, OpenCV, GTK2 and 3, Mesa and
+  Vulkan, two LLVMs, espeak, gstreamer, GDAL); about 560 MB more came
+  from Recommends (the RT kernel, 109 MB; `linuxcnc-doc-en`, 31 MB).
+* Backend plus the panel: `linuxcnc-uspace` (91 MB) and the closure
+  of `python3`, `libboost-python1.83.0`, `libc6`, `libedit2`,
+  `libgcc-s1`, `libgpiod3`, `libmodbus5`, `libpython3.13`,
+  `libstdc++6`, `libtirpc3t64`, `libudev1`, `libusb-1.0-0`,
+  `tcl8.6`, `python3-tk`, `procps`, `psmisc` (104 MB, 100 packages,
+  80 MB of it the Debian base): about 195 MB, about 90% less.
+* Options, in order:
+  1. `--no-install-recommends` in `install_linuxcnc.py`: free, saves
+     about 560 MB.
+  2. An `equivs` dummy package that provides the GUI dependencies,
+     so apt skips them (cleaner than `dpkg --force-depends`, which
+     leaves apt reporting a broken system).  AXIS and the other GUIs
+     then do not start, which is fine.
+  3. A source build with the GUIs turned off: same size, needs a
+     toolchain; only if 2 fails.
+* Not checked: whether the `linuxcnc` script, `milltask` or
+  `sim_linuxcnc.py` load a dropped package at run time (e.g.
+  `numpy`, `blt`, `bwidget`).  The test: a fresh box with 1 and 2
+  that starts `lcnc_sim/shop_mill.ini` and runs the demo.  Smaller
+  downloads also help the macOS and Windows probe runs.
