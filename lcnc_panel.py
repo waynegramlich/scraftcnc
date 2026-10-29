@@ -53,7 +53,9 @@ import tkinter as tk
 from dataclasses import dataclass, field
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
-from typing import Any
+from typing import Any, cast
+
+import shops
 
 # The steps a jog button can move (inches), the one chosen at start,
 # and how fast a jog moves (inches per second).
@@ -91,10 +93,63 @@ WORDS: re.Pattern[str] = re.compile(
     r"\s*([A-Za-z]\s*[-+]?(\d+\.?\d*|\.\d+)\s*)+"
 )
 
+# The shop and machine whose tools the Tools window lists, and the
+# material it starts with.
+SHOP_FILE: Path = (
+    Path(__file__).resolve().parent / "examples/shop/home_shop.toml"
+)
+SHOP_MACHINE: str = "Shop mill"
+MATERIAL: str = "6061 aluminum"
+
 # The MDI line's backgrounds: empty, RS-274, and not.
 BLANK: str = "white"
 GOOD: str = "#d8f5d0"
 BAD: str = "#f8d0d0"
+
+
+# Function `material_names()`:
+def material_names(shop: dict[str, object]) -> list[str]:
+    """Return the names of a shop's materials.
+
+    Arguments:
+    * `shop` (`dict[str, object]`): The shop, from `shops.read()`.
+
+    Returns:
+    * (`list[str]`): The names, in the shop's order.
+    """
+    materials: dict[str, Any] = cast(dict[str, Any], shop.get("materials", {}))
+    return [str(entry["name"]) for entry in materials.get("materials", [])]
+
+
+# Function `tool_speeds()`:
+def tool_speeds(shop: dict[str, object], machine: str, material: str) -> str:
+    """Return a table of a machine's tools' speeds and feeds.
+
+    Arguments:
+    * `shop` (`dict[str, object]`): The shop, from `shops.read()`.
+    * `machine` (`str`): The machine's name.
+    * `material` (`str`): The material being cut.
+
+    Returns:
+    * (`str`):
+      One line per loaded tool (T number, RPM, feed, plunge, name),
+      or the problem, if they can not be worked out.
+    """
+    # Work them out, as the G-code would.
+    try:
+        tools = shops.cnc_machine(shop, machine, material).tools
+    except ValueError as error:
+        return str(error)
+    lines: list[str] = [
+        f"Feeds in in/min, cutting {material}:",
+        "  T    RPM  Feed  Plunge  Tool",
+    ]
+    lines.extend(
+        f"{tool.number:3d} {tool.rpm:6.0f} {tool.feed:5.1f} "
+        f"{tool.plunge:7.1f}  {tool.name}"
+        for tool in tools
+    )
+    return "\n".join(lines)
 
 
 # Function `line_kind()`:
@@ -668,6 +723,9 @@ class Panel:  # pylint: disable=too-many-instance-attributes
         ttk.Button(slider, text="Open", command=self.on_open).pack(
             side="left", padx=(12, 1)
         )
+        ttk.Button(slider, text="Tools", command=self.on_tools).pack(
+            side="left", padx=1
+        )
         root.after(POLL_MS, self.poll)
 
     # Method `Panel.scrolled_text()`:
@@ -786,6 +844,43 @@ class Panel:  # pylint: disable=too-many-instance-attributes
         )
         if path:
             self.open(path)
+
+    # Method `Panel.on_tools()`:
+    def on_tools(self) -> None:
+        """Show the tools' speeds and feeds for a material chosen."""
+        # The shop is read again each time, so edits to it show.
+        try:
+            shop: dict[str, object] = shops.read(SHOP_FILE)
+        except ValueError as error:
+            messagebox.showerror("Tools", str(error))
+            return
+        window: tk.Toplevel = tk.Toplevel(self.root)
+        window.title(f"Tools: {SHOP_MACHINE}")
+        material: tk.StringVar = tk.StringVar(value=MATERIAL)
+        chooser: ttk.Combobox = ttk.Combobox(
+            window,
+            textvariable=material,
+            values=material_names(shop),
+            state="readonly",
+            width=30,
+        )
+        chooser.pack(anchor="w", padx=4, pady=4)
+        table: tk.Text = tk.Text(
+            window, width=72, height=12, font="TkFixedFont"
+        )
+        table.pack(fill="both", expand=True, padx=4, pady=(0, 4))
+
+        # Fill the table now, and again when another material is chosen.
+        def show(_event: object = None) -> None:
+            table.configure(state="normal")
+            table.delete("1.0", "end")
+            table.insert(
+                "1.0", tool_speeds(shop, SHOP_MACHINE, material.get())
+            )
+            table.configure(state="disabled")
+
+        chooser.bind("<<ComboboxSelected>>", show)
+        show()
 
     # Method `Panel.on_run()`:
     def on_run(self) -> None:

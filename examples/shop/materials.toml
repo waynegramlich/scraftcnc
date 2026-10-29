@@ -6,10 +6,37 @@ kind = "materials"
 language = "en"
 version = "0.0.1"
 
+# Surface speeds by tool material, as shares of HSS's: carbide from
+# the user's `drill_rules.txt`; cobalt is Claude's guess (M42 is
+# usually run a little faster than HSS).
+carbide_speed_factor = "250 %"
+cobalt_speed_factor = "110 %"
+
+# End mill feed per tooth (chip load) by diameter, times the group's
+# `feed_factor`: Claude's starting points, from the usual
+# .001-.002 in/tooth at 1/4-1/2 in.  Plunging at half the feed.
+[end_milling]
+plunge_factor = "50 %"
+
+[[end_milling.chip_loads]]
+below = "1/8 in"
+chip_load = "0.0005 in/tooth"
+
+[[end_milling.chip_loads]]
+below = "1/4 in"
+chip_load = "0.001 in/tooth"
+
+[[end_milling.chip_loads]]
+below = "1/2 in"
+chip_load = "0.0015 in/tooth"
+
+[[end_milling.chip_loads]]
+below = "1 in"
+chip_load = "0.002 in/tooth"
+
 # Drill feed per revolution: the middle of the catalog range for the
 # drill's diameter, times the group's `feed_factor`.
 [drilling]
-carbide_speed_factor = "250 %"
 
 [[drilling.feed_ranges]]
 below = "1/8 in"

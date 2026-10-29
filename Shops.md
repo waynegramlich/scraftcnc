@@ -83,6 +83,7 @@ a whole number and a fraction joined by `-` (`"1-1/2 in"`).
 | rotary feed   | `deg/min`, `deg/s`                               |
 | surface speed | `sfm`, `ft/min`, `m/min`                         |
 | feed per rev  | `in/rev`, `ipr`, `mm/rev`                        |
+| chip load     | `in/tooth`, `ipt`, `mm/tooth`                    |
 | fraction      | `%`                                              |
 | money         | `USD`, `CAD`, `EUR`, `GBP`, or any ISO 4217 code |
 
@@ -460,6 +461,14 @@ file of its own.
 |                   | `ER50`, `R8`, `5C`,  |          |                       |
 |                   | or another ending in |          |                       |
 |                   | `!`                  |          |                       |
+| `cutting`         | material name to     | no       | Its own speed and     |
+|                   | `cutting`            |          | feed for a material,  |
+|                   |                      |          | which win over those  |
+|                   |                      |          | worked out from       |
+|                   |                      |          | `materials` (and are  |
+|                   |                      |          | needed for a tool     |
+|                   |                      |          | that is not HSS,      |
+|                   |                      |          | cobalt or carbide).   |
 | `shank`           | length               | no       | The shank diameter,   |
 |                   |                      |          | if not `diameter`.    |
 | `overall_length`  | length               | yes      | Its whole length      |
@@ -528,8 +537,16 @@ A twist drill.  It has a `name` even when it is not a file of its own.
 |                   | `!`                  |          |                       |
 | `split_point`     | boolean              | no       | True if it has a      |
 |                   |                      |          | split point.          |
-| `peck`            | length               | no       | How deep each peck    |
+| `peck_depth`      | length               | no       | How deep each peck    |
 |                   |                      |          | goes (0 for none).    |
+| `cutting`         | material name to     | no       | Its own speed and     |
+|                   | `cutting`            |          | feed for a material,  |
+|                   |                      |          | which win over those  |
+|                   |                      |          | worked out from       |
+|                   |                      |          | `materials` (and are  |
+|                   |                      |          | needed for a tool     |
+|                   |                      |          | that is not HSS,      |
+|                   |                      |          | cobalt or carbide).   |
 | `shank`           | length               | no       | The shank diameter,   |
 |                   |                      |          | if not `diameter`.    |
 | `overall_length`  | length               | yes      | Its whole length      |
@@ -573,6 +590,27 @@ coating = "straw"
 vendor = "Shars Tool"
 vendor_pn = "415-8998"
 cost = "2.67 USD"
+
+[cutting."6061 aluminum"]
+rpm = "1200 rpm"
+feed = "4 in/min"
+```
+
+## `cutting`
+
+A tool's own speed and feed for one material.
+
+| Key      | Value | Required | Meaning                                       |
+| -------- | ----- | -------- | --------------------------------------------- |
+| `rpm`    | speed | yes      | The spindle speed.                            |
+| `feed`   | feed  | yes      | The feed.                                     |
+| `plunge` | feed  | no       | The feed going straight down (a drill's       |
+|          |       |          | `feed`, or an end mill's `feed` times         |
+|          |       |          | `plunge_factor`, if not given).               |
+
+```toml
+rpm = "1200 rpm"
+feed = "4 in/min"
 ```
 
 ## `chamfer_mill`
@@ -778,26 +816,44 @@ vendor_pn = "436-4296"
 
 ## `materials`
 
-The materials a shop cuts, and how to drill them.  Speeds and feeds
-worked out from these are only starting points; a drill's own `cutting`
-entries win.  It has a `name` even when it is not a file of its own.
+The materials a shop cuts, and how to drill and mill them.  Speeds and
+feeds worked out from these are only starting points; a tool's own
+`cutting` entries win.  It has a `name` even when it is not a file of
+its own.
 
-| Key         | Value                   | Required | Meaning                  |
-| ----------- | ----------------------- | -------- | ------------------------ |
-| `drilling`  | `drilling`              | yes      | How drills feed.         |
-| `groups`    | list of                 | yes      | The groups of materials  |
-|             | `material_group`        |          | that cut alike.          |
-| `materials` | list of `material`      | yes      | The materials, each in a |
-|             |                         |          | group.                   |
+| Key                    | Value              | Required | Meaning            |
+| ---------------------- | ------------------ | -------- | ------------------ |
+| `carbide_speed_factor` | fraction           | yes      | A carbide tool's   |
+|                        |                    |          | surface speed, as  |
+|                        |                    |          | a share of HSS's.  |
+| `cobalt_speed_factor`  | fraction           | yes      | A cobalt tool's    |
+|                        |                    |          | surface speed, as  |
+|                        |                    |          | a share of HSS's.  |
+| `end_milling`          | `end_milling`      | yes      | How end mills      |
+|                        |                    |          | feed.              |
+| `drilling`             | `drilling`         | yes      | How drills feed.   |
+| `groups`               | list of            | yes      | The groups of      |
+|                        | `material_group`   |          | materials that cut |
+|                        |                    |          | alike.             |
+| `materials`            | list of `material` | yes      | The materials,     |
+|                        |                    |          | each in a group.   |
 
 ```toml
 name = "Materials"
 kind = "materials"
 language = "English"
 version = "0.0.1"
+carbide_speed_factor = "250 %"
+cobalt_speed_factor = "110 %"
+
+[end_milling]
+plunge_factor = "50 %"
+
+[[end_milling.chip_loads]]
+below = "1/4 in"
+chip_load = "0.001 in/tooth"
 
 [drilling]
-carbide_speed_factor = "250 %"
 
 [[drilling.feed_ranges]]
 below = "1/8 in"
@@ -818,22 +874,50 @@ group = "soft"
 How drills feed: the feed per revolution by drill diameter (the middle
 of the catalog ranges), times the group's `feed_factor`.
 
-| Key                    | Value              | Required | Meaning            |
-| ---------------------- | ------------------ | -------- | ------------------ |
-| `carbide_speed_factor` | fraction           | yes      | A carbide drill's  |
-|                        |                    |          | surface speed, as  |
-|                        |                    |          | a share of HSS's.  |
-| `feed_ranges`          | list of            | yes      | The feeds per      |
-|                        | `feed_range`       |          | revolution,        |
-|                        |                    |          | smallest drills    |
-|                        |                    |          | first.             |
+| Key           | Value                | Required | Meaning                   |
+| ------------- | -------------------- | -------- | ------------------------- |
+| `feed_ranges` | list of `feed_range` | yes      | The feeds per revolution, |
+|               |                      |          | smallest drills first.    |
 
 ```toml
-carbide_speed_factor = "250 %"
-
 [[feed_ranges]]
 below = "1/8 in"
 feed = "0.002 in/rev"
+```
+
+## `end_milling`
+
+How end mills feed: the chip load by diameter, times the group's
+`feed_factor`, times the flutes and the RPM.
+
+| Key             | Value               | Required | Meaning                  |
+| --------------- | ------------------- | -------- | ------------------------ |
+| `plunge_factor` | fraction            | yes      | The plunge feed, as a    |
+|                 |                     |          | share of the feed.       |
+| `chip_loads`    | list of `chip_load` | yes      | The chip loads, smallest |
+|                 |                     |          | end mills first.         |
+
+```toml
+plunge_factor = "50 %"
+
+[[chip_loads]]
+below = "1/4 in"
+chip_load = "0.001 in/tooth"
+```
+
+## `chip_load`
+
+The chip load of end mills below a diameter.
+
+| Key         | Value     | Required | Meaning                                |
+| ----------- | --------- | -------- | -------------------------------------- |
+| `below`     | length    | yes      | The end mills it is for are smaller    |
+|             |           |          | than this.                             |
+| `chip_load` | chip load | yes      | Their feed per tooth.                  |
+
+```toml
+below = "1/4 in"
+chip_load = "0.001 in/tooth"
 ```
 
 ## `feed_range`
@@ -860,9 +944,10 @@ not a file of its own.
 | ------------------- | ------------- | -------- | -------------------------- |
 | `description`       | string        | no       | What is in it.             |
 | `hss_surface_speed` | surface speed | yes      | The surface speed of an    |
-|                     |               |          | HSS drill.                 |
-| `feed_factor`       | fraction      | yes      | The drill feed, as a share |
-|                     |               |          | of `feed_ranges`'.         |
+|                     |               |          | HSS tool.                  |
+| `feed_factor`       | fraction      | yes      | The feed, as a share of    |
+|                     |               |          | `feed_ranges` and          |
+|                     |               |          | `chip_loads`.              |
 
 ```toml
 name = "soft"

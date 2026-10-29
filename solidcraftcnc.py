@@ -593,8 +593,9 @@ def _uncut_reach(
 
 
 # Class `SCCNC`:
+# A program's state, and the job's heights, are each an attribute.
 @dataclass(slots=True)
-class SCCNC:
+class SCCNC:  # pylint: disable=too-many-instance-attributes
     """RS-274 (G-code) for a 3-axis mill, built one command at a time.
 
     The program works in inches and absolute coordinates, in the XY
@@ -613,6 +614,11 @@ class SCCNC:
     * `name` (`str`): The program's name (its first comment).
     * `machine` (`SCMachine`): The machine and its tool table.
     * `z_top` (`float`): The Z of the material's top surface.
+    * `job_z_safe` (`float | None`):
+      This job's `z_safe` (its hold downs), or `None` for the
+      machine's.
+    * `job_clearance` (`float | None`):
+      This job's `clearance`, or `None` for the machine's.
     * `commands` (`list[RS274]`): The program so far.
     * `minutes` (`float`):
       The time the moves so far take, at the machine's rapid speed and
@@ -623,13 +629,15 @@ class SCCNC:
     * `tool` (`SCTool | None`): The tool in the spindle, if any.
 
     Constructor:
-    * `SCCNC(name, machine, z_top)`
+    * `SCCNC(name, machine, z_top, job_z_safe, job_clearance)`
     """
 
     # Constructor arguments:
     name: str = field(init=True)
     machine: SCMachine = field(init=True)
     z_top: float = field(init=True, default=0.0)
+    job_z_safe: float | None = field(init=True, default=None)
+    job_clearance: float | None = field(init=True, default=None)
 
     # Program state (alphabetized):
     commands: list[RS274] = field(init=False, default_factory=list)
@@ -670,8 +678,10 @@ class SCCNC:
         """Return the Z above all of the hold down tooling.
 
         Returns:
-        * (`float`): The machine's `z_safe`.
+        * (`float`): The job's `z_safe`, or else the machine's.
         """
+        if self.job_z_safe is not None:
+            return self.job_z_safe
         return self.machine.z_safe
 
     # Method `SCCNC.clearance()`:
@@ -680,8 +690,10 @@ class SCCNC:
         """Return how far above `z_top` rapids down stop.
 
         Returns:
-        * (`float`): The machine's `clearance`.
+        * (`float`): The job's `clearance`, or else the machine's.
         """
+        if self.job_clearance is not None:
+            return self.job_clearance
         return self.machine.clearance
 
     # Method `SCCNC.cutter()`:

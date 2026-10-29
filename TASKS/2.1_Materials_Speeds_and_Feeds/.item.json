@@ -1,7 +1,7 @@
 {
-  "state": "Open",
+  "state": "Closed",
   "created": "2026-10-27T23:40:54Z",
-  "updated": "2026-10-28T23:11:05Z",
+  "updated": "2026-10-29T03:36:41Z",
   "history": [
     {
       "state": "Pending",
@@ -10,6 +10,10 @@
     {
       "state": "Open",
       "time": "2026-10-28T23:11:05Z"
+    },
+    {
+      "state": "Closed",
+      "time": "2026-10-29T03:36:41Z"
     }
   ],
   "tag": "msaf"

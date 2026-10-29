@@ -121,6 +121,15 @@ class TestSCCNC(unittest.TestCase):
         with self.assertRaises(ValueError):
             SCCNC("Test", machine()).linear(z=-1.0)
 
+    # Method `TestSCCNC.test_job_heights()`:
+    def test_job_heights(self) -> None:
+        """A job's `z_safe` and `clearance` win over the machine's."""
+        cnc: SCCNC = SCCNC("Test", machine(), 1.0, 3.0, 0.1)
+        self.assertEqual((cnc.z_safe, cnc.clearance), (3.0, 0.1))
+        self.assertEqual(cnc.commands[-1], {"G": 0, "Z": 3.0})
+        plain: SCCNC = SCCNC("Test", machine())
+        self.assertEqual(plain.z_safe, machine().z_safe)
+
     # Method `TestSCCNC.test_moves()`:
     def test_moves(self) -> None:
         """Unchanged axes and feeds, and still moves, are left out."""

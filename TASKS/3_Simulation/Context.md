@@ -37,3 +37,11 @@
   settled.
 * Session start check (2026-10-28): flake8 7.4.1 (7.5.0 out) and
   mypy 2.4.0 (2.4.1 out); not updated, the user not yet asked.
+
+## 2026-10-28: A display bug seen in the user's run
+
+* With the new speeds and feeds (`T.msaf~2.1`), the user's panel run
+  "was very good", but near the end the roughing mill's (T8) path
+  became visible again (`sim_solidcraft.py`'s `PathRack`).  Not yet
+  looked into.  SolidCraft is not on Claude's `PATH`: start
+  `../solidcraft/solidcraft-linux-x86_64.AppImage --control 8080`.

@@ -36,7 +36,7 @@ import re
 import sys
 import textwrap
 import tomllib
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, TypeAlias, cast
 
@@ -89,6 +89,13 @@ FEED_PER_REV: dict[str, float] = {
     "mm/rev": 1.0 / 25.4,
 }
 
+# Chip loads (the feed per tooth of an end mill), in inches per tooth.
+CHIP_LOAD: dict[str, float] = {
+    "in/tooth": 1.0,
+    "ipt": 1.0,
+    "mm/tooth": 1.0 / 25.4,
+}
+
 # Money: a few common currencies, though any ISO 4217 code (three
 # capital letters) is taken.  Amounts are never converted between
 # currencies.
@@ -105,6 +112,7 @@ UNITS: dict[str, dict[str, float]] = {
     "rotary_feed": ROTARY_FEED,
     "surface_speed": SURFACE_SPEED,
     "feed_per_rev": FEED_PER_REV,
+    "chip_load": CHIP_LOAD,
     "fraction": FRACTION,
     "money": MONEY,
 }
@@ -120,6 +128,7 @@ FORMS: tuple[str, ...] = (
     "table",
     "list",
     "t_numbers",
+    "by_material",
 )
 
 # The widest line in `Shops.md`.
@@ -150,7 +159,8 @@ class SCField:
       What its value is: a kind of measurement (a key of `UNITS`), or
       one of `FORMS`: `"table"` and `"list"` (of tables) take the kind
       named by `of`; `"choice"` is a string from `choices`;
-      `"t_numbers"` maps T numbers to tool names.
+      `"t_numbers"` maps T numbers to tool names; `"by_material"`
+      maps material names to tables of the kind named by `of`.
     * `meaning` (`str`): What it is, in Markdown.
     * `required` (`bool`): True if it must be there.
     * `of` (`str`): The kind of a `"table"` or `"list"`.
@@ -182,7 +192,7 @@ class SCField:
         """
         if self.form not in UNITS and self.form not in FORMS:
             raise ValueError(f"{self.key}: unknown form {self.form!r}")
-        if (self.form in ("table", "list")) != bool(self.of):
+        if (self.form in ("table", "list", "by_material")) != bool(self.of):
             raise ValueError(f"{self.key}: `of` is only for tables")
         if (self.form == "choice") != bool(self.choices):
             raise ValueError(f"{self.key}: `choices` is only for choices")
@@ -205,6 +215,8 @@ class SCField:
                 shown += ", or another ending in `!`"
         elif self.form == "t_numbers":
             shown = "T number to tool name"
+        elif self.form == "by_material":
+            shown = f"material name to `{self.of}`"
         return shown
 
 
@@ -385,6 +397,23 @@ def _collet_field(*, required: bool) -> SCField:
         required=required,
         choices=COLLETS,
         open=True,
+    )
+
+
+# Function `_cutting_field()`:
+def _cutting_field() -> SCField:
+    """Return the `cutting` field of a drill or an end mill.
+
+    Returns:
+    * (`SCField`): The field.
+    """
+    return SCField(
+        "cutting",
+        "by_material",
+        "Its own speed and feed for a material, which win over those "
+        "worked out from `materials` (and are needed for a tool that "
+        "is not HSS, cobalt or carbide).",
+        of="cutting",
     )
 
 
@@ -855,6 +884,7 @@ material = "HSS"
                     "True for a rougher (serrated flutes).",
                 ),
                 _collet_field(required=False),
+                _cutting_field(),
             ),
             True,
             """\
@@ -887,8 +917,11 @@ acquired = 2026-10-27
                     "split_point", "boolean", "True if it has a split point."
                 ),
                 SCField(
-                    "peck", "length", "How deep each peck goes (0 for none)."
+                    "peck_depth",
+                    "length",
+                    "How deep each peck goes (0 for none).",
                 ),
+                _cutting_field(),
             ),
             True,
             """\
@@ -905,6 +938,30 @@ coating = "straw"
 vendor = "Shars Tool"
 vendor_pn = "415-8998"
 cost = "2.67 USD"
+
+[cutting."6061 aluminum"]
+rpm = "1200 rpm"
+feed = "4 in/min"
+""",
+        ),
+        SCKind(
+            "cutting",
+            "A tool's own speed and feed for one material.",
+            (
+                SCField("rpm", "speed", "The spindle speed.", True),
+                SCField("feed", "feed", "The feed.", True),
+                SCField(
+                    "plunge",
+                    "feed",
+                    "The feed going straight down (a drill's `feed`, or "
+                    "an end mill's `feed` times `plunge_factor`, if not "
+                    "given).",
+                ),
+            ),
+            False,
+            """\
+rpm = "1200 rpm"
+feed = "4 in/min"
 """,
         ),
         SCKind(
@@ -1010,10 +1067,29 @@ vendor_pn = "436-4296"
         ),
         SCKind(
             "materials",
-            "The materials a shop cuts, and how to drill them.  Speeds "
-            "and feeds worked out from these are only starting points; "
-            "a drill's own `cutting` entries win.",
+            "The materials a shop cuts, and how to drill and mill them.  "
+            "Speeds and feeds worked out from these are only starting "
+            "points; a tool's own `cutting` entries win.",
             (
+                SCField(
+                    "carbide_speed_factor",
+                    "fraction",
+                    "A carbide tool's surface speed, as a share of HSS's.",
+                    True,
+                ),
+                SCField(
+                    "cobalt_speed_factor",
+                    "fraction",
+                    "A cobalt tool's surface speed, as a share of HSS's.",
+                    True,
+                ),
+                SCField(
+                    "end_milling",
+                    "table",
+                    "How end mills feed.",
+                    True,
+                    of="end_milling",
+                ),
                 SCField(
                     "drilling",
                     "table",
@@ -1042,9 +1118,17 @@ name = "Materials"
 kind = "materials"
 language = "English"
 version = "0.0.1"
+carbide_speed_factor = "250 %"
+cobalt_speed_factor = "110 %"
+
+[end_milling]
+plunge_factor = "50 %"
+
+[[end_milling.chip_loads]]
+below = "1/4 in"
+chip_load = "0.001 in/tooth"
 
 [drilling]
-carbide_speed_factor = "250 %"
 
 [[drilling.feed_ranges]]
 below = "1/8 in"
@@ -1067,12 +1151,6 @@ group = "soft"
             "`feed_factor`.",
             (
                 SCField(
-                    "carbide_speed_factor",
-                    "fraction",
-                    "A carbide drill's surface speed, as a share of HSS's.",
-                    True,
-                ),
-                SCField(
                     "feed_ranges",
                     "list",
                     "The feeds per revolution, smallest drills first.",
@@ -1082,11 +1160,60 @@ group = "soft"
             ),
             False,
             """\
-carbide_speed_factor = "250 %"
-
 [[feed_ranges]]
 below = "1/8 in"
 feed = "0.002 in/rev"
+""",
+        ),
+        SCKind(
+            "end_milling",
+            "How end mills feed: the chip load by diameter, times the "
+            "group's `feed_factor`, times the flutes and the RPM.",
+            (
+                SCField(
+                    "plunge_factor",
+                    "fraction",
+                    "The plunge feed, as a share of the feed.",
+                    True,
+                ),
+                SCField(
+                    "chip_loads",
+                    "list",
+                    "The chip loads, smallest end mills first.",
+                    True,
+                    of="chip_load",
+                ),
+            ),
+            False,
+            """\
+plunge_factor = "50 %"
+
+[[chip_loads]]
+below = "1/4 in"
+chip_load = "0.001 in/tooth"
+""",
+        ),
+        SCKind(
+            "chip_load",
+            "The chip load of end mills below a diameter.",
+            (
+                SCField(
+                    "below",
+                    "length",
+                    "The end mills it is for are smaller than this.",
+                    True,
+                ),
+                SCField(
+                    "chip_load",
+                    "chip_load",
+                    "Their feed per tooth.",
+                    True,
+                ),
+            ),
+            False,
+            """\
+below = "1/4 in"
+chip_load = "0.001 in/tooth"
 """,
         ),
         SCKind(
@@ -1120,13 +1247,13 @@ feed = "0.002 in/rev"
                 SCField(
                     "hss_surface_speed",
                     "surface_speed",
-                    "The surface speed of an HSS drill.",
+                    "The surface speed of an HSS tool.",
                     True,
                 ),
                 SCField(
                     "feed_factor",
                     "fraction",
-                    "The drill feed, as a share of `feed_ranges`'.",
+                    "The feed, as a share of `feed_ranges` and `chip_loads`.",
                     True,
                 ),
             ),
@@ -1928,6 +2055,16 @@ class _Reader:
         form: str = schema.form
         if form == "table":
             return self.table(value, KINDS[schema.of], path, source)
+        if form == "by_material":
+            if not isinstance(value, dict):
+                self.problem(source, path, f"{value!r} is not a table")
+                return {}
+            return {
+                material: self.table(
+                    item, KINDS[schema.of], path + (material,), source
+                )
+                for material, item in value.items()
+            }
         if form == "list":
             if not isinstance(value, list):
                 self.problem(source, path, f"{value!r} is not a list")
@@ -2263,9 +2400,8 @@ def cnc_machine(
     * `shop` (`dict[str, object]`): The shop, from `read()`.
     * `name` (`str`): The machine's name.
     * `material` (`str`):
-      The material being cut; if given, HSS and carbide drills get
-      their speeds and feeds from the shop's `materials` (see
-      `drill_cutting()`).
+      The material being cut, from which drills get their speeds and
+      feeds (see `tool_cutting()`); needed if a drill is loaded.
 
     Returns:
     * (`SCMachine`): Its preferences and its tool table.
@@ -2273,8 +2409,9 @@ def cnc_machine(
     Raises:
     * `ValueError`:
       If the shop has no such machine, the machine has no
-      `preferences`, or a loaded tool has no `rpm`, `feed` or
-      `plunge`.
+      `preferences`, a loaded tool other than a drill has no `rpm`,
+      `feed` or `plunge`, or a drill has no speed and feed for the
+      material.
     """
     # Find the machine and its preferences.
     machine: dict[str, object] = _machine(shop, name)
@@ -2290,13 +2427,20 @@ def cnc_machine(
     # The loaded tools, with drill speeds and feeds for the material.
     tools: list[SCTool] = []
     for number, (key, tool) in loaded_tools(shop, name).items():
-        cnc_tool: SCTool = _cnc_tool(number, CNC_KINDS[key], tool)
-        if material and key == "drills" and tool["material"] in DRILLED:
+        if key in CUT_KEYS:
+            if not material:
+                raise ValueError(f'"{tool["name"]}" needs a material to cut')
             rpm: float
             feed: float
-            rpm, feed = drill_cutting(shop, machine, tool, material)
-            cnc_tool = replace(cnc_tool, rpm=rpm, feed=feed, plunge=feed)
-        tools.append(cnc_tool)
+            plunge: float
+            rpm, feed, plunge = tool_cutting(shop, machine, tool, material)
+            tool = {
+                **tool,
+                "rpm": f"{rpm} rpm",
+                "feed": f"{feed} in/min",
+                "plunge": f"{plunge} in/min",
+            }
+        tools.append(_cnc_tool(number, CNC_KINDS[key], tool))
 
     # The machine, with its loaded tools.
     return SCMachine(
@@ -2315,76 +2459,273 @@ def cnc_machine(
     )
 
 
-# The drill materials with speeds and feeds in `materials`; others
-# (such as cobalt, with no data yet) keep their own `rpm` and `feed`.
-DRILLED: tuple[str, ...] = ("HSS", "carbide")
+# The tool materials with speeds and feeds worked out from
+# `materials`: their surface speed factor's key (`None` for HSS).
+SPEED_FACTORS: dict[str, str | None] = {
+    "HSS": None,
+    "cobalt": "cobalt_speed_factor",
+    "carbide": "carbide_speed_factor",
+}
+
+# The tool lists whose speeds and feeds come from `materials`.
+CUT_KEYS: tuple[str, ...] = (
+    "drills",
+    "end_mills",
+    "chamfer_mills",
+    "corner_rounding_mills",
+    "double_angle_cutters",
+)
 
 
-# Function `drill_cutting()`:
-def drill_cutting(
+# Function `tool_cutting()`:
+def tool_cutting(
     shop: dict[str, object],
     machine: dict[str, object],
-    drill: dict[str, object],
+    tool: dict[str, object],
     material: str,
-) -> tuple[float, float]:
-    """Return the speed and feed of an HSS or carbide drill.
+) -> tuple[float, float, float]:
+    """Return the speed and feeds of a tool in a material.
 
-    RPM = 12 SFM / (pi D), held to the spindle's range; the feed is
-    the middle of the catalog range for D, times the group's
-    `feed_factor`, times the RPM actually used.
+    The tool's own `cutting` entry for the material wins.  Otherwise,
+    RPM = 12 SFM / (pi D), at its widest diameter D, held to the
+    spindle's range.  A drill (one
+    with a `point_angle`) feeds at the middle of
+    the catalog range for D per revolution; an end mill at the chip
+    load for D per tooth; both times the group's `feed_factor`, at the
+    RPM actually used.  A feed (or plunge) faster than the axes can go
+    is brought down to their limit, with the RPM brought down with it,
+    so the chip load stays the same.
 
     Arguments:
     * `shop` (`dict[str, object]`): The shop, from `read()`.
     * `machine` (`dict[str, object]`): The machine it is in.
-    * `drill` (`dict[str, object]`): The drill, from `read()`.
+    * `tool` (`dict[str, object]`): The tool, from `read()`.
     * `material` (`str`): The material being cut.
 
     Returns:
-    * (`tuple[float, float]`): The RPM and the feed (in/min).
+    * (`tuple[float, float, float]`):
+      The RPM, the feed and the plunge feed (in/min).
 
     Raises:
     * `ValueError`:
       If the shop has no `materials`, the material is not one of them,
-      or the drill is larger than every `feed_ranges` entry.
+      the tool has no `cutting` entry for it and is not HSS, cobalt or
+      carbide, or it is larger than every range.
     """
-    # Find the material's group.
-    if "materials" not in shop:
-        raise ValueError("the shop has no `materials`")
-    materials: dict[str, Any] = cast(dict[str, Any], shop["materials"])
-    found: list[dict[str, Any]] = [
-        entry
-        for entry in materials["materials"]
-        if str(entry["name"]).lower() == material.lower()
-    ]
-    if not found:
-        known: str = ", ".join(
-            str(entry["name"]) for entry in materials["materials"]
+    # Find the material, and the tool's own entry for it.
+    materials: dict[str, Any] = _materials(shop)
+    found: dict[str, Any] = _material(materials, material)
+    drill: bool = "point_angle" in tool
+    own: tuple[float, float, float] | None = _own_cutting(
+        tool, str(found["name"]), drill, materials
+    )
+    if own is not None:
+        return own
+    if tool["material"] not in SPEED_FACTORS:
+        raise ValueError(
+            f'"{tool["name"]}" needs a `cutting."{found["name"]}"` '
+            "entry (its `rpm` and `feed`)"
         )
-        raise ValueError(f'"{material}" is not one of: {known}')
     group: dict[str, Any] = next(
         entry
         for entry in materials["groups"]
-        if entry["name"] == found[0]["group"]
+        if entry["name"] == found["group"]
     )
 
     # The speed, held to the spindle's range.
-    diameter: float = measure(drill["diameter"], LENGTH)
+    diameter: float = _widest(tool)
     surface_speed: float = measure(group["hss_surface_speed"], SURFACE_SPEED)
-    drilling: dict[str, Any] = materials["drilling"]
-    if drill["material"] == "carbide":
-        surface_speed *= measure(drilling["carbide_speed_factor"], FRACTION)
+    factor_key: str | None = SPEED_FACTORS[str(tool["material"])]
+    if factor_key is not None:
+        surface_speed *= measure(materials[factor_key], FRACTION)
     spindle: dict[str, Any] = cast(dict[str, Any], machine["spindle"])
     rpm: float = 12.0 * surface_speed / (math.pi * diameter)
     rpm = min(rpm, measure(spindle["max_rpm"], SPEED))
     rpm = max(rpm, measure(spindle.get("min_rpm", "0 rpm"), SPEED))
 
-    # The feed per revolution, from the first range the drill is in.
-    for feed_range in drilling["feed_ranges"]:
-        if diameter < measure(feed_range["below"], LENGTH):
-            return rpm, rpm * measure(
-                feed_range["feed"], FEED_PER_REV
-            ) * measure(group["feed_factor"], FRACTION)
-    raise ValueError(f'"{drill["name"]}" is larger than every feed range')
+    # The feed, at the RPM actually used.
+    feed: float = (
+        rpm
+        * _per_rev(tool, diameter, drill, materials)
+        * measure(group["feed_factor"], FRACTION)
+    )
+    return _axis_limited(machine, rpm, feed, _plunge(feed, drill, materials))
+
+
+# Function `_widest()`:
+def _widest(tool: dict[str, object]) -> float:
+    """Return a tool's widest cutting diameter.
+
+    Arguments:
+    * `tool` (`dict[str, object]`): The tool, from `read()`.
+
+    Returns:
+    * (`float`):
+      Its `diameter`, or for a corner rounding mill (which has none)
+      its tip diameter plus twice its radius (inches).
+    """
+    if "diameter" in tool:
+        return measure(tool["diameter"], LENGTH)
+    return measure(tool["tip_diameter"], LENGTH) + 2.0 * measure(
+        tool["radius"], LENGTH
+    )
+
+
+# Function `_axis_limited()`:
+def _axis_limited(
+    machine: dict[str, object], rpm: float, feed: float, plunge: float
+) -> tuple[float, float, float]:
+    """Return a speed and feeds brought down to what the axes can do.
+
+    Arguments:
+    * `machine` (`dict[str, object]`): The machine.
+    * `rpm` (`float`): The spindle speed.
+    * `feed` (`float`): The feed in X and Y (in/min).
+    * `plunge` (`float`): The feed down in Z (in/min).
+
+    Returns:
+    * (`tuple[float, float, float]`):
+      The RPM, feed and plunge, all scaled down by the same share if
+      the feed is faster than the slower of X and Y, or the plunge
+      faster than Z (so the chip load stays the same).
+    """
+    # The axes' top feeds; a missing axis sets no limit.
+    limits: dict[str, float] = {
+        str(axis["letter"]): measure(axis["max_feed"], FEED)
+        for axis in cast(list[dict[str, Any]], machine.get("axes", []))
+        if "max_feed" in axis
+    }
+    xy: float = min(limits.get("X", math.inf), limits.get("Y", math.inf))
+    scale: float = min(1.0, xy / feed, limits.get("Z", math.inf) / plunge)
+    return rpm * scale, feed * scale, plunge * scale
+
+
+# Function `_per_rev()`:
+def _per_rev(
+    tool: dict[str, object],
+    diameter: float,
+    drill: bool,
+    materials: dict[str, Any],
+) -> float:
+    """Return a tool's feed per revolution, before the group's factor.
+
+    Arguments:
+    * `tool` (`dict[str, object]`): The tool, from `read()`.
+    * `diameter` (`float`): Its diameter (inches).
+    * `drill` (`bool`): True for a drill (else an end mill).
+    * `materials` (`dict[str, Any]`): The shop's `materials`.
+
+    Returns:
+    * (`float`):
+      A drill's feed per revolution, or an end mill's chip load times
+      its flutes, from the first range it is in (inches).
+
+    Raises:
+    * `ValueError`: If it is larger than every range.
+    """
+    # A drill feeds per revolution, an end mill per tooth.
+    key: str = "feed_ranges" if drill else "chip_loads"
+    table: str = "drilling" if drill else "end_milling"
+    for entry in materials[table][key]:
+        if diameter < measure(entry["below"], LENGTH):
+            if drill:
+                return measure(entry["feed"], FEED_PER_REV)
+            return measure(entry["chip_load"], CHIP_LOAD) * int(
+                cast(int, tool.get("flutes", 2))
+            )
+    raise ValueError(f'"{tool["name"]}" is larger than every `{key}`')
+
+
+# Function `_materials()`:
+def _materials(shop: dict[str, object]) -> dict[str, Any]:
+    """Return a shop's `materials`.
+
+    Arguments:
+    * `shop` (`dict[str, object]`): The shop, from `read()`.
+
+    Returns:
+    * (`dict[str, Any]`): Its `materials`.
+
+    Raises:
+    * `ValueError`: If it has none.
+    """
+    if "materials" not in shop:
+        raise ValueError("the shop has no `materials`")
+    return cast(dict[str, Any], shop["materials"])
+
+
+# Function `_material()`:
+def _material(materials: dict[str, Any], material: str) -> dict[str, Any]:
+    """Return a material, whatever its capitals.
+
+    Arguments:
+    * `materials` (`dict[str, Any]`): The shop's `materials`.
+    * `material` (`str`): The material's name.
+
+    Returns:
+    * (`dict[str, Any]`): The material.
+
+    Raises:
+    * `ValueError`: If it is not one of them (listing them).
+    """
+    for entry in materials["materials"]:
+        if str(entry["name"]).lower() == material.lower():
+            return cast(dict[str, Any], entry)
+    known: str = ", ".join(
+        str(entry["name"]) for entry in materials["materials"]
+    )
+    raise ValueError(f'"{material}" is not one of: {known}')
+
+
+# Function `_plunge()`:
+def _plunge(feed: float, drill: bool, materials: dict[str, Any]) -> float:
+    """Return the plunge feed for a feed.
+
+    Arguments:
+    * `feed` (`float`): The feed (in/min).
+    * `drill` (`bool`): True for a drill, which plunges at its feed.
+    * `materials` (`dict[str, Any]`): The shop's `materials`.
+
+    Returns:
+    * (`float`): The plunge feed (in/min).
+    """
+    if drill:
+        return feed
+    return feed * measure(materials["end_milling"]["plunge_factor"], FRACTION)
+
+
+# Function `_own_cutting()`:
+def _own_cutting(
+    tool: dict[str, object],
+    material: str,
+    drill: bool,
+    materials: dict[str, Any],
+) -> tuple[float, float, float] | None:
+    """Return a tool's own speed and feeds for a material, if it has them.
+
+    Arguments:
+    * `tool` (`dict[str, object]`): The tool, from `read()`.
+    * `material` (`str`): The material, as the shop names it.
+    * `drill` (`bool`): True for a drill.
+    * `materials` (`dict[str, Any]`): The shop's `materials`.
+
+    Returns:
+    * (`tuple[float, float, float] | None`):
+      The RPM, the feed and the plunge feed (in/min), or `None` if it
+      has none.
+    """
+    # Material names match whatever their capitals.
+    cutting: dict[str, Any] = cast(dict[str, Any], tool.get("cutting", {}))
+    for key, entry in cutting.items():
+        if key.lower() == material.lower():
+            feed: float = measure(entry["feed"], FEED)
+            plunge: float = (
+                measure(entry["plunge"], FEED)
+                if "plunge" in entry
+                else _plunge(feed, drill, materials)
+            )
+            return measure(entry["rpm"], SPEED), feed, plunge
+    return None
 
 
 # Function `_cnc_tool()`:
@@ -2400,9 +2741,11 @@ def _cnc_tool(number: int, kind: ToolKind, tool: dict[str, object]) -> SCTool:
     * (`SCTool`): The tool.
 
     Raises:
-    * `ValueError`: If it has no `rpm`, `feed` or `plunge`.
+    * `ValueError`:
+      If it has no `rpm`, `feed` or `plunge`.
     """
-    # How to cut with it must be given, for now.
+    # How to cut with it must be given, for now (a drill's comes from
+    # `tool_cutting()`).
     name: str = str(tool["name"])
     for key in ("rpm", "feed", "plunge"):
         if key not in tool:
@@ -2422,7 +2765,7 @@ def _cnc_tool(number: int, kind: ToolKind, tool: dict[str, object]) -> SCTool:
         rpm=measure(tool["rpm"], SPEED),
         feed=measure(tool["feed"], FEED),
         plunge=measure(tool["plunge"], FEED),
-        peck=measure(tool.get("peck", "0 in"), LENGTH),
+        peck=measure(tool.get("peck_depth", "0 in"), LENGTH),
         angle=measure(tool.get("angle", "0 deg"), ANGLE),
         radius=measure(tool.get("radius", "0 in"), LENGTH),
     )

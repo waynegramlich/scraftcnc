@@ -442,7 +442,7 @@ class TestCNCMachine(CopiedShop):
     def test_cnc_machine(self) -> None:
         """A shop's machine, with its loaded tools, for the CNC side."""
         shop = shops.read(EXAMPLES / "home_shop.toml")
-        mill = shops.cnc_machine(shop, "Shop mill")
+        mill = shops.cnc_machine(shop, "Shop mill", "6061 aluminum")
         self.assertEqual(
             mill.tool_change, "T{number:02d} M6 G43 H{number:02d}"
         )
@@ -472,28 +472,13 @@ class TestCNCMachine(CopiedShop):
         self.assertAlmostEqual(drill.peck, 0.05)
 
         # The router is there too; there is no lathe.
-        router = shops.cnc_machine(shop, "Shop router")
+        router = shops.cnc_machine(shop, "Shop router", "6061 aluminum")
         self.assertEqual(
             router.tool(1).name, "1/2 in 2 flute carbide end mill"
         )
         with self.assertRaises(ValueError) as caught:
             shops.cnc_machine(shop, "Lathe")
         self.assertIn('no machine named "Lathe"', str(caught.exception))
-
-    def test_cnc_tool_needs_speeds(self) -> None:
-        """A loaded tool with no speeds and feeds can not be used."""
-        self.change(
-            "tools.toml",
-            'cost = "15.18 USD"\nacquired = 2026-10-27\nrpm = "1200 rpm"\n',
-            'cost = "15.18 USD"\nacquired = 2026-10-27\n',
-        )
-        shop = shops.read(self.directory / "home_shop.toml")
-        with self.assertRaises(ValueError) as caught:
-            shops.cnc_machine(shop, "Shop mill")
-        self.assertIn(
-            '"1/4 in 2 flute carbide end mill" has no `rpm`',
-            str(caught.exception),
-        )
 
     def test_cnc_needs_preferences(self) -> None:
         """A machine with no preferences can not be run."""
@@ -505,8 +490,110 @@ class TestCNCMachine(CopiedShop):
         )
         shop = shops.read(self.directory / "home_shop.toml")
         with self.assertRaises(ValueError) as caught:
-            shops.cnc_machine(shop, "Shop router")
+            shops.cnc_machine(shop, "Shop router", "6061 aluminum")
         self.assertIn("has no preferences", str(caught.exception))
+
+
+class TestToolCutting(unittest.TestCase):
+    """Speeds and feeds worked out from the shop's `materials`."""
+
+    def setUp(self) -> None:
+        self.shop = shops.read(EXAMPLES / "home_shop.toml")
+        self.mill = next(
+            machine
+            for machine in self.shop["machines"]
+            if machine["name"] == "Shop mill"
+        )
+        self.tools = {
+            tool["name"]: tool
+            for tools in self.shop["tools"]
+            for key in ("drills", "end_mills")
+            for tool in tools.get(key, [])
+        }
+
+    def cutting(self, name: str, material: str) -> tuple[float, ...]:
+        return shops.tool_cutting(
+            self.shop, self.mill, self.tools[name], material
+        )
+
+    def test_hss_drill(self) -> None:
+        """RPM = 12 SFM / (pi D); feed = midpoint x factor x RPM."""
+        rpm, feed, plunge = self.cutting("15/64 in HSS jobber drill", "steel")
+        self.assertAlmostEqual(rpm, 12 * 100 / (3.141592653589793 * 15 / 64))
+        self.assertAlmostEqual(feed, rpm * 0.004 * 1.0)
+        self.assertAlmostEqual(plunge, feed)
+
+    def test_spindle_limit(self) -> None:
+        """A carbide end mill in aluminum is held to the top RPM."""
+        rpm, feed, plunge = self.cutting(
+            "1/4 in 2 flute carbide end mill", "aluminum"
+        )
+        self.assertAlmostEqual(rpm, 5000.0)
+        self.assertAlmostEqual(feed, 5000 * 0.0015 * 2 * 1.5)
+        self.assertAlmostEqual(plunge, feed / 2)
+
+    def test_cobalt_factor(self) -> None:
+        """Cobalt runs at its factor of HSS's surface speed."""
+        rpm, _, _ = self.cutting(
+            "1/4 in 4 flute cobalt roughing end mill", "steel"
+        )
+        self.assertAlmostEqual(rpm, 12 * 100 * 1.1 / (3.141592653589793 / 4))
+
+    def test_own_cutting_wins(self) -> None:
+        """A tool's own entry wins, in any capitals."""
+        self.assertEqual(
+            self.cutting("1/8 in cobalt jobber drill", "6061 ALUMINUM"),
+            (1200.0, 4.0, 4.0),
+        )
+
+    def test_unknown_material(self) -> None:
+        """An unknown material lists the shop's materials."""
+        with self.assertRaises(ValueError) as caught:
+            self.cutting("15/64 in HSS jobber drill", "unobtainium")
+        self.assertIn(
+            '"unobtainium" is not one of: aluminum', str(caught.exception)
+        )
+
+    def test_needs_own_cutting(self) -> None:
+        """A tool material with no data needs its own entry."""
+        tool = dict(self.tools["15/64 in HSS jobber drill"], material="PCD")
+        with self.assertRaises(ValueError) as caught:
+            shops.tool_cutting(self.shop, self.mill, tool, "steel")
+        self.assertIn('needs a `cutting."steel"` entry', str(caught.exception))
+
+    def test_too_large(self) -> None:
+        """A tool larger than every range is refused."""
+        tool = dict(self.tools["15/64 in HSS jobber drill"], diameter="2 in")
+        with self.assertRaises(ValueError) as caught:
+            shops.tool_cutting(self.shop, self.mill, tool, "steel")
+        self.assertIn("larger than every `feed_ranges`", str(caught.exception))
+
+
+class TestAxisLimits(TestToolCutting):
+    """Feeds the axes can not reach, and edge finishing bits."""
+
+    def test_axis_limit(self) -> None:
+        """A feed over the axes' limit scales the RPM down with it."""
+        mill = dict(self.mill)
+        mill["axes"] = [
+            dict(axis, max_feed="10 in/min") for axis in mill["axes"]
+        ]
+        rpm, feed, plunge = shops.tool_cutting(
+            self.shop,
+            mill,
+            self.tools["1/4 in 2 flute carbide end mill"],
+            "aluminum",
+        )
+        self.assertAlmostEqual(feed, 10.0)
+        self.assertAlmostEqual(rpm, 5000.0 * 10.0 / 22.5)
+        self.assertAlmostEqual(plunge, 5.0)
+
+    def test_widest(self) -> None:
+        """A corner rounding mill is as wide as its tip and radii."""
+        self.assertAlmostEqual(
+            shops._widest({"tip_diameter": "0.0469 in", "radius": "1/16 in"}),
+            0.0469 + 0.125,
+        )
 
 
 class TestMarkdown(unittest.TestCase):

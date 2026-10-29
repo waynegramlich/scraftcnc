@@ -197,3 +197,68 @@
   4074 rpm, 24.4 in/min; steel 1630 rpm, 6.5 in/min.  116 tests pass
   (a line number in `test_shops.py` updated), checkers clean.  No
   test of `drill_cutting()` yet.
+
+## 2026-10-28: Drill overrides and `peck_depth`
+
+* New form `by_material` (material name to a table); drills take
+  `[drills.cutting."MATERIAL"]` (kind `cutting`: `rpm`, `feed`),
+  which wins in `drill_cutting()` (`_own_cutting()`, any capitals).
+  A drill that is not HSS or carbide with no entry is an error
+  naming the pair.  `peck` renamed `peck_depth`; drills in
+  `tools.toml` lost `rpm`/`feed`/`plunge`; the cobalt drill has a
+  `6061 aluminum` entry (1200 rpm, 4 in/min), so `--material steel`
+  stops with that error (intended).
+* `cnc_machine()` needs a material if a drill is loaded;
+  `sim_linuxcnc.py` passes `MATERIAL` (6061 aluminum; speeds unused).
+* The user: drills over 1 in are not worth handling.  End mills
+  next.  116 tests pass, checkers clean.
+
+## 2026-10-28: End mills, cobalt, tests
+
+* `tool_cutting(shop, machine, tool, material) -> (rpm, feed,
+  plunge)` replaces `drill_cutting()`, for `drills` and `end_mills`
+  (`CUT_KEYS`).  Speed factors moved to the top of `materials`:
+  `carbide_speed_factor` 250 %, `cobalt_speed_factor` 110 % (Claude's
+  guess, #3).  `[end_milling]`: `plunge_factor` 50 %, `chip_loads`
+  (unit kind `chip_load`: `in/tooth`, `ipt`, `mm/tooth`) .0005/.001/
+  .0015/.002 below 1/8, 1/4, 1/2, 1 in (Claude's guesses).  Feed =
+  RPM x chip load x flutes x group `feed_factor`.  `cutting` entries
+  may give `plunge`.  End mills lost `rpm`/`feed`/`plunge`; chamfer,
+  corner rounding and double angle cutters keep theirs.
+* Demo now about 10.5 min (was 19).  T1 in aluminum 5000 rpm (the
+  spindle top), 22.5 in/min.  `TestToolCutting` (7 tests); 123 pass.
+* #4 (preferences) explained to the user; recommendation: `z_safe`
+  and `clearance` move to the job (`SCCNC` arguments, machine values
+  as defaults).  Waiting on the user's answer.
+
+## 2026-10-28: Run, preferences, axis limits, edge bits
+
+* Brought up SolidCraft (the AppImage at
+  `../solidcraft/solidcraft-linux-x86_64.AppImage`; `solidcraft` is
+  not on Claude's `PATH`), the panel and `--watch` for the user's
+  run of the 10.5 minute `demo.ngc`.
+* #1 agreed: `SCCNC(name, machine, z_top, job_z_safe,
+  job_clearance)`; `None` uses the machine's.  `test_job_heights`.
+* #3 (the user: back compute from the limit): `_axis_limited()`
+  scales RPM, feed and plunge by one share when the feed passes the
+  slower of X and Y `max_feed`, or the plunge passes Z's.
+* #4 (widest is right): every tool list is in `CUT_KEYS`; `_widest()`
+  (corner rounding: tip + 2 radius); flutes default 2.  No tool in
+  `tools.toml` has `rpm`/`feed`/`plunge` now (only T2's `cutting`).
+  `test_cnc_tool_needs_speeds` removed; `TestAxisLimits` added.
+  Demo about 9.9 min.
+* #5 (30 s): cnc-optimizations.pages.dev has calculators only, no
+  tables; the guessed chip loads stand.
+
+## 2026-10-28: The user's verdicts; Tools window; closing
+
+* The run "was very good".  Near the end, the original roughing
+  mill's (T8) path became visible again: a `PathRack` display bug,
+  noted in `T.s~3`'s `Context.md`.
+* Chip thinning: the user could not see it; not done.  Machine power
+  limit: not worth doing (power curves are seldom known).
+* `lcnc_panel.py`: a Tools button opens a window with a material
+  chooser and each loaded tool's RPM, feed and plunge
+  (`tool_speeds()`, `material_names()`; `SHOP_FILE`, `SHOP_MACHINE`,
+  `MATERIAL`); `test_lcnc_panel.py` (3 tests).  Not yet tried in the
+  real panel.  135 tests pass, checkers clean.

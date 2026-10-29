@@ -72,6 +72,10 @@ POLL: float = 0.05
 # (`lcnc_sim/shop_mill.ini` allows up to 100, its `MAX_FEED_OVERRIDE`).
 SPEED: float = 10.0
 
+# The tool table needs no speeds and feeds, but drills are only
+# built for a material, so any of the shop's will do.
+MATERIAL: str = "6061 aluminum"
+
 # The shop and machine whose tools are loaded, by default.
 SHOP_FILE: Path = (
     Path(__file__).resolve().parent / "examples/shop/home_shop.toml"
@@ -267,7 +271,7 @@ class Simulator:
         lines: list[str] = [
             f"T{tool.number} P{tool.number} Z{lengths[tool.number]:.4f} "
             f"D{tool.diameter:.4f} ;{tool.name}"
-            for tool in cnc_machine(described, machine).tools
+            for tool in cnc_machine(described, machine, MATERIAL).tools
         ]
         table.write_text("\n".join(lines) + "\n", encoding="utf-8")
         self.command.load_tool_table()

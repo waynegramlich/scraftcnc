@@ -1,7 +1,7 @@
 # Example tools, from the Shars Tool 2026 catalog (pages below).  The
 # end mills go in R8 end mill holders; the drills in an ER32 chuck.
-# The speeds and feeds are the ones the demo has always used (1200
-# rpm), not recommendations.
+# Every tool gets its speeds and feeds from `materials.toml`, unless
+# it gives its own for a material (`cutting`).
 name = "Shop tools"
 kind = "tools"
 language = "English"
@@ -24,9 +24,6 @@ vendor = "Shars Tool"
 vendor_pn = "415-0982"
 cost = "15.18 USD"
 acquired = 2026-10-27
-rpm = "1200 rpm"
-feed = "12 in/min"
-plunge = "6 in/min"
 
 [[end_mills]]
 name = "1/2 in 2 flute carbide end mill"
@@ -46,9 +43,6 @@ vendor = "Shars Tool"
 vendor_pn = "415-0998"
 cost = "47.02 USD"
 acquired = 2026-10-27
-rpm = "1200 rpm"
-feed = "12 in/min"
-plunge = "6 in/min"
 
 # Page 54: 2 flute HSS ball nose, regular length, Weldon shank.
 [[end_mills]]
@@ -67,9 +61,6 @@ manufacturer = "Import"
 vendor = "Shars Tool"
 vendor_pn = "404-5952"
 cost = "10.15 USD"
-rpm = "1200 rpm"
-feed = "12 in/min"
-plunge = "4 in/min"
 
 # Page 65: M42 cobalt coarse tooth roughing end mill, Weldon shank.
 [[end_mills]]
@@ -89,9 +80,6 @@ manufacturer = "Import"
 vendor = "Shars Tool"
 vendor_pn = "404-9051"
 cost = "18.30 USD"
-rpm = "1200 rpm"
-feed = "12 in/min"
-plunge = "4 in/min"
 
 [[drills]]
 name = "15/64 in HSS jobber drill"
@@ -107,10 +95,7 @@ manufacturer = "USA Made"
 vendor = "Shars Tool"
 vendor_pn = "415-7938"
 cost = "1.92 USD"
-rpm = "1200 rpm"
-feed = "4 in/min"
-plunge = "4 in/min"
-peck = "0.05 in"
+peck_depth = "0.05 in"
 
 [[drills]]
 name = "1/8 in cobalt jobber drill"
@@ -128,10 +113,13 @@ manufacturer = "USA Made"
 vendor = "Shars Tool"
 vendor_pn = "415-8998"
 cost = "2.67 USD"
+peck_depth = "0.05 in"
+
+# A tool's own speed and feed for a material, which win over those
+# worked out from `materials.toml`.
+[drills.cutting."6061 aluminum"]
 rpm = "1200 rpm"
 feed = "4 in/min"
-plunge = "4 in/min"
-peck = "0.05 in"
 
 # Page 137: 2 flute single end carbide chamfer mill.
 [[chamfer_mills]]
@@ -148,9 +136,6 @@ coating = "uncoated"
 vendor = "Shars Tool"
 vendor_pn = "416-3509"
 cost = "14.93 USD"
-rpm = "1200 rpm"
-feed = "12 in/min"
-plunge = "4 in/min"
 
 # Page 60: 2 flute solid carbide corner rounding mill, unflared.
 [[corner_rounding_mills]]
@@ -167,9 +152,6 @@ manufacturer = "USA Made"
 vendor = "Shars Tool"
 vendor_pn = "417-1112"
 cost = "49.05 USD"
-rpm = "1200 rpm"
-feed = "12 in/min"
-plunge = "4 in/min"
 
 # Page 114 (the table starts on page 112): pointed double angle shank
 # cutter, which reaches under an edge to chamfer it from below.
@@ -191,6 +173,3 @@ manufacturer_pn = "72603"
 vendor = "Shars Tool"
 vendor_pn = "436-4296"
 cost = "107.30 USD"
-rpm = "1200 rpm"
-feed = "12 in/min"
-plunge = "4 in/min"
