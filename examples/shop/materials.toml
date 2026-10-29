@@ -1,0 +1,103 @@
+# DRAFT (2026-10-28, `T.msaf~2.1`): not yet read by `shops.py` and
+# not yet spliced into `home_shop.toml`.  From the user's
+# `drill_rules.txt`; the feed factors are Claude's guesses.
+name = "Example shop materials"
+kind = "materials"
+language = "en"
+version = "0.1"
+
+# Drill feed per revolution: IPR = `ipr_per_diameter` x D x
+# `feed_factor`, refused outside the catalog range for D.  The rule
+# of thumb is .001 in/rev per 1/16 in of diameter; the inches cancel,
+# so it is a plain number (per revolution).
+[drilling]
+ipr_per_diameter = 0.016
+carbide_speed_factor = 2.5
+
+[[drilling.ipr_ranges]]
+below = "1/8 in"
+ipr = ["0.001 in/rev", "0.003 in/rev"]
+
+[[drilling.ipr_ranges]]
+below = "1/4 in"
+ipr = ["0.002 in/rev", "0.006 in/rev"]
+
+[[drilling.ipr_ranges]]
+below = "1/2 in"
+ipr = ["0.004 in/rev", "0.010 in/rev"]
+
+[[drilling.ipr_ranges]]
+below = "1 in"
+ipr = ["0.007 in/rev", "0.015 in/rev"]
+
+# Groups of materials being cut (HSS surface speed).
+[[groups]]
+name = "soft"
+description = "Aluminum, brass, acetal"
+hss_surface_speed = "250 sfm"
+feed_factor = 1.5
+
+[[groups]]
+name = "mild"
+description = "Mild steel, soft cast iron"
+hss_surface_speed = "100 sfm"
+feed_factor = 1.0
+
+[[groups]]
+name = "cast"
+description = "Medium and hard cast iron"
+hss_surface_speed = "80 sfm"
+feed_factor = 0.8
+
+[[groups]]
+name = "alloy"
+description = "Tool and alloy steel"
+hss_surface_speed = "40 sfm"
+feed_factor = 0.7
+
+[[groups]]
+name = "hard"
+description = "Stainless, titanium, hardened steel"
+hss_surface_speed = "20 sfm"
+feed_factor = 0.5
+
+# The materials this shop cuts, each naming its group.
+[[materials]]
+name = "6061 aluminum"
+group = "soft"
+
+[[materials]]
+name = "brass"
+group = "soft"
+
+[[materials]]
+name = "acetal"
+group = "soft"
+
+[[materials]]
+name = "1018 mild steel"
+group = "mild"
+
+[[materials]]
+name = "soft cast iron"
+group = "mild"
+
+[[materials]]
+name = "medium cast iron"
+group = "cast"
+
+[[materials]]
+name = "4140 alloy steel"
+group = "alloy"
+
+[[materials]]
+name = "O1 tool steel"
+group = "alloy"
+
+[[materials]]
+name = "304 stainless"
+group = "hard"
+
+[[materials]]
+name = "titanium"
+group = "hard"

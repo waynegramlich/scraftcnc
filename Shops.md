@@ -73,16 +73,18 @@ of T-slots) and yes/no facts (`true`/`false`) have no unit.
 The number may be a decimal (`"0.5 in"`), a fraction (`"1/2 in"`), or
 a whole number and a fraction joined by `-` (`"1-1/2 in"`).
 
-| Measurement  | Units                                            |
-| ------------ | ------------------------------------------------ |
-| length       | `in`, `inch`, `inches`, `ft`, `mm`, `cm`         |
-| feed         | `in/min`, `ipm`, `in/s`, `mm/min`, `mm/s`        |
-| acceleration | `in/s^2`, `mm/s^2`                               |
-| speed        | `rpm`                                            |
-| angle        | `deg`                                            |
-| rotary feed  | `deg/min`, `deg/s`                               |
-| fraction     | `%`                                              |
-| money        | `USD`, `CAD`, `EUR`, `GBP`, or any ISO 4217 code |
+| Measurement   | Units                                            |
+| ------------- | ------------------------------------------------ |
+| length        | `in`, `inch`, `inches`, `ft`, `mm`, `cm`         |
+| feed          | `in/min`, `ipm`, `in/s`, `mm/min`, `mm/s`        |
+| acceleration  | `in/s^2`, `mm/s^2`                               |
+| speed         | `rpm`                                            |
+| angle         | `deg`                                            |
+| rotary feed   | `deg/min`, `deg/s`                               |
+| surface speed | `sfm`, `ft/min`, `m/min`                         |
+| feed per rev  | `in/rev`, `ipr`, `mm/rev`                        |
+| fraction      | `%`                                              |
+| money         | `USD`, `CAD`, `EUR`, `GBP`, or any ISO 4217 code |
 
 ### Keys and Problems
 

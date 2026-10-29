@@ -75,6 +75,19 @@ FRACTION: dict[str, float] = {"%": 0.01}
 ACCELERATION: dict[str, float] = {"in/s^2": 1.0, "mm/s^2": 1.0 / 25.4}
 ROTARY_FEED: dict[str, float] = {"deg/min": 1.0, "deg/s": 60.0}
 
+# Surface speeds, in feet per minute, and feeds per revolution (for
+# drills), in inches per revolution.
+SURFACE_SPEED: dict[str, float] = {
+    "sfm": 1.0,
+    "ft/min": 1.0,
+    "m/min": 1000.0 / 25.4 / 12.0,
+}
+FEED_PER_REV: dict[str, float] = {
+    "in/rev": 1.0,
+    "ipr": 1.0,
+    "mm/rev": 1.0 / 25.4,
+}
+
 # Money: a few common currencies, though any ISO 4217 code (three
 # capital letters) is taken.  Amounts are never converted between
 # currencies.
@@ -89,6 +102,8 @@ UNITS: dict[str, dict[str, float]] = {
     "speed": SPEED,
     "angle": ANGLE,
     "rotary_feed": ROTARY_FEED,
+    "surface_speed": SURFACE_SPEED,
+    "feed_per_rev": FEED_PER_REV,
     "fraction": FRACTION,
     "money": MONEY,
 }

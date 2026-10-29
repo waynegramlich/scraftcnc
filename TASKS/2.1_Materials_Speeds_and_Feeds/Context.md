@@ -148,3 +148,27 @@
 6. `Shops.md` regenerated, tests, checkers.
 7. Later: end mills; the machine power limit; the chip load guide
    (cnc-optimizations.pages.dev).
+
+## 2026-10-28: Design drafted (5 minute cap, nothing wired in)
+
+* `examples/shop/materials.toml`: draft data (kind `materials`):
+  `[drilling]` (`ipr_per_diameter` .016, `carbide_speed_factor` 2.5,
+  `ipr_ranges` with `below` and a [min, max] `ipr`), five `groups`
+  (`hss_surface_speed`, `feed_factor`), ten `materials` naming a
+  group.  Not yet in `KINDS` nor spliced into `home_shop.toml`.
+* Open unit questions: `in/rev` and `in/rev/in` are new unit kinds
+  besides `surface_speed`; `[min, max]` lists may need a schema type.
+* Drill entry in `tools.toml` (to do): drop `rpm`/`feed`/`plunge`,
+  add `peck_depth`, optional `[drills.cutting."MATERIAL"]` with
+  `rpm`, `feed`.
+* Lookup (to do, in `shops.py`): `drill_cutting(tool, material,
+  spindle) -> (rpm, feed)`: override first; else HSS/carbide group
+  SFM -> RPM = 12 SFM / (pi D) clamped to spindle; IPR = .016 D x
+  factor, error if outside the range for D; feed = IPR x RPM.
+  Cobalt (or anything else) with no override: error naming the pair.
+* Units settled: `ipr_per_diameter` is a plain number (.001 in/rev
+  per 1/16 in: the inches cancel).  `shops.py` gained unit kinds
+  `surface_speed` (`sfm`, `ft/min`, `m/min`; inside ft/min) and
+  `feed_per_rev` (`in/rev`, `ipr`, `mm/rev`); `Shops.md` regenerated;
+  116 tests pass, checkers clean.  Next: the `materials` kind in
+  `KINDS` (a [min, max] range form still undecided).
