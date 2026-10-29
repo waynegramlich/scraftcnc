@@ -1,0 +1,5 @@
+# Files to ignore.
+# Ignore EMACS open files markers
+\#*
+*~
+aic  # Symbolic link to ai_contexts.py

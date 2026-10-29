@@ -1,0 +1,20 @@
+{
+  "state": "Active",
+  "created": "2026-10-29T14:49:54Z",
+  "updated": "2026-10-29T14:50:09Z",
+  "history": [
+    {
+      "state": "InActive",
+      "time": "2026-10-29T14:49:54Z"
+    },
+    {
+      "state": "Active",
+      "time": "2026-10-29T14:50:09Z"
+    }
+  ],
+  "tag": "vcr",
+  "title": "Version Control Rules",
+  "source": "../scraftcnc/RULES/1_Version_Control_Rules/Details.md",
+  "sha256": "9aad6f4ce4ac7be633ccba2e943b5a07074847e8a3e529cf7e92581f375dc39e",
+  "refreshed": "2026-10-29T14:49:54Z"
+}
