@@ -1,7 +1,10 @@
 # Files to ignore.
 # Ignore EMACS open files markers
 \#*
+.hg/
 *~
-.*
 aic  # Symbolic link to ai_contexts.py
 catalog.pdf
+SharsMD/
+__pycache__/
+
