@@ -1,0 +1,36 @@
+
+Cutting speed depends heavily on the combination of the drill material
+(High-Speed Steel [HSS] vs. Carbide) and the workpiece material:
+• Aluminum / Brass / Acetal (Plastics): ~250 SFM (HSS) up to higher speeds for carbide
+• Mild Steel / Soft Cast Iron: ~100 SFM (HSS)
+• Medium/Hard Cast Iron: ~80 SFM (HSS)
+• Tool Steel / Alloy Steel: ~40 SFM (HSS)
+• Stainless Steel / Titanium / Hardened Steel: ~20 SFM (HSS) or conservative lower ranges
+• Tip: Carbide tooling generally allows you to multiply HSS surface speeds by roughly 2.5x, while cobalt or high-moly tool steels handle tough work-hardening materials better than standard HSS.
+
+SFM: Surface Feet per Minute (specified by manufacturer)
+RPM: = Rotations Per Minute (1/min.)
+D: Drill Diameter (inches)
+
+
+How IPR is Determined in Practice
+
+1. Rule of Thumb (Ferrous / Standard Drills):
+   * A common shop guideline sets feed rate as roughly 0.001in per revolution
+     for every 1/16 inch of drill diameter (adjusted up or down based on
+     hardness and depth):
+     * IPR ~= Drill Diameter x Material Factor
+2. From various manufacture catalogs:
+   * Under 1/8" diameter: 0.001in - 0.003in per rev.
+   * 1/8" to 1/4" diameter: 0.002in - 0.006" per rev.
+   * 1/4" to 1/2" diameter: 0.004in - 0.010in per rev
+   * 1/2" to 1" diameter: 0.007in - 0.015in per rev.
+3. Connecting to IPM (Inches Per Minute):
+   * Once you choose an IPR value from a catalog or rule of thumb, you multiply
+     it by the calculated RPM to find your linear feed rate in inches per
+     minute:
+     *  IPM = IPR * RPM
+
+RPM = (SFM * 12) / (pi * D)
+IPM = RPM * IPR
+IPS = IPM / 60

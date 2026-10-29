@@ -57,14 +57,94 @@
   checkers clean, demo about 19.4 minutes.  Not yet looked at in the
   viewer or the simulator.
 
-## Next
+## 2026-10-28: Drill (tool) materials
 
-1. The design from the user's points: calculated speeds and feeds
-   are defaults; per machine and tool overrides (perhaps in each
-   machine's tool table file).
-2. A machine power limit (one usable power number per machine,
-   set by the owner; power = removal rate x a material's unit
-   power, about 0.3 hp per in^3/min aluminum, 1 steel) to slow
-   feeds; not yet discussed with the user.
-3. Material tables to start from the chip load guide
-   (cnc-optimizations.pages.dev), which the user liked.
+* The user's search, "drills - what are the more common material to
+  make drill bits for drilling metal out of": tool material and
+  finish both matter for speeds and feeds; keep to the 4 materials
+  that search listed, for now.
+* Claude's same search found HSS (the default: mild steel, cast iron,
+  non-ferrous), cobalt (HSS-Co, M35/M42: stainless, titanium) and
+  carbide (hardest, brittle), plus coatings: TiN (often sold as
+  "titanium" bits; a coating on HSS or cobalt, not a material) and
+  black oxide.  The sources were weak (mostly scraped pages).
+* `shops.MATERIALS` already has HSS, cobalt, carbide (and cermet,
+  ceramic, CBN, PCD; open list); `coating` is a free string (the
+  example tools use uncoated, black oxide, straw).
+* Asked the user which is the fourth (TiN coated as a material, or
+  something else), and whether `coating` becomes a choice.
+* The user: the search links were mostly advertisements and are not
+  to be kept; the user's temporary `drill_rules.txt` (project
+  directory) is the source for now.  It gives HSS SFM by workpiece
+  group (aluminum/brass/acetal 250, mild steel/soft cast iron 100,
+  medium/hard cast iron 80, tool/alloy steel 40, stainless/titanium/
+  hardened 20), carbide about 2.5x HSS, cobalt for work hardening
+  materials, and RPM = 12 SFM / (pi D), IPM = RPM x IPR.
+
+## 2026-10-28: The user's answers on drills
+
+* Cobalt: no data, so it is left out for now.  Carbide: 2.5x HSS for
+  every group, the best there is (titanium is trouble anyway).
+  Coatings: skipped for now.
+* The five rows of `drill_rules.txt` become the groups of materials
+  being cut, and each workpiece material (6061 aluminum, brass, ...)
+  names its group.
+* `drill_rules.txt` now gives IPR: a rule of thumb, .001 in/rev per
+  1/16 in of diameter (IPR = .016 D x a material factor, adjusted for
+  hardness and depth), and catalog ranges (under 1/8 in .001-.003,
+  1/8-1/4 .002-.006, 1/4-1/2 .004-.010, 1/2-1 .007-.015 in/rev).
+  The material factors are not given.
+* The user: precise speeds and feeds are very hard to come by; these
+  are starting points.
+
+## 2026-10-28: Drill design, the user's answers
+
+* Material factors (Claude's guesses, no source): aluminum/brass/
+  acetal 1.5, mild steel/soft cast iron 1.0, medium/hard cast iron
+  0.8, tool/alloy steel 0.7, stainless/titanium/hardened 0.5.
+* Depth adjustment skipped for now.  Drills only; end mills get the
+  same treatment later.
+* Per tool overrides in the tools file, under each drill, as
+  `[drills.cutting."MATERIAL"]` with `rpm` and `feed`, imperial or
+  metric units.
+* `plunge` should be `peck_depth` for drills.
+* RPM is clamped to the spindle's range, and the feed comes from the
+  RPM actually used (feed = IPR x actual RPM).
+* The user names the material; the shop declares the materials it
+  supports, with suggestions to start from (the list: 6061 aluminum,
+  brass, acetal, 1018 mild steel, soft cast iron, medium cast iron,
+  4140 alloy steel, O1 tool steel, 304 stainless, titanium).
+* Surface speed units: `sfm`, `ft/min` and `m/min`, interchangeable.
+* The user: it keeps getting messier, and a wrong guess breaks a bit.
+
+## 2026-10-28: Last answers (numbered 11-16 by the user, read in
+## order as Claude's 11, 16, 17, 22, 23, 24)
+
+* 11: an IPR outside the catalog range is no guess: refuse, asking
+  for a (speed, feed) for that (tool, material) pair.
+* 16, 17 ("see #11"): no plain `rpm`/`feed` fallback; a cobalt drill
+  (no data) needs its pairs given.
+* 22: `materials.toml` with the groups and the shop's materials.
+* 23: an unknown material is an error listing the shop's materials.
+* 24: no safety margin ("breaking bits is part of the joy of CNC").
+* The user: the questions are getting hard to answer; ask fewer.
+
+## Next (drill plan, agreed 2026-10-28; nothing built yet)
+
+1. A `surface_speed` unit kind in `shops.py`: `sfm`, `ft/min`,
+   `m/min`, interchangeable.
+2. `materials.toml` (kind `materials`): the five groups (HSS SFM,
+   feed factor), carbide factor 2.5, catalog IPR ranges, the ten
+   starting materials naming their groups; `shop.toml` has
+   `materials = "@materials.toml"`.
+3. Drills: `[drills.cutting."MATERIAL"]` with `rpm` and `feed`;
+   `peck` becomes `peck_depth`; drop `rpm`, `feed`, `plunge`.
+4. Calculation: RPM = 12 SFM / (pi D), clamped to the spindle; IPR =
+   .016 D x factor, refused outside the catalog range; feed = IPR x
+   actual RPM.  No guess (cobalt, out of range): error asking for the
+   (tool, material) pair.
+5. Job material: an `SCCNC` argument and demo `--material` (default
+   6061 aluminum); the demo's cobalt drill gets a `cutting` entry.
+6. `Shops.md` regenerated, tests, checkers.
+7. Later: end mills; the machine power limit; the chip load guide
+   (cnc-optimizations.pages.dev).
