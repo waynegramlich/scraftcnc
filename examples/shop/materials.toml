@@ -1,67 +1,101 @@
-# DRAFT (2026-10-28, `T.msaf~2.1`): not yet read by `shops.py` and
-# not yet spliced into `home_shop.toml`.  From the user's
-# `drill_rules.txt`; the feed factors are Claude's guesses.
+# The materials the shop cuts, and how to drill them; the drilling
+# data is from the user's `drill_rules.txt`, the feed factors
+# Claude's guesses.
 name = "Example shop materials"
 kind = "materials"
 language = "en"
-version = "0.1"
+version = "0.0.1"
 
-# Drill feed per revolution: IPR = `ipr_per_diameter` x D x
-# `feed_factor`, refused outside the catalog range for D.  The rule
-# of thumb is .001 in/rev per 1/16 in of diameter; the inches cancel,
-# so it is a plain number (per revolution).
+# Drill feed per revolution: the middle of the catalog range for the
+# drill's diameter, times the group's `feed_factor`.
 [drilling]
-ipr_per_diameter = 0.016
-carbide_speed_factor = 2.5
+carbide_speed_factor = "250 %"
 
-[[drilling.ipr_ranges]]
+[[drilling.feed_ranges]]
 below = "1/8 in"
-ipr = ["0.001 in/rev", "0.003 in/rev"]
+feed = "0.002 in/rev"  # 0.001 to 0.003
 
-[[drilling.ipr_ranges]]
+[[drilling.feed_ranges]]
 below = "1/4 in"
-ipr = ["0.002 in/rev", "0.006 in/rev"]
+feed = "0.004 in/rev"  # 0.002 to 0.006
 
-[[drilling.ipr_ranges]]
+[[drilling.feed_ranges]]
 below = "1/2 in"
-ipr = ["0.004 in/rev", "0.010 in/rev"]
+feed = "0.007 in/rev"  # 0.004 to 0.010
 
-[[drilling.ipr_ranges]]
+[[drilling.feed_ranges]]
 below = "1 in"
-ipr = ["0.007 in/rev", "0.015 in/rev"]
+feed = "0.011 in/rev"  # 0.007 to 0.015
 
 # Groups of materials being cut (HSS surface speed).
 [[groups]]
 name = "soft"
 description = "Aluminum, brass, acetal"
 hss_surface_speed = "250 sfm"
-feed_factor = 1.5
+feed_factor = "150 %"
 
 [[groups]]
 name = "mild"
 description = "Mild steel, soft cast iron"
 hss_surface_speed = "100 sfm"
-feed_factor = 1.0
+feed_factor = "100 %"
 
 [[groups]]
 name = "cast"
 description = "Medium and hard cast iron"
 hss_surface_speed = "80 sfm"
-feed_factor = 0.8
+feed_factor = "80 %"
 
 [[groups]]
 name = "alloy"
 description = "Tool and alloy steel"
 hss_surface_speed = "40 sfm"
-feed_factor = 0.7
+feed_factor = "70 %"
 
 [[groups]]
 name = "hard"
 description = "Stainless, titanium, hardened steel"
 hss_surface_speed = "20 sfm"
-feed_factor = 0.5
+feed_factor = "50 %"
 
-# The materials this shop cuts, each naming its group.
+# The materials this shop cuts, each naming its group: generic ones
+# first, then particular alloys.
+[[materials]]
+name = "aluminum"
+group = "soft"
+
+[[materials]]
+name = "copper"
+group = "soft"
+
+[[materials]]
+name = "plastic"
+group = "soft"
+
+[[materials]]
+name = "hdpe"
+group = "soft"
+
+[[materials]]
+name = "acrylic"
+group = "soft"
+
+[[materials]]
+name = "wood"
+group = "soft"
+
+[[materials]]
+name = "steel"
+group = "mild"
+
+[[materials]]
+name = "cast iron"
+group = "cast"
+
+[[materials]]
+name = "stainless steel"
+group = "hard"
+
 [[materials]]
 name = "6061 aluminum"
 group = "soft"

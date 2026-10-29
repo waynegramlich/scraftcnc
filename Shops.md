@@ -122,12 +122,14 @@ shops = ["@home_shop.toml"]
 A shop: its name, where it is, its machines and its tools.  It has a
 `name` even when it is not a file of its own.
 
-| Key        | Value             | Required | Meaning                         |
-| ---------- | ----------------- | -------- | ------------------------------- |
-| `location` | `location`        | no       | Where the shop is.              |
-| `machines` | list of `machine` | yes      | The machines in the shop.       |
-| `tools`    | list of `tools`   | no       | The tools on hand, shared by    |
-|            |                   |          | the machines.                   |
+| Key         | Value             | Required | Meaning                        |
+| ----------- | ----------------- | -------- | ------------------------------ |
+| `location`  | `location`        | no       | Where the shop is.             |
+| `machines`  | list of `machine` | yes      | The machines in the shop.      |
+| `tools`     | list of `tools`   | no       | The tools on hand, shared by   |
+|             |                   |          | the machines.                  |
+| `materials` | `materials`       | no       | The materials it cuts, and how |
+|             |                   |          | to drill them.                 |
 
 ```toml
 name = "Home shop"
@@ -772,4 +774,113 @@ overall_length = "2-1/2 in"
 material = "carbide"
 vendor = "Shars Tool"
 vendor_pn = "436-4296"
+```
+
+## `materials`
+
+The materials a shop cuts, and how to drill them.  Speeds and feeds
+worked out from these are only starting points; a drill's own `cutting`
+entries win.  It has a `name` even when it is not a file of its own.
+
+| Key         | Value                   | Required | Meaning                  |
+| ----------- | ----------------------- | -------- | ------------------------ |
+| `drilling`  | `drilling`              | yes      | How drills feed.         |
+| `groups`    | list of                 | yes      | The groups of materials  |
+|             | `material_group`        |          | that cut alike.          |
+| `materials` | list of `material`      | yes      | The materials, each in a |
+|             |                         |          | group.                   |
+
+```toml
+name = "Materials"
+kind = "materials"
+language = "English"
+version = "0.0.1"
+
+[drilling]
+carbide_speed_factor = "250 %"
+
+[[drilling.feed_ranges]]
+below = "1/8 in"
+feed = "0.002 in/rev"
+
+[[groups]]
+name = "soft"
+hss_surface_speed = "250 sfm"
+feed_factor = "150 %"
+
+[[materials]]
+name = "6061 aluminum"
+group = "soft"
+```
+
+## `drilling`
+
+How drills feed: the feed per revolution by drill diameter (the middle
+of the catalog ranges), times the group's `feed_factor`.
+
+| Key                    | Value              | Required | Meaning            |
+| ---------------------- | ------------------ | -------- | ------------------ |
+| `carbide_speed_factor` | fraction           | yes      | A carbide drill's  |
+|                        |                    |          | surface speed, as  |
+|                        |                    |          | a share of HSS's.  |
+| `feed_ranges`          | list of            | yes      | The feeds per      |
+|                        | `feed_range`       |          | revolution,        |
+|                        |                    |          | smallest drills    |
+|                        |                    |          | first.             |
+
+```toml
+carbide_speed_factor = "250 %"
+
+[[feed_ranges]]
+below = "1/8 in"
+feed = "0.002 in/rev"
+```
+
+## `feed_range`
+
+The feed per revolution of drills below a diameter.
+
+| Key     | Value        | Required | Meaning                                 |
+| ------- | ------------ | -------- | --------------------------------------- |
+| `below` | length       | yes      | The drills it is for are smaller than   |
+|         |              |          | this.                                   |
+| `feed`  | feed per rev | yes      | Their feed per revolution.              |
+
+```toml
+below = "1/8 in"
+feed = "0.002 in/rev"
+```
+
+## `material_group`
+
+A group of materials that cut alike.  It has a `name` even when it is
+not a file of its own.
+
+| Key                 | Value         | Required | Meaning                    |
+| ------------------- | ------------- | -------- | -------------------------- |
+| `description`       | string        | no       | What is in it.             |
+| `hss_surface_speed` | surface speed | yes      | The surface speed of an    |
+|                     |               |          | HSS drill.                 |
+| `feed_factor`       | fraction      | yes      | The drill feed, as a share |
+|                     |               |          | of `feed_ranges`'.         |
+
+```toml
+name = "soft"
+description = "Aluminum, brass, acetal"
+hss_surface_speed = "250 sfm"
+feed_factor = "150 %"
+```
+
+## `material`
+
+A material the shop cuts.  It has a `name` even when it is not a file of
+its own.
+
+| Key     | Value  | Required | Meaning                 |
+| ------- | ------ | -------- | ----------------------- |
+| `group` | string | yes      | The group it cuts with. |
+
+```toml
+name = "6061 aluminum"
+group = "soft"
 ```

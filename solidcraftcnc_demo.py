@@ -56,6 +56,9 @@ SHOP_FILE: Path = (
     Path(__file__).resolve().parent / "examples/shop/home_shop.toml"
 )
 MACHINE: str = "Shop mill"
+
+# The material the demonstration cuts, unless `--material` says.
+MATERIAL: str = "6061 aluminum"
 END_MILL: str = "1/4 in 2 flute carbide end mill"
 
 # The bits that bevel and round over top edges, and the bevels' width.
@@ -353,8 +356,12 @@ def _sketch(
 
 
 # Function `cut_demo()`:
-def cut_demo() -> tuple[SCCNC, SCTool]:
+def cut_demo(material: str = MATERIAL) -> tuple[SCCNC, SCTool]:
     """Cut the demonstration plate on the example shop's mill.
+
+    Arguments:
+    * `material` (`str`):
+      The material being cut, which sets the drills' speeds and feeds.
 
     Returns:
     * (`SCCNC`): The program.
@@ -367,7 +374,7 @@ def cut_demo() -> tuple[SCCNC, SCTool]:
     hole: SCRoundPoly = demo_hole()
     pocket: SCRoundPoly = demo_pocket()
     islands: list[SCRoundPoly] = demo_islands()
-    machine: SCMachine = cnc_machine(read(SHOP_FILE), MACHINE)
+    machine: SCMachine = cnc_machine(read(SHOP_FILE), MACHINE, material)
     end_mill: SCTool = machine.named(END_MILL)
     rougher: SCTool | None = machine.rougher_for(end_mill)
     first: SCTool = end_mill if rougher is None else rougher
@@ -443,13 +450,19 @@ def main() -> int:
     opaque: bool = "--opaque" in arguments
     if opaque:
         arguments.remove("--opaque")
+    material: str = MATERIAL
+    if "--material" in arguments:
+        at: int = arguments.index("--material")
+        if at + 1 < len(arguments):
+            material = arguments[at + 1]
+            del arguments[at : at + 2]
     if arguments[:1] == ["--plot"] and len(arguments) >= 2:
         plot = Path(arguments[1])
         arguments = arguments[2:]
     if len(arguments) > 1 or arguments[:1] == ["--plot"]:
         print(
             f"usage: {sys.argv[0]} [--plot FILE.html] [--no-path] [--opaque] "
-            "[PORT|headless]",
+            "[--material NAME] [PORT|headless]",
             file=sys.stderr,
         )
         return 2
@@ -461,7 +474,7 @@ def main() -> int:
     islands: list[SCRoundPoly] = demo_islands()
     cnc: SCCNC
     rounding: SCTool
-    cnc, rounding = cut_demo()
+    cnc, rounding = cut_demo(material)
     print(cnc.gcode(), end="")
     print(f"About {cnc.minutes:.1f} minutes", file=sys.stderr)
 

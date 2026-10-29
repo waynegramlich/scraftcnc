@@ -31,13 +31,14 @@ import argparse
 import bisect
 import datetime
 import json
+import math
 import re
 import sys
 import textwrap
 import tomllib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import TypeAlias, cast
+from typing import Any, TypeAlias, cast
 
 from scmachine import DrillCycle, SCMachine, SCTool, ToolKind
 
@@ -432,6 +433,12 @@ shops = ["@home_shop.toml"]
                     "list",
                     "The tools on hand, shared by the machines.",
                     of="tools",
+                ),
+                SCField(
+                    "materials",
+                    "table",
+                    "The materials it cuts, and how to drill them.",
+                    of="materials",
                 ),
             ),
             True,
@@ -999,6 +1006,146 @@ overall_length = "2-1/2 in"
 material = "carbide"
 vendor = "Shars Tool"
 vendor_pn = "436-4296"
+""",
+        ),
+        SCKind(
+            "materials",
+            "The materials a shop cuts, and how to drill them.  Speeds "
+            "and feeds worked out from these are only starting points; "
+            "a drill's own `cutting` entries win.",
+            (
+                SCField(
+                    "drilling",
+                    "table",
+                    "How drills feed.",
+                    True,
+                    of="drilling",
+                ),
+                SCField(
+                    "groups",
+                    "list",
+                    "The groups of materials that cut alike.",
+                    True,
+                    of="material_group",
+                ),
+                SCField(
+                    "materials",
+                    "list",
+                    "The materials, each in a group.",
+                    True,
+                    of="material",
+                ),
+            ),
+            True,
+            """\
+name = "Materials"
+kind = "materials"
+language = "English"
+version = "0.0.1"
+
+[drilling]
+carbide_speed_factor = "250 %"
+
+[[drilling.feed_ranges]]
+below = "1/8 in"
+feed = "0.002 in/rev"
+
+[[groups]]
+name = "soft"
+hss_surface_speed = "250 sfm"
+feed_factor = "150 %"
+
+[[materials]]
+name = "6061 aluminum"
+group = "soft"
+""",
+        ),
+        SCKind(
+            "drilling",
+            "How drills feed: the feed per revolution by drill diameter "
+            "(the middle of the catalog ranges), times the group's "
+            "`feed_factor`.",
+            (
+                SCField(
+                    "carbide_speed_factor",
+                    "fraction",
+                    "A carbide drill's surface speed, as a share of HSS's.",
+                    True,
+                ),
+                SCField(
+                    "feed_ranges",
+                    "list",
+                    "The feeds per revolution, smallest drills first.",
+                    True,
+                    of="feed_range",
+                ),
+            ),
+            False,
+            """\
+carbide_speed_factor = "250 %"
+
+[[feed_ranges]]
+below = "1/8 in"
+feed = "0.002 in/rev"
+""",
+        ),
+        SCKind(
+            "feed_range",
+            "The feed per revolution of drills below a diameter.",
+            (
+                SCField(
+                    "below",
+                    "length",
+                    "The drills it is for are smaller than this.",
+                    True,
+                ),
+                SCField(
+                    "feed",
+                    "feed_per_rev",
+                    "Their feed per revolution.",
+                    True,
+                ),
+            ),
+            False,
+            """\
+below = "1/8 in"
+feed = "0.002 in/rev"
+""",
+        ),
+        SCKind(
+            "material_group",
+            "A group of materials that cut alike.",
+            (
+                SCField("description", "string", "What is in it."),
+                SCField(
+                    "hss_surface_speed",
+                    "surface_speed",
+                    "The surface speed of an HSS drill.",
+                    True,
+                ),
+                SCField(
+                    "feed_factor",
+                    "fraction",
+                    "The drill feed, as a share of `feed_ranges`'.",
+                    True,
+                ),
+            ),
+            True,
+            """\
+name = "soft"
+description = "Aluminum, brass, acetal"
+hss_surface_speed = "250 sfm"
+feed_factor = "150 %"
+""",
+        ),
+        SCKind(
+            "material",
+            "A material the shop cuts.",
+            (SCField("group", "string", "The group it cuts with.", True),),
+            True,
+            """\
+name = "6061 aluminum"
+group = "soft"
 """,
         ),
     )
@@ -2107,12 +2254,18 @@ def loaded_tools(
 
 
 # Function `cnc_machine()`:
-def cnc_machine(shop: dict[str, object], name: str) -> SCMachine:
+def cnc_machine(
+    shop: dict[str, object], name: str, material: str = ""
+) -> SCMachine:
     """Return a machine of a shop, with its loaded tools, for `SCCNC`.
 
     Arguments:
     * `shop` (`dict[str, object]`): The shop, from `read()`.
     * `name` (`str`): The machine's name.
+    * `material` (`str`):
+      The material being cut; if given, HSS and carbide drills get
+      their speeds and feeds from the shop's `materials` (see
+      `drill_cutting()`).
 
     Returns:
     * (`SCMachine`): Its preferences and its tool table.
@@ -2134,6 +2287,17 @@ def cnc_machine(shop: dict[str, object], name: str) -> SCMachine:
         dict[str, object], machine["controller"]
     )
 
+    # The loaded tools, with drill speeds and feeds for the material.
+    tools: list[SCTool] = []
+    for number, (key, tool) in loaded_tools(shop, name).items():
+        cnc_tool: SCTool = _cnc_tool(number, CNC_KINDS[key], tool)
+        if material and key == "drills" and tool["material"] in DRILLED:
+            rpm: float
+            feed: float
+            rpm, feed = drill_cutting(shop, machine, tool, material)
+            cnc_tool = replace(cnc_tool, rpm=rpm, feed=feed, plunge=feed)
+        tools.append(cnc_tool)
+
     # The machine, with its loaded tools.
     return SCMachine(
         name=name,
@@ -2147,11 +2311,80 @@ def cnc_machine(shop: dict[str, object], name: str) -> SCMachine:
         stepover=measure(preferences["stepover"], FRACTION),
         ramp_angle=measure(preferences["ramp_angle"], ANGLE),
         finish_allowance=measure(preferences["finish_allowance"], LENGTH),
-        tools=tuple(
-            _cnc_tool(number, CNC_KINDS[key], tool)
-            for number, (key, tool) in loaded_tools(shop, name).items()
-        ),
+        tools=tuple(tools),
     )
+
+
+# The drill materials with speeds and feeds in `materials`; others
+# (such as cobalt, with no data yet) keep their own `rpm` and `feed`.
+DRILLED: tuple[str, ...] = ("HSS", "carbide")
+
+
+# Function `drill_cutting()`:
+def drill_cutting(
+    shop: dict[str, object],
+    machine: dict[str, object],
+    drill: dict[str, object],
+    material: str,
+) -> tuple[float, float]:
+    """Return the speed and feed of an HSS or carbide drill.
+
+    RPM = 12 SFM / (pi D), held to the spindle's range; the feed is
+    the middle of the catalog range for D, times the group's
+    `feed_factor`, times the RPM actually used.
+
+    Arguments:
+    * `shop` (`dict[str, object]`): The shop, from `read()`.
+    * `machine` (`dict[str, object]`): The machine it is in.
+    * `drill` (`dict[str, object]`): The drill, from `read()`.
+    * `material` (`str`): The material being cut.
+
+    Returns:
+    * (`tuple[float, float]`): The RPM and the feed (in/min).
+
+    Raises:
+    * `ValueError`:
+      If the shop has no `materials`, the material is not one of them,
+      or the drill is larger than every `feed_ranges` entry.
+    """
+    # Find the material's group.
+    if "materials" not in shop:
+        raise ValueError("the shop has no `materials`")
+    materials: dict[str, Any] = cast(dict[str, Any], shop["materials"])
+    found: list[dict[str, Any]] = [
+        entry
+        for entry in materials["materials"]
+        if str(entry["name"]).lower() == material.lower()
+    ]
+    if not found:
+        known: str = ", ".join(
+            str(entry["name"]) for entry in materials["materials"]
+        )
+        raise ValueError(f'"{material}" is not one of: {known}')
+    group: dict[str, Any] = next(
+        entry
+        for entry in materials["groups"]
+        if entry["name"] == found[0]["group"]
+    )
+
+    # The speed, held to the spindle's range.
+    diameter: float = measure(drill["diameter"], LENGTH)
+    surface_speed: float = measure(group["hss_surface_speed"], SURFACE_SPEED)
+    drilling: dict[str, Any] = materials["drilling"]
+    if drill["material"] == "carbide":
+        surface_speed *= measure(drilling["carbide_speed_factor"], FRACTION)
+    spindle: dict[str, Any] = cast(dict[str, Any], machine["spindle"])
+    rpm: float = 12.0 * surface_speed / (math.pi * diameter)
+    rpm = min(rpm, measure(spindle["max_rpm"], SPEED))
+    rpm = max(rpm, measure(spindle.get("min_rpm", "0 rpm"), SPEED))
+
+    # The feed per revolution, from the first range the drill is in.
+    for feed_range in drilling["feed_ranges"]:
+        if diameter < measure(feed_range["below"], LENGTH):
+            return rpm, rpm * measure(
+                feed_range["feed"], FEED_PER_REV
+            ) * measure(group["feed_factor"], FRACTION)
+    raise ValueError(f'"{drill["name"]}" is larger than every feed range')
 
 
 # Function `_cnc_tool()`:

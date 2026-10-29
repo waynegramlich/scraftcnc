@@ -5,6 +5,7 @@ language = "English"
 version = "0.0.1"
 machines = ["@shop_mill.toml", "@shop_router.toml"]
 tools = ["@tools.toml"]
+materials = "@materials.toml"
 
 [location]
 latitude = "37.37066 deg"

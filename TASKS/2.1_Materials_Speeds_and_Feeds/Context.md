@@ -172,3 +172,28 @@
   `feed_per_rev` (`in/rev`, `ipr`, `mm/rev`); `Shops.md` regenerated;
   116 tests pass, checkers clean.  Next: the `materials` kind in
   `KINDS` (a [min, max] range form still undecided).
+* The user: "split the difference" (bits breaking is part of the
+  joy).  Read as: no .016 D rule and no refusal; drill feed = middle
+  of the catalog range for its diameter x the group's `feed_factor`.
+  `shops.py` now has kinds `materials`, `drilling`, `feed_range`
+  (`below`, `feed`), `material_group`, `material`; factors are
+  `fraction`s (`"150 %"`).  `materials.toml` reads cleanly; not yet
+  spliced into `home_shop.toml`.  Next: plan steps 3-6 (drill
+  `cutting` overrides, `peck_depth`, the lookup, `--material`).
+
+## 2026-10-28: Drill speeds and feeds wired in
+
+* `materials.toml` spliced into `home_shop.toml` and `shops.toml`
+  (shop key `materials`); generic materials added (aluminum, copper,
+  plastic, hdpe, acrylic, wood: soft; steel: mild; cast iron: cast;
+  stainless steel: hard) before the particular alloys.
+* `shops.drill_cutting(shop, machine, drill, material)`: RPM = 12
+  SFM / (pi D) (carbide x 2.5), clamped to the spindle; feed = range
+  midpoint x `feed_factor` x RPM; `plunge` = feed.  An unknown
+  material lists the shop's.  `cnc_machine(shop, name, material)`
+  uses it for HSS and carbide drills only (`DRILLED`); the cobalt
+  drill keeps its own `rpm`/`feed` until `cutting` overrides (#3a).
+* Demo `--material NAME` (default 6061 aluminum): T4 15/64 HSS gets
+  4074 rpm, 24.4 in/min; steel 1630 rpm, 6.5 in/min.  116 tests pass
+  (a line number in `test_shops.py` updated), checkers clean.  No
+  test of `drill_cutting()` yet.
