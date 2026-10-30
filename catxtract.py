@@ -14,16 +14,24 @@ see: saving writes the regions to `OUTDIR/page_NNN/page_NNN.md`, with
 the region definitions in `page_NNN.json` beside it, so the page can
 be redone later.
 
-the next rectangle); `n` / `p` next / previous page;
-`u` undo the newest rectangle (again and again); `[` / `]` select
-the region above / below; `x` ignore the selected region; `q` quit.
+Everything is done with the mouse.  The Mode buttons choose the kind
+(title, text, image, table) of the next rectangle, and of the selected
+region if there is one.  The Page buttons move to the next / previous
+page, or the next / previous page not extracted yet ("New"); typing a
+page number into the box and pressing `Goto` (or Enter) moves to that
+page (0 means 1, and a number past the end means the last page).
+The Region buttons select the region above / below, cycle up (newer) /
+down (older) through the regions, delete the selected region, undo the
+newest rectangle (again and again), and clear all of the regions.
 A click selects a region, and the right mouse button ignores it.
 A page with no saved regions starts with suggested ones.
 
-Moving to another page, or quitting, saves the page first.
+Moving to another page, or quitting, saves the page first.  Each
+`.md` file starts with a `# Page NNN` heading and links to the nearest
+saved pages before and after it; saving a page updates those links in
+the pages on either side as well.
 
-Usage: `catxtract.py PDF OUTDIR [SSS-EEE]`, where `SSS` and `EEE` are
-the first and last pages to work on (e.g. `100-102`, or `100` alone).
+Usage: `catxtract.py PDF OUTDIR`
 """
 
 # pylint: disable=too-many-instance-attributes,too-many-locals
@@ -542,11 +550,14 @@ class App:
     * `ignored` (`list[Region]`): The regions ignored on this page.
     * `kind_var` (`tk.StringVar`): Shows `kind` on the kind buttons.
     * `kind` (`str`): The kind of the next region.
+    * `goto` (`tk.Entry`): Holds the page number to go to.
     * `out_dir` (`Path`): The directory the Markdown goes into.
-    * `first` (`int`): The first page to work on, counting from 0.
-    * `last` (`int`): The last page to work on, counting from 0.
+    * `page_buttons` (`dict[str, tk.Button]`): The page moving
+      buttons, by key, so they can be greyed out.
     * `page_no` (`int`): The current page, counting from 0.
     * `photo` (`tk.PhotoImage`): The current page's image.
+    * `progress` (`str`): How many pages have been edited, as of the
+      last page change.
     * `regions` (`list[Region]`): The current page's regions.
     * `root` (`tk.Tk`): The main window.
     * `rubber` (`int`): The canvas id of the rectangle being dragged.
@@ -557,9 +568,7 @@ class App:
     """
 
     # Method `App.__init__()`:
-    def __init__(
-        self, pdf: Path, out_dir: Path, first: int, last: int
-    ) -> None:
+    def __init__(self, pdf: Path, out_dir: Path) -> None:
         """Open the PDF and create the window.
 
         Arguments:
@@ -567,28 +576,24 @@ class App:
           The PDF to extract from.
         * `out_dir` (`Path`):
           The directory the Markdown goes into.
-        * `first` (`int`):
-          The first page to work on, counting from 0.
-        * `last` (`int`):
-          The last page to work on, counting from 0 (or -1 for the
-          document's last page).
         """
         self.doc: pymupdf.Document = pymupdf.open(pdf)
         self.out_dir: Path = out_dir
-        last = len(self.doc) - 1 if last < 0 else last
-        if not 0 <= first <= last < len(self.doc):
-            raise SystemExit(
-                f"Pages {first + 1}-{last + 1} are not all in {pdf} "
-                f"(1-{len(self.doc)})"
-            )
-        self.first: int = first
-        self.last: int = last
-        self.page_no: int = first
+        # Start at the first page not extracted yet (with no directory).
+        self.page_no: int = next(
+            (
+                n - 1
+                for n in range(1, len(self.doc) + 1)
+                if not self.page_dir(n).exists()
+            ),
+            0,
+        )
         self.kind: str = "table"
         self.regions: list[Region] = []
         self.ignored: list[Region] = []
         self.selected: int = -1
         self.message: str = ""
+        self.progress: str = ""
         self.drag: tuple[float, float] = (0.0, 0.0)
         self.rubber: int = 0
 
@@ -597,29 +602,70 @@ class App:
         page_height: float = self.doc[0].rect.height
         self.zoom: float = (self.root.winfo_screenheight() - 190) / page_height
 
-        # Put the action buttons in the first row, and the mode buttons
-        # (which stay pressed to show the kind of the next region) in
-        # the second.
-        self.kind_var: tk.StringVar = tk.StringVar(value=self.kind)
-        actions: tk.Frame = tk.Frame(self.root)
-        actions.pack(fill="x")
-        tk.Label(actions, text="Actions:").pack(side="left")
+        # Put the page buttons in the first row.
+        pages: tk.Frame = tk.Frame(self.root)
+        pages.pack(fill="x")
+        tk.Label(pages, text="Page:").pack(side="left")
         key: str
         label: str
+        self.page_buttons: dict[str, tk.Button] = {}
         for key, label in (
-            ("p", "Previous"),
+            ("N", "Next New"),
             ("n", "Next"),
-            ("u", "Undo"),
+            ("p", "Prev."),
+            ("P", "Prev. New"),
+        ):
+            self.page_buttons[key] = tk.Button(
+                pages,
+                text=label,
+                command=functools.partial(self.command, key),
+            )
+            self.page_buttons[key].pack(side="left")
+
+        # Then the `Goto` button with its page number box (at most 5
+        # digits), and `Quit`.
+        tk.Button(pages, text="Goto", command=self.go_to).pack(side="left")
+        self.goto: tk.Entry = tk.Entry(
+            pages,
+            width=6,
+            validate="key",
+            validatecommand=(
+                self.root.register(
+                    lambda text: text.isdigit() and len(text) <= 5 or not text
+                ),
+                "%P",
+            ),
+        )
+        self.goto.bind("<Return>", lambda _event: self.go_to())
+        self.goto.pack(side="left")
+        tk.Button(
+            pages,
+            text="Quit",
+            command=functools.partial(self.command, "q"),
+        ).pack(side="left")
+
+        # Put the region buttons in the second row.
+        regions: tk.Frame = tk.Frame(self.root)
+        regions.pack(fill="x")
+        tk.Label(regions, text="Region:").pack(side="left")
+        for key, label in (
             ("[", "Region Up"),
             ("]", "Region Down"),
-            ("x", "Ignore"),
-            ("q", "Quit"),
+            ("Y", "Cycle Up"),
+            ("y", "Cycle Down"),
+            ("d", "Delete"),
+            ("u", "Undo"),
+            ("c", "Clear"),
         ):
             tk.Button(
-                actions,
-                text=f"{label} ({key})",
+                regions,
+                text=label,
                 command=functools.partial(self.command, key),
             ).pack(side="left")
+
+        # Put the mode buttons (which stay pressed to show the kind of
+        # the next region) in the third row.
+        self.kind_var: tk.StringVar = tk.StringVar(value=self.kind)
         modes: tk.Frame = tk.Frame(self.root)
         modes.pack(fill="x")
         tk.Label(modes, text="Mode:").pack(side="left")
@@ -627,7 +673,7 @@ class App:
         for key, kind in KINDS.items():
             tk.Radiobutton(
                 modes,
-                text=f"{kind.title()} ({key})",
+                text=kind.title(),
                 fg=COLORS[kind],
                 variable=self.kind_var,
                 value=kind,
@@ -640,15 +686,41 @@ class App:
         self.canvas.pack()
         self.photo: tk.PhotoImage = tk.PhotoImage()
 
-        # Bind the mouse and keys.
+        # Bind the mouse, and quit when the window is closed.
         self.canvas.bind("<ButtonPress-1>", self.on_press)
         self.canvas.bind("<B1-Motion>", self.on_motion)
         self.canvas.bind("<ButtonRelease-1>", self.on_release)
         self.canvas.bind("<ButtonPress-3>", self.on_delete)
-        self.root.bind("<Key>", self.on_key)
         self.root.protocol(
             "WM_DELETE_WINDOW", functools.partial(self.command, "q")
         )
+        self.show_page()
+
+    # Method `App.go_to()`:
+    def go_to(self) -> None:
+        """Go to the page whose number is in the `goto` box.
+
+        0 goes to the first page, and a number past the end goes to the
+        last page.
+        """
+        text: str = self.goto.get()
+        if text:
+            self.change_page(min(max(int(text), 1), len(self.doc)) - 1)
+        else:
+            self.message = "Type a page number first."
+            self.draw_regions()
+        self.canvas.focus_set()
+
+    # Method `App.change_page()`:
+    def change_page(self, page_no: int) -> None:
+        """Save the current page, then show another.
+
+        Arguments:
+        * `page_no` (`int`):
+          The page to show, counting from 0.
+        """
+        self.save_if_marked()
+        self.page_no = page_no
         self.show_page()
 
     # Method `App.json_path()`:
@@ -711,6 +783,15 @@ class App:
             self.ignored = []
             how = "Suggested"
         self.message = f"{how} {len(self.regions)} regions."
+
+        # Count the pages edited so far (those with a directory).
+        edited: int = sum(
+            self.page_dir(n).exists() for n in range(1, len(self.doc) + 1)
+        )
+        self.progress = (
+            f"Edited {edited}/{len(self.doc)}="
+            f"{100 * edited / len(self.doc):.0f}%"
+        )
         self.draw_regions()
 
     # Method `App.draw_regions()`:
@@ -732,13 +813,42 @@ class App:
                 dash=(6, 3) if chosen else (),
                 tags="region",
             )
+        # Grey out the page buttons that have nowhere to go.
+        targets: dict[str, int] = {
+            "N": self.empty_page(1),
+            "n": self.page_no + 1 if self.page_no < len(self.doc) - 1 else -1,
+            "p": self.page_no - 1,
+            "P": self.empty_page(-1),
+        }
+        key: str
+        button: tk.Button
+        for key, button in self.page_buttons.items():
+            button.config(state="normal" if targets[key] >= 0 else "disabled")
         self.status.config(
-            text=f"Page {self.page_no + 1} "
-            f"(of {self.first + 1}-{self.last + 1})  "
-            f"Next region: {self.kind}  "
-            "(drag to add a region, click to select one, "
-            "right click to ignore one)  "
-            f"{self.message}"
+            text=f"Page {self.page_no + 1} of {len(self.doc)}  "
+            f"{self.progress}  "
+            f"Next region: {self.kind}  {self.message}"
+        )
+
+    # Method `App.empty_page()`:
+    def empty_page(self, step: int) -> int:
+        """Find the nearest page not extracted yet in one direction.
+
+        Arguments:
+        * `step` (`int`):
+          1 to look forward, or -1 to look back.
+
+        Returns:
+        * (`int`): The page, counting from 0, or -1 if there is none.
+        """
+        end: int = len(self.doc) if step > 0 else -1
+        return next(
+            (
+                n
+                for n in range(self.page_no + step, end, step)
+                if not self.page_dir(n + 1).exists()
+            ),
+            -1,
         )
 
     # Method `App.on_press()`:
@@ -778,8 +888,9 @@ class App:
         y0: float = min(self.drag[1], event.y) / self.zoom
         y1: float = max(self.drag[1], event.y) / self.zoom
         if x1 - x0 > 3 and y1 - y0 > 3:
+            # Select the new region, so a mode button can fix its kind.
             self.regions.append(Region(self.kind, x0, y0, x1, y1))
-            self.selected = -1
+            self.selected = len(self.regions) - 1
         else:
             self.select_at(event)
         self.draw_regions()
@@ -811,38 +922,34 @@ class App:
         self.select_at(event)
         self.command("x")
 
-    # Method `App.on_key()`:
-    def on_key(self, event: tk.Event[tk.Misc]) -> None:
-        """Handle a key press.
-
-        Arguments:
-        * `event` (`tk.Event[tk.Misc]`):
-          The key press.
-        """
-        self.command(event.char)
-
     # Method `App.command()`:
     def command(self, key: str) -> None:
-        """Do the command of a key or button.
+        """Do the command of a button.
 
         Arguments:
         * `key` (`str`):
-          The command's key (e.g. `n` for the next page).
+          The command's key, which names it (e.g. `n` for the next
+          page).
         """
         if key in KINDS:
+            # A mode button sets the kind of the selected region (if
+            # any) as well as the kind of the next region.
             self.kind = KINDS[key]
             self.kind_var.set(self.kind)
-        elif key == "n" and self.page_no < self.last:
-            self.save_if_marked()
-            self.page_no += 1
-            self.show_page()
-        elif key == "p" and self.page_no > self.first:
-            self.save_if_marked()
-            self.page_no -= 1
-            self.show_page()
+            if 0 <= self.selected < len(self.regions):
+                self.regions[self.selected].kind = self.kind
+        elif key == "n" and self.page_no < len(self.doc) - 1:
+            self.change_page(self.page_no + 1)
+        elif key == "p" and self.page_no > 0:
+            self.change_page(self.page_no - 1)
         elif key == "u" and self.regions:
             self.regions.pop()
+            self.selected = len(self.regions) - 1
+        elif key == "c":
+            self.regions = []
+            self.ignored = []
             self.selected = -1
+            self.message = "Cleared."
         elif key in "[]" and key and self.regions:
             # Step through the regions top to bottom (or back up).
             order: list[int] = sorted(
@@ -856,6 +963,27 @@ class App:
                 else (-1 if step > 0 else 0)
             )
             self.selected = order[(here + step) % len(order)]
+        elif key == "N" and self.empty_page(1) >= 0:
+            self.change_page(self.empty_page(1))
+        elif key == "P" and self.empty_page(-1) >= 0:
+            self.change_page(self.empty_page(-1))
+        elif key == "y" and self.regions:
+            # Step down to older regions, wrapping to the newest.
+            self.selected = (
+                len(self.regions) - 1
+                if self.selected < 0
+                else (self.selected - 1) % len(self.regions)
+            )
+        elif key == "Y" and self.regions:
+            # Step up to newer regions, wrapping to the oldest.
+            self.selected = (self.selected + 1) % len(self.regions)
+        elif key == "d" and 0 <= self.selected < len(self.regions):
+            # Delete the selected region, then select the one before it,
+            # so that cycling carries on from there.
+            self.regions.pop(self.selected)
+            self.selected = (
+                (self.selected - 1) % len(self.regions) if self.regions else -1
+            )
         elif key == "x" and 0 <= self.selected < len(self.regions):
             self.ignored.append(self.regions.pop(self.selected))
             self.selected = -1
@@ -917,22 +1045,71 @@ class App:
         md_path.write_text("\n\n".join(parts) + "\n")
         self.status.config(text=f"Saved {md_path}")
 
+        # Link this page to its saved neighbors, and them to it.
+        saved: list[int] = sorted(
+            int(path.stem[5:])
+            for path in self.out_dir.glob("page_*/page_*.md")
+        )
+        here: int = saved.index(self.page_no + 1)
+        index: int
+        for index in range(max(here - 1, 0), min(here + 2, len(saved))):
+            write_links(
+                self.out_dir,
+                saved[index],
+                saved[index - 1] if index > 0 else 0,
+                saved[index + 1] if index + 1 < len(saved) else 0,
+            )
+
+
+# Function `write_links()`:
+def write_links(out_dir: Path, number: int, before: int, after: int) -> None:
+    """Put the links to the neighboring pages under a page's heading.
+
+    The links line is the second paragraph of the page's `.md` file;
+    a file written before there were links gets one added.
+
+    Arguments:
+    * `out_dir` (`Path`):
+      The directory the Markdown goes into.
+    * `number` (`int`):
+      The page to update, counting from 1.
+    * `before` (`int`):
+      The nearest earlier saved page, or 0 if there is none.
+    * `after` (`int`):
+      The nearest later saved page, or 0 if there is none.
+    """
+    # Make the links line.
+    links: list[str] = []
+    label: str
+    other: int
+    for label, other in (("Previous", before), ("Next", after)):
+        if other:
+            name: str = f"page_{other:03d}"
+            links.append(f"{label}: [Page {other}](../{name}/{name}.md)")
+        else:
+            links.append(f"{label}: none")
+    line: str = " | ".join(links)
+
+    # Replace the old links line (if any) after the heading.
+    path: Path = out_dir / f"page_{number:03d}" / f"page_{number:03d}.md"
+    parts: list[str] = path.read_text().rstrip("\n").split("\n\n")
+    if len(parts) > 1 and parts[1].startswith("Previous: "):
+        parts[1] = line
+    else:
+        parts.insert(1, line)
+    path.write_text("\n\n".join(parts) + "\n")
+
 
 # Function `main()`:
 def main() -> None:
     """Run `catxtract` with the command line arguments."""
-    # Check the arguments, and get the page range.
-    if len(sys.argv) not in (3, 4):
+    # Check the arguments.
+    if len(sys.argv) != 3:
         print(__doc__)
         sys.exit(1)
-    span: list[str] = (sys.argv[3] if len(sys.argv) == 4 else "1-0").split("-")
-    if len(span) > 2 or not all(n.isdigit() for n in span):
-        raise SystemExit(f"{sys.argv[3]!r} is not a page range like 100-102")
-    first: int = int(span[0]) - 1
-    last: int = int(span[-1]) - 1
 
     # Run the window.
-    app: App = App(Path(sys.argv[1]), Path(sys.argv[2]), first, last)
+    app: App = App(Path(sys.argv[1]), Path(sys.argv[2]))
     app.root.mainloop()
 
 
