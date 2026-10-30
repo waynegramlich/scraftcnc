@@ -198,3 +198,82 @@ fast-export | sed | git fast-import` in scratch, then `git reset
 `scraftpybind`'s `github/main` still has the old 4 commits, so its
 next push is `git push --force-with-lease github main` (the user
 agreed: nobody has cloned it).
+
+## 2026-10-30: How automated the generator is; PyPI question
+
+The user asked how automated `scraftpybind_generate.py` is, whether
+perfect documentation would make it fully automatic, and whether PyPI
+is pointless since the package would get out of date.
+
+Measured (a scratch copy, so the repository did not change):
+
+* A fresh run against `solidcraft-cli` 0.25.1 took 37 s with no manual
+  steps; the output parses, but the checkers and tests were not run on
+  it.  Compared with the 0.20.0 cache: 407 to 493 commands (86 added,
+  none removed), 3 to 12 schemas, 38 to 39 namespaces, and 97 changed
+  `params` descriptions.
+* In the 0.20.0 cache, 404 of 407 commands are parsed from free text;
+  1006 of their 1390 parameters are only `JSON`, 33 commands have no
+  parameters and 137 have text left over as notes.
+* Still manual: starting a run, reviewing changed methods (nothing
+  reports them), `CACHED_VERSION` (`test_scraftpybind.py:62`) and the
+  README's version, assertion failures on name collisions, and the
+  hand-written `TEXT_TYPES` and `SCHEMA_REFS`.
+* SolidCraft released 9 stable versions from 0.23.1 (2026-10-26) to
+  0.27.1 (2026-10-30), about two a day.
+
+Conclusions:
+
+* Accurate prose would not be enough, because the free text is hard
+  to parse even when correct (`sketch.rectangle.center` puts `connect`
+  after a `Returns` sentence).  Input and output schemas for every
+  command would make the signatures fully automatic, and the source
+  code is not needed: the generator only reads `engine.describe`.
+* `engine.describe` also gives an `output` schema, which `fetch()`
+  drops today; it could give methods real return types.
+* A schema still leaves ordering rules, some rules across parameters,
+  what an id refers to, runtime refusals (`edit.repeat` is always
+  refused outside the GUI) and failures to prose.  The transports stay
+  hand-written, and renames or removals need a person's decision.
+
+PyPI (not decided; this is Claude's recommendation):
+
+* `scraftcnc` is the first consumer, through a symbolic link, and its
+  plan is to package both for test.pypi.org.  PyPI refuses packages
+  with direct URL dependencies, so a `scraftcnc` on PyPI needs
+  `scraftpybind` on PyPI too (or a vendored copy).  This replaces
+  "until somebody asks" in the end-of-session notes above.
+* Being behind is not the same as being broken: no command was removed
+  from 0.20.0 to 0.25.1, and `execute()` and `**extra` reach anything
+  newer.  A text search of `scraftcnc` found 25 commands: 14 with the
+  same description, 10 changed (not reviewed for whether they break
+  anything) and `sketch.arc3d`, which is new and which `probe_batch.py`
+  already writes as a raw step.
+* Recommended: publish when `scraftcnc` is ready to, regenerating
+  first, then release when a consumer needs a command or a change and
+  not for every SolidCraft release.  Say which SolidCraft version each
+  release was generated from.  The name was free on 2026-10-30.
+
+## 2026-10-30: Could schemas be derived from the Rust source?
+
+Read SolidCraft v0.25.1 in a scratch clone (one handler in depth;
+nothing generated or built).  Answer: largely yes, as an AI reading of
+each handler, but not as a mechanical parse.
+
+* Upstream's direction (`crates/engine/src/schema/mod.rs`,
+  `docs/book/src/dev/schemas.md`): `schemars` generates each schema
+  from a Rust "contract" type checked in front of a handler, which
+  still reads raw JSON.  `schema/unconverted.txt` lists 455 commands;
+  it only shrinks, and new commands are meant to have both schemas
+  (a warning for now, required later).
+* Handlers show what the prose hides: `rect_center`
+  (`crates/engine/src/cmd/sketch.rs:1196`) uses `req_vec2` for `center`
+  and `corner`.  But `construction` and `connect` are read in helpers
+  (`sketch.rs:410`, `:557`), so reading must follow the calls.  Scale:
+  about 98,000 lines in `cmd/`.
+* The contract check is off by default, and handlers read a wrong-typed
+  key as absent, so a renamed key can be ignored silently.  That is the
+  real interface-change risk: no error, possibly wrong geometry.
+* Recommended, not decided: derive schemas first for the 25 or so
+  commands `scraftcnc` uses, offer them upstream as contracts, and diff
+  schemas between releases to flag removed or narrowed parameters.
