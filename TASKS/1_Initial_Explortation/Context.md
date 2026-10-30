@@ -49,20 +49,32 @@ Flipsnack, real text layer, no OCR needed).
   tables with 3+ data rows, merged embedded images, carry-over from
   the nearest earlier saved page).
 
-## Index mode (2026-10-30)
+## Index mode (2026-10-30, third session)
 
-Page buttons are now Prev. New, Prev., Next, Next New.  Mode `Index`
-(`index_rows()`, `INDEX_LINE`) writes a two column table, `Item` and
-`Pages`, one row per line; the user will tweak it.  The index is PDF
-pages 451-455.  Index regions are written left to right.  A heading
-line gets a row with no pages; indents are `* `.  Items link to the
-first page listed, when its `.md` exists as of the save (printed page
-numbers equal PDF page numbers), and
-`~` is written as `-`.
-Experiment: each page or range after a comma also gets a `+ NNN` row
-(the row with the whole list stays as it was).
-`Index Update` button (`App.update_indexes()`) rewrites every saved page
-with an index region; a fresh current page stays unsaved.
+The user likes this.
+
+* Page buttons are now Prev. New, Prev., Next, Next New; `Index Update`
+  sits before `Quit`.
+* Mode `Index` (`lines_inside()`, `index_rows()`, `page_link()`,
+  `INDEX_LINE`) writes a two column table, `Item` and `Pages`, one row
+  per line, for each index region, left to right.  The index is PDF
+  pages 451-455 (printed page numbers equal PDF page numbers).
+* A heading line gets a row with no pages.  An indented line starts
+  with `* `.  `~` is written as `-`.
+* An item links to the first page listed, only if that page's `.md`
+  exists at save time.
+* Each page or range after a comma also gets a `+ NNN` row, whose
+  `Pages` is that piece; the main row keeps the whole list.  The user
+  approved this.
+* `App.update_indexes()` rewrites every saved page with an index
+  region.  The current page stays on screen; a fresh one stays unsaved.
+  Tested only on a scratch copy, by invoking the button from a script.
+* In the real `SharsMD`, only `page_452.md` was regenerated with the
+  final format by Claude; the user will press `Index Update` for the
+  rest, and again as more pages get extracted.
+* To drive `App` from a script: `PYTHONPATH` as above plus `.`, then
+  `a = App(...)`, `a.root.withdraw()`, set `a.page_no`, `a.show_page()`,
+  `a.save()`, `a.root.destroy()`.
 
 ## Open items (user's numbering, from the first session)
 
