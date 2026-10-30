@@ -8,18 +8,20 @@
 """Extract catalog information from PDF pages into Markdown files.
 
 `catxtract` shows one PDF page at a time.  The user drags rectangles
-over the page to mark regions (title, text, image or table).  Each
-page gets its own directory, so the pages not done yet are easy to
+over the page to mark regions (title, text, image, table or index).
+Each page gets its own directory, so the pages not done yet are easy to
 see: saving writes the regions to `OUTDIR/page_NNN/page_NNN.md`, with
 the region definitions in `page_NNN.json` beside it, so the page can
 be redone later.
 
 Everything is done with the mouse.  The Mode buttons choose the kind
-(title, text, image, table) of the next rectangle, and of the selected
+(title, text, image, table, index) of the next rectangle, and of the selected
 region if there is one.  The Page buttons move to the next / previous
 page, or the next / previous page not extracted yet ("New"); typing a
 page number into the box and pressing `Goto` (or Enter) moves to that
 page (0 means 1, and a number past the end means the last page).
+`Index Update` rewrites every saved page that has an index region, so
+that its links reach the pages extracted since.
 The Region buttons select the region above / below, cycle up (newer) /
 down (older) through the regions, delete the selected region, undo the
 newest rectangle (again and again), and clear all of the regions.
@@ -83,7 +85,9 @@ except Exception as x:  # Do not edit try block!
 import bisect
 import functools
 import itertools
+import re
 import tkinter as tk
+from collections.abc import Iterator
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -97,13 +101,23 @@ KINDS: dict[str, str] = {
     "2": "text",
     "3": "image",
     "4": "table",
+    "5": "index",
 }
 COLORS: dict[str, str] = {
     "title": "red",
     "text": "blue",
     "image": "green",
     "table": "magenta",
+    "index": "dark orange",
 }
+
+# An index line: `SOME_TEXT.....NNN`, where the page numbers may be a
+# range (`NNN~MMM` or `NNN-MMM`), a list (`NNN,MMM`) or a mix.  The dots may be
+# periods or ellipsis characters, with spaces among them.
+INDEX_LINE: re.Pattern[str] = re.compile(
+    r"(?P<item>.*?)[\s.…]*[.…]{2}[\s.…]*"
+    r"(?P<pages>\d+(?:\s*[~,-]\s*\d+)*)\s*"
+)
 
 # A word from `pymupdf`: (x0, y0, x1, y1, text).
 type Word = tuple[float, float, float, float, str]
@@ -348,6 +362,102 @@ def markdown_table(table: list[list[str]]) -> str:
     return "\n".join(lines)
 
 
+# Function `lines_inside()`:
+def lines_inside(page: pymupdf.Page, region: Region) -> str:
+    """Return the lines of text whose centers are inside a region.
+
+    A hand drawn rectangle often clips a neighboring line (e.g. a page
+    footer), and `get_text()` with a `clip` keeps the pieces it touches.
+
+    Arguments:
+    * `page` (`pymupdf.Page`):
+      The page to look at.
+    * `region` (`Region`):
+      The region to look inside.
+
+    Returns:
+    * (`str`): The lines, in the order of the page, with their indents.
+    """
+    lines: list[str] = []
+    for block in page.get_text("dict")["blocks"]:
+        for line in block.get("lines", []):
+            center: pymupdf.Point = pymupdf.Rect(line["bbox"]).tl / 2
+            center += pymupdf.Rect(line["bbox"]).br / 2
+            if center in region.rect():
+                lines.append("".join(s["text"] for s in line["spans"]))
+    return "\n".join(lines)
+
+
+# Function `page_link()`:
+def page_link(label: str, pages: str, out_dir: Path) -> str:
+    """Link a label to the first page of a list, if its file exists.
+
+    Arguments:
+    * `label` (`str`):
+      The text to link.
+    * `pages` (`str`):
+      The page numbers (e.g. `7`, `66-76` or `66-76,83`).
+    * `out_dir` (`Path`):
+      The directory the Markdown goes into.
+
+    Returns:
+    * (`str`): The Markdown link, or just `label` if there is no file.
+    """
+    name: str = f"page_{int(re.split('[-,]', pages)[0]):03d}"
+    if (out_dir / name / f"{name}.md").exists():
+        return f"[{label}](../{name}/{name}.md)"
+    return label
+
+
+# Function `index_rows()`:
+def index_rows(text: str, out_dir: Path) -> list[list[str]]:
+    """Convert the lines of an index into table rows, one row per line.
+
+    This is generic for any index whose lines look like `INDEX_LINE`.
+    A line with no page numbers (e.g. a heading over indented lines)
+    gets a row with no pages.  Otherwise, the item links to the `.md`
+    file of the first page listed, if that file exists, and each `~`
+    becomes a `-`.  An indented line starts with `* `.  Each page or
+    range after a comma gets a row of its own as well, whose item is
+    `+ ` and its first page number, linked the same way.
+
+    Arguments:
+    * `text` (`str`):
+      The text of the index, one entry per line.
+    * `out_dir` (`Path`):
+      The directory the Markdown goes into.
+
+    Returns:
+    * (`list[list[str]]`): The header row, then an item and its pages
+      for each line, or nothing if there are no lines.
+    """
+    table: list[list[str]] = []
+    line: str
+    for line in text.splitlines():
+        # Split the line into its item and its page numbers.
+        match: re.Match[str] | None = INDEX_LINE.fullmatch(line.rstrip())
+        item: str = match["item"] if match else line.rstrip()
+        pages: str = "".join(match["pages"].split()) if match else ""
+
+        pages = pages.replace("~", "-")
+
+        # Make the spaces single, link the item, and mark any indent.
+        words: list[str] = item.split()
+        if words:
+            label: str = " ".join(words)
+            if pages:
+                label = page_link(label, pages, out_dir)
+            indent: str = "* " if item[0].isspace() else ""
+            table.append([indent + label, pages])
+
+            # Add a row for each page or range after a comma.
+            more: str
+            for more in pages.split(",")[1:]:
+                first: str = more.split("-")[0]
+                table.append(["+ " + page_link(first, more, out_dir), more])
+    return [["Item", "Pages"], *table] if table else []
+
+
 # Function `overlap()`:
 def overlap(a: Region, b: Region) -> float:
     """Return how much two regions overlap.
@@ -523,7 +633,7 @@ def suggest(
             best: Region = max(same, key=lambda f: overlap(f, old))
             found.remove(best)
             regions.append(best)
-        elif old.kind in ("title", "text"):
+        elif old.kind in ("title", "text", "index"):
             fitted: Region | None = snap(old, words)
             if fitted is not None:
                 regions.append(fitted)
@@ -610,10 +720,10 @@ class App:
         label: str
         self.page_buttons: dict[str, tk.Button] = {}
         for key, label in (
-            ("N", "Next New"),
-            ("n", "Next"),
-            ("p", "Prev."),
             ("P", "Prev. New"),
+            ("p", "Prev."),
+            ("n", "Next"),
+            ("N", "Next New"),
         ):
             self.page_buttons[key] = tk.Button(
                 pages,
@@ -623,7 +733,7 @@ class App:
             self.page_buttons[key].pack(side="left")
 
         # Then the `Goto` button with its page number box (at most 5
-        # digits), and `Quit`.
+        # digits), `Index Update` and `Quit`.
         tk.Button(pages, text="Goto", command=self.go_to).pack(side="left")
         self.goto: tk.Entry = tk.Entry(
             pages,
@@ -638,6 +748,9 @@ class App:
         )
         self.goto.bind("<Return>", lambda _event: self.go_to())
         self.goto.pack(side="left")
+        tk.Button(
+            pages, text="Index Update", command=self.update_indexes
+        ).pack(side="left")
         tk.Button(
             pages,
             text="Quit",
@@ -993,6 +1106,44 @@ class App:
             return
         self.draw_regions()
 
+    # Method `App.update_indexes()`:
+    def update_indexes(self) -> None:
+        """Rewrite every saved page that has an index region.
+
+        The current page stays on the screen.  It is saved first if it
+        was saved before or has an index region; otherwise it stays
+        unsaved, since saving would mark it as extracted.
+        """
+        # Save the current page, and remember what is on the screen.
+        if self.json_path().exists() or any(
+            r.kind == "index" for r in self.regions
+        ):
+            self.save()
+        here: tuple[int, list[Region], list[Region]] = (
+            self.page_no,
+            self.regions,
+            self.ignored,
+        )
+
+        # Rewrite the saved pages with an index region.
+        count: int = 0
+        path: Path
+        for path in sorted(self.out_dir.glob("page_*/page_*.json")):
+            regions: list[Region]
+            ignored: list[Region]
+            regions, ignored = load_regions(path)
+            if any(r.kind == "index" for r in regions):
+                self.page_no = int(path.stem[5:]) - 1
+                self.regions = regions
+                self.ignored = ignored
+                self.save()
+                count += 1
+
+        # Put the current page back.
+        self.page_no, self.regions, self.ignored = here
+        self.message = f"Updated {count} index pages."
+        self.draw_regions()
+
     # Method `App.save_if_marked()`:
     def save_if_marked(self) -> None:
         """Save the current page if it has (or had) any regions."""
@@ -1016,12 +1167,27 @@ class App:
             + "\n"
         )
 
-        # Write each region, top to bottom.
+        # Write each region, top to bottom, except that the index regions
+        # (usually columns, whose tops differ a little) go left to right.
         page: pymupdf.Page = self.doc[self.page_no]
+        columns: Iterator[Region] = iter(
+            sorted(
+                (r for r in self.regions if r.kind == "index"),
+                key=lambda r: (r.x0, r.y0),
+            )
+        )
         parts: list[str] = [f"# Page {self.page_no + 1}"]
         image_count: int = 0
         region: Region
         for region in sorted(self.regions, key=lambda r: (r.y0, r.x0)):
+            if region.kind == "index":
+                region = next(columns)
+                parts.append(
+                    markdown_table(
+                        index_rows(lines_inside(page, region), self.out_dir)
+                    )
+                )
+                continue
             text: str = " ".join(
                 page.get_text("text", clip=region.rect()).split()
             )

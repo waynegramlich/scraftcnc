@@ -49,6 +49,21 @@ Flipsnack, real text layer, no OCR needed).
   tables with 3+ data rows, merged embedded images, carry-over from
   the nearest earlier saved page).
 
+## Index mode (2026-10-30)
+
+Page buttons are now Prev. New, Prev., Next, Next New.  Mode `Index`
+(`index_rows()`, `INDEX_LINE`) writes a two column table, `Item` and
+`Pages`, one row per line; the user will tweak it.  The index is PDF
+pages 451-455.  Index regions are written left to right.  A heading
+line gets a row with no pages; indents are `* `.  Items link to the
+first page listed, when its `.md` exists as of the save (printed page
+numbers equal PDF page numbers), and
+`~` is written as `-`.
+Experiment: each page or range after a comma also gets a `+ NNN` row
+(the row with the whole list stays as it was).
+`Index Update` button (`App.update_indexes()`) rewrites every saved page
+with an index region; a fresh current page stays unsaved.
+
 ## Open items (user's numbering, from the first session)
 
 2. Multi-page tables not detected.
