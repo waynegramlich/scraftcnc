@@ -380,3 +380,10 @@ Moved from `T.s2~3`'s `Context.md` on 2026-10-28, when it was split.
   Tk opens a window.  `xvfb_listen()` chooses TCP only when the
   directory can not be written.  Waiting for the user's commit, then
   one more probe run.
+
+## 2026-10-30: Probe run 41157277075 (e992757): both pass; closed
+
+* `ubuntu-latest`: 3.1 min; 1545 samples in 77.4 s (`DISPLAY=:0`).
+* `windows-latest` (WSL 2): 6.6 min; 1546 samples in 77.4 s
+  (`DISPLAY=127.0.0.1:0`, so the TCP route was the one needed).
+* Both: 0 errors, 0 delay messages, nothing left running.

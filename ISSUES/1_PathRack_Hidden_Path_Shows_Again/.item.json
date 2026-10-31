@@ -1,0 +1,16 @@
+{
+  "state": "Open",
+  "created": "2026-10-31T02:05:40Z",
+  "updated": "2026-10-31T02:05:41Z",
+  "history": [
+    {
+      "state": "Pending",
+      "time": "2026-10-31T02:05:40Z"
+    },
+    {
+      "state": "Open",
+      "time": "2026-10-31T02:05:41Z"
+    }
+  ],
+  "tag": "phpsa"
+}
