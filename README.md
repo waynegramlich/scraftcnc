@@ -121,8 +121,8 @@ Each step below needs a little more than the one before it.
 * `shops.py`, `Shops.md` and `examples/shop/`: the shop description
   files, their reader (every problem reported at its file and line),
   and the example shop that the demonstration uses.
-* `tools.py`: 3D models of tooling (mill tables, drills) and the
-  keep-out regions around them.  Run it to see them in SolidCraft.
+* `tools.py`: 3D models of tooling (mill tables, drills, a vise) and
+  the keep-out regions around them.  Run it to see them in SolidCraft.
 * `scmachine.py`: the machine and its tools as the G-code side sees
   them.
 * `scplot.py` and `scplot_template.html`: the tool path viewer, and the
