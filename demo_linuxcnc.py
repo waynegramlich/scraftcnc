@@ -70,6 +70,10 @@ FILES: tuple[str, ...] = (
 XVFB: str = "/usr/bin/Xvfb"
 XVFB_PACKAGE: str = "xvfb"
 
+# Where X servers make their sockets.  WSL's can not be written by the
+# user, so `Xvfb` listens on TCP there.
+X_SOCKETS: Path = Path("/tmp/.X11-unix")
+
 # The command port of `lcnc_panel.py`, as `lcnc_sim/shop_mill.ini` sets
 # it.
 PANEL_PORT: int = 5007
@@ -294,6 +298,25 @@ def outside(arguments: argparse.Namespace) -> int:
     return 0 if ok else 1
 
 
+# Function `xvfb_listen()`:
+def xvfb_listen(sockets: Path = X_SOCKETS) -> tuple[list[str], str]:
+    """Choose how `Xvfb` listens: its socket directory, or else TCP.
+
+    An X server takes connections from its own computer only, unless
+    it is told otherwise, so TCP does not open it to the network.
+
+    Arguments:
+    * `sockets` (`Path`): Where X servers make their sockets.
+
+    Returns:
+    * (`tuple[list[str], str]`): Its arguments, and the host to put in
+      front of its display number.
+    """
+    if sockets.exists() and not os.access(sockets, os.W_OK):
+        return ["-listen", "tcp", "-nolisten", "unix"], "127.0.0.1"
+    return ["-nolisten", "tcp"], ""
+
+
 # Function `start_xvfb()`:
 def start_xvfb(log: Path) -> tuple[subprocess.Popen[bytes], str]:
     """Start `Xvfb` on a free display.
@@ -303,17 +326,18 @@ def start_xvfb(log: Path) -> tuple[subprocess.Popen[bytes], str]:
 
     Returns:
     * (`tuple[subprocess.Popen[bytes], str]`): It, and its display
-      (such as `:1`).
+      (such as `:1` or `127.0.0.1:1`).
 
     Raises:
     * `SystemExit`: If it does not say which display it took in time.
     """
     # `-displayfd 1` makes it pick a free display, and print its number
     # once it is ready.
+    listen, host = xvfb_listen()
     with log.open("wb") as messages:
         xvfb = subprocess.Popen(  # pylint: disable=consider-using-with
             [XVFB, "-displayfd", "1", "-screen", "0", "1280x1024x24",
-             "-nolisten", "tcp"],
+             *listen],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=messages,
@@ -326,7 +350,7 @@ def start_xvfb(log: Path) -> tuple[subprocess.Popen[bytes], str]:
         xvfb.kill()
         print(log.read_text(errors="replace"), file=sys.stderr)
         raise SystemExit("Xvfb did not start.")
-    return xvfb, f":{number}"
+    return xvfb, f"{host}:{number}"
 
 
 # Function `ask_panel()`:

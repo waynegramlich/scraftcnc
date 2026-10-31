@@ -357,3 +357,26 @@ Moved from `T.s2~3`'s `Context.md` on 2026-10-28, when it was split.
 * Left: the probe run on `ubuntu-latest` and `windows-latest` (about 8
   min), which needs these changes committed and pushed by the user;
   then `Summary.md` and close.  `SharsMD` is for the next task.
+
+## 2026-10-30: Probe run 41151300976 (994400c): Ubuntu passes, WSL stops at `Xvfb`
+
+* `ubuntu-latest`: pass, 3.2 min; install 454 packages; demo 1545
+  samples in 77.4 s, 0 errors, 0 delay messages, nothing left running.
+* `windows-latest`: 7 min; the install passed (589 packages), then
+  `Xvfb` as `lcnc` failed before LinuxCNC started: "Mode of
+  /tmp/.X11-unix should be set to 1777", "failed to bind listener",
+  "Failed to find a socket to listen on".  Probably WSLg's own
+  `/tmp/.X11-unix` (from memory; not checked on the runner).  So a
+  program under WSL is still not shown.
+* Suggested, not done: `Xvfb` on TCP (`start_xvfb()` passes `-nolisten
+  tcp`), which needs the user's commit and one more run (about 8 min).
+  Not closed: the user was to decide on anything but two passes.
+
+## 2026-10-30: `Xvfb` on TCP where it can not make its socket
+
+* Reproduced in a scratch `debian:trixie` container: a non-root user
+  and a root-owned `/tmp/.X11-unix` mode 755 give the runner's errors;
+  `-listen tcp -nolisten unix` with `DISPLAY=127.0.0.1:0` starts, and
+  Tk opens a window.  `xvfb_listen()` chooses TCP only when the
+  directory can not be written.  Waiting for the user's commit, then
+  one more probe run.

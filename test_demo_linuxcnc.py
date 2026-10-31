@@ -70,6 +70,18 @@ class TestDemoLinuxCNC(unittest.TestCase):
         self.assertEqual(contents["lib.py"], b"X = 1\n")
         self.assertEqual(contents["run.py"], b"#!/bin/sh\n")
 
+    def test_xvfb_listen(self) -> None:
+        """TCP only when the socket directory can not be written."""
+        listen = demo_linuxcnc.xvfb_listen
+        with tempfile.TemporaryDirectory() as scratch:
+            sockets = Path(scratch)
+            self.assertEqual(listen(sockets / "none")[1], "")
+            self.assertEqual(listen(sockets), (["-nolisten", "tcp"], ""))
+            with mock.patch("os.access", return_value=False):
+                arguments, host = listen(sockets)
+        self.assertEqual(arguments, ["-listen", "tcp", "-nolisten", "unix"])
+        self.assertEqual(host, "127.0.0.1")
+
     def test_panel_errors(self) -> None:
         """Messages are found; no answer counts as a problem."""
         errors = demo_linuxcnc.panel_errors
