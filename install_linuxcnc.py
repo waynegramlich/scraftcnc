@@ -10,14 +10,6 @@ system made for it, which this program calls the target:
 * Windows: WSL 2 with Debian (`Debian`, upgraded to Trixie if it is
   older), with the package installed in it directly.  This program
   runs in Windows' own Python and drives `wsl.exe`.
-* macOS with a hypervisor (`sysctl kern.hv_support` is 1): a
-  `debian:trixie` container (`lcnc`) in a Linux VM, made by `podman
-  machine` on Apple Silicon and by `colima` (with `docker`) on Intel,
-  where Homebrew no longer has `podman`.
-* macOS without one (as on GitHub's Apple Silicon runners): a Debian
-  Trixie cloud image run by QEMU in software emulation (TCG), reached
-  by `ssh` on port 2222.  It is slow (hours), but needs nothing from
-  the machine.
 
 Each step is checked first and skipped when it is already done, so
 running this again is safe.  A step that needs the user (installing
@@ -67,7 +59,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-# The Debian image of the box or container.
+# The Debian image of the box.
 IMAGE: str = "docker.io/library/debian:trixie"
 
 # Where LinuxCNC's Trixie packages are; `ARCH` is the target's Debian
@@ -75,8 +67,8 @@ IMAGE: str = "docker.io/library/debian:trixie"
 REPOSITORY: str = "https://linuxcnc.org/dists/trixie/2.9-uspace"
 PACKAGE: str = "linuxcnc-uspace"
 
-# Where downloads (and the QEMU VM) are kept.  A `distrobox` box
-# shares the home directory, so it sees the same files.
+# Where downloads are kept.  A `distrobox` box shares the home
+# directory, so it sees the same files.
 CACHE: Path = Path.home() / ".cache" / "scraftcnc"
 
 # LinuxCNC's sample configurations, and where (under the target
@@ -95,20 +87,8 @@ WSL_ENV: tuple[str, ...] = (
     "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
 )
 
-# The user (not root) made in a container or WSL, and the container's
-# name.
+# The user (not root) made in WSL.
 USER: str = "lcnc"
-CONTAINER: str = "lcnc"
-
-# The QEMU VM: Debian's cloud images, its directory, and its `ssh`
-# port on this computer.
-CLOUD: str = "https://cloud.debian.org/images/cloud/trixie/latest"
-VM: Path = CACHE / "vm"
-SSH_PORT: int = 2222
-
-# How long to wait for the QEMU VM to answer `ssh` (seconds); TCG
-# boots slowly.
-VM_BOOT: float = 45 * 60.0
 
 # How often a long command reports its progress (seconds).
 HEARTBEAT: float = 300.0
@@ -188,16 +168,13 @@ class Target:
       The command prefix that runs a command in it as the user who
       runs LinuxCNC (not root).
     * `home` (`str`): That user's home directory in it.
-    * `joined` (`bool`):
-      True when the command after the prefix must be one shell
-      string (`ssh`).
     * `shares_home` (`bool`):
       True when it sees this computer's files at the same paths
       (`distrobox`).
     * `enter` (`str`): How the user gets a shell in it.
 
     Constructor:
-    * `Target(name, root, user, home, joined, shares_home, enter)`
+    * `Target(name, root, user, home, shares_home, enter)`
     """
 
     # Constructor arguments:
@@ -205,7 +182,6 @@ class Target:
     root: tuple[str, ...] = field(init=True)
     user: tuple[str, ...] = field(init=True)
     home: str = field(init=True)
-    joined: bool = field(init=True)
     shares_home: bool = field(init=True)
     enter: str = field(init=True)
 
@@ -221,8 +197,6 @@ class Target:
         * (`list[str]`): The command to run here.
         """
         prefix = self.root if root else self.user
-        if self.joined:
-            return [*prefix, shlex.join(command)]
         return [*prefix, *command]
 
 
@@ -233,8 +207,7 @@ class Options:
 
     Attributes:
     * `route` (`str`):
-      How LinuxCNC is installed: `distrobox`, `wsl`, `podman`,
-      `colima` or `qemu`.
+      How LinuxCNC is installed: `distrobox` or `wsl`.
     * `box` (`str`): The `distrobox` box's name.
     * `distribution` (`str`): The WSL distribution's name.
     * `yes` (`bool`):
@@ -390,8 +363,8 @@ def output(command: list[str]) -> str:
 def copy_to_clipboard(text: str) -> str:
     """Put text on the clipboard, if there is a way to.
 
-    The clipboard programs of macOS, Wayland, X11 and Windows (also
-    from WSL) are tried in turn; failing those, the terminal is asked
+    The clipboard programs of Wayland, X11 and Windows (also from
+    WSL) are tried in turn; failing those, the terminal is asked
     to do it (the OSC 52 escape sequence, which many terminals honor
     and the rest ignore).
 
@@ -403,7 +376,6 @@ def copy_to_clipboard(text: str) -> str:
     """
     # Try the clipboard programs.
     programs: list[list[str]] = [
-        ["pbcopy"],
         ["wl-copy"],
         ["xclip", "-selection", "clipboard"],
         ["xsel", "--clipboard", "--input"],
@@ -486,19 +458,14 @@ def in_box(box: str, command: list[str]) -> list[str]:
 
 
 # Function `choose_route()`:
-def choose_route(system: str, machine: str, hv_support: str) -> str:
+def choose_route(system: str) -> str:
     """Choose how to install LinuxCNC on this computer.
 
     Arguments:
-    * `system` (`str`): `platform.system()` (`Linux`, `Windows`,
-      `Darwin`).
-    * `machine` (`str`): `platform.machine()` (e.g. `arm64`).
-    * `hv_support` (`str`):
-      What `sysctl -n kern.hv_support` printed on macOS (`1` when
-      there is a hypervisor).
+    * `system` (`str`): `platform.system()` (`Linux`, `Windows`).
 
     Returns:
-    * (`str`): `distrobox`, `wsl`, `podman`, `colima` or `qemu`.
+    * (`str`): `distrobox` or `wsl`.
 
     Raises:
     * `SystemExit`: If the system is not supported.
@@ -507,10 +474,6 @@ def choose_route(system: str, machine: str, hv_support: str) -> str:
         return "distrobox"
     if system == "Windows":
         return "wsl"
-    if system == "Darwin":
-        if hv_support.strip() != "1":
-            return "qemu"
-        return "podman" if machine == "arm64" else "colima"
     raise SystemExit(f"{system} is not supported.")
 
 
@@ -603,13 +566,12 @@ def newest_package(arch: str) -> tuple[str, str, str]:
 
 
 # Function `download()`:
-def download(url: str, digest: str, *, algorithm: str = "sha256") -> Path:
+def download(url: str, digest: str) -> Path:
     """Download a file into `CACHE`, unless it is there already.
 
     Arguments:
     * `url` (`str`): Where it is.
     * `digest` (`str`): Its hash, to check it against.
-    * `algorithm` (`str`): The hash (`sha256` or `sha512`).
 
     Returns:
     * (`Path`): The file.
@@ -619,7 +581,7 @@ def download(url: str, digest: str, *, algorithm: str = "sha256") -> Path:
     """
     # Download it, unless a good copy is already there.
     path = CACHE / url.rsplit("/", 1)[1]
-    if not path.exists() or file_hash(path, algorithm) != digest:
+    if not path.exists() or file_sha256(path) != digest:
         CACHE.mkdir(parents=True, exist_ok=True)
         print(f"{stamp()} Downloading {url}", flush=True)
         partial = path.with_suffix(".part")
@@ -627,25 +589,10 @@ def download(url: str, digest: str, *, algorithm: str = "sha256") -> Path:
         partial.replace(path)
 
     # Check it.
-    if file_hash(path, algorithm) != digest:
+    if file_sha256(path) != digest:
         path.unlink()
-        raise SystemExit(f"{url}: wrong {algorithm}; removed the download.")
+        raise SystemExit(f"{url}: wrong SHA-256; removed the download.")
     return path
-
-
-# Function `file_hash()`:
-def file_hash(path: Path, algorithm: str = "sha256") -> str:
-    """Return a file's hash.
-
-    Arguments:
-    * `path` (`Path`): The file.
-    * `algorithm` (`str`): The hash (`sha256` or `sha512`).
-
-    Returns:
-    * (`str`): Its hash, in hexadecimal.
-    """
-    with path.open("rb") as file:
-        return hashlib.file_digest(file, algorithm).hexdigest()
 
 
 # Function `file_sha256()`:
@@ -658,7 +605,8 @@ def file_sha256(path: Path) -> str:
     Returns:
     * (`str`): Its SHA-256, in hexadecimal.
     """
-    return file_hash(path, "sha256")
+    with path.open("rb") as file:
+        return hashlib.file_digest(file, "sha256").hexdigest()
 
 
 # Function `send_file()`:
@@ -726,7 +674,6 @@ def box_steps(options: Options) -> tuple[Target, list[Step]]:
             box,
         ),
         home=home,
-        joined=False,
         shares_home=True,
         enter=f"distrobox enter {box} -- linuxcnc lcnc_sim/shop_mill.ini",
     )
@@ -768,404 +715,6 @@ def box_steps(options: Options) -> tuple[Target, list[Step]]:
     ]
 
 
-# Function `container_step()`:
-def container_step(cli: str) -> tuple[Target, Step]:
-    """Return a container target (macOS) and the step that starts it.
-
-    Arguments:
-    * `cli` (`str`): The container program (`podman` or `docker`).
-
-    Returns:
-    * (`tuple[Target, Step]`): The target and its step.
-    """
-    target = Target(
-        name=f"the {CONTAINER} container",
-        root=(cli, "exec", "-i", CONTAINER),
-        user=(cli, "exec", "-i", "-u", USER, CONTAINER),
-        home=f"/home/{USER}",
-        joined=False,
-        shares_home=False,
-        enter=f"{cli} exec -it -u {USER} {CONTAINER} bash",
-    )
-
-    # A Debian Trixie container that keeps running (`sleep`), so that
-    # commands can be run in it.
-    def running() -> bool:
-        state = output(
-            [
-                cli,
-                "container",
-                "inspect",
-                "-f",
-                "{{.State.Running}}",
-                CONTAINER,
-            ]
-        )
-        return state == "true"
-
-    def start() -> None:
-        if run([cli, "container", "inspect", CONTAINER], quiet=True):
-            run([cli, "start", CONTAINER])
-        else:
-            run(
-                [
-                    cli,
-                    "run",
-                    "-d",
-                    "--name",
-                    CONTAINER,
-                    IMAGE,
-                    "sleep",
-                    "infinity",
-                ]
-            )
-
-    return target, Step(
-        f"the {CONTAINER} container (Debian Trixie)", running, start
-    )
-
-
-# Function `podman_steps()`:
-def podman_steps(options: Options) -> tuple[Target, list[Step]]:
-    """Return the `podman machine` target (Apple Silicon) and steps.
-
-    Arguments:
-    * `options` (`Options`): The command line.
-
-    Returns:
-    * (`tuple[Target, list[Step]]`): The target and its steps.
-    """
-
-    # `podman`, from Homebrew.
-    def have_podman() -> bool:
-        return bool(shutil.which("podman"))
-
-    def install_podman() -> None:
-        ask_user(
-            "`podman` is needed (from Homebrew).",
-            ["brew", "install", "podman"],
-            yes=options.yes,
-        )
-
-    # Its Linux VM, made once and started.
-    def machine_running() -> bool:
-        state = output(
-            ["podman", "machine", "inspect", "--format", "{{.State}}"]
-        )
-        return state == "running"
-
-    def start_machine() -> None:
-        if not run(["podman", "machine", "inspect"], quiet=True):
-            run(["podman", "machine", "init"])
-        run(["podman", "machine", "start"])
-
-    target, container = container_step("podman")
-    return target, [
-        Step("podman", have_podman, install_podman),
-        Step(
-            "the podman machine (a Linux VM)", machine_running, start_machine
-        ),
-        container,
-    ]
-
-
-# Function `colima_steps()`:
-def colima_steps(options: Options) -> tuple[Target, list[Step]]:
-    """Return the `colima` target (Intel macOS) and its steps.
-
-    Arguments:
-    * `options` (`Options`): The command line.
-
-    Returns:
-    * (`tuple[Target, list[Step]]`): The target and its steps.
-    """
-
-    # `colima` and `docker`, from Homebrew.
-    def have_colima() -> bool:
-        return bool(shutil.which("colima") and shutil.which("docker"))
-
-    def install_colima() -> None:
-        ask_user(
-            "`colima` and `docker` are needed (from Homebrew, which has"
-            " no `podman` for Intel Macs).",
-            ["brew", "install", "colima", "docker"],
-            yes=options.yes,
-        )
-
-    # Its Linux VM, started.
-    def colima_running() -> bool:
-        return run(["colima", "status"], quiet=True)
-
-    def start_colima() -> None:
-        run(["colima", "start", "--cpu", "2", "--memory", "4"])
-
-    target, container = container_step("docker")
-    return target, [
-        Step("colima and docker", have_colima, install_colima),
-        Step("colima (a Linux VM)", colima_running, start_colima),
-        container,
-    ]
-
-
-# Function `qemu_command()`:
-def qemu_command(machine: str, accelerated: bool, firmware: str) -> list[str]:
-    """Return the command that starts the QEMU VM in the background.
-
-    Arguments:
-    * `machine` (`str`): `platform.machine()` (`arm64` or `x86_64`).
-    * `accelerated` (`bool`):
-      True to use the hypervisor (`hvf`), false for software
-      emulation (TCG).
-    * `firmware` (`str`): The UEFI firmware (ARM only).
-
-    Returns:
-    * (`list[str]`): The command.
-    """
-    # The machine, and how its processor is made.
-    accel = "hvf" if accelerated else "tcg,thread=multi"
-    cpus = str(min(4, os.cpu_count() or 2))
-    if machine == "arm64":
-        cpu = "host" if accelerated else "max,pauth-impdef=on"
-        command = [
-            "qemu-system-aarch64",
-            "-machine",
-            "virt",
-            "-bios",
-            firmware,
-        ]
-    else:
-        cpu = "host" if accelerated else "max"
-        command = ["qemu-system-x86_64", "-machine", "q35"]
-
-    # Its disk, its cloud-init seed, `ssh` on `SSH_PORT`, and a serial
-    # console log.
-    return [
-        *command,
-        "-accel",
-        accel,
-        "-cpu",
-        cpu,
-        "-smp",
-        cpus,
-        "-m",
-        "4096",
-        "-drive",
-        f"if=virtio,format=qcow2,file={VM / 'disk.qcow2'}",
-        "-drive",
-        f"if=virtio,format=raw,readonly=on,file={VM / 'seed.iso'}",
-        "-netdev",
-        f"user,id=net0,hostfwd=tcp:127.0.0.1:{SSH_PORT}-:22",
-        "-device",
-        "virtio-net-pci,netdev=net0",
-        "-display",
-        "none",
-        "-serial",
-        f"file:{VM / 'console.log'}",
-        "-daemonize",
-        "-pidfile",
-        str(VM / "qemu.pid"),
-    ]
-
-
-# Function `qemu_steps()`:
-def qemu_steps(options: Options) -> tuple[Target, list[Step]]:
-    """Return the QEMU VM target (macOS with no hypervisor) and steps.
-
-    Arguments:
-    * `options` (`Options`): The command line.
-
-    Returns:
-    * (`tuple[Target, list[Step]]`): The target and its steps.
-    """
-    machine = platform.machine()
-    arch = "arm64" if machine == "arm64" else "amd64"
-    emulator = (
-        "qemu-system-aarch64" if machine == "arm64" else "qemu-system-x86_64"
-    )
-    image_name = f"debian-13-genericcloud-{arch}.qcow2"
-    key = VM / "id_ed25519"
-    ssh = (
-        "ssh",
-        "-p",
-        str(SSH_PORT),
-        "-i",
-        str(key),
-        "-o",
-        "StrictHostKeyChecking=no",
-        "-o",
-        "UserKnownHostsFile=/dev/null",
-        "-o",
-        "LogLevel=ERROR",
-        "-o",
-        "BatchMode=yes",
-        "-o",
-        "IdentitiesOnly=yes",
-        "-o",
-        "ConnectTimeout=20",
-        "-o",
-        "ServerAliveInterval=30",
-        "-o",
-        "ServerAliveCountMax=20",
-        "debian@127.0.0.1",
-    )
-    target = Target(
-        name="the QEMU VM",
-        root=(*ssh, "sudo"),
-        user=ssh,
-        home="/home/debian",
-        joined=True,
-        shares_home=False,
-        enter=shlex.join(ssh),
-    )
-
-    # QEMU, from Homebrew.
-    def have_qemu() -> bool:
-        return bool(shutil.which(emulator) and shutil.which("qemu-img"))
-
-    def install_qemu() -> None:
-        ask_user(
-            "QEMU is needed (from Homebrew), since this Mac has no"
-            " hypervisor for a VM (`kern.hv_support` is 0).",
-            ["brew", "install", "qemu"],
-            yes=options.yes,
-        )
-
-    # Debian's cloud image, checked against its SHA-512.
-    def image() -> Path:
-        return CACHE / image_name
-
-    def have_image() -> bool:
-        return image().exists() and (VM / "image.ok").exists()
-
-    def get_image() -> None:
-        with urllib.request.urlopen(f"{CLOUD}/SHA512SUMS", timeout=60) as (
-            response
-        ):
-            sums: str = response.read().decode()
-        digest = next(
-            line.split()[0]
-            for line in sums.splitlines()
-            if line.endswith(f" {image_name}")
-        )
-        download(f"{CLOUD}/{image_name}", digest, algorithm="sha512")
-        VM.mkdir(parents=True, exist_ok=True)
-        (VM / "image.ok").write_text(digest + "\n", encoding="utf-8")
-
-    # The VM's own disk (on top of the image), an `ssh` key, and the
-    # cloud-init seed that lets the key in.
-    def have_disk() -> bool:
-        return all((VM / name).exists() for name in ("disk.qcow2", "seed.iso"))
-
-    def make_disk() -> None:
-        VM.mkdir(parents=True, exist_ok=True)
-        if not key.exists():
-            run(
-                [
-                    "ssh-keygen",
-                    "-q",
-                    "-t",
-                    "ed25519",
-                    "-N",
-                    "",
-                    "-C",
-                    "lcnc-vm",
-                    "-f",
-                    str(key),
-                ]
-            )
-        public = key.with_suffix(".pub").read_text(encoding="utf-8")
-        seed = VM / "seed"
-        seed.mkdir(exist_ok=True)
-        (seed / "meta-data").write_text(
-            "instance-id: lcnc\nlocal-hostname: lcnc\n", encoding="utf-8"
-        )
-        (seed / "user-data").write_text(
-            f"#cloud-config\nssh_authorized_keys:\n  - {public.strip()}\n",
-            encoding="utf-8",
-        )
-        (VM / "seed.iso").unlink(missing_ok=True)
-        run(
-            [
-                "hdiutil",
-                "makehybrid",
-                "-o",
-                str(VM / "seed.iso"),
-                "-iso",
-                "-joliet",
-                "-iso-volume-name",
-                "cidata",
-                "-joliet-volume-name",
-                "cidata",
-                str(seed),
-            ]
-        )
-        run(
-            [
-                "qemu-img",
-                "create",
-                "-q",
-                "-f",
-                "qcow2",
-                "-F",
-                "qcow2",
-                "-b",
-                str(image()),
-                str(VM / "disk.qcow2"),
-                "20G",
-            ]
-        )
-
-    # The VM, started in the background and answering `ssh`.
-    def answers() -> bool:
-        return run([*ssh, "true"], quiet=True)
-
-    def start_vm() -> None:
-        pid_file = VM / "qemu.pid"
-        if not (pid_file.exists() and pid_alive(pid_file)):
-            prefix = Path(shutil.which(emulator) or emulator).resolve()
-            firmware = str(
-                prefix.parent.parent / "share/qemu/edk2-aarch64-code.fd"
-            )
-            hv = output(["sysctl", "-n", "kern.hv_support"]) == "1"
-            run(qemu_command(machine, hv, firmware))
-        print(f"{stamp()} Waiting for the VM to answer ssh (TCG is slow).")
-        deadline = time.monotonic() + VM_BOOT
-        while time.monotonic() < deadline and not answers():
-            print(f"{stamp()} ... not yet", flush=True)
-            time.sleep(30)
-        if not answers():
-            console = VM / "console.log"
-            if console.exists():
-                text = console.read_text(encoding="utf-8", errors="replace")
-                print("\n".join(text.splitlines()[-40:]))
-            return
-        run([*ssh, "sudo cloud-init status --wait || true"])
-
-    return target, [
-        Step("QEMU", have_qemu, install_qemu),
-        Step("Debian's cloud image", have_image, get_image),
-        Step("the VM's disk, key and seed", have_disk, make_disk),
-        Step(f"the QEMU VM (ssh port {SSH_PORT})", answers, start_vm),
-    ]
-
-
-# Function `pid_alive()`:
-def pid_alive(pid_file: Path) -> bool:
-    """Tell whether the process in a PID file is running.
-
-    Arguments:
-    * `pid_file` (`Path`): The file.
-
-    Returns:
-    * (`bool`): True if it is.
-    """
-    try:
-        os.kill(int(pid_file.read_text(encoding="utf-8").strip()), 0)
-    except (OSError, ValueError):
-        return False
-    return True
-
-
 # Function `wsl_steps()`:
 def wsl_steps(options: Options) -> tuple[Target, list[Step]]:
     """Return the WSL target (Windows) and the steps making it.
@@ -1182,7 +731,6 @@ def wsl_steps(options: Options) -> tuple[Target, list[Step]]:
         root=("wsl.exe", "-d", name, "-u", "root", "--exec", *WSL_ENV),
         user=("wsl.exe", "-d", name, "-u", USER, "--exec", *WSL_ENV),
         home=f"/home/{USER}",
-        joined=False,
         shares_home=False,
         enter=f"wsl.exe -d {name} -u {USER}",
     )
@@ -1259,7 +807,7 @@ def common_steps(target: Target) -> list[Step]:
         run(target.command(apt_get("-y", "full-upgrade"), root=True))
 
     # A user who is not root, who runs LinuxCNC (`rtapi_app` refuses
-    # root).  A box and the VM already have one.
+    # root).  A box already has one.
     def have_user() -> bool:
         uid = output(target.command(["id", "-u"]))
         return uid.isdigit() and uid != "0"
@@ -1375,9 +923,6 @@ def common_steps(target: Target) -> list[Step]:
 ROUTES: dict[str, Callable[[Options], tuple[Target, list[Step]]]] = {
     "distrobox": box_steps,
     "wsl": wsl_steps,
-    "podman": podman_steps,
-    "colima": colima_steps,
-    "qemu": qemu_steps,
 }
 
 
@@ -1481,15 +1026,8 @@ def target_options(arguments: argparse.Namespace) -> Options:
             stream.reconfigure(errors="replace")
 
     # Choose the route; `wsl.exe` prints UTF-8 when asked to.
-    system = platform.system()
     os.environ["WSL_UTF8"] = "1"
-    route: str = arguments.route or choose_route(
-        system,
-        platform.machine(),
-        output(["sysctl", "-n", "kern.hv_support"])
-        if system == "Darwin"
-        else "",
-    )
+    route: str = arguments.route or choose_route(platform.system())
     return Options(
         route=route,
         box=arguments.box,
@@ -1508,8 +1046,7 @@ def main() -> int:
     # Read the command line.
     parser = argparse.ArgumentParser(
         description="Install LinuxCNC's simulator in Debian Trixie: a"
-        " distrobox (Linux), WSL 2 (Windows), or a container or QEMU VM"
-        " (macOS)."
+        " distrobox (Linux) or WSL 2 (Windows)."
     )
     add_target_arguments(parser)
     options = target_options(parser.parse_args())

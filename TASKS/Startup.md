@@ -1,11 +1,13 @@
 @2_Document_a_Shop/Details.md
 @2_Document_a_Shop/Context.md
 @2.3_Mounting/Details.md
+@2.3_Mounting/Context.md
 @2.4_Stock_Models/Details.md
 @2.5_Tool_Models/Details.md
 @3_Simulation/Details.md
 @3_Simulation/Context.md
 @3.1_Installing_LinuxCNC/Details.md
+@3.1_Installing_LinuxCNC/Context.md
 @2.1_Materials_Speeds_and_Feeds/Summary.md
 @3.3_Replace_LinuxCNC_GUI/Summary.md
 @3.4_Minimal_LinuxCNC_Control_Panel/Summary.md

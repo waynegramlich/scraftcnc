@@ -307,3 +307,53 @@ Moved from `T.s2~3`'s `Context.md` on 2026-10-28, when it was split.
   `numpy`, `blt`, `bwidget`).  The test: a fresh box with 1 and 2
   that starts `lcnc_sim/shop_mill.ini` and runs the demo.  Smaller
   downloads also help the macOS and Windows probe runs.
+
+## 2026-10-30: Reopened; testing the panel on macOS (suggested, not agreed)
+
+* The user's goal: the `tkinter` panel, driven by a test suite over a
+  socket, talking to LinuxCNC on Apple Silicon macOS, with no Mac
+  bought, so that "tested on macOS" is a credible claim.
+* macOS in QEMU on this PC is out: `vmapple` needs an Apple Silicon
+  host with HVF (and took only macOS 12 guests when merged), OSX-KVM
+  is Intel macOS, and Apple's license ties macOS to Apple hardware.
+  `macos-latest` is real Apple Silicon, and free for a public project.
+* The catch: `lcnc_panel.py` needs `import linuxcnc`, which is Linux
+  only, so today the panel can only run inside the VM.  Suggested: a
+  bridge at the `Machine` class (`lcnc_panel.py:217`): the panel native
+  on macOS, a bridge in the VM as the INI file's `DISPLAY`, joined by
+  `ssh -L`.  Then the VM needs no GUI packages (the backend only entry
+  above).
+* The runner has no hypervisor (`kern.hv_support` 0), so it tests TCG,
+  not the `podman machine` route that real Macs take.  Suggested: one
+  rented Mac (or a volunteer) before making the claim.
+* Not yet known: whether a hosted runner's GUI session lets a Tk window
+  open and `screencapture` work; whether LinuxCNC runs a program under
+  TCG (`demo_linuxcnc.py` never ran on the runners).
+
+## 2026-10-30: macOS dropped
+
+* The user's decision: macOS is removed from the test vector; nothing
+  is to be spent on testing on Apple's hardware.  The macOS testing
+  plan in the entry above is dropped, bridge included.
+* Checked: `demo_linuxcnc.py:316-321` still waits on `axis-remote
+  --ping`, while `lcnc_sim/shop_mill.ini:32` starts `lcnc_panel.py`, so
+  it needs fixing before it can pass.  Last probe run 40734286264
+  (2d88d02) covered the install only.  `ruff`, `mypy --strict` and
+  `test_demo_linuxcnc` pass on it today.
+
+## 2026-10-30: macOS removed; the demo passes locally with the panel
+
+* Removed: the `podman`, `colima` and QEMU routes, their tests, the
+  macOS jobs in `probe_linuxcnc.yml`.  `Details.md` updated, at the
+  user's word.
+* `demo_linuxcnc.py` waits on the panel's `ping` (port 5007), not AXIS.
+  `pack()` gives files with `#!` mode 755, since LinuxCNC runs
+  `lcnc_panel.py` directly (first tested for real by a WSL run).  The
+  panel reads the error channel too, so its new `messages` port command
+  is part of the verdict.
+* Fresh throwaway `lcnc-demo` box (removed since): install about 5 min
+  (454 packages); demo PASS, 1545 samples in 77.4 s, 0 errors, 0 delay
+  messages, nothing left running.
+* Left: the probe run on `ubuntu-latest` and `windows-latest` (about 8
+  min), which needs these changes committed and pushed by the user;
+  then `Summary.md` and close.  `SharsMD` is for the next task.

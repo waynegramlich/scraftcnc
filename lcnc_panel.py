@@ -30,7 +30,8 @@ the INI file, or by hand), with Open, or through the command port
 (`--port PORT`, on 127.0.0.1), which takes one line per connection and
 answers one line: `ping`, `open FILE`, `start` (or `run`), `pause`,
 `reset` (or `stop`), `tool+`, `tool-` (the start line to the next or
-previous tool change), `speed X`, `status` or `quit`:
+previous tool change), `speed X`, `status`, `messages` (every message
+LinuxCNC has sent, as `messages: A | B`) or `quit`:
 
 ```
 echo "open demo.ngc" | nc -q 1 127.0.0.1 5007
@@ -227,6 +228,7 @@ class Machine:
     * `file` (`str`): The program opened (kept for a dry run).
     * `linuxcnc` (`Any`): The `linuxcnc` module, or `None`.
     * `log` (`list[str]`): What was asked of the machine, in order.
+    * `messages` (`list[str]`): Every message LinuxCNC has sent.
     * `sim` (`Any`): A `sim_linuxcnc.Simulator`, or `None`.
     """
 
@@ -241,6 +243,7 @@ class Machine:
         self.dry_run: bool = dry_run
         self.file: str = ""
         self.log: list[str] = []
+        self.messages: list[str] = []
         self.linuxcnc: Any = None
         self.sim: Any = None
 
@@ -468,6 +471,7 @@ class Machine:
             else message
             for message in messages
         ]
+        self.messages += messages
         return Status(
             str(stat.file),
             int(stat.motion_line),
@@ -999,6 +1003,8 @@ class Panel:  # pylint: disable=too-many-instance-attributes
                     f"x={x:.4f} y={y:.4f} z={z:.4f} tool={status.tool} "
                     f"start={self.start}"
                 )
+            elif word == "messages":
+                return f"messages: {' | '.join(self.machine.messages)}"
             else:
                 return f"error: unknown command {line!r}"
         except (ValueError, OSError) as error:

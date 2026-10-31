@@ -82,30 +82,14 @@ class TestInstallLinuxCNC(unittest.TestCase):
             install_linuxcnc.ask_user("Why.", ["sudo", "true"])
 
     def test_choose_route(self) -> None:
-        """Each operating system gets its route; no hypervisor, QEMU."""
+        """Each operating system gets its route; macOS has none."""
         choose = install_linuxcnc.choose_route
-        self.assertEqual(choose("Linux", "x86_64", ""), "distrobox")
-        self.assertEqual(choose("Windows", "AMD64", ""), "wsl")
-        self.assertEqual(choose("Darwin", "arm64", "1\n"), "podman")
-        self.assertEqual(choose("Darwin", "x86_64", "1"), "colima")
-        self.assertEqual(choose("Darwin", "arm64", "0"), "qemu")
-        self.assertEqual(choose("Darwin", "x86_64", "0"), "qemu")
-        self.assertEqual(choose("Darwin", "arm64", ""), "qemu")
+        self.assertEqual(choose("Linux"), "distrobox")
+        self.assertEqual(choose("Windows"), "wsl")
         with self.assertRaises(SystemExit):
-            choose("FreeBSD", "amd64", "")
-
-    def test_qemu_command(self) -> None:
-        """TCG without a hypervisor, `hvf` with one."""
-        tcg = install_linuxcnc.qemu_command("arm64", False, "/fw.fd")
-        self.assertEqual(tcg[0], "qemu-system-aarch64")
-        self.assertIn("tcg,thread=multi", tcg)
-        self.assertIn("max,pauth-impdef=on", tcg)
-        self.assertIn("/fw.fd", tcg)
-        self.assertIn("-daemonize", tcg)
-        hvf = install_linuxcnc.qemu_command("x86_64", True, "")
-        self.assertEqual(hvf[0], "qemu-system-x86_64")
-        self.assertIn("hvf", hvf)
-        self.assertIn("host", hvf)
+            choose("Darwin")
+        with self.assertRaises(SystemExit):
+            choose("FreeBSD")
 
     def test_halrun_ok(self) -> None:
         """Only a listed thread with no failure counts."""
@@ -143,30 +127,19 @@ class TestInstallLinuxCNC(unittest.TestCase):
         run.assert_called_once_with(["true"])
 
     def test_target_command(self) -> None:
-        """Commands are prefixed, and joined into one string for ssh."""
-        plain = install_linuxcnc.container_step("docker")[0]
+        """Commands are prefixed, as root or as the user."""
+        options = install_linuxcnc.Options("wsl", "lcnc", "Debian", False)
+        wsl = install_linuxcnc.wsl_steps(options)[0]
+        command = wsl.command(["id", "-u"], root=True)
         self.assertEqual(
-            plain.command(["id", "-u"], root=True),
-            ["docker", "exec", "-i", "lcnc", "id", "-u"],
+            command[:5], ["wsl.exe", "-d", "Debian", "-u", "root"]
         )
-        self.assertEqual(
-            plain.command(["id"])[:5], ["docker", "exec", "-i", "-u", "lcnc"]
-        )
-        options = install_linuxcnc.Options("qemu", "lcnc", "Debian", False)
-        vm = install_linuxcnc.qemu_steps(options)[0]
-        command = vm.command(["sh", "-c", "cat > /tmp/a b"], root=True)
-        self.assertEqual(command[0], "ssh")
-        self.assertEqual(command[-2:], ["sudo", "sh -c 'cat > /tmp/a b'"])
+        self.assertEqual(command[-2:], ["id", "-u"])
+        self.assertEqual(wsl.command(["id"])[3:5], ["-u", "lcnc"])
 
     def test_steps(self) -> None:
         """Every route ends with the same eight steps, `halrun` last."""
-        for route, setup in (
-            ("distrobox", 2),
-            ("wsl", 1),
-            ("podman", 3),
-            ("colima", 3),
-            ("qemu", 4),
-        ):
+        for route, setup in (("distrobox", 2), ("wsl", 1)):
             options = install_linuxcnc.Options(route, "b", "Debian", True)
             _, all_steps = install_linuxcnc.steps(options)
             self.assertEqual(len(all_steps), setup + 8, route)

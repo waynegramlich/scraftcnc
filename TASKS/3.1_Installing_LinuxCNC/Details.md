@@ -20,14 +20,13 @@ works in the box.
 
 ## Operating Systems
 
-For now, only find out where each stands; solve the problems later:
+* Ubuntu Linux: a `distrobox` box.
+* Windows: through WSL 2.
 
-* Ubuntu Linux: done by hand.
-* macOS (Apple Silicon and Intel): to be found out.
-* Windows: through WSL (not a concern for now).
+macOS is not a goal (the user's decision, 2026-10-30), and its routes
+were removed from `install_linuxcnc.py`.
 
 ## Done When
 
-* LinuxCNC runs on every platform (Linux, Windows through WSL,
-  Intel macOS and Apple Silicon macOS), or it is known why it can
-  not on one (the user's bar, 2026-10-28).
+* LinuxCNC runs a program on Linux and on Windows through WSL, or it
+  is known why it can not on one.

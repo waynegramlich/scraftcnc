@@ -1,13 +1,11 @@
 # Install LinuxCNC's simulator (`linuxcnc-uspace`, Debian 13 Trixie)
-# on each kind of GitHub runner with `install_linuxcnc.py --yes`, as
-# a user would (with `--yes` running the commands it would ask the
-# user to run), then run the demonstration's G-code in it with
-# `demo_linuxcnc.py --yes` (AXIS on `Xvfb`, which it installs in the
-# target only for runs like these, with no screen).  The jobs are
-# independent: macOS on Apple Silicon has no hypervisor on GitHub, so
-# it runs Debian in QEMU's software emulation, which is slow; the
-# programs print the time on every line, so a timeout still shows
-# how far it got.  `demo_timeout` (minutes) limits the G-code's run.
+# on Linux and Windows runners with `install_linuxcnc.py --yes`, as a
+# user would (with `--yes` running the commands it would ask the user
+# to run), then run the demonstration's G-code in it with
+# `demo_linuxcnc.py --yes` (`lcnc_panel.py` on `Xvfb`, which it installs
+# in the target only for runs like these, with no screen).  The
+# programs print the time on every line, so a timeout still shows how
+# far it got.  `demo_timeout` (minutes) limits the G-code's run.
 name: probe linuxcnc
 
 on:
@@ -29,12 +27,6 @@ jobs:
           - os: windows-latest
             timeout: 45
             demo_timeout: 20
-          - os: macos-15-intel
-            timeout: 75
-            demo_timeout: 30
-          - os: macos-latest
-            timeout: 240
-            demo_timeout: 180
     runs-on: ${{ matrix.os }}
     timeout-minutes: ${{ matrix.timeout }}
     defaults:
@@ -65,10 +57,6 @@ jobs:
         run: |
           uname -a
           python --version
-          if [ "$RUNNER_OS" = macOS ]; then
-            sysctl -n machdep.cpu.brand_string || true
-            echo "kern.hv_support=$(sysctl -n kern.hv_support)"
-          fi
 
       - name: install_linuxcnc.py --yes
         run: python -u install_linuxcnc.py --yes
@@ -77,11 +65,3 @@ jobs:
         env:
           DEMO_TIMEOUT: ${{ matrix.demo_timeout }}
         run: python -u demo_linuxcnc.py --yes --timeout "$DEMO_TIMEOUT"
-
-      - name: Keep the QEMU VM's console log
-        if: always() && runner.os == 'macOS'
-        uses: actions/upload-artifact@v4
-        with:
-          name: vm-console-${{ matrix.os }}
-          path: ~/.cache/scraftcnc/vm/console.log
-          if-no-files-found: ignore

@@ -1,7 +1,9 @@
 """Tests for `demo_linuxcnc.py` that need no LinuxCNC or target."""
 
+import socket
 import tarfile
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -43,24 +45,60 @@ class TestDemoLinuxCNC(unittest.TestCase):
             (project / "lcnc_sim").mkdir(parents=True)
             (project / "lcnc_sim/mill.ini").write_bytes(b"[EMC]\r\nA = 1\r\n")
             (project / "a.py").write_bytes(b"print(1)\r\n")
+            (project / "run.py").write_bytes(b"#!/bin/sh\r\n")
             (project / "notes.md").write_text("not packed\n")
             (root / "other").mkdir()
             (root / "other/lib.py").write_text("X = 1\n")
             # How a Windows checkout writes a symbolic link.
             (project / "lib.py").write_text("../other/lib.py")
             tarball = root / "demo.tar"
-            self.assertEqual(demo_linuxcnc.pack(project, tarball), 3)
+            self.assertEqual(demo_linuxcnc.pack(project, tarball), 4)
             with tarfile.open(tarball) as tar:
                 names = sorted(tar.getnames())
+                self.assertEqual(tar.getmember("run.py").mode, 0o755)
+                self.assertEqual(tar.getmember("a.py").mode, 0o644)
                 contents: dict[str, bytes] = {}
                 for name in names:
                     member = tar.extractfile(name)
                     assert member is not None
                     contents[name] = member.read()
-        self.assertEqual(names, ["a.py", "lcnc_sim/mill.ini", "lib.py"])
+        self.assertEqual(
+            names, ["a.py", "lcnc_sim/mill.ini", "lib.py", "run.py"]
+        )
         self.assertEqual(contents["lcnc_sim/mill.ini"], b"[EMC]\nA = 1\n")
         self.assertEqual(contents["a.py"], b"print(1)\n")
         self.assertEqual(contents["lib.py"], b"X = 1\n")
+        self.assertEqual(contents["run.py"], b"#!/bin/sh\n")
+
+    def test_panel_errors(self) -> None:
+        """Messages are found; no answer counts as a problem."""
+        errors = demo_linuxcnc.panel_errors
+        self.assertEqual(errors("messages: "), [])
+        # What `ask_panel()` returns for no messages: its space stripped.
+        self.assertEqual(errors("messages:"), [])
+        self.assertEqual(errors("messages: a | b"), ["a", "b"])
+        self.assertEqual(len(errors("")), 1)
+
+    def test_ask_panel(self) -> None:
+        """A line goes to the port and its answer comes back."""
+        with socket.socket() as server:
+            server.bind(("127.0.0.1", 0))
+            server.listen()
+            port = server.getsockname()[1]
+
+            def answer() -> None:
+                connection = server.accept()[0]
+                with connection:
+                    if connection.recv(100) == b"ping\n":
+                        connection.sendall(b"ok\n")
+
+            thread = threading.Thread(target=answer)
+            thread.start()
+            self.assertEqual(demo_linuxcnc.ask_panel("ping", port), "ok")
+            thread.join()
+
+        # Nobody is listening now.
+        self.assertEqual(demo_linuxcnc.ask_panel("ping", port), "")
 
     def test_place_project_shared(self) -> None:
         """A box that sees the project uses it where it is."""
@@ -69,7 +107,6 @@ class TestDemoLinuxCNC(unittest.TestCase):
             root=("podman", "exec", "-u", "root", "box"),
             user=("podman", "exec", "box"),
             home="/home/me",
-            joined=False,
             shares_home=True,
             enter="",
         )
@@ -80,12 +117,11 @@ class TestDemoLinuxCNC(unittest.TestCase):
 
     def test_place_project_copied(self) -> None:
         """Another target gets a copy, unpacked as the user."""
-        vm = Target(
-            name="the VM",
-            root=("ssh", "vm", "sudo"),
-            user=("ssh", "vm"),
-            home="/home/debian",
-            joined=True,
+        wsl = Target(
+            name="WSL",
+            root=("wsl.exe", "-u", "root"),
+            user=("wsl.exe",),
+            home="/home/lcnc",
             shares_home=False,
             enter="",
         )
@@ -101,14 +137,21 @@ class TestDemoLinuxCNC(unittest.TestCase):
             mock.patch("install_linuxcnc.run", fake_run),
             mock.patch("install_linuxcnc.CACHE", Path(scratch)),
         ):
-            where = demo_linuxcnc.place_project(vm)
-        self.assertEqual(where, "/home/debian/scraftcnc_demo")
+            where = demo_linuxcnc.place_project(wsl)
+        self.assertEqual(where, "/home/lcnc/scraftcnc_demo")
         self.assertEqual(
             commands[0],
-            ["ssh", "vm", "sudo", "sh -c 'cat > /tmp/scraftcnc_demo.tar'"],
+            [
+                "wsl.exe",
+                "-u",
+                "root",
+                "sh",
+                "-c",
+                "cat > /tmp/scraftcnc_demo.tar",
+            ],
         )
-        self.assertEqual(commands[1][:2], ["ssh", "vm"])
-        self.assertIn("tar -xf /tmp/scraftcnc_demo.tar", commands[1][2])
+        self.assertEqual(commands[1][:3], ["wsl.exe", "sh", "-c"])
+        self.assertIn("tar -xf /tmp/scraftcnc_demo.tar", commands[1][3])
 
 
 if __name__ == "__main__":

@@ -1,11 +1,15 @@
 {
-  "state": "Pending",
+  "state": "Open",
   "created": "2026-10-27T23:40:54Z",
-  "updated": "2026-10-27T23:40:54Z",
+  "updated": "2026-10-29T14:35:06Z",
   "history": [
     {
       "state": "Pending",
       "time": "2026-10-27T23:40:54Z"
+    },
+    {
+      "state": "Open",
+      "time": "2026-10-29T14:35:06Z"
     }
   ],
   "tag": "m"

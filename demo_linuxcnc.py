@@ -3,9 +3,8 @@
 
 `T.il~3.1`.  After `install_linuxcnc.py` has installed LinuxCNC's
 simulator in its Debian Trixie target (a `distrobox` box, WSL's
-Debian, a container or a QEMU VM), this shows that LinuxCNC runs a
-program there, as the user that `install_linuxcnc.py` made (not
-root):
+Debian), this shows that LinuxCNC runs a program there, as the user
+that `install_linuxcnc.py` made (not root):
 
 1. The project's files are put in the target: a box sees them where
    they are; any other target gets a copy (`~/scraftcnc_demo`), sent
@@ -14,14 +13,15 @@ root):
    `demo.ngc` (`solidcraftcnc_demo.py`), starts an X server with no
    screen (`Xvfb`, installed in the target when it is missing) unless
    `--display` names a real one, starts LinuxCNC with
-   `lcnc_sim/shop_mill.ini` (the AXIS screen), runs `sim_linuxcnc.py
+   `lcnc_sim/shop_mill.ini` (which starts `lcnc_panel.py`), waits for
+   the panel to answer on its command port, runs `sim_linuxcnc.py
    demo.ngc` to the end, closes LinuxCNC with `stop_linuxcnc.py`, and
    checks that nothing is left running.
 3. It passes when `sim_linuxcnc.py` exits 0 with its samples and
-   LinuxCNC sent no error messages.  LinuxCNC's "Unexpected realtime
+   LinuxCNC sent no error messages to it or to the panel (whichever
+   polls first gets a message).  LinuxCNC's "Unexpected realtime
    delay" messages (its 1 ms thread running late, as it may on a
-   slow or emulated computer) are counted and shown, but do not fail
-   it.
+   slow computer) are counted and shown, but do not fail it.
 
 It takes the same target arguments as `install_linuxcnc.py`:
 
@@ -39,6 +39,7 @@ import os
 import re
 import select
 import shlex
+import socket
 import subprocess
 import sys
 import tarfile
@@ -69,10 +70,14 @@ FILES: tuple[str, ...] = (
 XVFB: str = "/usr/bin/Xvfb"
 XVFB_PACKAGE: str = "xvfb"
 
-# How long to wait for the X server and for LinuxCNC's AXIS screen to
-# start (seconds); an emulated computer is slow.
+# The command port of `lcnc_panel.py`, as `lcnc_sim/shop_mill.ini` sets
+# it.
+PANEL_PORT: int = 5007
+
+# How long to wait for the X server and for the panel to start
+# (seconds).
 X_START: float = 300.0
-AXIS_START: float = 900.0
+PANEL_START: float = 300.0
 
 # What LinuxCNC prints when its realtime thread runs late.
 DELAY: str = "Unexpected realtime delay"
@@ -115,6 +120,24 @@ def parse_result(text: str) -> Result:
     return Result(int(done.group(1)), float(done.group(2)), errors)
 
 
+# Function `panel_errors()`:
+def panel_errors(answer: str) -> list[str]:
+    """Find the messages in the panel's answer to `messages`.
+
+    Arguments:
+    * `answer` (`str`): Its answer (empty when it gave none).
+
+    Returns:
+    * (`list[str]`): The messages; no answer is reported as one, since
+      a panel that is gone may have taken its messages with it.
+    """
+    prefix = "messages:"
+    if not answer.startswith(prefix):
+        return [f"the panel's answer to messages was {answer!r}"]
+    texts = answer[len(prefix) :].split(" | ")
+    return [text.strip() for text in texts if text.strip()]
+
+
 # Function `pack()`:
 def pack(project: Path, tarball: Path) -> int:
     """Put the demonstration's files in a `tar` file.
@@ -123,7 +146,9 @@ def pack(project: Path, tarball: Path) -> int:
     `\\r\\n`, which LinuxCNC's INI and HAL files must not), and a
     symbolic link that a Windows checkout made into a small text file
     (such as `scraftpybind.py`, whose text is `../scraftpybind/...`)
-    is replaced by the file it names.
+    is replaced by the file it names.  A file with a `#!` line can be
+    executed, since LinuxCNC runs `lcnc_panel.py` directly (a Windows
+    checkout has no execute bits to copy).
 
     Arguments:
     * `project` (`Path`): The project's directory.
@@ -144,7 +169,7 @@ def pack(project: Path, tarball: Path) -> int:
             data = data.replace(b"\r\n", b"\n")
             info = tarfile.TarInfo(path.relative_to(project).as_posix())
             info.size = len(data)
-            info.mode = 0o644
+            info.mode = 0o755 if data.startswith(b"#!") else 0o644
             info.mtime = int(time.time())
             tar.addfile(info, io.BytesIO(data))
     return len(paths)
@@ -191,7 +216,7 @@ def place_project(target: Target) -> str:
 def ensure_xvfb(target: Target, yes: bool) -> None:
     """Install `Xvfb` in the target, unless it is there.
 
-    AXIS needs an X server; `Xvfb` is one with no screen.  A computer
+    The panel needs an X server; `Xvfb` is one with no screen.  A computer
     with a screen does not need it (`--display`), so the installer
     leaves it out; this is for test machines such as GitHub's runners.
 
@@ -213,7 +238,7 @@ def ensure_xvfb(target: Target, yes: bool) -> None:
         f" {XVFB_PACKAGE}"
     )
     install_linuxcnc.ask_user(
-        f"`Xvfb` (an X server with no screen, for AXIS) is not in"
+        f"`Xvfb` (an X server with no screen, for the panel) is not in"
         f" {target.name}.",
         target.command(
             ["env", "DEBIAN_FRONTEND=noninteractive", "sh", "-c", script],
@@ -304,28 +329,39 @@ def start_xvfb(log: Path) -> tuple[subprocess.Popen[bytes], str]:
     return xvfb, f":{number}"
 
 
-# Function `wait_for_axis()`:
-def wait_for_axis(lcnc: subprocess.Popen[bytes], env: dict[str, str]) -> bool:
-    """Wait until the AXIS screen answers, or LinuxCNC exits.
+# Function `ask_panel()`:
+def ask_panel(line: str, port: int = PANEL_PORT) -> str:
+    """Send the panel a line on its command port.
+
+    Arguments:
+    * `line` (`str`): The command.
+    * `port` (`int`): The port.
+
+    Returns:
+    * (`str`): Its answer, or `""` when it did not answer.
+    """
+    try:
+        with socket.create_connection(("127.0.0.1", port), 5.0) as connection:
+            connection.sendall(f"{line}\n".encode())
+            with connection.makefile("r", encoding="utf-8") as answers:
+                return answers.readline().strip()
+    except OSError:
+        return ""
+
+
+# Function `wait_for_panel()`:
+def wait_for_panel(lcnc: subprocess.Popen[bytes]) -> bool:
+    """Wait until the panel answers, or LinuxCNC exits.
 
     Arguments:
     * `lcnc` (`subprocess.Popen[bytes]`): The `linuxcnc` script.
-    * `env` (`dict[str, str]`): Its environment (with `DISPLAY`).
 
     Returns:
-    * (`bool`): True when AXIS answered `axis-remote --ping`.
+    * (`bool`): True when the panel answered `ping`.
     """
-    end = time.monotonic() + AXIS_START
+    end = time.monotonic() + PANEL_START
     while time.monotonic() < end and lcnc.poll() is None:
-        ping = subprocess.run(
-            ["axis-remote", "--ping"],
-            env=env,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=False,
-        )
-        if ping.returncode == 0:
+        if ask_panel("ping") == "ok":
             return True
         time.sleep(2.0)
     return False
@@ -438,19 +474,21 @@ def inside(arguments: argparse.Namespace) -> int:
     # for a LinuxCNC still running (and can not kill).
     threading.Thread(target=lcnc.wait, daemon=True).start()
     text = ""
+    errors: list[str] = []
     try:
-        # Wait for AXIS, then run the program to its end.
-        if wait_for_axis(lcnc, env):
+        # Wait for the panel, then run the program to its end.
+        if wait_for_panel(lcnc):
             seconds = time.monotonic() - started
-            print(f"AXIS answered after {seconds:.0f} s", flush=True)
+            print(f"The panel answered after {seconds:.0f} s", flush=True)
             text = follow(
                 [sys.executable, "-u", "sim_linuxcnc.py", "demo.ngc",
                  "--speed", str(arguments.speed)],
                 env,
                 arguments.timeout * 60.0,
             )  # fmt: skip
+            errors = panel_errors(ask_panel("messages"))
         else:
-            print("AXIS did not answer", flush=True)
+            print("The panel did not answer", flush=True)
     finally:
         # Close LinuxCNC, then the X server.
         follow([sys.executable, "stop_linuxcnc.py"], env, 120.0)
@@ -466,12 +504,13 @@ def inside(arguments: argparse.Namespace) -> int:
                 xvfb.kill()
 
     # What was left, what LinuxCNC said, and the verdict.
-    return verdict(text, log, stop_linuxcnc.running(), xvfb)
+    return verdict(text, errors, log, stop_linuxcnc.running(), xvfb)
 
 
 # Function `verdict()`:
 def verdict(
     text: str,
+    panel: list[str],
     log: Path,
     left: list[int],
     xvfb: subprocess.Popen[bytes] | None,
@@ -480,6 +519,7 @@ def verdict(
 
     Arguments:
     * `text` (`str`): `sim_linuxcnc.py`'s output (from `follow()`).
+    * `panel` (`list[str]`): The messages that the panel got.
     * `log` (`Path`): LinuxCNC's log.
     * `left` (`list[int]`): LinuxCNC's processes still running.
     * `xvfb` (`subprocess.Popen[bytes] | None`): `Xvfb`, if started.
@@ -493,11 +533,14 @@ def verdict(
     delays = [line for line in messages.splitlines() if DELAY in line]
     for line in delays[:5]:
         print(f"linuxcnc: {line}")
+    for line in panel:
+        print(f"panel: {line}")
     result = parse_result(text)
+    errors = len(result.errors) + len(panel)
     passed = (
         text.endswith("\nexit 0")
         and result.samples > 0
-        and not result.errors
+        and not errors
         and not left
         and (xvfb is None or xvfb.poll() is not None)
     )
@@ -510,7 +553,7 @@ def verdict(
     exit_line = text.rsplit("\n", 1)[-1] if text else "not run"
     print(
         f"demo: sim_linuxcnc.py {exit_line}, {result.samples}"
-        f" samples in {result.seconds:.1f} s, {len(result.errors)} errors,"
+        f" samples in {result.seconds:.1f} s, {errors} errors,"
         f" {len(delays)} realtime delay messages, left running: {left},"
         f" Xvfb stopped: {xvfb is None or xvfb.poll() is not None}"
         f" -> {'PASS' if passed else 'FAIL'}",
@@ -546,7 +589,7 @@ def main() -> int:
     parser.add_argument(
         "--display",
         default="",
-        help="an X display to show AXIS on (default: Xvfb, no screen)",
+        help="an X display to show the panel on (default: Xvfb, no screen)",
     )
     parser.add_argument("--inside", action="store_true", help="(internal)")
     arguments = parser.parse_args()

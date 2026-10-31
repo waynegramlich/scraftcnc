@@ -1,6 +1,7 @@
-"""Tests of `lcnc_panel.py`'s Tools window text (no LinuxCNC)."""
+"""Tests of `lcnc_panel.py` that need no LinuxCNC or window."""
 
 import unittest
+from unittest import mock
 
 import lcnc_panel
 import shops
@@ -32,6 +33,27 @@ class TestToolSpeeds(unittest.TestCase):
             self.shop, lcnc_panel.SHOP_MACHINE, "unobtainium"
         )
         self.assertIn('"unobtainium" is not one of', text)
+
+
+class TestMessages(unittest.TestCase):
+    """LinuxCNC's messages, kept for the command port."""
+
+    def test_messages(self) -> None:
+        """Each message is kept, past the `status()` that read it."""
+        machine = lcnc_panel.Machine(True)
+        machine.linuxcnc = mock.MagicMock()
+        machine.sim = mock.MagicMock()
+        machine.sim.errors.poll.side_effect = [(1, "first"), None, None]
+        machine.status()
+        machine.status()
+        self.assertEqual(machine.messages, ["first"])
+
+        # The port shows them, and something when there are none.
+        panel = mock.MagicMock(machine=machine)
+        handle = lcnc_panel.Panel.handle
+        self.assertEqual(handle(panel, "messages"), "messages: first")
+        machine.messages = []
+        self.assertEqual(handle(panel, "messages"), "messages: ")
 
 
 if __name__ == "__main__":
