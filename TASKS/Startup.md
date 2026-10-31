@@ -4,6 +4,7 @@
 @2.3_Mounting/Context.md
 @2.4_Stock_Models/Details.md
 @2.5_Tool_Models/Details.md
+@2.5_Tool_Models/Context.md
 @../ISSUES/1_PathRack_Hidden_Path_Shows_Again/Details.md
 @../ISSUES/1_PathRack_Hidden_Path_Shows_Again/Context.md
 @3_Simulation/Summary.md
