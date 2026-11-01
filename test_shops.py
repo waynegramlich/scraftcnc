@@ -15,7 +15,8 @@ EXAMPLES: Path = Path(__file__).parent / "examples" / "shop"
 def lines_of(text: str) -> dict[shops.KeyPath, int]:
     """Return the line of every key path in some TOML."""
     tomllib.loads(text)
-    return shops._Scanner(text).document()  # pylint: disable=protected-access
+    # pylint: disable-next=protected-access
+    return shops._SCScanner(text).document()
 
 
 class TestScanner(unittest.TestCase):
@@ -127,7 +128,7 @@ class TestMeasure(unittest.TestCase):
                 self.assertIn(problem, str(caught.exception))
 
 
-class CopiedShop(unittest.TestCase):
+class SCCopiedShop(unittest.TestCase):
     """A copy of the example shop, to change and read."""
 
     def setUp(self) -> None:
@@ -163,7 +164,7 @@ class CopiedShop(unittest.TestCase):
         return [p.replace(prefix, "") for p in caught.exception.problems]
 
 
-class TestReader(CopiedShop):
+class TestReader(SCCopiedShop):
     """Reading the example shop, and copies of it with problems."""
 
     def test_example(self) -> None:
@@ -436,7 +437,7 @@ class TestReader(CopiedShop):
         )
 
 
-class TestCNCMachine(CopiedShop):
+class TestCNCMachine(SCCopiedShop):
     """A shop's machine, for the G-code side."""
 
     def test_cnc_machine(self) -> None:
@@ -669,8 +670,10 @@ class TestMarkdown(unittest.TestCase):
             if "@" in kind.example:
                 continue
             with self.subTest(kind=kind.kind):
-                reader = shops._Reader(EXAMPLES)  # pylint: disable=W0212
-                source = shops._Source(kind.kind, {})  # pylint: disable=W0212
+                # pylint: disable-next=protected-access
+                reader = shops._SCReader(EXAMPLES)
+                # pylint: disable-next=protected-access
+                source = shops._SCSource(kind.kind, {})
                 reader.table(tomllib.loads(kind.example), kind, (), source)
                 self.assertEqual(reader.problems, [])
 

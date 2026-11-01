@@ -30,7 +30,7 @@ from scgeometry import SCRoundedPolygon, point_at
 from solidcraftcnc import RS274, SCCNC
 
 if TYPE_CHECKING:
-    from scraftpybind import JSON, SolidCraftPyBind
+    from scraftpybind import JSON, SCPyBind
 
 # The page the path is filled into.
 TEMPLATE: Path = Path(__file__).resolve().parent / "scplot_template.html"
@@ -43,7 +43,7 @@ SpacePoint: TypeAlias = list[float]
 
 # One step of an `engine.batch` request: `{"command": ..., "params":
 # {...}}`.
-Step: TypeAlias = "dict[str, JSON]"
+SCStep: TypeAlias = "dict[str, JSON]"
 
 # The most points `sketch.line3d` takes in one call.
 MAX_POINTS: int = 500
@@ -52,8 +52,8 @@ MAX_POINTS: int = 500
 SAME: float = 1e-6
 
 
-# Class `Move`:
-class Move(TypedDict):
+# Class `SCMove`:
+class SCMove(TypedDict):
     """One move of a program, as `path_moves()` finds it.
 
     Attributes:
@@ -113,21 +113,21 @@ def read_gcode(text: str) -> list[RS274]:
 
 
 # Function `path_moves()`:
-def path_moves(cnc: SCCNC) -> list[Move]:
+def path_moves(cnc: SCCNC) -> list[SCMove]:
     """Return the program's moves as lines through 3D points.
 
     Arguments:
     * `cnc` (`SCCNC`): The program.
 
     Returns:
-    * (`list[Move]`): Each move's `G` code, line, points, feed and tool
-      (see `command_moves()`).
+    * (`list[SCMove]`): Each move's `G` code, line, points, feed and
+      tool (see `command_moves()`).
     """
     return command_moves(cnc.commands)
 
 
 # Function `command_moves()`:
-def command_moves(commands: Sequence[RS274]) -> list[Move]:
+def command_moves(commands: Sequence[RS274]) -> list[SCMove]:
     """Return the moves of a program's commands as lines through points.
 
     Moves before every axis has a position are left out, since where
@@ -140,10 +140,11 @@ def command_moves(commands: Sequence[RS274]) -> list[Move]:
     * `commands` (`Sequence[RS274]`): The program's commands.
 
     Returns:
-    * (`list[Move]`): Each move's `G` code, line, points, feed and tool.
+    * (`list[SCMove]`): Each move's `G` code, line, points, feed and
+      tool.
     """
-    moves: list[Move] = []
-    state: _State = _State()
+    moves: list[SCMove] = []
+    state: _SCState = _SCState()
     line: int
     for line, command in enumerate(commands):
         # Follow the modal words: the feed, the tool, the cycle.
@@ -165,15 +166,15 @@ def command_moves(commands: Sequence[RS274]) -> list[Move]:
             moves += state.hole(command, line)
         elif code in (0, 1, 2, 3):
             assert isinstance(code, int)
-            move: Move | None = state.move(command, code, line)
+            move: SCMove | None = state.move(command, code, line)
             if move is not None:
                 moves.append(move)
     return moves
 
 
-# Class `_State`:
+# Class `_SCState`:
 @dataclass(slots=True)
-class _State:
+class _SCState:
     """Where a program is, and its modal words, while it is read.
 
     Attributes:
@@ -185,7 +186,7 @@ class _State:
       bottom (`None` when there is none).
 
     Constructor:
-    * `_State()`
+    * `_SCState()`
     """
 
     # The program's state (alphabetized):
@@ -196,7 +197,7 @@ class _State:
     )
     tool: int = field(init=False, default=0)
 
-    # Method `_State.start_cycle()`:
+    # Method `_SCState.start_cycle()`:
     def start_cycle(self, command: RS274) -> None:
         """Start a canned cycle.
 
@@ -213,8 +214,8 @@ class _State:
             float(bottom),
         )
 
-    # Method `_State.hole()`:
-    def hole(self, command: RS274, line: int) -> list[Move]:
+    # Method `_SCState.hole()`:
+    def hole(self, command: RS274, line: int) -> list[SCMove]:
         """Return the moves that drill one hole of a canned cycle.
 
         Arguments:
@@ -222,7 +223,7 @@ class _State:
         * `line` (`int`): Its index in the G-code's lines.
 
         Returns:
-        * (`list[Move]`): Over, down to `R`, down to the bottom, up.
+        * (`list[SCMove]`): Over, down to `R`, down to the bottom, up.
         """
         assert self.cycle is not None
         start: float
@@ -255,8 +256,8 @@ class _State:
             for index in range(4)
         ]
 
-    # Method `_State.move()`:
-    def move(self, command: RS274, code: int, line: int) -> Move | None:
+    # Method `_SCState.move()`:
+    def move(self, command: RS274, code: int, line: int) -> SCMove | None:
         """Return an ordinary move (`G0` to `G3`).
 
         Arguments:
@@ -265,7 +266,7 @@ class _State:
         * `line` (`int`): Its index in the G-code's lines.
 
         Returns:
-        * (`Move | None`): The move, or `None` when where it starts is
+        * (`SCMove | None`): The move, or `None` when where it starts is
           not known yet.
         """
         # Where the move ends.
@@ -426,7 +427,7 @@ def write_plot(
 
 # Function `sketch_path()`:
 def sketch_path(
-    solidcraft: "SolidCraftPyBind", cnc: SCCNC, mm_per_unit: float = 1.0
+    solidcraft: "SCPyBind", cnc: SCCNC, mm_per_unit: float = 1.0
 ) -> list[str]:
     """Draw a program's tool path into SolidCraft as 3D sketches.
 
@@ -439,7 +440,7 @@ def sketch_path(
     and sketch mode never shows.  The path is the tool's center.
 
     Arguments:
-    * `solidcraft` (`SolidCraftPyBind`): Where to draw it.
+    * `solidcraft` (`SCPyBind`): Where to draw it.
     * `cnc` (`SCCNC`): The program.
     * `mm_per_unit` (`float`):
       SolidCraft's world coordinates are millimeters, so this scales
@@ -454,9 +455,9 @@ def sketch_path(
         for line, command in enumerate(cnc.commands)
         if "comment" in command
     }
-    groups: dict[str, list[Move]] = {}
+    groups: dict[str, list[SCMove]] = {}
     title: str = cnc.name
-    move: Move
+    move: SCMove
     for move in path_moves(cnc):
         title = max(
             (
@@ -471,7 +472,7 @@ def sketch_path(
 
     # Draw each group in its own 3D sketch, with one request.
     name: str
-    moves: list[Move]
+    moves: list[SCMove]
     for name, moves in groups.items():
         send_batch(
             solidcraft, sketch_steps(name, path_steps(moves, mm_per_unit))
@@ -480,7 +481,7 @@ def sketch_path(
 
 
 # Function `path_steps()`:
-def path_steps(moves: Sequence[Move], mm_per_unit: float) -> list[Step]:
+def path_steps(moves: Sequence[SCMove], mm_per_unit: float) -> list[SCStep]:
     """Return the `sketch.line3d` steps that draw moves.
 
     Moves that follow on from each other make one polyline, broken
@@ -489,13 +490,13 @@ def path_steps(moves: Sequence[Move], mm_per_unit: float) -> list[Step]:
     out.
 
     Arguments:
-    * `moves` (`Sequence[Move]`): The moves, in order.
+    * `moves` (`Sequence[SCMove]`): The moves, in order.
     * `mm_per_unit` (`float`): The scale to millimeters.
 
     Returns:
-    * (`list[Step]`): The steps, for an open 3D sketch.
+    * (`list[SCStep]`): The steps, for an open 3D sketch.
     """
-    steps: list[Step] = []
+    steps: list[SCStep] = []
     run: list[SpacePoint] = []
 
     # Function `flush()`:
@@ -511,7 +512,7 @@ def path_steps(moves: Sequence[Move], mm_per_unit: float) -> list[Step]:
         run.clear()
 
     # Add each move to the polyline, or start a new one where it jumps.
-    move: Move
+    move: SCMove
     for move in moves:
         points: list[SpacePoint] = [
             [value * mm_per_unit for value in point] for point in move["pts"]
@@ -527,15 +528,15 @@ def path_steps(moves: Sequence[Move], mm_per_unit: float) -> list[Step]:
 
 
 # Function `sketch_steps()`:
-def sketch_steps(name: str, drawing: list[Step]) -> list[Step]:
+def sketch_steps(name: str, drawing: list[SCStep]) -> list[SCStep]:
     """Return the steps of one batch: a whole 3D sketch.
 
     Arguments:
     * `name` (`str`): The sketch's name.
-    * `drawing` (`list[Step]`): Its drawing steps (`path_steps()`).
+    * `drawing` (`list[SCStep]`): Its drawing steps (`path_steps()`).
 
     Returns:
-    * (`list[Step]`): Create, options (3D; points, profile,
+    * (`list[SCStep]`): Create, options (3D; points, profile,
       constraints and dimensions not shown), the drawing, finish.
     """
     return [
@@ -556,7 +557,7 @@ def sketch_steps(name: str, drawing: list[Step]) -> list[Step]:
 
 
 # Function `send_batch()`:
-def send_batch(solidcraft: "SolidCraftPyBind", steps: list[Step]) -> None:
+def send_batch(solidcraft: "SCPyBind", steps: list[SCStep]) -> None:
     """Run steps in SolidCraft as one batch, with no rollback.
 
     A GUI takes `engine.batch` and runs the steps in one frame; a
@@ -564,21 +565,21 @@ def send_batch(solidcraft: "SolidCraftPyBind", steps: list[Step]) -> None:
     has a `batch` tool that takes the same steps.
 
     Arguments:
-    * `solidcraft` (`SolidCraftPyBind`): The SolidCraft session.
-    * `steps` (`list[Step]`): The steps.
+    * `solidcraft` (`SCPyBind`): The SolidCraft session.
+    * `steps` (`list[SCStep]`): The steps.
 
     Raises:
-    * `SolidCraftError`: If a step failed (or the batch was refused).
+    * `SCSolidCraftError`: If a step failed (or the batch was refused).
     """
     # Imported here, so the viewer needs no `scraftpybind`.
     # pylint: disable-next=import-outside-toplevel
-    from scraftpybind import HeadlessTransport, SolidCraftError
+    from scraftpybind import SCHeadlessTransport, SCSolidCraftError
 
     # The GUI's `engine.batch`, or the headless MCP `batch` tool.
     params: dict[str, JSON] = {"commands": steps, "rollback": False}
     transport = solidcraft.transport
     reply: object
-    if isinstance(transport, HeadlessTransport):
+    if isinstance(transport, SCHeadlessTransport):
         if transport.process is None:
             transport.start()
         result = transport.call(
@@ -597,12 +598,14 @@ def send_batch(solidcraft: "SolidCraftPyBind", steps: list[Step]) -> None:
         or "failed" in reply
         or reply.get("completed") != len(steps)
     ):
-        raise SolidCraftError("engine.batch", str(reply)[:2000], False, False)
+        raise SCSolidCraftError(
+            "engine.batch", str(reply)[:2000], False, False
+        )
 
 
 # Function `tube_path()`:
 def tube_path(
-    solidcraft: "SolidCraftPyBind",
+    solidcraft: "SCPyBind",
     cnc: SCCNC,
     mm_per_unit: float = 1.0,
     *,
@@ -627,7 +630,7 @@ def tube_path(
     way to see a path.
 
     Arguments:
-    * `solidcraft` (`SolidCraftPyBind`): Where to draw it.
+    * `solidcraft` (`SCPyBind`): Where to draw it.
     * `cnc` (`SCCNC`): The program.
     * `mm_per_unit` (`float`):
       SolidCraft's world coordinates are millimeters, so this scales
@@ -676,12 +679,12 @@ def tube_path(
 
 # Function `_sketch_moves()`:
 def _sketch_moves(
-    solidcraft: "SolidCraftPyBind", cnc: SCCNC, mm_per_unit: float, sketch: str
+    solidcraft: "SCPyBind", cnc: SCCNC, mm_per_unit: float, sketch: str
 ) -> list[tuple[int, list[str]]]:
     """Sketch each move of a program as 3D straight pieces.
 
     Arguments:
-    * `solidcraft` (`SolidCraftPyBind`): Where to sketch them.
+    * `solidcraft` (`SCPyBind`): Where to sketch them.
     * `cnc` (`SCCNC`): The program.
     * `mm_per_unit` (`float`): The scale to millimeters.
     * `sketch` (`str`): The new 3D sketch's name.
@@ -693,7 +696,7 @@ def _sketch_moves(
     solidcraft.sketch.create(plane="XY", name=sketch)
     solidcraft.sketch.options(sketch_3d=True)
     wires: list[tuple[int, list[str]]] = []
-    move: Move
+    move: SCMove
     for move in path_moves(cnc):
         points: list[SpacePoint] = [
             [value * mm_per_unit for value in point] for point in move["pts"]

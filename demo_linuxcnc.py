@@ -50,7 +50,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import install_linuxcnc
-from install_linuxcnc import Target, run, stamp
+from install_linuxcnc import SCTarget, run, stamp
 
 # This project's directory, and the copy's in a target that does not
 # see it.
@@ -87,9 +87,9 @@ PANEL_START: float = 300.0
 DELAY: str = "Unexpected realtime delay"
 
 
-# Class `Result`:
+# Class `SCResult`:
 @dataclass(frozen=True, slots=True)
-class Result:
+class SCResult:
     """What `sim_linuxcnc.py` printed about its run.
 
     Attributes:
@@ -98,7 +98,7 @@ class Result:
     * `errors` (`list[str]`): LinuxCNC's error messages.
 
     Constructor:
-    * `Result(samples, seconds, errors)`
+    * `SCResult(samples, seconds, errors)`
     """
 
     # Constructor arguments:
@@ -108,20 +108,20 @@ class Result:
 
 
 # Function `parse_result()`:
-def parse_result(text: str) -> Result:
+def parse_result(text: str) -> SCResult:
     """Find what `sim_linuxcnc.py`'s output says about its run.
 
     Arguments:
     * `text` (`str`): Its output.
 
     Returns:
-    * (`Result`): What it found.
+    * (`SCResult`): What it found.
     """
     done = re.search(r"^done: (\d+) samples in ([\d.]+) s", text, re.MULTILINE)
     errors = re.findall(r"^error: (.*)$", text, re.MULTILINE)
     if done is None:
-        return Result(0, 0.0, errors)
-    return Result(int(done.group(1)), float(done.group(2)), errors)
+        return SCResult(0, 0.0, errors)
+    return SCResult(int(done.group(1)), float(done.group(2)), errors)
 
 
 # Function `panel_errors()`:
@@ -180,11 +180,11 @@ def pack(project: Path, tarball: Path) -> int:
 
 
 # Function `place_project()`:
-def place_project(target: Target) -> str:
+def place_project(target: SCTarget) -> str:
     """Make the project's files visible in the target.
 
     Arguments:
-    * `target` (`Target`): The target.
+    * `target` (`SCTarget`): The target.
 
     Returns:
     * (`str`): The directory in the target that has them.
@@ -217,7 +217,7 @@ def place_project(target: Target) -> str:
 
 
 # Function `ensure_xvfb()`:
-def ensure_xvfb(target: Target, yes: bool) -> None:
+def ensure_xvfb(target: SCTarget, yes: bool) -> None:
     """Install `Xvfb` in the target, unless it is there.
 
     The panel needs an X server; `Xvfb` is one with no screen.  A computer
@@ -225,7 +225,7 @@ def ensure_xvfb(target: Target, yes: bool) -> None:
     leaves it out; this is for test machines such as GitHub's runners.
 
     Arguments:
-    * `target` (`Target`): The target.
+    * `target` (`SCTarget`): The target.
     * `yes` (`bool`): True to install it rather than ask the user to.
 
     Raises:

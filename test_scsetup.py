@@ -8,7 +8,7 @@ from pathlib import Path
 
 import scsetup
 import tools
-from scraftpybind import HeadlessTransport, SolidCraftPyBind
+from scraftpybind import SCHeadlessTransport, SCPyBind
 
 # An extracted `solidcraft-cli` (as the demo uses) for the live test.
 HERE: Path = Path(__file__).resolve().parent
@@ -25,7 +25,7 @@ class TestExample(unittest.TestCase):
     """The example: a tooling plate from a chunk, in a vise."""
 
     def setUp(self) -> None:
-        self.setup = scsetup.Setup(example())
+        self.setup = scsetup.SCSetup(example())
 
     def test_items(self) -> None:
         """Everything in the JSON is there."""
@@ -111,7 +111,7 @@ class TestProblems(unittest.TestCase):
         setup_json = copy.deepcopy(example())
         change(setup_json)
         with self.assertRaises(ValueError) as caught:
-            scsetup.Setup(setup_json)
+            scsetup.SCSetup(setup_json)
         return str(caught.exception)
 
     def test_no_unit(self) -> None:
@@ -167,7 +167,7 @@ class TestProblems(unittest.TestCase):
     def test_not_object(self) -> None:
         """A setup must be an object."""
         with self.assertRaises(ValueError):
-            scsetup.Setup([])
+            scsetup.SCSetup([])
 
 
 class TestOtherSetups(unittest.TestCase):
@@ -177,28 +177,28 @@ class TestOtherSetups(unittest.TestCase):
         """Material wider than the gap is reported."""
         setup_json = example()
         setup_json["tooling"][1]["opening"] = "5 in"
-        text = "\n".join(scsetup.Setup(setup_json).notes())
+        text = "\n".join(scsetup.SCSetup(setup_json).notes())
         self.assertIn("DOES NOT FIT", text)
 
     def test_not_clamped(self) -> None:
         """Material narrower than the gap is reported."""
         setup_json = example()
         setup_json["materials"][0]["size"][0] = "5 in"
-        text = "\n".join(scsetup.Setup(setup_json).notes())
+        text = "\n".join(scsetup.SCSetup(setup_json).notes())
         self.assertIn("NOT CLAMPED: Raw aluminum is 1.000 in narrower", text)
 
     def test_out_of_reach(self) -> None:
         """A part past the travel is reported."""
         setup_json = example()
         setup_json["machine"]["y_travel"] = "4 in"
-        text = "\n".join(scsetup.Setup(setup_json).notes())
+        text = "\n".join(scsetup.SCSetup(setup_json).notes())
         self.assertIn("OUT OF REACH: Tooling plate reaches 0.750 in", text)
 
     def test_part_does_not_fit(self) -> None:
         """Material too small for the part is reported."""
         setup_json = example()
         setup_json["materials"][0]["size"][1] = "10 in"
-        text = "\n".join(scsetup.Setup(setup_json).notes())
+        text = "\n".join(scsetup.SCSetup(setup_json).notes())
         self.assertIn(
             "Tooling plate reaches past Raw aluminum along X, by 0.250 in "
             "on the low side and 0.250 in on the high side",
@@ -207,7 +207,7 @@ class TestOtherSetups(unittest.TestCase):
 
     def test_part_margin(self) -> None:
         """The material is 1/2 in past the part at both ends."""
-        material = scsetup.Setup(example()).materials[0]
+        material = scsetup.SCSetup(example()).materials[0]
         room = material.bounds()
         part = material.parts[0].bounds()
         self.assertAlmostEqual(part.low[0] - room.low[0], 0.5 * INCH)
@@ -219,7 +219,7 @@ class TestOtherSetups(unittest.TestCase):
         setup_json["materials"].append(
             copy.deepcopy(setup_json["materials"][0])
         )
-        setup = scsetup.Setup(setup_json)
+        setup = scsetup.SCSetup(setup_json)
         self.assertEqual(len(setup.materials), 2)
 
 
@@ -229,9 +229,9 @@ class TestModel(unittest.TestCase):
     def test_model(self) -> None:
         """Nothing overlaps, and everything lands where the JSON says."""
         program = shutil.which("solidcraft-cli") or str(CLI)
-        setup = scsetup.Setup(example())
-        with HeadlessTransport(program) as transport:
-            solidcraft = SolidCraftPyBind(transport)
+        setup = scsetup.SCSetup(example())
+        with SCHeadlessTransport(program) as transport:
+            solidcraft = SCPyBind(transport)
             names = setup.model(solidcraft)
             self.assertEqual(len(names), 1 + 12 + 2 + 1 + 1)
 

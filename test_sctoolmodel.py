@@ -7,7 +7,7 @@ from pathlib import Path
 
 import sctoolmodel
 import shops
-from scraftpybind import HeadlessTransport, SolidCraftPyBind
+from scraftpybind import SCHeadlessTransport, SCPyBind
 
 # The example shop, and an extracted `solidcraft-cli` (as the demo
 # uses) for the live test.
@@ -122,8 +122,8 @@ class TestModel(unittest.TestCase):
         """The 15/64 in drill stands on its tip at the origin."""
         key, tool = example_tools()[4]
         cli = "solidcraft-cli" if shutil.which("solidcraft-cli") else str(CLI)
-        with HeadlessTransport(cli=cli) as transport:
-            solidcraft = SolidCraftPyBind(transport)
+        with SCHeadlessTransport(cli=cli) as transport:
+            solidcraft = SCPyBind(transport)
             body = sctoolmodel.model(
                 solidcraft, "Drill", sctoolmodel.profile(key, tool)
             )

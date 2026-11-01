@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Setups: all of the tooling and material on a machine, from JSON.
 
-A `Setup` says where everything goes: the location, orientation and
+A `SCSetup` says where everything goes: the location, orientation and
 height of each piece of tooling, each chunk of material, and each part
 to be made from a chunk.  Everything is given outright, with a unit on
-every number, and `Setup` reports how it comes out.  There may be many
+every number, and `SCSetup` reports how it comes out.  There may be many
 chunks of material, each becoming a different part, so that they can
 all be cut with few tool changes.
 
@@ -25,8 +25,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from mount import Layer, ParallelLayer, Plate, TableLayer, ViseLayer, _inches
-from scraftpybind import SolidCraftPyBind, connect
+from mount import (
+    SCLayer,
+    SCParallelLayer,
+    SCPlate,
+    SCTableLayer,
+    SCViseLayer,
+    _inches,
+)
+from scraftpybind import SCPyBind, connect
 from sctoolmodel import MM_PER_INCH
 from shops import ANGLE, LENGTH, measure
 from tools import (
@@ -37,13 +44,13 @@ from tools import (
     TABLE_MARGIN,
     TOOLING_PLATE,
     VISE_MARGIN,
-    KeepOut,
-    MillTable,
-    Parallel,
     Point,
-    Prism,
-    ToolingPlate,
-    Vise,
+    SCKeepOut,
+    SCMillTable,
+    SCParallel,
+    SCPrism,
+    SCToolingPlate,
+    SCVise,
     _mm,
 )
 
@@ -60,19 +67,19 @@ RAW_OPACITY: float = 0.35
 TOLERANCE: float = 1.0e-6
 
 # What the JSON can name.
-TABLES: dict[str, MillTable] = {
+TABLES: dict[str, SCMillTable] = {
     table.name: table for table in (*MILL_TABLES, MIKINI_1610L)
 }
-VISES: dict[str, Vise] = {KURT_D688.name: KURT_D688}
-PARALLEL_TYPES: dict[str, Parallel] = {
+VISES: dict[str, SCVise] = {KURT_D688.name: KURT_D688}
+PARALLEL_TYPES: dict[str, SCParallel] = {
     parallel.name: parallel for parallel in PARALLELS
 }
-PARTS: dict[str, ToolingPlate] = {TOOLING_PLATE.name: TOOLING_PLATE}
+PARTS: dict[str, SCToolingPlate] = {TOOLING_PLATE.name: TOOLING_PLATE}
 
 
-# Class `Placement`:
+# Class `SCPlacement`:
 @dataclass(frozen=True, slots=True)
-class Placement:
+class SCPlacement:
     """Where an item goes.
 
     Attributes:
@@ -83,7 +90,7 @@ class Placement:
       How many quarter turns clockwise it is turned, from 0 to 3.
 
     Constructor:
-    * `Placement(x, y, z, turns)`
+    * `SCPlacement(x, y, z, turns)`
     """
 
     # Constructor arguments:
@@ -92,7 +99,7 @@ class Placement:
     z: float = field(init=True)
     turns: int = field(init=True)
 
-    # Method `Placement.center()`:
+    # Method `SCPlacement.center()`:
     def center(self) -> Point:
         """Return the center of the item's bottom.
 
@@ -101,27 +108,27 @@ class Placement:
         """
         return (self.x, self.y, self.z)
 
-    # Method `Placement.turned()`:
-    def turned(self, prism: Prism) -> Prism:
+    # Method `SCPlacement.turned()`:
+    def turned(self, prism: SCPrism) -> SCPrism:
         """Return a prism, around the item unturned, as the item is turned.
 
         Arguments:
-        * `prism` (`Prism`): The prism, at the item's location.
+        * `prism` (`SCPrism`): The prism, at the item's location.
 
         Returns:
-        * (`Prism`): The prism with the item's turns.
+        * (`SCPrism`): The prism with the item's turns.
         """
         for _ in range(self.turns):
             prism = prism.quarter_turned(self.x, self.y)
         return prism
 
-    # Method `Placement.model()`:
-    def model(self, layer: Layer, solidcraft: SolidCraftPyBind) -> list[str]:
+    # Method `SCPlacement.model()`:
+    def model(self, layer: SCLayer, solidcraft: SCPyBind) -> list[str]:
         """Model an item here.
 
         Arguments:
-        * `layer` (`Layer`): The item.
-        * `solidcraft` (`SolidCraftPyBind`): The SolidCraft session.
+        * `layer` (`SCLayer`): The item.
+        * `solidcraft` (`SCPyBind`): The SolidCraft session.
 
         Returns:
         * (`list[str]`): The names of its bodies.
@@ -141,83 +148,83 @@ class Placement:
         return bodies
 
 
-# Class `PlacedTool`:
+# Class `SCPlacedTool`:
 @dataclass(frozen=True, slots=True)
-class PlacedTool:
+class SCPlacedTool:
     """A piece of tooling, and where it goes.
 
     Attributes:
-    * `layer` (`Layer`): The tooling.
-    * `placement` (`Placement`): Where it goes.
+    * `layer` (`SCLayer`): The tooling.
+    * `placement` (`SCPlacement`): Where it goes.
 
     Constructor:
-    * `PlacedTool(layer, placement)`
+    * `SCPlacedTool(layer, placement)`
     """
 
     # Constructor arguments:
-    layer: Layer = field(init=True)
-    placement: Placement = field(init=True)
+    layer: SCLayer = field(init=True)
+    placement: SCPlacement = field(init=True)
 
-    # Method `PlacedTool.keep_out()`:
-    def keep_out(self) -> KeepOut:
+    # Method `SCPlacedTool.keep_out()`:
+    def keep_out(self) -> SCKeepOut:
         """Return the regions around it that a tool must not enter.
 
         Returns:
-        * (`KeepOut`): The regions, as it is placed.
+        * (`SCKeepOut`): The regions, as it is placed.
         """
-        keep_out: KeepOut = self.layer.keep_out(self.placement.center())
+        keep_out: SCKeepOut = self.layer.keep_out(self.placement.center())
         keep_out.prisms = [
             self.placement.turned(prism) for prism in keep_out.prisms
         ]
         return keep_out
 
 
-# Class `PlacedWork`:
+# Class `SCPlacedWork`:
 @dataclass(frozen=True, slots=True)
-class PlacedWork:
+class SCPlacedWork:
     """A chunk of material or a finished part, and where it goes.
 
     Attributes:
-    * `solid` (`Plate | ToolingPlate`): The material or the part.
-    * `placement` (`Placement`): Where it goes.
-    * `parts` (`tuple[PlacedWork, ...]`):
+    * `solid` (`SCPlate | SCToolingPlate`): The material or the part.
+    * `placement` (`SCPlacement`): Where it goes.
+    * `parts` (`tuple[SCPlacedWork, ...]`):
       The parts to be made from it, if it is material.
 
     Constructor:
-    * `PlacedWork(solid, placement, parts)`
+    * `SCPlacedWork(solid, placement, parts)`
     """
 
     # Constructor arguments:
-    solid: Plate | ToolingPlate = field(init=True)
-    placement: Placement = field(init=True)
-    parts: tuple["PlacedWork", ...] = field(init=True, default=())
+    solid: SCPlate | SCToolingPlate = field(init=True)
+    placement: SCPlacement = field(init=True)
+    parts: tuple["SCPlacedWork", ...] = field(init=True, default=())
 
-    # Method `PlacedWork.bounds()`:
-    def bounds(self) -> Prism:
+    # Method `SCPlacedWork.bounds()`:
+    def bounds(self) -> SCPrism:
         """Return the prism that just encloses it, as it is placed.
 
         Returns:
-        * (`Prism`): The prism.
+        * (`SCPrism`): The prism.
         """
         return self.placement.turned(self.solid.prism(self.placement.center()))
 
 
-# Class `_Reader`:
+# Class `_SCReader`:
 @dataclass(slots=True)
-class _Reader:
+class _SCReader:
     """Reads the JSON, saving every problem to report them all at once.
 
     Attributes:
     * `problems` (`list[str]`): What is wrong, each with its entry.
 
     Constructor:
-    * `_Reader()`
+    * `_SCReader()`
     """
 
     # Attributes filled in later (alphabetized):
     problems: list[str] = field(init=False, default_factory=list)
 
-    # Method `_Reader.problem()`:
+    # Method `_SCReader.problem()`:
     def problem(self, path: str, message: str) -> None:
         """Save a problem.
 
@@ -227,7 +234,7 @@ class _Reader:
         """
         self.problems.append(f"{path}: {message}")
 
-    # Method `_Reader.keys()`:
+    # Method `_SCReader.keys()`:
     def keys(
         self, entry: Any, path: str, keys: tuple[str, ...]
     ) -> dict[str, Any]:
@@ -255,7 +262,7 @@ class _Reader:
             result[key] = entry.get(key)
         return result
 
-    # Method `_Reader.items()`:
+    # Method `_SCReader.items()`:
     def items(self, entry: Any, path: str) -> list[Any]:
         """Return an entry that must be a list.
 
@@ -272,7 +279,7 @@ class _Reader:
             self.problem(path, "must be a list")
         return []
 
-    # Method `_Reader.text()`:
+    # Method `_SCReader.text()`:
     def text(self, entry: Any, path: str) -> str:
         """Return an entry that must be a string.
 
@@ -289,7 +296,7 @@ class _Reader:
             self.problem(path, "must be a string")
         return ""
 
-    # Method `_Reader.length()`:
+    # Method `_SCReader.length()`:
     def length(self, entry: Any, path: str) -> float:
         """Return a length with a unit.
 
@@ -308,7 +315,7 @@ class _Reader:
             self.problem(path, str(error))
             return 0.0
 
-    # Method `_Reader.lengths()`:
+    # Method `_SCReader.lengths()`:
     def lengths(self, entry: Any, path: str, count: int) -> list[float]:
         """Return a list of lengths with units.
 
@@ -330,8 +337,8 @@ class _Reader:
             for index, item in enumerate(entry)
         ]
 
-    # Method `_Reader.placement()`:
-    def placement(self, entry: dict[str, Any], path: str) -> Placement:
+    # Method `_SCReader.placement()`:
+    def placement(self, entry: dict[str, Any], path: str) -> SCPlacement:
         """Return where an entry says it goes.
 
         Arguments:
@@ -339,15 +346,15 @@ class _Reader:
         * `path` (`str`): The entry's name, for problems.
 
         Returns:
-        * (`Placement`): Where it goes.
+        * (`SCPlacement`): Where it goes.
         """
         x, y = self.lengths(entry["location"], f"{path}.location", 2)
         z: float = self.length(entry["height"], f"{path}.height")
-        return Placement(
+        return SCPlacement(
             x, y, z, self.turns(entry["orientation"], f"{path}.orientation")
         )
 
-    # Method `_Reader.turns()`:
+    # Method `_SCReader.turns()`:
     def turns(self, entry: Any, path: str) -> int:
         """Return an orientation as quarter turns clockwise.
 
@@ -370,8 +377,8 @@ class _Reader:
             return 0
         return round(-degrees / 90.0) % 4
 
-    # Method `_Reader.tool()`:
-    def tool(self, entry: Any, path: str) -> PlacedTool | None:
+    # Method `_SCReader.tool()`:
+    def tool(self, entry: Any, path: str) -> SCPlacedTool | None:
         """Return a piece of tooling.
 
         Arguments:
@@ -379,7 +386,7 @@ class _Reader:
         * `path` (`str`): The entry's name, for problems.
 
         Returns:
-        * (`PlacedTool | None`): The tool, or `None` on a problem.
+        * (`SCPlacedTool | None`): The tool, or `None` on a problem.
         """
         kind: Any = entry.get("kind") if isinstance(entry, dict) else None
         names: tuple[str, ...] = ("kind", "type", "location", "height")
@@ -387,32 +394,32 @@ class _Reader:
         if kind == "vise":
             names += ("opening",)
         item: dict[str, Any] = self.keys(entry, path, names)
-        placement: Placement = self.placement(item, path)
+        placement: SCPlacement = self.placement(item, path)
         name: str = self.text(item["type"], f"{path}.type")
-        layer: Layer | None = None
+        layer: SCLayer | None = None
         if kind == "mill_table" and name in TABLES:
-            layer = TableLayer(TABLES[name])
+            layer = SCTableLayer(TABLES[name])
         elif kind == "parallel" and name in PARALLEL_TYPES:
-            layer = ParallelLayer(PARALLEL_TYPES[name])
+            layer = SCParallelLayer(PARALLEL_TYPES[name])
         elif kind == "vise" and name in VISES:
             layer = self.vise(VISES[name], item["opening"], path)
         elif kind not in ("mill_table", "parallel", "vise"):
             self.problem(f"{path}.kind", f"{kind!r} is not a kind of tooling")
         else:
             self.problem(f"{path}.type", f"{name!r} is not a known {kind}")
-        return None if layer is None else PlacedTool(layer, placement)
+        return None if layer is None else SCPlacedTool(layer, placement)
 
-    # Method `_Reader.vise()`:
-    def vise(self, vise: Vise, entry: Any, path: str) -> ViseLayer | None:
+    # Method `_SCReader.vise()`:
+    def vise(self, vise: SCVise, entry: Any, path: str) -> SCViseLayer | None:
         """Return a vise with its jaws set.
 
         Arguments:
-        * `vise` (`Vise`): The vise.
+        * `vise` (`SCVise`): The vise.
         * `entry` (`Any`): The opening, from the JSON.
         * `path` (`str`): The vise's entry's name, for problems.
 
         Returns:
-        * (`ViseLayer | None`): The vise, or `None` on a problem.
+        * (`SCViseLayer | None`): The vise, or `None` on a problem.
         """
         opening: float = self.length(entry, f"{path}.opening")
         if not 0.0 <= opening <= vise.max_opening:
@@ -422,10 +429,10 @@ class _Reader:
                 f"that a {vise.name} opens",
             )
             return None
-        return ViseLayer(vise, opening)
+        return SCViseLayer(vise, opening)
 
-    # Method `_Reader.part()`:
-    def part(self, entry: Any, path: str) -> PlacedWork | None:
+    # Method `_SCReader.part()`:
+    def part(self, entry: Any, path: str) -> SCPlacedWork | None:
         """Return a part to be made.
 
         Arguments:
@@ -433,20 +440,20 @@ class _Reader:
         * `path` (`str`): The entry's name, for problems.
 
         Returns:
-        * (`PlacedWork | None`): The part, or `None` on a problem.
+        * (`SCPlacedWork | None`): The part, or `None` on a problem.
         """
         item: dict[str, Any] = self.keys(
             entry, path, ("type", "location", "height", "orientation")
         )
-        placement: Placement = self.placement(item, path)
+        placement: SCPlacement = self.placement(item, path)
         name: str = self.text(item["type"], f"{path}.type")
         if name not in PARTS:
             self.problem(f"{path}.type", f"{name!r} is not a known part")
             return None
-        return PlacedWork(PARTS[name], placement)
+        return SCPlacedWork(PARTS[name], placement)
 
-    # Method `_Reader.material()`:
-    def material(self, entry: Any, path: str) -> PlacedWork | None:
+    # Method `_SCReader.material()`:
+    def material(self, entry: Any, path: str) -> SCPlacedWork | None:
         """Return a chunk of raw material, with the parts it becomes.
 
         Arguments:
@@ -454,7 +461,7 @@ class _Reader:
         * `path` (`str`): The entry's name, for problems.
 
         Returns:
-        * (`PlacedWork | None`): The material, or `None` on a problem.
+        * (`SCPlacedWork | None`): The material, or `None` on a problem.
         """
         item: dict[str, Any] = self.keys(
             entry,
@@ -472,37 +479,37 @@ class _Reader:
         self.text(item["material"], f"{path}.material")
         name: str = self.text(item["name"], f"{path}.name")
         x, y, z = self.lengths(item["size"], f"{path}.size", 3)
-        parts: list[PlacedWork | None] = [
+        parts: list[SCPlacedWork | None] = [
             self.part(part, f"{path}.parts[{index}]")
             for index, part in enumerate(
                 self.items(item["parts"], f"{path}.parts")
             )
         ]
-        placement: Placement = self.placement(item, path)
+        placement: SCPlacement = self.placement(item, path)
         if min(x, y, z) <= 0.0:
             self.problem(f"{path}.size", "must be three lengths above zero")
             return None
-        return PlacedWork(
-            Plate(name, x, y, z, RAW_COLOR, RAW_OPACITY),
+        return SCPlacedWork(
+            SCPlate(name, x, y, z, RAW_COLOR, RAW_OPACITY),
             placement,
             tuple(part for part in parts if part is not None),
         )
 
 
 # Function `_part_notes()`:
-def _part_notes(material: PlacedWork) -> list[str]:
+def _part_notes(material: SCPlacedWork) -> list[str]:
     """Return how the parts fit in a chunk of material.
 
     Arguments:
-    * `material` (`PlacedWork`): The material.
+    * `material` (`SCPlacedWork`): The material.
 
     Returns:
     * (`list[str]`): The notes, one sentence each.
     """
     notes: list[str] = []
-    room: Prism = material.bounds()
+    room: SCPrism = material.bounds()
     for part in material.parts:
-        bounds: Prism = part.bounds()
+        bounds: SCPrism = part.bounds()
         for axis, letter in enumerate("XYZ"):
             below: float = room.low[axis] - bounds.low[axis]
             above: float = bounds.high[axis] - room.high[axis]
@@ -516,22 +523,22 @@ def _part_notes(material: PlacedWork) -> list[str]:
 
 
 # Function `_gap()`:
-def _gap(layer: ViseLayer, placement: Placement) -> Prism:
+def _gap(layer: SCViseLayer, placement: SCPlacement) -> SCPrism:
     """Return the space between a vise's plates, up to their tops.
 
     Arguments:
-    * `layer` (`ViseLayer`): The vise.
-    * `placement` (`Placement`): Where it goes.
+    * `layer` (`SCViseLayer`): The vise.
+    * `placement` (`SCPlacement`): Where it goes.
 
     Returns:
-    * (`Prism`): The space, as the vise is placed.
+    * (`SCPrism`): The space, as the vise is placed.
     """
-    vise: Vise = layer.vise
+    vise: SCVise = layer.vise
     middle: float = placement.x + vise.gap_center(layer.opening)
     half_jaw: float = vise.plate.width / 2.0
     rails: float = placement.z + vise.base_height()
     return placement.turned(
-        Prism(
+        SCPrism(
             "gap",
             (
                 middle - layer.opening / 2.0,
@@ -550,19 +557,20 @@ def _gap(layer: ViseLayer, placement: Placement) -> Prism:
 # Function `_held_notes()`:
 # Each of the sizes it compares gets a name, past `pylint`'s limit.
 # pylint: disable-next=too-many-locals
-def _held_notes(tool: PlacedTool, material: PlacedWork) -> list[str]:
+def _held_notes(tool: SCPlacedTool, material: SCPlacedWork) -> list[str]:
     """Return how a vise holds a chunk of material.
 
     Arguments:
-    * `tool` (`PlacedTool`): The vise, whose `layer` is a `ViseLayer`.
-    * `material` (`PlacedWork`): The material.
+    * `tool` (`SCPlacedTool`):
+      The vise, whose `layer` is a `SCViseLayer`.
+    * `material` (`SCPlacedWork`): The material.
 
     Returns:
     * (`list[str]`): The notes, one sentence each.
     """
-    assert isinstance(tool.layer, ViseLayer)
-    gap: Prism = _gap(tool.layer, tool.placement)
-    bounds: Prism = material.bounds()
+    assert isinstance(tool.layer, SCViseLayer)
+    gap: SCPrism = _gap(tool.layer, tool.placement)
+    bounds: SCPrism = material.bounds()
     across: int = 1 if tool.placement.turns % 2 else 0
     along: int = 1 - across
     margin: float = _mm(VISE_MARGIN)
@@ -607,7 +615,7 @@ def _held_notes(tool: PlacedTool, material: PlacedWork) -> list[str]:
 
     # How close a part comes to the jaws' keep-outs.
     for part in material.parts:
-        edges: Prism = part.bounds()
+        edges: SCPrism = part.bounds()
         room: float = min(
             edges.low[across] - gap.low[across],
             gap.high[across] - edges.high[across],
@@ -621,8 +629,8 @@ def _held_notes(tool: PlacedTool, material: PlacedWork) -> list[str]:
     return notes
 
 
-# Class `Setup`:
-class Setup:
+# Class `SCSetup`:
+class SCSetup:
     """All of the tooling and material on a machine, from JSON.
 
     Attributes:
@@ -630,14 +638,14 @@ class Setup:
     * `machine` (`str`): The machine's name.
     * `x_travel` (`float`): How far its X axis travels (millimeters).
     * `y_travel` (`float`): How far its Y axis travels (millimeters).
-    * `tooling` (`list[PlacedTool]`): The tooling, from the bottom up.
-    * `materials` (`list[PlacedWork]`): The chunks of raw material.
+    * `tooling` (`list[SCPlacedTool]`): The tooling, from the bottom up.
+    * `materials` (`list[SCPlacedWork]`): The chunks of raw material.
 
     Constructor:
-    * `Setup(setup_json)`
+    * `SCSetup(setup_json)`
     """
 
-    # Method `Setup.__init__()`:
+    # Method `SCSetup.__init__()`:
     def __init__(self, setup_json: dict[str, Any]) -> None:
         """Read a setup.
 
@@ -647,7 +655,7 @@ class Setup:
         Raises:
         * `ValueError`: With every problem found, one to a line.
         """
-        reader: _Reader = _Reader()
+        reader: _SCReader = _SCReader()
         top: dict[str, Any] = reader.keys(
             setup_json, "setup", ("name", "machine", "tooling", "materials")
         )
@@ -662,13 +670,13 @@ class Setup:
         self.y_travel: float = reader.length(
             machine["y_travel"], "machine.y_travel"
         )
-        tools: list[PlacedTool | None] = [
+        tools: list[SCPlacedTool | None] = [
             reader.tool(entry, f"tooling[{index}]")
             for index, entry in enumerate(
                 reader.items(top["tooling"], "tooling")
             )
         ]
-        materials: list[PlacedWork | None] = [
+        materials: list[SCPlacedWork | None] = [
             reader.material(entry, f"materials[{index}]")
             for index, entry in enumerate(
                 reader.items(top["materials"], "materials")
@@ -676,19 +684,19 @@ class Setup:
         ]
         if reader.problems:
             raise ValueError("\n".join(reader.problems))
-        self.tooling: list[PlacedTool] = [
+        self.tooling: list[SCPlacedTool] = [
             tool for tool in tools if tool is not None
         ]
-        self.materials: list[PlacedWork] = [
+        self.materials: list[SCPlacedWork] = [
             material for material in materials if material is not None
         ]
 
-    # Method `Setup.model()`:
-    def model(self, solidcraft: SolidCraftPyBind) -> list[str]:
+    # Method `SCSetup.model()`:
+    def model(self, solidcraft: SCPyBind) -> list[str]:
         """Model the tooling, then the material, then the parts.
 
         Arguments:
-        * `solidcraft` (`SolidCraftPyBind`): The SolidCraft session.
+        * `solidcraft` (`SCPyBind`): The SolidCraft session.
 
         Returns:
         * (`list[str]`): The names of the bodies.
@@ -703,23 +711,23 @@ class Setup:
                 bodies.extend(part.placement.model(part.solid, solidcraft))
         return bodies
 
-    # Method `Setup.keep_out()`:
-    def keep_out(self) -> KeepOut:
+    # Method `SCSetup.keep_out()`:
+    def keep_out(self) -> SCKeepOut:
         """Return the regions that a tool must not enter.
 
         Material and parts have none, since they are what gets cut.
 
         Returns:
-        * (`KeepOut`): The regions of all of the tooling.
+        * (`SCKeepOut`): The regions of all of the tooling.
         """
-        keep_out: KeepOut = KeepOut()
+        keep_out: SCKeepOut = SCKeepOut()
         for tool in self.tooling:
-            regions: KeepOut = tool.keep_out()
+            regions: SCKeepOut = tool.keep_out()
             keep_out.prisms.extend(regions.prisms)
             keep_out.cylinders.extend(regions.cylinders)
         return keep_out
 
-    # Method `Setup._table_notes()`:
+    # Method `SCSetup._table_notes()`:
     def _table_notes(self) -> list[str]:
         """Return how far a vise reaches past the table it stands on.
 
@@ -727,15 +735,19 @@ class Setup:
         * (`list[str]`): The notes, one sentence each.
         """
         notes: list[str] = []
-        tables: list[PlacedTool] = [
-            tool for tool in self.tooling if isinstance(tool.layer, TableLayer)
+        tables: list[SCPlacedTool] = [
+            tool
+            for tool in self.tooling
+            if isinstance(tool.layer, SCTableLayer)
         ]
         if not tables:
             return notes
-        table: Prism = tables[0].keep_out().prisms[0].grown(-_mm(TABLE_MARGIN))
+        table: SCPrism = (
+            tables[0].keep_out().prisms[0].grown(-_mm(TABLE_MARGIN))
+        )
         for tool in self.tooling:
-            if isinstance(tool.layer, ViseLayer):
-                base: Prism = (
+            if isinstance(tool.layer, SCViseLayer):
+                base: SCPrism = (
                     tool.keep_out().prisms[0].grown(-_mm(VISE_MARGIN))
                 )
                 for axis, letter in enumerate("XY"):
@@ -750,7 +762,7 @@ class Setup:
                         )
         return notes
 
-    # Method `Setup._reach_notes()`:
+    # Method `SCSetup._reach_notes()`:
     def _reach_notes(self) -> list[str]:
         """Return which parts the axes can not reach.
 
@@ -766,7 +778,7 @@ class Setup:
         )
         for material in self.materials:
             for part in material.parts:
-                bounds: Prism = part.bounds()
+                bounds: SCPrism = part.bounds()
                 for axis, letter in enumerate("XY"):
                     past: float = (
                         max(bounds.high[axis], -bounds.low[axis])
@@ -779,7 +791,7 @@ class Setup:
                         )
         return notes
 
-    # Method `Setup.notes()`:
+    # Method `SCSetup.notes()`:
     def notes(self) -> list[str]:
         """Return what a person should know about how the setup came out.
 
@@ -790,13 +802,13 @@ class Setup:
         for material in self.materials:
             notes.extend(_part_notes(material))
             for tool in self.tooling:
-                if isinstance(tool.layer, ViseLayer):
+                if isinstance(tool.layer, SCViseLayer):
                     notes.extend(_held_notes(tool, material))
         notes.extend(self._table_notes())
         notes.extend(self._reach_notes())
         return notes
 
-    # Method `Setup.report()`:
+    # Method `SCSetup.report()`:
     def report(self) -> list[str]:
         """Return the setup as lines of text.
 
@@ -805,7 +817,7 @@ class Setup:
           Each item's height, location and turns, then the `notes()`.
         """
         lines: list[str] = [f"{self.name} ({self.machine}):"]
-        items: list[tuple[str, Placement]] = [
+        items: list[tuple[str, SCPlacement]] = [
             (tool.layer.name, tool.placement) for tool in self.tooling
         ]
         for material in self.materials:
@@ -829,9 +841,9 @@ def main() -> None:
     arguments: list[str] = sys.argv[1:]
     target: str = arguments.pop() if arguments else "8080"
     path: Path = Path(arguments[0]) if arguments else EXAMPLE
-    setup: Setup = Setup(json.loads(path.read_text(encoding="utf-8")))
+    setup: SCSetup = SCSetup(json.loads(path.read_text(encoding="utf-8")))
     with connect(target) as transport:
-        solidcraft: SolidCraftPyBind = SolidCraftPyBind(transport)
+        solidcraft: SCPyBind = SCPyBind(transport)
         solidcraft.file.new()
         print(setup.model(solidcraft))
         print(setup.keep_out().model(solidcraft))

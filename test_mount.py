@@ -10,7 +10,7 @@ from unittest import mock
 import mount
 import tools
 from scgeometry import SCCorner, SCHole, SCRoundedPolygon
-from scraftpybind import HeadlessTransport, SolidCraftPyBind
+from scraftpybind import SCHeadlessTransport, SCPyBind
 
 # An extracted `solidcraft-cli` (as the demo uses) for the live test.
 HERE: Path = Path(__file__).resolve().parent
@@ -23,7 +23,7 @@ INCH = 25.4
 
 def work(length: float = 5.5, width: float = 12.0, thick: float = 0.5):
     """Return a plate, from its size in inches."""
-    return mount.Plate("Work", length * INCH, width * INCH, thick * INCH)
+    return mount.SCPlate("Work", length * INCH, width * INCH, thick * INCH)
 
 
 class TestFirstMount(unittest.TestCase):
@@ -52,7 +52,7 @@ class TestFirstMount(unittest.TestCase):
     def test_parallels_under_work(self) -> None:
         """The parallels' outer faces are flush with the work's edges."""
         pair = mount.FIRST_MOUNT.layers[2]
-        assert isinstance(pair, mount.ParallelPair)
+        assert isinstance(pair, mount.SCParallelPair)
         center = mount.FIRST_MOUNT.places()[2]
         low, high = pair.centers(center)
         half = pair.first.thickness / 2.0
@@ -86,7 +86,7 @@ class TestFirstMount(unittest.TestCase):
 class TestViseMount(unittest.TestCase):
     """Other stacks in a vise."""
 
-    def build(self, opening: float, height: str, plate: mount.Plate):
+    def build(self, opening: float, height: str, plate: mount.SCPlate):
         """Return a stack, with the opening in inches."""
         return mount.vise_mount(TABLE, VISE, opening * INCH, height, plate)
 
@@ -116,9 +116,9 @@ class TestViseMount(unittest.TestCase):
         """A pair must match in height and not overlap."""
         low, high = tools.PARALLELS[0], tools.PARALLELS[2]
         with self.assertRaises(ValueError):
-            mount.ParallelPair(low, high, 100.0)
+            mount.SCParallelPair(low, high, 100.0)
         with self.assertRaises(ValueError):
-            mount.ParallelPair(low, tools.PARALLELS[1], 1.0)
+            mount.SCParallelPair(low, tools.PARALLELS[1], 1.0)
 
 
 class TestGarage(unittest.TestCase):
@@ -144,7 +144,7 @@ class TestGarage(unittest.TestCase):
 
     def test_turned_prism(self) -> None:
         """A quarter turn sends +X to -Y, about the axis given."""
-        prism = tools.Prism("P", (10.0, -1.0, 0.0), (20.0, 1.0, 5.0))
+        prism = tools.SCPrism("P", (10.0, -1.0, 0.0), (20.0, 1.0, 5.0))
         turned = prism.quarter_turned(10.0, 0.0)
         self.assertEqual(turned.low, (9.0, -10.0, 0.0))
         self.assertEqual(turned.high, (11.0, 0.0, 5.0))
@@ -242,8 +242,8 @@ class TestModel(unittest.TestCase):
     def test_no_overlaps(self) -> None:
         """No two bodies of the stack overlap."""
         program = shutil.which("solidcraft-cli") or str(CLI)
-        with HeadlessTransport(program) as transport:
-            solidcraft = SolidCraftPyBind(transport)
+        with SCHeadlessTransport(program) as transport:
+            solidcraft = SCPyBind(transport)
             names = mount.FIRST_MOUNT.model(solidcraft)
             self.assertEqual(len(names), 1 + 12 + 2 + 1)
             result = solidcraft.inspect.interference(bodies=names)
@@ -255,8 +255,8 @@ class TestModel(unittest.TestCase):
     def test_garage(self) -> None:
         """The table's volume is right; the turned vise lands in place."""
         program = shutil.which("solidcraft-cli") or str(CLI)
-        with HeadlessTransport(program) as transport:
-            solidcraft = SolidCraftPyBind(transport)
+        with SCHeadlessTransport(program) as transport:
+            solidcraft = SCPyBind(transport)
             names = mount.GARAGE_MOUNT.model(solidcraft)
             result = solidcraft.inspect.center_of_mass(bodies=[names[0]])
             assert isinstance(result, dict)
@@ -280,8 +280,8 @@ class TestModel(unittest.TestCase):
     def test_tooling_plate(self) -> None:
         """All of the holes are cut, and the plate sits on the table."""
         program = shutil.which("solidcraft-cli") or str(CLI)
-        with HeadlessTransport(program) as transport:
-            solidcraft = SolidCraftPyBind(transport)
+        with SCHeadlessTransport(program) as transport:
+            solidcraft = SCPyBind(transport)
             plate = tools.TOOLING_PLATE
             names = mount.PLATE_MOUNT.model(solidcraft)
 
@@ -314,8 +314,8 @@ class TestModel(unittest.TestCase):
     def test_one_extrude(self) -> None:
         """The plate takes one extrude, and no cut, and makes one body."""
         program = shutil.which("solidcraft-cli") or str(CLI)
-        with HeadlessTransport(program) as transport:
-            solidcraft = SolidCraftPyBind(transport)
+        with SCHeadlessTransport(program) as transport:
+            solidcraft = SCPyBind(transport)
             commands = type(solidcraft.solid)
             with mock.patch.object(
                 commands, "extrude", autospec=True, wraps=commands.extrude
@@ -345,8 +345,8 @@ class TestModel(unittest.TestCase):
         boss = square("Boss", 5.0, 10.0, 15.0, x=-40.0)
         plate = square("Plate", 50.0, 0.0, 10.0, [pocket, through, boss])
         program = shutil.which("solidcraft-cli") or str(CLI)
-        with HeadlessTransport(program) as transport:
-            solidcraft = SolidCraftPyBind(transport)
+        with SCHeadlessTransport(program) as transport:
+            solidcraft = SCPyBind(transport)
             self.assertEqual(plate.model(solidcraft), "Plate")
             volume = solidcraft.inspect.center_of_mass(bodies=["Plate"])[
                 "volume"

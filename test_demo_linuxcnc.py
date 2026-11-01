@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest import mock
 
 import demo_linuxcnc
-from install_linuxcnc import Target
+from install_linuxcnc import SCTarget
 
 # What `sim_linuxcnc.py` prints at the end of a good run, and of one
 # where LinuxCNC sent an error.
@@ -114,7 +114,7 @@ class TestDemoLinuxCNC(unittest.TestCase):
 
     def test_place_project_shared(self) -> None:
         """A box that sees the project uses it where it is."""
-        box = Target(
+        box = SCTarget(
             name="the box",
             root=("podman", "exec", "-u", "root", "box"),
             user=("podman", "exec", "box"),
@@ -129,7 +129,7 @@ class TestDemoLinuxCNC(unittest.TestCase):
 
     def test_place_project_copied(self) -> None:
         """Another target gets a copy, unpacked as the user."""
-        wsl = Target(
+        wsl = SCTarget(
             name="WSL",
             root=("wsl.exe", "-u", "root"),
             user=("wsl.exe",),

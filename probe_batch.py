@@ -53,13 +53,13 @@ from pathlib import Path
 from typing import TypeAlias
 
 import solidcraftcnc_demo
-from scplot import Move, SpacePoint, command_moves, read_gcode
+from scplot import SCMove, SpacePoint, command_moves, read_gcode
 from scraftpybind import (
     JSON,
-    HeadlessTransport,
-    SolidCraftError,
-    SolidCraftPyBind,
-    Transport,
+    SCHeadlessTransport,
+    SCPyBind,
+    SCSolidCraftError,
+    SCTransport,
     connect,
 )
 
@@ -73,24 +73,26 @@ SAME: float = 1e-6
 MM_PER_INCH: float = 25.4
 
 # One step of an `engine.batch`: `{"command": ..., "params": {...}}`.
-Step: TypeAlias = dict[str, JSON]
+SCStep: TypeAlias = dict[str, JSON]
 
 
 # Function `group_moves()`:
-def group_moves(moves: Sequence[Move], mixed: bool) -> dict[str, list[Move]]:
+def group_moves(
+    moves: Sequence[SCMove], mixed: bool
+) -> dict[str, list[SCMove]]:
     """Group a program's moves by tool, and into cuts and rapids.
 
     Arguments:
-    * `moves` (`Sequence[Move]`): The moves, in program order.
+    * `moves` (`Sequence[SCMove]`): The moves, in program order.
     * `mixed` (`bool`): True to keep a tool's cuts and rapids together.
 
     Returns:
-    * (`dict[str, list[Move]]`): The moves of each group, in order,
+    * (`dict[str, list[SCMove]]`): The moves of each group, in order,
       named like `T08 cuts`, `T08 rapids` or (mixed) `T08 path`, in
       the order the groups first appear.
     """
-    groups: dict[str, list[Move]] = {}
-    move: Move
+    groups: dict[str, list[SCMove]] = {}
+    move: SCMove
     for move in moves:
         kind: str = "path" if mixed else "rapids" if move["g"] == 0 else "cuts"
         groups.setdefault(f"T{move['tool']:02d} {kind}", []).append(move)
@@ -98,11 +100,11 @@ def group_moves(moves: Sequence[Move], mixed: bool) -> dict[str, list[Move]]:
 
 
 # Function `_planar()`:
-def _planar(move: Move) -> bool:
+def _planar(move: SCMove) -> bool:
     """Return whether a move is an arc in one plane (no change in Z).
 
     Arguments:
-    * `move` (`Move`): The move.
+    * `move` (`SCMove`): The move.
 
     Returns:
     * (`bool`): True for a `G2` or `G3` whose points share their Z.
@@ -113,7 +115,7 @@ def _planar(move: Move) -> bool:
 
 
 # Function `arc_steps()`:
-def arc_steps(points: Sequence[SpacePoint]) -> list[Step]:
+def arc_steps(points: Sequence[SpacePoint]) -> list[SCStep]:
     """Return `sketch.arc3d` steps for an arc in one plane.
 
     The arc's points (`scplot`'s, evenly spaced) give its middle; a
@@ -124,7 +126,7 @@ def arc_steps(points: Sequence[SpacePoint]) -> list[Step]:
     * `points` (`Sequence[SpacePoint]`): Points along the arc (mm).
 
     Returns:
-    * (`list[Step]`): One step, or two for a whole circle.
+    * (`list[SCStep]`): One step, or two for a whole circle.
     """
     # The points that split it: the middle, or the quarters of a circle.
     last: int = len(points) - 1
@@ -133,7 +135,7 @@ def arc_steps(points: Sequence[SpacePoint]) -> list[Step]:
         if math.dist(points[0], points[last]) < SAME
         else [0, last // 2, last]
     )
-    steps: list[Step] = []
+    steps: list[SCStep] = []
     index: int
     for index in range(0, len(marks) - 1, 2):
         start: list[JSON] = list(points[marks[index]])
@@ -149,7 +151,9 @@ def arc_steps(points: Sequence[SpacePoint]) -> list[Step]:
 
 
 # Function `path_steps()`:
-def path_steps(moves: Sequence[Move], scale: float, arcs: bool) -> list[Step]:
+def path_steps(
+    moves: Sequence[SCMove], scale: float, arcs: bool
+) -> list[SCStep]:
     """Return the steps that draw moves into an open 3D sketch.
 
     Moves that follow on from each other make one polyline (a
@@ -158,14 +162,14 @@ def path_steps(moves: Sequence[Move], scale: float, arcs: bool) -> list[Step]:
     the one before are left out.
 
     Arguments:
-    * `moves` (`Sequence[Move]`): The moves, in order.
+    * `moves` (`Sequence[SCMove]`): The moves, in order.
     * `scale` (`float`): Millimeters per program unit.
     * `arcs` (`bool`): True to draw arcs in one plane as `sketch.arc3d`.
 
     Returns:
-    * (`list[Step]`): The `sketch.line3d` (and `sketch.arc3d`) steps.
+    * (`list[SCStep]`): The `sketch.line3d` (and `sketch.arc3d`) steps.
     """
-    steps: list[Step] = []
+    steps: list[SCStep] = []
     run: list[SpacePoint] = []
 
     # Function `flush()`:
@@ -184,7 +188,7 @@ def path_steps(moves: Sequence[Move], scale: float, arcs: bool) -> list[Step]:
         run.clear()
 
     # Add each move to the polyline, or start a new one where it jumps.
-    move: Move
+    move: SCMove
     for move in moves:
         points: list[SpacePoint] = [
             [value * scale for value in point] for point in move["pts"]
@@ -205,18 +209,18 @@ def path_steps(moves: Sequence[Move], scale: float, arcs: bool) -> list[Step]:
 
 
 # Function `sketch_steps()`:
-def sketch_steps(name: str, drawing: list[Step], hide: bool) -> list[Step]:
+def sketch_steps(name: str, drawing: list[SCStep], hide: bool) -> list[SCStep]:
     """Return the steps of one batch: a whole 3D sketch.
 
     Arguments:
     * `name` (`str`): The sketch's name.
-    * `drawing` (`list[Step]`): Its drawing steps (`path_steps()`).
+    * `drawing` (`list[SCStep]`): Its drawing steps (`path_steps()`).
     * `hide` (`bool`): True to hide it at the end.
 
     Returns:
-    * (`list[Step]`): Create, options, the drawing, finish (and hide).
+    * (`list[SCStep]`): Create, options, the drawing, finish (and hide).
     """
-    steps: list[Step] = [
+    steps: list[SCStep] = [
         {"command": "sketch.create", "params": {"plane": "XY", "name": name}},
         {
             "command": "sketch.options",
@@ -242,19 +246,19 @@ def sketch_steps(name: str, drawing: list[Step], hide: bool) -> list[Step]:
 
 
 # Function `send_batch()`:
-def send_batch(transport: Transport, steps: list[Step]) -> dict[str, JSON]:
+def send_batch(transport: SCTransport, steps: list[SCStep]) -> dict[str, JSON]:
     """Run steps as one batch, with no rollback, and return the reply.
 
     Arguments:
-    * `transport` (`Transport`): The session.
-    * `steps` (`list[Step]`): The steps.
+    * `transport` (`SCTransport`): The session.
+    * `steps` (`list[SCStep]`): The steps.
 
     Returns:
     * (`dict[str, JSON]`): The reply: `completed`, `results`,
       `timings`, `total_ms`.
 
     Raises:
-    * `SolidCraftError`: If a step failed (or the batch was refused).
+    * `SCSolidCraftError`: If a step failed (or the batch was refused).
     """
     # The GUI's `engine.batch`, or the headless MCP `batch` tool.
     commands: list[JSON] = list(steps)
@@ -264,7 +268,7 @@ def send_batch(transport: Transport, steps: list[Step]) -> dict[str, JSON]:
         "timings": True,
     }
     reply: JSON
-    if isinstance(transport, HeadlessTransport):
+    if isinstance(transport, SCHeadlessTransport):
         if transport.process is None:
             transport.start()
         result: JSON = transport.call(
@@ -283,7 +287,9 @@ def send_batch(transport: Transport, steps: list[Step]) -> dict[str, JSON]:
         or "failed" in reply
         or reply.get("completed") != len(steps)
     ):
-        raise SolidCraftError("engine.batch", str(reply)[:2000], False, False)
+        raise SCSolidCraftError(
+            "engine.batch", str(reply)[:2000], False, False
+        )
     return reply
 
 
@@ -306,25 +312,25 @@ def wires_made(reply: Mapping[str, JSON]) -> int:
     )
 
 
-# Class `_Shared`:
+# Class `_SCShared`:
 @dataclass(slots=True)
-class _Shared(Transport):
+class _SCShared(SCTransport):
     """A transport that passes requests on, and never closes it.
 
     So that `solidcraftcnc_demo.model()`, which closes the transport it
     makes, models the plate in the probe's own session.
 
     Attributes:
-    * `inner` (`Transport`): The probe's transport.
+    * `inner` (`SCTransport`): The probe's transport.
 
     Constructor:
-    * `_Shared(inner)`
+    * `_SCShared(inner)`
     """
 
     # Constructor arguments:
-    inner: Transport = field(init=True)
+    inner: SCTransport = field(init=True)
 
-    # Method `_Shared.request()`:
+    # Method `_SCShared.request()`:
     def request(self, method: str, params: Mapping[str, JSON]) -> JSON:
         """Pass a request on.
 
@@ -339,11 +345,11 @@ class _Shared(Transport):
 
 
 # Function `model_plate()`:
-def model_plate(transport: Transport) -> str:
+def model_plate(transport: SCTransport) -> str:
     """Model the demonstration's plate, with no tool path drawn.
 
     Arguments:
-    * `transport` (`Transport`): The session to model it in.
+    * `transport` (`SCTransport`): The session to model it in.
 
     Returns:
     * (`str`): The demonstration's G-code.
@@ -353,7 +359,7 @@ def model_plate(transport: Transport) -> str:
     """
     # The demonstration, with its path drawing left out, in this
     # session, its G-code caught.
-    shared: _Shared = _Shared(transport)
+    shared: _SCShared = _SCShared(transport)
     names: dict[str, object] = vars(solidcraftcnc_demo)
     saved: dict[str, object] = {
         "sketch_path": names["sketch_path"],
@@ -395,11 +401,11 @@ def report(label: str, times: list[float]) -> str:
 
 
 # Function `toggle()`:
-def toggle(solidcraft: SolidCraftPyBind, names: list[str]) -> None:
+def toggle(solidcraft: SCPyBind, names: list[str]) -> None:
     """Hide and show each sketch again, timing each, and print them.
 
     Arguments:
-    * `solidcraft` (`SolidCraftPyBind`): The session.
+    * `solidcraft` (`SCPyBind`): The session.
     * `names` (`list[str]`): The sketches.
     """
     hides: list[float] = []
@@ -439,19 +445,19 @@ def main() -> int:
 
     # A headless session uses the extracted `solidcraft-cli` when none
     # is on the `PATH`.
-    transport: Transport = connect(options.where)
+    transport: SCTransport = connect(options.where)
     if (
-        isinstance(transport, HeadlessTransport)
+        isinstance(transport, SCHeadlessTransport)
         and shutil.which(transport.cli) is None
         and solidcraftcnc_demo.SOLIDCRAFT_CLI.exists()
     ):
-        transport = HeadlessTransport(
+        transport = SCHeadlessTransport(
             cli=str(solidcraftcnc_demo.SOLIDCRAFT_CLI)
         )
 
     with transport:
         # A new design, and the plate, as asked.
-        solidcraft: SolidCraftPyBind = SolidCraftPyBind(transport)
+        solidcraft: SCPyBind = SCPyBind(transport)
         if not options.keep:
             solidcraft.file.new(name="Batch probe")
         gcode: str = ""
@@ -463,16 +469,18 @@ def main() -> int:
             gcode = options.ngc.read_text(encoding="utf-8")
 
         # One batch per group.
-        groups: dict[str, list[Move]] = group_moves(
+        groups: dict[str, list[SCMove]] = group_moves(
             command_moves(read_gcode(gcode)), options.mixed
         )
         began: float = time.monotonic()
         total: tuple[int, int, int] = (0, 0, 0)
         name: str
-        moves: list[Move]
+        moves: list[SCMove]
         for name, moves in groups.items():
-            drawing: list[Step] = path_steps(moves, MM_PER_INCH, options.arcs)
-            steps: list[Step] = sketch_steps(name, drawing, options.hide)
+            drawing: list[SCStep] = path_steps(
+                moves, MM_PER_INCH, options.arcs
+            )
+            steps: list[SCStep] = sketch_steps(name, drawing, options.hide)
             points: int = sum(
                 len(params["points"])
                 for step in drawing

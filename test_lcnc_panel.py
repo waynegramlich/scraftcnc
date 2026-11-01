@@ -40,7 +40,7 @@ class TestMessages(unittest.TestCase):
 
     def test_messages(self) -> None:
         """Each message is kept, past the `status()` that read it."""
-        machine = lcnc_panel.Machine(True)
+        machine = lcnc_panel.SCPanelMachine(True)
         machine.linuxcnc = mock.MagicMock()
         machine.sim = mock.MagicMock()
         machine.sim.errors.poll.side_effect = [(1, "first"), None, None]
@@ -50,7 +50,7 @@ class TestMessages(unittest.TestCase):
 
         # The port shows them, and something when there are none.
         panel = mock.MagicMock(machine=machine)
-        handle = lcnc_panel.Panel.handle
+        handle = lcnc_panel.SCPanel.handle
         self.assertEqual(handle(panel, "messages"), "messages: first")
         machine.messages = []
         self.assertEqual(handle(panel, "messages"), "messages: ")

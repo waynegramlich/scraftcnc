@@ -32,9 +32,9 @@ from scmachine import SCMachine, SCTool
 from scplot import sketch_path, write_plot
 from scraftpybind import (
     JSON,
-    HeadlessTransport,
-    SolidCraftPyBind,
-    Transport,
+    SCHeadlessTransport,
+    SCPyBind,
+    SCTransport,
     connect,
 )
 from shops import cnc_machine, read
@@ -67,9 +67,9 @@ ROUNDING_BIT: str = "1/16 in radius carbide corner rounding mill"
 BEVEL: float = 0.03
 
 
-# Class `Part`:
+# Class `SCPart`:
 @dataclass(slots=True)
-class Part:
+class SCPart:
     """The demonstration plate's shape, for modeling it in SolidCraft.
 
     Attributes:
@@ -85,7 +85,7 @@ class Part:
       rounded over (by their radius).
 
     Constructor:
-    * `Part(outlines, pocket, sizes, edges)`
+    * `SCPart(outlines, pocket, sizes, edges)`
     """
 
     # Constructor arguments:
@@ -215,7 +215,7 @@ def demo_islands() -> list[SCRoundedPolygon]:
 # Its options and the steps of one SolidCraft session make many locals.
 def model(  # pylint: disable=too-many-locals
     where: str,
-    part: Part,
+    part: SCPart,
     cnc: SCCNC,
     *,
     path: bool = True,
@@ -225,7 +225,7 @@ def model(  # pylint: disable=too-many-locals
 
     Arguments:
     * `where` (`str`): A GUI's control port, or `headless`.
-    * `part` (`Part`): The plate's shape.
+    * `part` (`SCPart`): The plate's shape.
     * `cnc` (`SCCNC`):
       The program, whose tool path is drawn beside the plate (which is
       made see-through so that the path inside it shows).
@@ -244,13 +244,13 @@ def model(  # pylint: disable=too-many-locals
     """
     # A headless session uses the extracted `solidcraft-cli` when none
     # is on the `PATH` and it exists.
-    transport: Transport = connect(where)
+    transport: SCTransport = connect(where)
     if (
-        isinstance(transport, HeadlessTransport)
+        isinstance(transport, SCHeadlessTransport)
         and shutil.which(transport.cli) is None
         and SOLIDCRAFT_CLI.exists()
     ):
-        transport = HeadlessTransport(cli=str(SOLIDCRAFT_CLI))
+        transport = SCHeadlessTransport(cli=str(SOLIDCRAFT_CLI))
 
     # Sketch the outlines on the plate's bottom (whose origin is given
     # in millimeters), and extrude only the plate's own profile, so
@@ -261,7 +261,7 @@ def model(  # pylint: disable=too-many-locals
     top, thickness, depth = part.sizes
     outlines: list[SCRoundedPolygon] = part.outlines
     with transport:
-        solidcraft: SolidCraftPyBind = SolidCraftPyBind(transport)
+        solidcraft: SCPyBind = SCPyBind(transport)
         solidcraft.document.units(units="in")
         curves: list[str] = _sketch(
             solidcraft, outlines, (top - thickness) * MM_PER_INCH
@@ -304,7 +304,7 @@ def model(  # pylint: disable=too-many-locals
 
 # Function `_edges()`:
 def _edges(
-    solidcraft: SolidCraftPyBind,
+    solidcraft: SCPyBind,
     edges: Sequence[
         tuple[SCRoundedPolygon, Literal["chamfer", "fillet"], float]
     ],
@@ -316,7 +316,7 @@ def _edges(
     of its outline, at the top.
 
     Arguments:
-    * `solidcraft` (`SolidCraftPyBind`): Where the plate is.
+    * `solidcraft` (`SCPyBind`): Where the plate is.
     * `edges` (`Sequence[tuple[SCRoundedPolygon, Literal["chamfer",
       "fillet"], float]]`):
       The outlines, how to finish each, and the size (inches).
@@ -342,12 +342,12 @@ def _edges(
 
 # Function `_sketch()`:
 def _sketch(
-    solidcraft: SolidCraftPyBind, outlines: list[SCRoundedPolygon], z: float
+    solidcraft: SCPyBind, outlines: list[SCRoundedPolygon], z: float
 ) -> list[str]:
     """Sketch outlines on a horizontal plane.
 
     Arguments:
-    * `solidcraft` (`SolidCraftPyBind`): Where to sketch them.
+    * `solidcraft` (`SCPyBind`): Where to sketch them.
     * `outlines` (`list[SCRoundedPolygon]`): The outlines.
     * `z` (`float`): The plane's Z (mm).
 
@@ -513,7 +513,7 @@ def main() -> int:
 
     # Model it, if asked to.
     if arguments:
-        part: Part = Part(
+        part: SCPart = SCPart(
             [plate, hole],
             [pocket, *islands],
             (cnc.z_top, 0.5, 0.25),

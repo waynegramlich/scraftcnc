@@ -10,9 +10,9 @@ line (-Tool and +Tool, which move the line Start runs from to the
 previous or next tool change; Start, Pause and Reset), a speed slider
 (the feed override) with Open, and the work
 position and tool in the spindle.  The LinuxCNC calls are kept in
-`Machine`, which imports `linuxcnc` (through `sim_linuxcnc`) only when
-it connects, so the window can be built and tested where LinuxCNC is
-not installed (it exists only in the `lcnc` box).
+`SCPanelMachine`, which imports `linuxcnc` (through `sim_linuxcnc`)
+only when it connects, so the window can be built and tested where
+LinuxCNC is not installed (it exists only in the `lcnc` box).
 
 `lcnc_sim/shop_mill.ini` names it as its `[DISPLAY] DISPLAY`, so
 LinuxCNC starts it (with `-ini FILE`), and closing it closes LinuxCNC
@@ -187,9 +187,9 @@ def tool_changes(lines: list[str]) -> list[int]:
     ]
 
 
-# Class `Status`:
+# Class `SCStatus`:
 @dataclass(slots=True)
-class Status:
+class SCStatus:
     """What the panel shows of the machine, from one poll.
 
     Attributes:
@@ -203,7 +203,7 @@ class Status:
       run, where the panel's own idea of it stands).
 
     Constructor:
-    * `Status(file, line, position, tool, messages, state)`
+    * `SCStatus(file, line, position, tool, messages, state)`
     """
 
     # Constructor arguments:
@@ -215,8 +215,8 @@ class Status:
     state: str = field(init=True)
 
 
-# Class `Machine`:
-class Machine:
+# Class `SCPanelMachine`:
+class SCPanelMachine:
     """The LinuxCNC back end, as the panel sees it.
 
     With `dry_run`, nothing is sent anywhere and every call only
@@ -229,10 +229,10 @@ class Machine:
     * `linuxcnc` (`Any`): The `linuxcnc` module, or `None`.
     * `log` (`list[str]`): What was asked of the machine, in order.
     * `messages` (`list[str]`): Every message LinuxCNC has sent.
-    * `sim` (`Any`): A `sim_linuxcnc.Simulator`, or `None`.
+    * `sim` (`Any`): A `sim_linuxcnc.SCSimulator`, or `None`.
     """
 
-    # Method `Machine.__init__()`:
+    # Method `SCPanelMachine.__init__()`:
     def __init__(self, dry_run: bool) -> None:
         """Connect to LinuxCNC, unless `dry_run`.
 
@@ -250,9 +250,9 @@ class Machine:
         # Import `linuxcnc` only here, since only the `lcnc` box has it.
         if not dry_run:
             self.linuxcnc = importlib.import_module("linuxcnc")
-            self.sim = importlib.import_module("sim_linuxcnc").Simulator()
+            self.sim = importlib.import_module("sim_linuxcnc").SCSimulator()
 
-    # Method `Machine._mode()`:
+    # Method `SCPanelMachine._mode()`:
     def _mode(self, name: str) -> None:
         """Switch LinuxCNC to a mode (`MODE_AUTO`, `MODE_MDI`, ...).
 
@@ -264,7 +264,7 @@ class Machine:
             self.sim.command.mode(getattr(self.linuxcnc, name))
             self.sim.command.wait_complete()
 
-    # Method `Machine.start()`:
+    # Method `SCPanelMachine.start()`:
     def start(self) -> None:
         """Take it out of E-stop, turn it on, home it and set G54.
 
@@ -277,7 +277,7 @@ class Machine:
             self.sim.home()
             self.sim.set_origin(importlib.import_module("sim_linuxcnc").ORIGIN)
 
-    # Method `Machine.max_speed()`:
+    # Method `SCPanelMachine.max_speed()`:
     def max_speed(self, ini_file: str) -> float:
         """Return the highest feed override the INI file allows.
 
@@ -298,7 +298,7 @@ class Machine:
         )
         return float(found) if found else MAX_SPEED
 
-    # Method `Machine.open()`:
+    # Method `SCPanelMachine.open()`:
     def open(self, path: str) -> None:
         """Open a program, ready to run from its start.
 
@@ -318,7 +318,7 @@ class Machine:
             self.sim.command.program_open(self.file)
             self.sim.command.wait_complete()
 
-    # Method `Machine.run()`:
+    # Method `SCPanelMachine.run()`:
     def run(self, start: int) -> None:
         """Run the open program from a line.
 
@@ -332,14 +332,14 @@ class Machine:
             self._mode("MODE_AUTO")
             self.sim.command.auto(self.linuxcnc.AUTO_RUN, start)
 
-    # Method `Machine.pause()`:
+    # Method `SCPanelMachine.pause()`:
     def pause(self) -> None:
         """Pause the running program."""
         self.log.append("pause")
         if self.sim is not None:
             self.sim.command.auto(self.linuxcnc.AUTO_PAUSE)
 
-    # Method `Machine.resume()`:
+    # Method `SCPanelMachine.resume()`:
     def resume(self) -> None:
         """Resume a paused program."""
         self.log.append("resume")
@@ -347,14 +347,14 @@ class Machine:
             self._mode("MODE_AUTO")
             self.sim.command.auto(self.linuxcnc.AUTO_RESUME)
 
-    # Method `Machine.stop()`:
+    # Method `SCPanelMachine.stop()`:
     def stop(self) -> None:
         """Stop at once (`command.abort()`)."""
         self.log.append("stop")
         if self.sim is not None:
             self.sim.stop()
 
-    # Method `Machine.mdi()`:
+    # Method `SCPanelMachine.mdi()`:
     def mdi(self, line: str) -> None:
         """Run one line of G-code as a manual (MDI) command.
 
@@ -376,12 +376,12 @@ class Machine:
             self.sim.command.mdi(line)
             self.sim.command.wait_complete()
 
-    # Method `Machine.set_origin()`:
+    # Method `SCPanelMachine.set_origin()`:
     def set_origin(self) -> None:
         """Make the current position the program's zero (G54)."""
         self.mdi("G10 L20 P1 X0 Y0 Z0")
 
-    # Method `Machine.jog()`:
+    # Method `SCPanelMachine.jog()`:
     def jog(self, axis: int, direction: int, step: float) -> None:
         """Jog one axis by one step.
 
@@ -405,7 +405,7 @@ class Machine:
                 direction * step,
             )
 
-    # Method `Machine.go_origin()`:
+    # Method `SCPanelMachine.go_origin()`:
     def go_origin(self, z: float) -> None:
         """Rapid to the work origin, never moving sideways below Z0.
 
@@ -416,7 +416,7 @@ class Machine:
         self.mdi("G0 X0 Y0")
         self.mdi("G0 Z0")
 
-    # Method `Machine.set_speed()`:
+    # Method `SCPanelMachine.set_speed()`:
     def set_speed(self, speed: float) -> None:
         """Set the feed override.
 
@@ -428,7 +428,7 @@ class Machine:
         if self.sim is not None:
             self.sim.command.feedrate(speed)
 
-    # Method `Machine.top_z()`:
+    # Method `SCPanelMachine.top_z()`:
     def top_z(self) -> float:
         """Return the highest work Z the tool's tip can reach.
 
@@ -444,15 +444,15 @@ class Machine:
             - stat.tool_offset[2]
         )
 
-    # Method `Machine.status()`:
-    def status(self) -> Status:
+    # Method `SCPanelMachine.status()`:
+    def status(self) -> SCStatus:
         """Poll LinuxCNC.
 
         Returns:
-        * (`Status`): The program, line, position, tool and messages.
+        * (`SCStatus`): The program, line, position, tool and messages.
         """
         if self.sim is None:
-            return Status(self.file, 0, (0.0, 0.0, 0.0), 0, [], "")
+            return SCStatus(self.file, 0, (0.0, 0.0, 0.0), 0, [], "")
         stat: Any = self.sim.stat
         stat.poll()
         messages: list[str] = []
@@ -472,7 +472,7 @@ class Machine:
             for message in messages
         ]
         self.messages += messages
-        return Status(
+        return SCStatus(
             str(stat.file),
             int(stat.motion_line),
             self.sim.work_position(),
@@ -486,15 +486,15 @@ class Machine:
         )
 
 
-# Class `CommandPort`:
-class CommandPort:  # pylint: disable=too-few-public-methods
+# Class `SCCommandPort`:
+class SCCommandPort:  # pylint: disable=too-few-public-methods
     """A command port on 127.0.0.1: one line in, one line back.
 
     Attributes:
     * `server` (`socket.socket`): The listening socket (not blocking).
     """
 
-    # Method `CommandPort.__init__()`:
+    # Method `SCCommandPort.__init__()`:
     def __init__(self, port: int) -> None:
         """Listen on a port.
 
@@ -507,7 +507,7 @@ class CommandPort:  # pylint: disable=too-few-public-methods
         self.server.listen()
         self.server.setblocking(False)
 
-    # Method `CommandPort.poll()`:
+    # Method `SCCommandPort.poll()`:
     def poll(self, handle: Any) -> None:
         """Answer each waiting connection.
 
@@ -534,8 +534,8 @@ class CommandPort:  # pylint: disable=too-few-public-methods
                     pass
 
 
-# Class `Panel`:
-class Panel:  # pylint: disable=too-many-instance-attributes
+# Class `SCPanel`:
+class SCPanel:  # pylint: disable=too-many-instance-attributes
     """The control panel window, laid out as in `T.mlcp~3.4`.
 
     Attributes:
@@ -547,14 +547,14 @@ class Panel:  # pylint: disable=too-many-instance-attributes
       -Y, +Y, -Z, +Z, and the step buttons.
     * `lines` (`list[str]`): The open program's lines.
     * `lines_file` (`str`): The file `lines` was read from.
-    * `machine` (`Machine`): The LinuxCNC back end.
+    * `machine` (`SCPanelMachine`): The LinuxCNC back end.
     * `mdi` (`tk.StringVar`): The MDI line's text.
     * `mdi_entry` (`tk.Entry`): The MDI line, colored as it is typed.
     * `message` (`ttk.Label`): LinuxCNC's last error message.
     * `origin_button` (`ttk.Button`): The Set Origin button.
     * `paused` (`bool`): True while the program is paused.
     * `pause_button` (`ttk.Button`): The Pause button.
-    * `port` (`CommandPort | None`): The command port, if any.
+    * `port` (`SCCommandPort | None`): The command port, if any.
     * `position` (`ttk.Label`): The work position and the tool.
     * `root` (`tk.Tk`): The window.
     * `run_button` (`ttk.Button`): The Start button (Resume while
@@ -572,14 +572,14 @@ class Panel:  # pylint: disable=too-many-instance-attributes
     * `tool_buttons` (`list[ttk.Button]`): -Tool and +Tool.
     """
 
-    # Method `Panel.__init__()`:
+    # Method `SCPanel.__init__()`:
     # pylint: disable-next=too-many-locals,too-many-statements
     def __init__(
         self,
         root: tk.Tk,
-        machine: Machine,
+        machine: SCPanelMachine,
         max_speed: float,
-        port: CommandPort | None,
+        port: SCCommandPort | None,
     ) -> None:
         """Build the window.
 
@@ -589,16 +589,16 @@ class Panel:  # pylint: disable=too-many-instance-attributes
         Arguments:
         * `root` (`tk.Tk`):
           The window to build in.
-        * `machine` (`Machine`):
+        * `machine` (`SCPanelMachine`):
           The LinuxCNC back end.
         * `max_speed` (`float`):
           The speed slider's highest setting.
-        * `port` (`CommandPort | None`):
+        * `port` (`SCCommandPort | None`):
           The command port, if any.
         """
         self.root: tk.Tk = root
-        self.machine: Machine = machine
-        self.port: CommandPort | None = port
+        self.machine: SCPanelMachine = machine
+        self.port: SCCommandPort | None = port
         self.paused: bool = False
         self.running: bool = False
         self.start: int = 0
@@ -732,7 +732,7 @@ class Panel:  # pylint: disable=too-many-instance-attributes
         )
         root.after(POLL_MS, self.poll)
 
-    # Method `Panel.scrolled_text()`:
+    # Method `SCPanel.scrolled_text()`:
     @staticmethod
     def scrolled_text(root: tk.Tk, row: int) -> tk.Text:
         """Make a read only text window with a scroll bar.
@@ -753,7 +753,7 @@ class Panel:  # pylint: disable=too-many-instance-attributes
         scroll.pack(side="left", fill="y")
         return text
 
-    # Method `Panel.set_speed()`:
+    # Method `SCPanel.set_speed()`:
     def set_speed(self, speed: float) -> None:
         """Set the feed override, the slider and the number shown.
 
@@ -766,7 +766,7 @@ class Panel:  # pylint: disable=too-many-instance-attributes
         self.speed_text.set(f"{speed:.2g}x")
         self.machine.set_speed(speed)
 
-    # Method `Panel.set_text()`:
+    # Method `SCPanel.set_text()`:
     @staticmethod
     def set_text(text: tk.Text, lines: list[str]) -> None:
         """Replace the contents of a read only text window.
@@ -782,7 +782,7 @@ class Panel:  # pylint: disable=too-many-instance-attributes
         text.insert("1.0", "\n".join(lines))
         text.configure(state="disabled")
 
-    # Method `Panel.set_running()`:
+    # Method `SCPanel.set_running()`:
     def set_running(self, running: bool, paused: bool) -> None:
         """Grey out the buttons that can not be pressed now.
 
@@ -810,7 +810,7 @@ class Panel:  # pylint: disable=too-many-instance-attributes
             widget.configure(state="disabled" if running else "normal")
         self.check_mdi()
 
-    # Method `Panel.check_mdi()`:
+    # Method `SCPanel.check_mdi()`:
     def check_mdi(self) -> None:
         """Color the MDI line; allow Execute when stopped and good.
 
@@ -827,7 +827,7 @@ class Panel:  # pylint: disable=too-many-instance-attributes
             else "disabled"
         )
 
-    # Method `Panel.open()`:
+    # Method `SCPanel.open()`:
     def open(self, path: str) -> None:
         """Open a program.
 
@@ -839,7 +839,7 @@ class Panel:  # pylint: disable=too-many-instance-attributes
         self.lines_file = ""  # Read it again, even when the same file.
         self.set_running(False, False)
 
-    # Method `Panel.on_open()`:
+    # Method `SCPanel.on_open()`:
     def on_open(self) -> None:
         """Choose a program with a file window, and open it."""
         path: str = filedialog.askopenfilename(
@@ -849,7 +849,7 @@ class Panel:  # pylint: disable=too-many-instance-attributes
         if path:
             self.open(path)
 
-    # Method `Panel.on_tools()`:
+    # Method `SCPanel.on_tools()`:
     def on_tools(self) -> None:
         """Show the tools' speeds and feeds for a material chosen."""
         # The shop is read again each time, so edits to it show.
@@ -886,7 +886,7 @@ class Panel:  # pylint: disable=too-many-instance-attributes
         chooser.bind("<<ComboboxSelected>>", show)
         show()
 
-    # Method `Panel.on_run()`:
+    # Method `SCPanel.on_run()`:
     def on_run(self) -> None:
         """Run the program, or resume it after a pause."""
         self.message.configure(text="")
@@ -896,13 +896,13 @@ class Panel:  # pylint: disable=too-many-instance-attributes
             self.machine.run(self.start)
         self.set_running(True, False)
 
-    # Method `Panel.on_pause()`:
+    # Method `SCPanel.on_pause()`:
     def on_pause(self) -> None:
         """Pause the program; the editable lines may then be run."""
         self.machine.pause()
         self.set_running(True, True)
 
-    # Method `Panel.on_tool()`:
+    # Method `SCPanel.on_tool()`:
     def on_tool(self, step: int) -> None:
         """Move the start line to the next or previous tool change.
 
@@ -919,7 +919,7 @@ class Panel:  # pylint: disable=too-many-instance-attributes
             ]
             self.start = earlier[-1] if earlier else 0
 
-    # Method `Panel.on_execute()`:
+    # Method `SCPanel.on_execute()`:
     def on_execute(self) -> None:
         """Run the MDI line."""
         try:
@@ -927,7 +927,7 @@ class Panel:  # pylint: disable=too-many-instance-attributes
         except RuntimeError as error:
             self.message.configure(text=str(error))
 
-    # Method `Panel.on_stop()`:
+    # Method `SCPanel.on_stop()`:
     def on_stop(self) -> None:
         """Stop at once, ready to run again from the program's start."""
         self.message.configure(text="")
@@ -935,7 +935,7 @@ class Panel:  # pylint: disable=too-many-instance-attributes
         self.start = 0
         self.set_running(False, False)
 
-    # Method `Panel.on_jog()`:
+    # Method `SCPanel.on_jog()`:
     def on_jog(self, axis: int, direction: int) -> None:
         """Jog one axis by the chosen step.
 
@@ -945,7 +945,7 @@ class Panel:  # pylint: disable=too-many-instance-attributes
         """
         self.machine.jog(axis, direction, float(self.step.get()))
 
-    # Method `Panel.on_home()`:
+    # Method `SCPanel.on_home()`:
     def on_home(self) -> None:
         """Rapid to the work origin."""
         try:
@@ -953,7 +953,7 @@ class Panel:  # pylint: disable=too-many-instance-attributes
         except RuntimeError as error:
             self.message.configure(text=str(error))
 
-    # Method `Panel.on_set_origin()`:
+    # Method `SCPanel.on_set_origin()`:
     def on_set_origin(self) -> None:
         """Make the current position zero, after asking (No first)."""
         if messagebox.askyesno(
@@ -966,7 +966,7 @@ class Panel:  # pylint: disable=too-many-instance-attributes
             except RuntimeError as error:
                 self.message.configure(text=str(error))
 
-    # Method `Panel.handle()`:
+    # Method `SCPanel.handle()`:
     def handle(self, line: str) -> str:
         """Answer one command from the command port.
 
@@ -996,7 +996,7 @@ class Panel:  # pylint: disable=too-many-instance-attributes
             elif word == "speed" and rest:
                 self.set_speed(float(rest))
             elif word == "status":
-                status: Status = self.machine.status()
+                status: SCStatus = self.machine.status()
                 x, y, z = status.position
                 return (
                     f"file={status.file} line={status.line} "
@@ -1011,11 +1011,11 @@ class Panel:  # pylint: disable=too-many-instance-attributes
             return f"error: {error}"
         return "ok"
 
-    # Method `Panel.poll()`:
+    # Method `SCPanel.poll()`:
     def poll(self) -> None:
         """Show the machine's state, answer the port, then poll again."""
         # The program around the line being run, read once per file.
-        status: Status = self.machine.status()
+        status: SCStatus = self.machine.status()
         if status.file != self.lines_file:
             self.lines_file = status.file
             try:
@@ -1117,16 +1117,16 @@ def main(arguments: list[str]) -> int:
     options: argparse.Namespace = parser.parse_args(arguments)
 
     # The machine, on and homed, and the command port.
-    machine: Machine = Machine(options.dry_run)
+    machine: SCPanelMachine = SCPanelMachine(options.dry_run)
     machine.start()
-    port: CommandPort | None = (
-        CommandPort(options.port) if options.port else None
+    port: SCCommandPort | None = (
+        SCCommandPort(options.port) if options.port else None
     )
 
     # The window.  A `SIGTERM` (`stop_linuxcnc.py`) closes it as the
     # window's close button does, so LinuxCNC shuts down quietly.
     root: tk.Tk = tk.Tk()
-    panel: Panel = Panel(root, machine, machine.max_speed(ini_file), port)
+    panel: SCPanel = SCPanel(root, machine, machine.max_speed(ini_file), port)
     signal.signal(signal.SIGTERM, lambda *_: root.destroy())
     if options.program:
         panel.open(options.program)

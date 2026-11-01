@@ -2036,7 +2036,7 @@ class TestSCLoop(unittest.TestCase):
             self.check_inset(shape, distance, inset([shape], distance, "N"))
 
 
-class _Sketch:
+class _SCSketch:
     """Stands in for SolidCraft's `sketch` commands, counting curves."""
 
     def __init__(self):
@@ -2189,7 +2189,7 @@ class TestChildren(unittest.TestCase):
             "Cut", 6.0, 9.0, 1.0, 0.0, [box("In", 7.0, 8.0, 0.0, 1.0)]
         )
         plate = box("P", 0.0, 10.0, 0.0, 1.0, [through, blind, counterbore])
-        sketch = _Sketch()
+        sketch = _SCSketch()
         solidcraft = types.SimpleNamespace(sketch=sketch)
         curves = plate.sketch(solidcraft, 25.4)
         self.assertEqual(len(curves), 4 + 1 + 4)

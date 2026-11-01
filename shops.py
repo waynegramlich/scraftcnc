@@ -12,7 +12,7 @@ and the reader can not disagree.
 Every problem is reported as `FILE:LINE: KEY: message` (the form that
 compilers use, so editors can jump to it), and all of them are
 reported at once.  `tomllib` gives the line of a syntax error; for the
-rest, `_Scanner` finds the line of every key, since no TOML library
+rest, `_SCScanner` finds the line of every key, since no TOML library
 keeps line numbers once a file is parsed.
 
 ```
@@ -1390,8 +1390,8 @@ class SCShopError(ValueError):
         self.problems: list[str] = problems
 
 
-# Class `_Scanner`:
-class _Scanner:
+# Class `_SCScanner`:
+class _SCScanner:
     """Find the line of every key and list item in a TOML file.
 
     The file has already been read by `tomllib`, so it is known to be
@@ -1409,10 +1409,10 @@ class _Scanner:
       (`[[NAME]]`), where later headers refer to it.
 
     Constructor:
-    * `_Scanner(text)`
+    * `_SCScanner(text)`
     """
 
-    # Method `_Scanner.__init__()`:
+    # Method `_SCScanner.__init__()`:
     def __init__(self, text: str) -> None:
         """Get ready to scan a file.
 
@@ -1427,7 +1427,7 @@ class _Scanner:
         self.lines: dict[KeyPath, int] = {}
         self.arrays: dict[KeyPath, int] = {}
 
-    # Method `_Scanner.line()`:
+    # Method `_SCScanner.line()`:
     def line(self) -> int:
         """Return the line the scanner is on.
 
@@ -1436,7 +1436,7 @@ class _Scanner:
         """
         return bisect.bisect_right(self.starts, self.at)
 
-    # Method `_Scanner.peek()`:
+    # Method `_SCScanner.peek()`:
     def peek(self) -> str:
         """Return the next character.
 
@@ -1445,7 +1445,7 @@ class _Scanner:
         """
         return self.text[self.at : self.at + 1]
 
-    # Method `_Scanner.skip()`:
+    # Method `_SCScanner.skip()`:
     def skip(self, newlines: bool) -> None:
         """Skip white space and comments.
 
@@ -1461,7 +1461,7 @@ class _Scanner:
             else:
                 return
 
-    # Method `_Scanner.string()`:
+    # Method `_SCScanner.string()`:
     def string(self) -> str:
         """Skip the string that starts here.
 
@@ -1488,7 +1488,7 @@ class _Scanner:
             extra += 1
         return self.text[start : self.at]
 
-    # Method `_Scanner.key()`:
+    # Method `_SCScanner.key()`:
     def key(self) -> list[str]:
         """Read a key (dotted or not) that starts here.
 
@@ -1514,7 +1514,7 @@ class _Scanner:
                 return parts
             self.at += 1
 
-    # Method `_Scanner.pair()`:
+    # Method `_SCScanner.pair()`:
     def pair(self, table: KeyPath) -> None:
         """Read a `key = value` pair that starts here.
 
@@ -1535,7 +1535,7 @@ class _Scanner:
         self.skip(newlines=False)
         self.value(path)
 
-    # Method `_Scanner.value()`:
+    # Method `_SCScanner.value()`:
     def value(self, path: KeyPath) -> None:
         """Read the value that starts here.
 
@@ -1553,7 +1553,7 @@ class _Scanner:
             while self.peek() not in ("", ",", "]", "}", "#", "\n"):
                 self.at += 1
 
-    # Method `_Scanner.items()`:
+    # Method `_SCScanner.items()`:
     def items(self, path: KeyPath, *, inline_table: bool) -> None:
         """Read the items of an inline table or list, after its `{` or `[`.
 
@@ -1579,7 +1579,7 @@ class _Scanner:
                 self.value(path + (index,))
                 index += 1
 
-    # Method `_Scanner.header()`:
+    # Method `_SCScanner.header()`:
     def header(self, parts: list[str]) -> KeyPath:
         """Return the path that a table header names.
 
@@ -1598,7 +1598,7 @@ class _Scanner:
                 path += (self.arrays[path],)
         return path
 
-    # Method `_Scanner.document()`:
+    # Method `_SCScanner.document()`:
     def document(self) -> dict[KeyPath, int]:
         """Scan the whole file.
 
@@ -1636,7 +1636,7 @@ def locate(lines: dict[KeyPath, int], path: KeyPath) -> int:
     """Return the line of a key path, or of the nearest table above it.
 
     Arguments:
-    * `lines` (`dict[KeyPath, int]`): From `_Scanner.document()`.
+    * `lines` (`dict[KeyPath, int]`): From `_SCScanner.document()`.
     * `path` (`KeyPath`):
       The path (which may not be in the file, as for a missing key).
 
@@ -1750,9 +1750,9 @@ def measure(value: object, units: dict[str, float]) -> float:
     return number
 
 
-# Class `_Source`:
+# Class `_SCSource`:
 @dataclass(frozen=True, slots=True)
-class _Source:
+class _SCSource:
     """One file being read.
 
     Attributes:
@@ -1760,7 +1760,7 @@ class _Source:
     * `lines` (`dict[KeyPath, int]`): The line of every key path.
 
     Constructor:
-    * `_Source(shown, lines)`
+    * `_SCSource(shown, lines)`
     """
 
     # Constructor arguments:
@@ -1768,9 +1768,9 @@ class _Source:
     lines: dict[KeyPath, int] = field(init=True)
 
 
-# Class `_Reader`:
+# Class `_SCReader`:
 @dataclass(slots=True)
-class _Reader:
+class _SCReader:
     """Read Nested TOML files, checking them against `KINDS`.
 
     Attributes:
@@ -1781,15 +1781,15 @@ class _Reader:
     * `reading` (`list[Path]`):
       The files being read, each named by the one before it, to find
       loops.
-    * `machine_tables` (`list[tuple[str, _Source, KeyPath, object]]`):
+    * `machine_tables` (`list[tuple[str, _SCSource, KeyPath, object]]`):
       Every machine's name, where its `tool_table` is, and the table.
-    * `tool_uses` (`list[tuple[_Source, KeyPath, str]]`):
+    * `tool_uses` (`list[tuple[_SCSource, KeyPath, str]]`):
       Every tool named in a `tool_table`: where, and its name.
-    * `tools` (`dict[str, tuple[_Source, KeyPath]]`):
+    * `tools` (`dict[str, tuple[_SCSource, KeyPath]]`):
       Every tool read, by name: where it is.
 
     Constructor:
-    * `_Reader(directory)`
+    * `_SCReader(directory)`
     """
 
     # Constructor arguments:
@@ -1800,23 +1800,23 @@ class _Reader:
         init=False, default_factory=dict
     )
     problems: list[str] = field(init=False, default_factory=list)
-    machine_tables: list[tuple[str, _Source, KeyPath, object]] = field(
+    machine_tables: list[tuple[str, _SCSource, KeyPath, object]] = field(
         init=False, default_factory=list
     )
     reading: list[Path] = field(init=False, default_factory=list)
-    tool_uses: list[tuple[_Source, KeyPath, str]] = field(
+    tool_uses: list[tuple[_SCSource, KeyPath, str]] = field(
         init=False, default_factory=list
     )
-    tools: dict[str, tuple[_Source, KeyPath]] = field(
+    tools: dict[str, tuple[_SCSource, KeyPath]] = field(
         init=False, default_factory=dict
     )
 
-    # Method `_Reader.problem()`:
-    def problem(self, source: _Source, path: KeyPath, message: str) -> None:
+    # Method `_SCReader.problem()`:
+    def problem(self, source: _SCSource, path: KeyPath, message: str) -> None:
         """Note a problem.
 
         Arguments:
-        * `source` (`_Source`): The file it is in.
+        * `source` (`_SCSource`): The file it is in.
         * `path` (`KeyPath`): Where in the file.
         * `message` (`str`): What is wrong.
         """
@@ -1824,7 +1824,7 @@ class _Reader:
         key: str = f" {shown_path(path)}:" if path else ""
         self.problems.append(f"{where}:{key} {message}")
 
-    # Method `_Reader.file()`:
+    # Method `_SCReader.file()`:
     def file(self, file: Path, shown: str) -> dict[str, object] | None:
         """Read and check one file, the first time it is named.
 
@@ -1859,7 +1859,7 @@ class _Reader:
                 )
             self.problems.append(f"{shown}:{message}")
             return None
-        source: _Source = _Source(shown, _Scanner(text).document())
+        source: _SCSource = _SCSource(shown, _SCScanner(text).document())
 
         # Check it against its own kind.
         kind: object = data.get("kind")
@@ -1875,9 +1875,9 @@ class _Reader:
         self.files[file] = contents
         return contents
 
-    # Method `_Reader.reference()`:
+    # Method `_SCReader.reference()`:
     def reference(
-        self, name: str, kind: SCKind, path: KeyPath, source: _Source
+        self, name: str, kind: SCKind, path: KeyPath, source: _SCSource
     ) -> dict[str, object]:
         """Return the contents of a file named by `"@FILE_NAME"`.
 
@@ -1885,7 +1885,7 @@ class _Reader:
         * `name` (`str`): The file name (after the `@`).
         * `kind` (`SCKind`): The kind of table that belongs here.
         * `path` (`KeyPath`): Where it is named.
-        * `source` (`_Source`): The file that names it.
+        * `source` (`_SCSource`): The file that names it.
 
         Returns:
         * (`dict[str, object]`):
@@ -1926,13 +1926,13 @@ class _Reader:
             return {}
         return contents
 
-    # Method `_Reader.table()`:
+    # Method `_SCReader.table()`:
     def table(
         self,
         value: object,
         kind: SCKind,
         path: KeyPath,
-        source: _Source,
+        source: _SCSource,
         *,
         whole: bool = False,
     ) -> dict[str, object]:
@@ -1942,7 +1942,7 @@ class _Reader:
         * `value` (`object`): The table, or a `"@FILE_NAME"` string.
         * `kind` (`SCKind`): What kind of table it must be.
         * `path` (`KeyPath`): Where it is.
-        * `source` (`_Source`): The file it is in.
+        * `source` (`_SCSource`): The file it is in.
         * `whole` (`bool`): True if it is a whole file.
 
         Returns:
@@ -2009,19 +2009,21 @@ class _Reader:
             )
         return contents
 
-    # Method `_Reader.name_tool()`:
-    def name_tool(self, name: object, path: KeyPath, source: _Source) -> None:
+    # Method `_SCReader.name_tool()`:
+    def name_tool(
+        self, name: object, path: KeyPath, source: _SCSource
+    ) -> None:
         """Note where a tool is, refusing a name already taken.
 
         Arguments:
         * `name` (`object`): Its `name` (checked already as a string).
         * `path` (`KeyPath`): Where the tool is.
-        * `source` (`_Source`): The file it is in.
+        * `source` (`_SCSource`): The file it is in.
         """
         if not isinstance(name, str):
             return
         if name in self.tools:
-            other: _Source
+            other: _SCSource
             where: KeyPath
             other, where = self.tools[name]
             line: int = locate(other.lines, where)
@@ -2034,9 +2036,9 @@ class _Reader:
         else:
             self.tools[name] = (source, path)
 
-    # Method `_Reader.value()`:
+    # Method `_SCReader.value()`:
     def value(
-        self, value: object, schema: SCField, path: KeyPath, source: _Source
+        self, value: object, schema: SCField, path: KeyPath, source: _SCSource
     ) -> object:
         """Check one value.
 
@@ -2044,7 +2046,7 @@ class _Reader:
         * `value` (`object`): The value.
         * `schema` (`SCField`): What it must be.
         * `path` (`KeyPath`): Where it is.
-        * `source` (`_Source`): The file it is in.
+        * `source` (`_SCSource`): The file it is in.
 
         Returns:
         * (`object`):
@@ -2086,7 +2088,7 @@ class _Reader:
                 self.tool_uses.append((source, path + (number,), name))
         return value
 
-    # Method `_Reader.check_tool_uses()`:
+    # Method `_SCReader.check_tool_uses()`:
     def check_tool_uses(self) -> None:
         """Note every tool named in a tool table that was not read.
 
@@ -2108,12 +2110,12 @@ class _Reader:
                 owners[id(table)] = machine
 
         # Each tool named is a tool, and is named once.
-        first: dict[str, tuple[_Source, KeyPath]] = {}
+        first: dict[str, tuple[_SCSource, KeyPath]] = {}
         for source, path, name in self.tool_uses:
             if name not in self.tools:
                 self.problem(source, path, f'no tool named "{name}"')
             elif name in first:
-                other: _Source
+                other: _SCSource
                 where: KeyPath
                 other, where = first[name]
                 self.problem(
@@ -2262,7 +2264,7 @@ def read(file: Path) -> dict[str, object]:
     * `SCShopError`: With every problem found.
     """
     # Read every file.
-    reader: _Reader = _Reader(file.parent)
+    reader: _SCReader = _SCReader(file.parent)
     contents: dict[str, object] | None = reader.file(file, file.as_posix())
 
     # A shop (or shops) has its tools, so its machines' tool tables

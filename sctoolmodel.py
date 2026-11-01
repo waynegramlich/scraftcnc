@@ -20,7 +20,7 @@ Arcs are drawn as short straight lines, which is plenty for a picture.
 import math
 from collections.abc import Sequence
 
-from scraftpybind import JSON, SolidCraftPyBind
+from scraftpybind import JSON, SCPyBind
 from shops import ANGLE, LENGTH, measure
 
 # A profile: `(r, z)` points, in inches.
@@ -174,7 +174,7 @@ def profile(key: str, tool: dict[str, object]) -> Profile:
 
 # Function `model()`:
 def model(
-    solidcraft: SolidCraftPyBind,
+    solidcraft: SCPyBind,
     name: str,
     outline: Sequence[tuple[float, float]],
 ) -> str:
@@ -184,7 +184,7 @@ def model(
     -Z) and revolved about Z.
 
     Arguments:
-    * `solidcraft` (`SolidCraftPyBind`): The SolidCraft session.
+    * `solidcraft` (`SCPyBind`): The SolidCraft session.
     * `name` (`str`): The name for its body and sketch.
     * `outline` (`Sequence[tuple[float, float]]`): Its profile.
 

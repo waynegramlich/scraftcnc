@@ -11,7 +11,7 @@ from probe_batch import (
     path_steps,
     sketch_steps,
 )
-from scplot import Move, SpacePoint, command_moves, read_gcode
+from scplot import SCMove, SpacePoint, command_moves, read_gcode
 
 # A small program: a rapid, a cut, a jump, an arc, a tool change.
 GCODE: str = """(Tool 4)
@@ -29,7 +29,7 @@ G1 X3 Z0.5
 """
 
 
-def _move(code: int, points: list[SpacePoint], tool: int = 1) -> Move:
+def _move(code: int, points: list[SpacePoint], tool: int = 1) -> SCMove:
     """Return a move for a test."""
     return {"g": code, "line": 0, "pts": points, "f": 1.0, "tool": tool}
 
@@ -39,20 +39,20 @@ class TestProbeBatch(unittest.TestCase):
 
     def test_group_moves(self) -> None:
         """Moves group by tool, cuts apart from rapids, in order."""
-        moves: list[Move] = command_moves(read_gcode(GCODE))
-        groups: dict[str, list[Move]] = group_moves(moves, False)
+        moves: list[SCMove] = command_moves(read_gcode(GCODE))
+        groups: dict[str, list[SCMove]] = group_moves(moves, False)
         self.assertEqual(
             list(groups), ["T04 cuts", "T04 rapids", "T08 rapids", "T08 cuts"]
         )
         self.assertTrue(all(m["g"] == 0 for m in groups["T04 rapids"]))
         self.assertTrue(all(m["g"] != 0 for m in groups["T04 cuts"]))
-        mixed: dict[str, list[Move]] = group_moves(moves, True)
+        mixed: dict[str, list[SCMove]] = group_moves(moves, True)
         self.assertEqual(list(mixed), ["T04 path", "T08 path"])
         self.assertEqual(sum(map(len, mixed.values())), len(moves))
 
     def test_jumps_split_polylines(self) -> None:
         """A jump starts a new `sketch.line3d`; joined moves share one."""
-        moves: list[Move] = [
+        moves: list[SCMove] = [
             _move(1, [[0, 0, 0], [1, 0, 0]]),
             _move(1, [[1, 0, 0], [1, 1, 0]]),
             _move(1, [[5, 5, 0], [6, 5, 0]]),
@@ -87,7 +87,7 @@ class TestProbeBatch(unittest.TestCase):
 
     def test_arcs(self) -> None:
         """A planar arc is one `sketch.arc3d`, a circle two; not helices."""
-        moves: list[Move] = command_moves(read_gcode(GCODE))
+        moves: list[SCMove] = command_moves(read_gcode(GCODE))
         steps = path_steps(moves, 1.0, True)
         commands: list[object] = [step["command"] for step in steps]
         self.assertEqual(commands.count("sketch.arc3d"), 2)

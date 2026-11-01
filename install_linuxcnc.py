@@ -135,9 +135,9 @@ HALRUN: str = (
 )
 
 
-# Class `Step`:
+# Class `SCStep`:
 @dataclass(frozen=True, slots=True)
-class Step:
+class SCStep:
     """One step of the installation.
 
     Attributes:
@@ -146,7 +146,7 @@ class Step:
     * `act` (`Callable[[], None]`): Does the step (or asks the user to).
 
     Constructor:
-    * `Step(title, done, act)`
+    * `SCStep(title, done, act)`
     """
 
     # Constructor arguments:
@@ -155,9 +155,9 @@ class Step:
     act: Callable[[], None] = field(init=True)
 
 
-# Class `Target`:
+# Class `SCTarget`:
 @dataclass(frozen=True, slots=True)
-class Target:
+class SCTarget:
     """The Debian Trixie system that LinuxCNC is installed in.
 
     Attributes:
@@ -174,7 +174,7 @@ class Target:
     * `enter` (`str`): How the user gets a shell in it.
 
     Constructor:
-    * `Target(name, root, user, home, shares_home, enter)`
+    * `SCTarget(name, root, user, home, shares_home, enter)`
     """
 
     # Constructor arguments:
@@ -185,7 +185,7 @@ class Target:
     shares_home: bool = field(init=True)
     enter: str = field(init=True)
 
-    # Method `Target.command()`:
+    # Method `SCTarget.command()`:
     def command(self, command: list[str], *, root: bool = False) -> list[str]:
         """Return a command that runs a command in the target.
 
@@ -200,9 +200,9 @@ class Target:
         return [*prefix, *command]
 
 
-# Class `Options`:
+# Class `SCOptions`:
 @dataclass(frozen=True, slots=True)
-class Options:
+class SCOptions:
     """What the command line asked for.
 
     Attributes:
@@ -214,7 +214,7 @@ class Options:
       True to run the commands that the user would be asked to.
 
     Constructor:
-    * `Options(route, box, distribution, yes)`
+    * `SCOptions(route, box, distribution, yes)`
     """
 
     # Constructor arguments:
@@ -610,11 +610,11 @@ def file_sha256(path: Path) -> str:
 
 
 # Function `send_file()`:
-def send_file(target: Target, path: Path) -> str:
+def send_file(target: SCTarget, path: Path) -> str:
     """Put a file of this computer's into the target's `/tmp`.
 
     Arguments:
-    * `target` (`Target`): The target.
+    * `target` (`SCTarget`): The target.
     * `path` (`Path`): The file.
 
     Returns:
@@ -647,20 +647,20 @@ def apt_get(*arguments: str) -> list[str]:
 
 
 # Function `box_steps()`:
-def box_steps(options: Options) -> tuple[Target, list[Step]]:
+def box_steps(options: SCOptions) -> tuple[SCTarget, list[SCStep]]:
     """Return the `distrobox` target (Linux) and the steps making it.
 
     Arguments:
-    * `options` (`Options`): The command line.
+    * `options` (`SCOptions`): The command line.
 
     Returns:
-    * (`tuple[Target, list[Step]]`): The target and its steps.
+    * (`tuple[SCTarget, list[SCStep]]`): The target and its steps.
     """
     box = options.box
     # Commands go in through `podman exec`, since `distrobox enter`
     # runs its command through `eval`, which breaks quoted arguments.
     home = str(Path.home())
-    target = Target(
+    target = SCTarget(
         name=f"the {box} box",
         root=("podman", "exec", "-i", "-u", "root", box),
         user=(
@@ -710,23 +710,23 @@ def box_steps(options: Options) -> tuple[Target, list[Step]]:
         run(in_box(box, ["true"]))
 
     return target, [
-        Step("podman and distrobox", have_tools, install_tools),
-        Step(f"the {box} box (Debian Trixie)", have_box, make_box),
+        SCStep("podman and distrobox", have_tools, install_tools),
+        SCStep(f"the {box} box (Debian Trixie)", have_box, make_box),
     ]
 
 
 # Function `wsl_steps()`:
-def wsl_steps(options: Options) -> tuple[Target, list[Step]]:
+def wsl_steps(options: SCOptions) -> tuple[SCTarget, list[SCStep]]:
     """Return the WSL target (Windows) and the steps making it.
 
     Arguments:
-    * `options` (`Options`): The command line.
+    * `options` (`SCOptions`): The command line.
 
     Returns:
-    * (`tuple[Target, list[Step]]`): The target and its steps.
+    * (`tuple[SCTarget, list[SCStep]]`): The target and its steps.
     """
     name = options.distribution
-    target = Target(
+    target = SCTarget(
         name=f"WSL's {name}",
         root=("wsl.exe", "-d", name, "-u", "root", "--exec", *WSL_ENV),
         user=("wsl.exe", "-d", name, "-u", USER, "--exec", *WSL_ENV),
@@ -768,19 +768,19 @@ def wsl_steps(options: Options) -> tuple[Target, list[Step]]:
             )
 
     return target, [
-        Step(f"WSL 2 with {name}", have_wsl, install_wsl),
+        SCStep(f"WSL 2 with {name}", have_wsl, install_wsl),
     ]
 
 
 # Function `common_steps()`:
-def common_steps(target: Target) -> list[Step]:
+def common_steps(target: SCTarget) -> list[SCStep]:
     """Return the steps that install LinuxCNC in a target.
 
     Arguments:
-    * `target` (`Target`): The target.
+    * `target` (`SCTarget`): The target.
 
     Returns:
-    * (`list[Step]`): The steps, in order.
+    * (`list[SCStep]`): The steps, in order.
     """
     # The user comes first, since the other checks run as the user.
     # Debian Trixie: an older Debian (WSL's) is upgraded.
@@ -902,16 +902,18 @@ def common_steps(target: Target) -> list[Step]:
         raise SystemExit(f"LinuxCNC's realtime layer fails in {target.name}.")
 
     return [
-        Step("a user who is not root", have_user, make_user),
-        Step(f"Debian Trixie in {target.name}", is_trixie, upgrade),
-        Step(f"{PACKAGE} in {target.name}", have_linuxcnc, install_linuxcnc),
-        Step("rtapi_app not set user ID root", rtapi_fixed, fix_rtapi),
-        Step(
+        SCStep("a user who is not root", have_user, make_user),
+        SCStep(f"Debian Trixie in {target.name}", is_trixie, upgrade),
+        SCStep(f"{PACKAGE} in {target.name}", have_linuxcnc, install_linuxcnc),
+        SCStep("rtapi_app not set user ID root", rtapi_fixed, fix_rtapi),
+        SCStep(
             f"sample configurations in {configs}", have_samples, copy_samples
         ),
-        Step(f"import linuxcnc in {target.name}", can_import, cannot_import),
-        Step("the AXIS screen's Python modules load", axis_loads, axis_fails),
-        Step(
+        SCStep(f"import linuxcnc in {target.name}", can_import, cannot_import),
+        SCStep(
+            "the AXIS screen's Python modules load", axis_loads, axis_fails
+        ),
+        SCStep(
             "LinuxCNC's realtime layer starts (halrun)",
             realtime_starts,
             realtime_fails,
@@ -920,21 +922,21 @@ def common_steps(target: Target) -> list[Step]:
 
 
 # The routes, and the functions that give their targets and steps.
-ROUTES: dict[str, Callable[[Options], tuple[Target, list[Step]]]] = {
+ROUTES: dict[str, Callable[[SCOptions], tuple[SCTarget, list[SCStep]]]] = {
     "distrobox": box_steps,
     "wsl": wsl_steps,
 }
 
 
 # Function `steps()`:
-def steps(options: Options) -> tuple[Target, list[Step]]:
+def steps(options: SCOptions) -> tuple[SCTarget, list[SCStep]]:
     """Return the target and every step that installs LinuxCNC in it.
 
     Arguments:
-    * `options` (`Options`): The command line.
+    * `options` (`SCOptions`): The command line.
 
     Returns:
-    * (`tuple[Target, list[Step]]`): The target and the steps, in
+    * (`tuple[SCTarget, list[SCStep]]`): The target and the steps, in
       order.
     """
     target, setup = ROUTES[options.route](options)
@@ -942,11 +944,11 @@ def steps(options: Options) -> tuple[Target, list[Step]]:
 
 
 # Function `install()`:
-def install(options: Options) -> int:
+def install(options: SCOptions) -> int:
     """Do every step that is not already done, checking each.
 
     Arguments:
-    * `options` (`Options`): The command line.
+    * `options` (`SCOptions`): The command line.
 
     Returns:
     * (`int`): The exit status (0 when everything is done).
@@ -1007,7 +1009,7 @@ def add_target_arguments(parser: argparse.ArgumentParser) -> None:
 
 
 # Function `target_options()`:
-def target_options(arguments: argparse.Namespace) -> Options:
+def target_options(arguments: argparse.Namespace) -> SCOptions:
     """Return the options that `add_target_arguments()` read.
 
     Output that the console can not show (Windows) is replaced from
@@ -1017,7 +1019,7 @@ def target_options(arguments: argparse.Namespace) -> Options:
     * `arguments` (`argparse.Namespace`): The parsed command line.
 
     Returns:
-    * (`Options`): The options, with the route chosen for this
+    * (`SCOptions`): The options, with the route chosen for this
       computer unless `--route` named one.
     """
     # Output that the console can not show is replaced.
@@ -1028,7 +1030,7 @@ def target_options(arguments: argparse.Namespace) -> Options:
     # Choose the route; `wsl.exe` prints UTF-8 when asked to.
     os.environ["WSL_UTF8"] = "1"
     route: str = arguments.route or choose_route(platform.system())
-    return Options(
+    return SCOptions(
         route=route,
         box=arguments.box,
         distribution=arguments.distribution,

@@ -220,3 +220,26 @@
 * The demo's RPs have real heights (top at Z = 0), but `SCCNC` ignores them: still flat.  A move across
   two touching holes is a false alarm, since it leaves each one's `shrunk()`.
 * Not started: the checker walking `SCCNC.commands`, `SCPrism` and the vise as roots, renames.
+
+## 2026-11-01: `SC` rename done; testing on Table/Vise/Parallels
+
+* Step 11 is done, and in `scraftpybind` too (`T.rcts` there), since `scraftcnc` links to it: this
+  replaces question 11's "separate task".  `SolidCraftPyBind` is `SCPyBind` (the user's choice),
+  `Machine` in `lcnc_panel.py` is `SCPanelMachine` (`SCMachine` was taken).  Test classes keep `Test`.
+  Done by token, not by word, so body names ("Plate") and `argparse.Namespace` stayed.  The demo's
+  G-code is byte for byte the same; 318 tests passed; 126 `mypy` errors in test files were already there.
+* The user wants the first test on `examples/setup/tooling_plate.json`.  Keep-outs in work Z (chunk top
+  = 0): jaws to -0.14, parallels to -0.375, vise base to -1.875, table to -4.515; plate bottom -0.5.
+* Predicted by hand, not run: the 200 holes clean, the short ends clean; the long edges fail below -0.14
+  where |X| < 3.125 + R, for any R over 1/16 in.  The user: keep it failing, and figure it out later.
+* Test order: deliberate crashes on each zone and move kind; brute force distances; the demo in a 6 in wide
+  chunk, 3 in side across the jaws, should be clean; the tooling plate must fail exactly as predicted.
+* Decided: the work origin is the center of the material's top (the user will later explain why the fixed
+  jaw is better).  Zones are moved into work coordinates; rapid rule reports are kept apart from keep-out
+  hits; the checker comes before fixing the other rapids, so that they are seen to fire.
+* Turning: the user says a turned part regenerates its G-code, but remapping X/Y and I/J is easy, given
+  a point and an amount, with no sine or cosine at 90 and 180 degrees.  Not yet settled.
+* Next, none started: `SCTool` widest diameter, canned cycles with their own `G0 X Y`, prisms as root RPs,
+  work origin in the JSON, the checker, the tests.
+* Seen once: after the suite, a `mcp --headless` process was left, its parent `systemd`.  Killed it.  Not
+  looked into; check `pgrep` after the next suite.

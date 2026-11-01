@@ -14,7 +14,7 @@ segment in, finds where the moved segments cross, drops the pieces
 that came too close to the region's edge, and joins the rest into
 loops (one region can become several).
 
-This module only uses `scraftpybind` through the `SolidCraftPyBind`
+This module only uses `scraftpybind` through the `SCPyBind`
 that is handed to `SCRoundedPolygon.sketch()`, so it imports it only for
 type checking.
 """
@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, TypeAlias
 
 if TYPE_CHECKING:
-    from scraftpybind import JSON, SolidCraftPyBind
+    from scraftpybind import JSON, SCPyBind
 
 # A point in the XY plane, `(x, y)`.
 Point: TypeAlias = tuple[float, float]
@@ -857,13 +857,11 @@ class SCRoundedPolygon:
         return True
 
     # Method `SCRoundedPolygon.model()`:
-    def model(
-        self, solidcraft: "SolidCraftPyBind", mm_per_unit: float = 1.0
-    ) -> str:
+    def model(self, solidcraft: "SCPyBind", mm_per_unit: float = 1.0) -> str:
         """Model this root and its descendants as one body.
 
         Arguments:
-        * `solidcraft` (`SolidCraftPyBind`): Where to model it.
+        * `solidcraft` (`SCPyBind`): Where to model it.
         * `mm_per_unit` (`float`):
           Scales the polygon's units to SolidCraft's millimeters.
 
@@ -888,7 +886,7 @@ class SCRoundedPolygon:
 
     # Method `SCRoundedPolygon._model_children()`:
     def _model_children(
-        self, solidcraft: "SolidCraftPyBind", mm_per_unit: float, body: str
+        self, solidcraft: "SCPyBind", mm_per_unit: float, body: str
     ) -> None:
         """Model what this polygon's own extrude did not make.
 
@@ -896,7 +894,7 @@ class SCRoundedPolygon:
         The rest with the same heights share one sketch and one extrude.
 
         Arguments:
-        * `solidcraft` (`SolidCraftPyBind`): Where to model them.
+        * `solidcraft` (`SCPyBind`): Where to model them.
         * `mm_per_unit` (`float`):
           Scales the polygon's units to SolidCraft's millimeters.
         * `body` (`str`): The body to add to or cut from.
@@ -1043,7 +1041,7 @@ class SCRoundedPolygon:
 
     # Method `SCRoundedPolygon.sketch()`:
     def sketch(
-        self, solidcraft: "SolidCraftPyBind", mm_per_unit: float = 1.0
+        self, solidcraft: "SCPyBind", mm_per_unit: float = 1.0
     ) -> list[str]:
         """Draw the outline, and children it shares an extrude with.
 
@@ -1054,7 +1052,7 @@ class SCRoundedPolygon:
         computed, so SolidCraft joins them into one closed profile.
 
         Arguments:
-        * `solidcraft` (`SolidCraftPyBind`): Where to draw it.
+        * `solidcraft` (`SCPyBind`): Where to draw it.
         * `mm_per_unit` (`float`):
           SolidCraft's sketch coordinates are millimeters, whatever the
           design's units, so this scales the outline's units to them
@@ -1075,12 +1073,12 @@ class SCRoundedPolygon:
 
     # Method `SCRoundedPolygon._draw_outline()`:
     def _draw_outline(
-        self, solidcraft: "SolidCraftPyBind", mm_per_unit: float
+        self, solidcraft: "SCPyBind", mm_per_unit: float
     ) -> list[str]:
         """Draw just the outline into the open sketch.
 
         Arguments:
-        * `solidcraft` (`SolidCraftPyBind`): Where to draw it.
+        * `solidcraft` (`SCPyBind`): Where to draw it.
         * `mm_per_unit` (`float`):
           Scales the outline's units to SolidCraft's millimeters.
 
@@ -1190,12 +1188,12 @@ class SCHole(SCRoundedPolygon):
 
     # Method `SCHole._draw_outline()`:
     def _draw_outline(
-        self, solidcraft: "SolidCraftPyBind", mm_per_unit: float
+        self, solidcraft: "SCPyBind", mm_per_unit: float
     ) -> list[str]:
         """Draw a true circle into the open sketch.
 
         Arguments:
-        * `solidcraft` (`SolidCraftPyBind`): Where to draw it.
+        * `solidcraft` (`SCPyBind`): Where to draw it.
         * `mm_per_unit` (`float`):
           Scales the outline's units to SolidCraft's millimeters.
 

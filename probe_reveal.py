@@ -49,15 +49,15 @@ import time
 from collections.abc import Callable
 from functools import partial
 
-from scraftpybind import JSON, SolidCraftPyBind, connect
+from scraftpybind import JSON, SCPyBind, connect
 
 
 # Function `occurrence_of()`:
-def occurrence_of(solidcraft: SolidCraftPyBind, body: str) -> str:
+def occurrence_of(solidcraft: SCPyBind, body: str) -> str:
     """Make a body a component and return its occurrence's name.
 
     Arguments:
-    * `solidcraft` (`SolidCraftPyBind`): The SolidCraft session.
+    * `solidcraft` (`SCPyBind`): The SolidCraft session.
     * `body` (`str`): The body.
 
     Returns:
@@ -100,13 +100,11 @@ def path_point(index: float) -> tuple[float, float, float]:
 
 
 # Function `cylinders()`:
-def cylinders(
-    solidcraft: SolidCraftPyBind, count: int, start: float
-) -> list[str]:
+def cylinders(solidcraft: SCPyBind, count: int, start: float) -> list[str]:
     """Make the path's pieces as thin cylinders, then hide them all.
 
     Arguments:
-    * `solidcraft` (`SolidCraftPyBind`): The SolidCraft session.
+    * `solidcraft` (`SCPyBind`): The SolidCraft session.
     * `count` (`int`): How many pieces.
     * `start` (`float`): When the building started (monotonic).
 
@@ -156,30 +154,30 @@ def report(label: str, times: list[float]) -> str:
     )
 
 
-# Class `Probe`:
+# Class `SCProbe`:
 # It only carries the timings and limits between its steps.
-class Probe:  # pylint: disable=too-few-public-methods
+class SCProbe:  # pylint: disable=too-few-public-methods
     """The probe's session, timings and limits.
 
     Attributes:
     * `limit` (`float`): When the reveal must end (monotonic seconds).
     * `slow` (`float`): The longest a command may take (seconds).
-    * `solidcraft` (`SolidCraftPyBind`): The SolidCraft session.
+    * `solidcraft` (`SCPyBind`): The SolidCraft session.
     """
 
-    # Method `Probe.__init__()`:
-    def __init__(self, solidcraft: SolidCraftPyBind, slow: float) -> None:
+    # Method `SCProbe.__init__()`:
+    def __init__(self, solidcraft: SCPyBind, slow: float) -> None:
         """Start the probe.
 
         Arguments:
-        * `solidcraft` (`SolidCraftPyBind`): The SolidCraft session.
+        * `solidcraft` (`SCPyBind`): The SolidCraft session.
         * `slow` (`float`): The longest a command may take (seconds).
         """
-        self.solidcraft: SolidCraftPyBind = solidcraft
+        self.solidcraft: SCPyBind = solidcraft
         self.slow: float = slow
         self.limit: float = math.inf
 
-    # Method `Probe.timed()`:
+    # Method `SCProbe.timed()`:
     def timed(
         self, times: list[float], what: str, command: Callable[[], JSON]
     ) -> None:
@@ -204,15 +202,15 @@ class Probe:  # pylint: disable=too-few-public-methods
 
 
 # Function `live()`:
-def live(probe: Probe, tool: str, options: argparse.Namespace) -> None:
+def live(probe: SCProbe, tool: str, options: argparse.Namespace) -> None:
     """Move the tool, making a sketch after every `--every` moves.
 
     Arguments:
-    * `probe` (`Probe`): The probe (its session and limits).
+    * `probe` (`SCProbe`): The probe (its session and limits).
     * `tool` (`str`): The tool's occurrence.
     * `options` (`argparse.Namespace`): The command line arguments.
     """
-    solidcraft: SolidCraftPyBind = probe.solidcraft
+    solidcraft: SCPyBind = probe.solidcraft
 
     # Function `sketch()`:
     def sketch(number: int) -> JSON:
@@ -317,8 +315,8 @@ def main() -> None:
     options: argparse.Namespace = parser.parse_args()
 
     with connect(options.where) as transport:
-        solidcraft: SolidCraftPyBind = SolidCraftPyBind(transport)
-        probe: Probe = Probe(solidcraft, options.slow)
+        solidcraft: SCPyBind = SCPyBind(transport)
+        probe: SCProbe = SCProbe(solidcraft, options.slow)
         if not options.keep:
             solidcraft.file.new(name="Reveal probe")
 

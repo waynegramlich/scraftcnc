@@ -113,7 +113,7 @@ class TestPlot(unittest.TestCase):
         cnc: SCCNC = milling()
         cnc.profile(square(1.0, 0.25), -0.1, 0.1)
         cnc.finish()
-        fake: FakeSolidCraft = FakeSolidCraft()
+        fake: SCFakeSolidCraft = SCFakeSolidCraft()
         names: list[str] = sketch_path(cast(Any, fake), cnc, 25.4)
         self.assertEqual(
             names,
@@ -140,20 +140,20 @@ class TestPlot(unittest.TestCase):
         self.assertGreater(len(first), 20)
 
 
-# Class `FakeTransport`:
-class FakeTransport:  # pylint: disable=too-few-public-methods
+# Class `SCFakeTransport`:
+class SCFakeTransport:  # pylint: disable=too-few-public-methods
     """Stands in for a GUI's transport, recording `engine.batch` steps.
 
     Attributes:
     * `batches` (`list[list[dict[str, Any]]]`): Each batch's steps.
     """
 
-    # Method `FakeTransport.__init__()`:
+    # Method `SCFakeTransport.__init__()`:
     def __init__(self) -> None:
         """Start with no batches."""
         self.batches: list[list[dict[str, Any]]] = []
 
-    # Method `FakeTransport.request()`:
+    # Method `SCFakeTransport.request()`:
     def request(self, method: str, params: dict[str, Any]) -> Any:
         """Record a batch, and answer that every step ran.
 
@@ -169,27 +169,28 @@ class FakeTransport:  # pylint: disable=too-few-public-methods
         return {"completed": len(params["commands"])}
 
 
-# Class `FakeSolidCraft`:
+# Class `SCFakeSolidCraft`:
 # Its commands come from `__getattr__()`, so `pylint` sees no public
 # methods.
-class FakeSolidCraft:  # pylint: disable=too-few-public-methods
-    """Stands in for `SolidCraftPyBind`, recording the sketch commands.
+class SCFakeSolidCraft:  # pylint: disable=too-few-public-methods
+    """Stands in for `SCPyBind`, recording the sketch commands.
 
     Attributes:
     * `calls` (`list[tuple[str, dict[str, Any]]]`): Each command's name
       and arguments.
-    * `sketch` (`FakeSolidCraft`): Itself, for `solidcraft.sketch.X()`.
-    * `transport` (`FakeTransport`): Where batches go.
+    * `sketch` (`SCFakeSolidCraft`):
+      Itself, for `solidcraft.sketch.X()`.
+    * `transport` (`SCFakeTransport`): Where batches go.
     """
 
-    # Method `FakeSolidCraft.__init__()`:
+    # Method `SCFakeSolidCraft.__init__()`:
     def __init__(self) -> None:
         """Start with no calls."""
         self.calls: list[tuple[str, dict[str, Any]]] = []
-        self.sketch: FakeSolidCraft = self
-        self.transport: FakeTransport = FakeTransport()
+        self.sketch: SCFakeSolidCraft = self
+        self.transport: SCFakeTransport = SCFakeTransport()
 
-    # Method `FakeSolidCraft.__getattr__()`:
+    # Method `SCFakeSolidCraft.__getattr__()`:
     def __getattr__(self, name: str) -> Any:
         """Return a function that records a call of a command.
 
