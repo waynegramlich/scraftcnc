@@ -466,3 +466,18 @@ Moved from `T.s2~3`'s `Context.md` on 2026-10-28, when it was split.
 
 * `T.mcfs~1` there holds the plan.  Next: the user commits both, Claude pushes and
   runs `probe_linuxcnc.yml` here; the run covers WSL with the trimmed install.
+
+## 2026-11-01: Probe run 41347030573 (60e8bf2): WSL failed; `libxinerama1`
+
+* `ubuntu-latest` passed (25 packages, 1736 samples, 0 errors).  `windows-latest`: the
+  panel never answered, with an empty `linuxcnc.log`, since the `linuxcnc` script sends
+  its output to its own files when it has no terminal.
+* Reproduced in a plain `debian:trixie` container.  Under `script -qec` (a terminal):
+  `/usr/lib/tcltk/linuxcnc/linuxcnc.so` needs `libXinerama.so.1`.  A `distrobox` box
+  already has it, so my list leaned on the box.  Added `libxinerama1` to `DEPENDS`.
+* `ldd` over the whole package there: otherwise only `halscope` and `classicladder`
+  (GTK tools, not used) lack anything.
+* With it, the plain container: 1737 samples in 87.0 s, 0 errors.  The demo still said
+  FAIL there for "left running": all were zombies (`ps` state `Z`), since that
+  container's PID 1 is `sleep`, which reaps nothing.  Only a flaw of that test.
+* Waiting: the user's commit, then one more probe run.

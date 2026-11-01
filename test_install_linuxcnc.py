@@ -163,6 +163,7 @@ class TestInstallLinuxCNC(unittest.TestCase):
         self.assertEqual(commands[1][:3], ["dpkg-deb", "-R", "/tmp/p.deb"])
         edit = commands[2][2]
         self.assertIn("libepoxy0", edit)
+        self.assertIn("libxinerama1", edit)
         self.assertIn("tk8.6", edit)
         self.assertNotIn("pyqt5", edit)
         self.assertNotIn("&", edit)

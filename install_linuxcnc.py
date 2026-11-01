@@ -107,8 +107,9 @@ INSTALL: tuple[str, ...] = ("install", "-y", "--no-install-recommends")
 # drop, so a new dependency of LinuxCNC's screens is never installed.
 # A new one that the simulator does need fails this program's checks,
 # or `demo_linuxcnc.py`, and is added here.  `linuxcnc.so` links
-# `libepoxy0`, and the `linuxcnc` script shows errors with `wish8.6`,
-# from `tk8.6`.
+# `libepoxy0`, LinuxCNC's Tcl module links `libxinerama1` (which a
+# `distrobox` box happens to have, but WSL's Debian does not), and the
+# `linuxcnc` script shows errors with `wish8.6`, from `tk8.6`.
 DEPENDS: tuple[str, ...] = (
     "python3 (<< 3.14)",
     "python3 (>= 3.13~)",
@@ -126,6 +127,7 @@ DEPENDS: tuple[str, ...] = (
     "libtirpc3t64 (>= 1.0.2)",
     "libudev1 (>= 183)",
     "libusb-1.0-0 (>= 2:1.0.22)",
+    "libxinerama1 (>= 2:1.1.4)",
     "tcl8.6",
     "tk8.6",
     "python3-tk",
