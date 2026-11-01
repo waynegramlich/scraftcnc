@@ -22,7 +22,7 @@ type checking.
 # pylint: disable=too-many-lines
 
 import math
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, TypeAlias
 
@@ -47,6 +47,12 @@ JOIN: float = 1e-5
 # Segments meeting at an angle smaller than this (radians) meet
 # smoothly (tangent), with no corner between them.
 ANGLE: float = 1e-6
+
+# `grown()` and `shrunk()` go this much past the tool's radius, in the
+# outline's units.  A slot exactly as wide as the tool then closes up,
+# instead of leaving a slit of no width.  It is well above `JOIN`, and
+# too small to matter at a machine, in inches or millimeters.
+SLOP: float = 1e-4
 
 
 # Class `SCLine`:
@@ -229,6 +235,12 @@ class SCRoundedPolygon:
       The round holes directly inside it (stored as a tuple).
     * `regions` (`Sequence[SCRoundedPolygon]`):
       The rounded polygons directly inside it (stored as a tuple).
+    * `bound` (`tuple[SCLine, ...]`):
+      A closed polygon that holds the whole outline, for a quick test
+      of what is nowhere near it: the sharp corners, but with a chord
+      across each rounded corner that turns against the others, since
+      rounding those adds to the shape.  It is empty when these lines
+      cross, which a very sharp corner with a large radius can do.
     * `segments` (`tuple[SCSegment, ...]`):
       The outline, starting with the edge that leaves the first corner
       and ending with the first corner's arc.  An edge used up entirely
@@ -248,12 +260,13 @@ class SCRoundedPolygon:
     regions: Sequence["SCRoundedPolygon"] = field(init=True, default=())
 
     # Attributes set by `__post_init__()` (alphabetized):
+    bound: tuple[SCLine, ...] = field(init=False, default=())
     segments: tuple[SCSegment, ...] = field(init=False, default=())
     signed_area: float = field(init=False, default=0.0)
 
     # Method `SCRoundedPolygon.__post_init__()`:
     def __post_init__(self) -> None:
-        """Validate the corners; compute `segments` and `signed_area`.
+        """Validate the corners, and compute what follows from them.
 
         Raises:
         * `ValueError`:
@@ -308,21 +321,58 @@ class SCRoundedPolygon:
                 entries[following],
                 (corners[following].x, corners[following].y),
             )
-            if used > edge + EPSILON:
+            if used > edge + TOUCH:
                 raise ValueError(
                     f"{self.name}: the arcs of corners {index} and "
                     f"{following} need {used:g} of an edge {edge:g} long"
                 )
-            if edge - used > EPSILON:
+            if edge - used > TOUCH:
                 segments.append(SCLine(exits[index], entries[following]))
             following_arc: SCArc | None = arcs[following]
             if following_arc is not None:
                 segments.append(following_arc)
-        self.segments = tuple(segments)
+        self.segments = _closed(segments)
         self._check_crossings()
+        self.bound = self._find_bound(arcs, entries, exits)
         self.holes = tuple(self.holes)
         self.regions = tuple(self.regions)
         self._check_inside()
+
+    # Method `SCRoundedPolygon.circle()`:
+    @staticmethod
+    def circle(
+        name: str, x: float, y: float, radius: float
+    ) -> "SCRoundedPolygon":
+        """Return a whole circle, as a rounded polygon.
+
+        It is a counter-clockwise square whose corner radii are half its
+        side, so its edges are used up and its outline is four quarter
+        circle arcs.  Unlike an `SCHole`, it can be offset and be a keep
+        out zone like any other rounded polygon.
+
+        Arguments:
+        * `name` (`str`): The circle's name (used for its sketch).
+        * `x` (`float`): The X of its center.
+        * `y` (`float`): The Y of its center.
+        * `radius` (`float`): Its radius.
+
+        Returns:
+        * (`SCRoundedPolygon`): The circle.
+
+        Raises:
+        * `ValueError`: If `radius` is not above zero.
+        """
+        if radius <= 0.0:
+            raise ValueError(f"{name}: {radius=} must be above zero")
+        return SCRoundedPolygon(
+            name,
+            (
+                SCCorner(x - radius, y - radius, radius),
+                SCCorner(x + radius, y - radius, radius),
+                SCCorner(x + radius, y + radius, radius),
+                SCCorner(x - radius, y + radius, radius),
+            ),
+        )
 
     # Method `SCRoundedPolygon._round()`:
     def _round(self, index: int) -> tuple[SCArc | None, Point, Point]:
@@ -513,6 +563,288 @@ class SCRoundedPolygon:
                     f"{self.name}: {region.name} meets {other.name}"
                 )
 
+    # Method `SCRoundedPolygon._find_bound()`:
+    def _find_bound(
+        self,
+        arcs: Sequence[SCArc | None],
+        entries: Sequence[Point],
+        exits: Sequence[Point],
+    ) -> tuple[SCLine, ...]:
+        """Return the closed polygon of lines that holds the outline.
+
+        Arguments:
+        * `arcs` (`Sequence[SCArc | None]`): Each corner's arc.
+        * `entries` (`Sequence[Point]`): Where each corner's arc starts.
+        * `exits` (`Sequence[Point]`): Where each corner's arc ends.
+
+        Returns:
+        * (`tuple[SCLine, ...]`): The lines, or none if they cross.
+        """
+        # A corner bulging outward stays sharp; a rounded one turning
+        # the other way gets the chord of its arc.
+        ccw: bool = SCLoop(self.name, self.segments).is_ccw()
+        points: list[Point] = []
+        index: int
+        arc: SCArc | None
+        for index, arc in enumerate(arcs):
+            if arc is not None and (arc.sweep > 0.0) != ccw:
+                points += [entries[index], exits[index]]
+            else:
+                corner: SCCorner = self.corners[index]
+                points.append((corner.x, corner.y))
+
+        # An edge used up by its arcs leaves two ends in the same place.
+        count: int = len(points)
+        lines: list[SCLine] = [
+            SCLine(point, points[(index + 1) % count])
+            for index, point in enumerate(points)
+            if math.dist(point, points[(index + 1) % count]) > TOUCH
+        ]
+
+        # Crossing lines would make `SCLoop.contains()` read wrongly.
+        count = len(lines)
+        first: int
+        second: int
+        for first in range(count):
+            for second in range(first + 2, count):
+                if (first, second) != (0, count - 1) and meet(
+                    lines[first], lines[second]
+                ):
+                    return ()
+        return tuple(lines)
+
+    # Method `SCRoundedPolygon.enters()`:
+    def enters(self, segment: SCSegment) -> bool:
+        """Return whether any part of a line or arc is inside the solid.
+
+        What is solid follows the levels inside the polygon, so a move
+        within a hole or an opening is clear of it.  A move that only
+        touches an edge or runs along one is clear as well, within
+        `TOUCH`.  A move starting or ending inside has entered.
+
+        It starts with `bound`, as a move that stays out of that is
+        nowhere near the outline; both ends being out is not enough,
+        since a line or an arc can pass through, so edges are tried too.
+        Otherwise, it cuts the move wherever it meets an edge, so that
+        each piece is entirely in or out, and tests the pieces.
+
+        Arguments:
+        * `segment` (`SCSegment`):
+          The line or arc (of at most one whole turn, and its ends may
+          be the same point).
+
+        Returns:
+        * (`bool`): True when part of it is inside the solid.
+
+        Raises:
+        * `ValueError`: If an arc goes around more than one whole turn.
+        """
+        self._check_turns(segment)
+
+        # A move that stays out of `bound` can not reach the outline.
+        short: bool = segment.length() <= TOUCH
+        if self.bound and not short:
+            loop: SCLoop = SCLoop(self.name, self.bound)
+            if not (
+                loop.contains(segment.start)
+                or loop.contains(segment.end)
+                or any(meet(segment, edge) for edge in self.bound)
+            ):
+                return False
+
+        # Test the pieces between the edges of every level.
+        edges: list[SCSegment] = self._all_edges()
+        return any(
+            self._is_solid(point) for point in _clear_points(segment, edges)
+        )
+
+    # Method `SCRoundedPolygon.leaves()`:
+    def leaves(self, segment: SCSegment) -> bool:
+        """Return whether any part of a line or arc leaves the outline.
+
+        This is `enters()` turned around, for a tool that must stay in a
+        region, such as a pocket.  Only the outline counts; holes and
+        regions are ignored.  A move that only touches the outline or
+        runs along it stays in, within `TOUCH`.
+
+        Arguments:
+        * `segment` (`SCSegment`):
+          The line or arc (of at most one whole turn, and its ends may
+          be the same point).
+
+        Returns:
+        * (`bool`): True when part of it is outside the outline.
+
+        Raises:
+        * `ValueError`: If an arc goes around more than one whole turn.
+        """
+        self._check_turns(segment)
+        loop: SCLoop = SCLoop(self.name, self.segments)
+        return any(
+            not loop.contains(point)
+            for point in _clear_points(segment, self.segments)
+        )
+
+    # Method `SCRoundedPolygon._check_turns()`:
+    def _check_turns(self, segment: SCSegment) -> None:
+        """Check that a move goes around at most one whole turn.
+
+        Arguments:
+        * `segment` (`SCSegment`): The move.
+
+        Raises:
+        * `ValueError`: If it is an arc of more than one whole turn,
+          since `fraction_of()` can not place points on one.
+        """
+        if (
+            isinstance(segment, SCArc)
+            and abs(segment.sweep) > 2.0 * math.pi + ANGLE
+        ):
+            raise ValueError(f"{self.name}: {segment} is over one turn")
+
+    # Method `SCRoundedPolygon.grown()`:
+    def grown(self, radius: float) -> "SCRoundedPolygon":
+        """Return where a tool's center would touch this polygon.
+
+        A tool of radius `radius` reaches this polygon just when its
+        center enters the result, so a keep out zone only needs to track
+        the tip.  The outline moves out by `radius` plus `SLOP`.  A slot
+        or cavity the tool can not reach closes up, and only the
+        exterior is kept, so holes, regions and any enclosed void are
+        lost, and count as solid.  Unlike `offset()`, it copes with an
+        outline that changes shape; a corner left where two arcs cross
+        has radius 0.
+
+        Arguments:
+        * `radius` (`float`): The tool's radius (not negative).
+
+        Returns:
+        * (`SCRoundedPolygon`):
+          The grown exterior, going around the same way, named after
+          this one.
+
+        Raises:
+        * `ValueError`: If `radius` is negative, or the outline can not
+          be made, which is possible only when a slot is within about
+          `TOUCH` of the tool's width at two different slops.
+        """
+        if radius < 0.0:
+            raise ValueError(f"{self.name}: {radius=} must not be negative")
+
+        # The outside of the polygon is on the left of a clockwise loop.
+        loop: SCLoop = SCLoop(self.name, self.segments)
+        outside: SCLoop = loop.reversed() if loop.is_ccw() else loop
+        name: str = f"{self.name} grown {radius:g}"
+
+        # A slot can happen to fit one slop exactly, but not two.
+        problem: ValueError | None = None
+        slop: float
+        for slop in (SLOP, 2.0 * SLOP):
+            try:
+                exterior: SCLoop = max(
+                    inset([outside], radius + slop, name),
+                    key=lambda found: abs(found.signed_area()),
+                )
+                if exterior.is_ccw() != loop.is_ccw():
+                    exterior = exterior.reversed()
+                return exterior.polygon(name)
+            except ValueError as error:
+                problem = error
+        assert problem is not None
+        raise problem
+
+    # Method `SCRoundedPolygon.shrunk()`:
+    def shrunk(self, radius: float) -> list["SCRoundedPolygon"]:
+        """Return where a tool's center can go and stay inside this.
+
+        This is `grown()` turned around, for a tool that must stay in a
+        region, such as a pocket: it stays in just when its center does
+        not leave (`leaves()`) one of the results.  The outline moves in
+        by `radius` plus `SLOP`; holes and regions are ignored.
+
+        Arguments:
+        * `radius` (`float`): The tool's radius (not negative).
+
+        Returns:
+        * (`list[SCRoundedPolygon]`):
+          The places it can be, going counter-clockwise: none when it
+          does not fit, several when a narrow neck splits the region.
+
+        Raises:
+        * `ValueError`: If `radius` is negative, or the outlines can not
+          be made, which is possible only when a neck is within about
+          `TOUCH` of the tool's width at two different slops.
+        """
+        if radius < 0.0:
+            raise ValueError(f"{self.name}: {radius=} must not be negative")
+
+        # The inside is on the left of a counter-clockwise loop.
+        loop: SCLoop = SCLoop(self.name, self.segments)
+        inside: SCLoop = loop if loop.is_ccw() else loop.reversed()
+        name: str = f"{self.name} shrunk {radius:g}"
+
+        # A neck can happen to fit one slop exactly, but not two.
+        problem: ValueError | None = None
+        slop: float
+        for slop in (SLOP, 2.0 * SLOP):
+            try:
+                return [
+                    found.polygon(found.name)
+                    for found in inset([inside], radius + slop, name)
+                ]
+            except ValueError as error:
+                problem = error
+        assert problem is not None
+        raise problem
+
+    # Method `SCRoundedPolygon._all_edges()`:
+    def _all_edges(self) -> list[SCSegment]:
+        """Return the edges of the outline and of all levels inside it.
+
+        Returns:
+        * (`list[SCSegment]`):
+          The outline's segments, a whole circle for each hole, and the
+          edges of each region.
+        """
+        edges: list[SCSegment] = list(self.segments)
+        hole: SCHole
+        for hole in self.holes:
+            radius: float = hole.diameter / 2.0
+            start: Point = (hole.x + radius, hole.y)
+            edges.append(
+                SCArc(start, start, (hole.x, hole.y), radius, 2.0 * math.pi)
+            )
+        region: SCRoundedPolygon
+        for region in self.regions:
+            # A region is this same class, not a client of it.
+            edges += region._all_edges()  # pylint: disable=protected-access
+        return edges
+
+    # Method `SCRoundedPolygon._is_solid()`:
+    def _is_solid(self, point: Point) -> bool:
+        """Return whether a point is solid at this level.
+
+        A region that is solid at its own level is an opening in this
+        one, which is how the levels swap.
+
+        Arguments:
+        * `point` (`Point`): The point (not on an edge).
+
+        Returns:
+        * (`bool`): True when it is inside the outline, out of the
+          holes, and out of whatever each region leaves solid.
+        """
+        # A region is this same class, not a client of it.
+        # pylint: disable=protected-access
+        return (
+            SCLoop(self.name, self.segments).contains(point)
+            and all(
+                math.dist(point, (hole.x, hole.y)) > hole.diameter / 2.0
+                for hole in self.holes
+            )
+            and not any(region._is_solid(point) for region in self.regions)
+        )
+
     # Method `SCRoundedPolygon.is_ccw()`:
     def is_ccw(self) -> bool:
         """Return whether the corners go counter-clockwise.
@@ -699,6 +1031,102 @@ class SCRoundedPolygon:
         for region in self.regions:
             curves += region.sketch(solidcraft, mm_per_unit)
         return curves
+
+
+# Function `_without_backtracks()`:
+def _without_backtracks(segments: Sequence[SCSegment]) -> list[SCSegment]:
+    """Return an outline without its tiny segments and backward lines.
+
+    Arguments:
+    * `segments` (`Sequence[SCSegment]`): The outline.
+
+    Returns:
+    * (`list[SCSegment]`):
+      The segments longer than `SLOP`, less any line that ends on the
+      segment before it and starts on the one after it, to within
+      `SLOP`, since it only goes back over them.
+    """
+    long: list[SCSegment] = [
+        segment for segment in segments if segment.length() > SLOP
+    ]
+    return [
+        segment
+        for index, segment in enumerate(long)
+        if not (
+            isinstance(segment, SCLine)
+            and distance_to(segment.end, long[index - 1]) <= SLOP
+            and distance_to(segment.start, long[(index + 1) % len(long)])
+            <= SLOP
+        )
+    ]
+
+
+# Function `_closed()`:
+def _closed(segments: Sequence[SCSegment]) -> tuple[SCSegment, ...]:
+    """Return an outline with each segment ending where the next starts.
+
+    Arcs that use up an edge to within `TOUCH` have no line between
+    them, so their ends may differ by that much.
+
+    Arguments:
+    * `segments` (`Sequence[SCSegment]`): The outline.
+
+    Returns:
+    * (`tuple[SCSegment, ...]`):
+      The same outline, with its joints shared.
+    """
+    closed: list[SCSegment] = []
+    index: int
+    segment: SCSegment
+    for index, segment in enumerate(segments):
+        end: Point = segments[(index + 1) % len(segments)].start
+        if isinstance(segment, SCLine):
+            closed.append(SCLine(segment.start, end))
+        else:
+            closed.append(
+                SCArc(
+                    segment.start,
+                    end,
+                    segment.center,
+                    segment.radius,
+                    segment.sweep,
+                )
+            )
+    return tuple(closed)
+
+
+# Function `_clear_points()`:
+def _clear_points(
+    segment: SCSegment, edges: Sequence[SCSegment]
+) -> Iterator[Point]:
+    """Yield points of a move that show which side of the edges it is.
+
+    The move is cut wherever it meets an edge, so that each piece is on
+    one side of them all.  A point within `TOUCH` of an edge counts as
+    touching, and is left out.  Several are tried on each piece, in case
+    one is by chance that near to an edge the piece misses.
+
+    Arguments:
+    * `segment` (`SCSegment`):
+      The move (its ends may be the same point).
+    * `edges` (`Sequence[SCSegment]`): The edges.
+
+    Yields:
+    * (`Point`): The points clear of the edges.
+    """
+    pieces: list[SCSegment] = [segment]
+    if segment.length() > TOUCH:
+        pieces = split_at(
+            segment,
+            [point for edge in edges for point in meet(segment, edge)],
+        )
+    piece: SCSegment
+    for piece in pieces:
+        fraction: float
+        for fraction in (0.25, 0.5, 0.75):
+            point: Point = point_at(piece, fraction)
+            if all(distance_to(point, edge) > TOUCH for edge in edges):
+                yield point
 
 
 # Function `_segments_meet()`:
@@ -1237,6 +1665,79 @@ class SCLoop:
         * (`SCLoop`): Its outline, with its name.
         """
         return SCLoop(poly.name, poly.segments)
+
+    # Method `SCLoop.polygon()`:
+    def polygon(self, name: str) -> SCRoundedPolygon:
+        """Return the loop as a rounded polygon.
+
+        Each arc's corner is where the tangents at its ends meet, with
+        the arc's radius, and uses up the edges only as far as the arc
+        goes.  So a joint that is not smooth is a corner of radius 0,
+        even between two arcs.
+
+        A line that lies back along its neighbors, and any segment
+        shorter than `SLOP`, are dropped.  `inset()` leaves them where a
+        corner's radius about matches the distance moved, or a corner is
+        nearly straight, and an outline with them would count as
+        crossing itself.  The outline moves less than the slop it was
+        given.
+
+        Arguments:
+        * `name` (`str`): The polygon's name.
+
+        Returns:
+        * (`SCRoundedPolygon`): The polygon, going around the same way.
+
+        Raises:
+        * `ValueError`: If the loop turns back on itself, or crosses
+          itself.
+        """
+        # One corner can not make a half circle, so split long arcs.
+        pieces: list[SCSegment] = []
+        segment: SCSegment
+        for segment in _without_backtracks(self.segments):
+            if isinstance(segment, SCLine):
+                pieces.append(segment)
+                continue
+            count: int = max(
+                1, math.ceil(abs(segment.sweep) / (math.pi / 2.0) - ANGLE)
+            )
+            step: int
+            for step in range(count):
+                fractions: Point = (step / count, (step + 1) / count)
+                pieces.append(
+                    piece_of(
+                        segment,
+                        (
+                            point_at(segment, fractions[0]),
+                            point_at(segment, fractions[1]),
+                        ),
+                        fractions,
+                    )
+                )
+
+        # An arc gives its corner, and a joint not smooth gives another.
+        corners: list[SCCorner] = []
+        index: int
+        piece: SCSegment
+        for index, piece in enumerate(pieces):
+            if isinstance(piece, SCArc):
+                tangent: Point = start_tangent(piece)
+                reach: float = piece.radius * math.tan(abs(piece.sweep) / 2.0)
+                corners.append(
+                    SCCorner(
+                        piece.start[0] + tangent[0] * reach,
+                        piece.start[1] + tangent[1] * reach,
+                        piece.radius,
+                    )
+                )
+            following: SCSegment = pieces[(index + 1) % len(pieces)]
+            turn: float = turn_between(
+                end_tangent(piece), start_tangent(following)
+            )
+            if abs(turn) > ANGLE:
+                corners.append(SCCorner(piece.end[0], piece.end[1]))
+        return SCRoundedPolygon(name, corners)
 
     # Method `SCLoop.signed_area()`:
     def signed_area(self) -> float:
