@@ -1,0 +1,10 @@
+# Files to ignore.
+*~
+# Ignore emacs open files
+\#*
+.#*
+.hg/
+.hgignore
+__pycache__/
+.mypy_cache/
+.ruff_cache/
