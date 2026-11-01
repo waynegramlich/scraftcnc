@@ -1,14 +1,16 @@
 """Tests for `scgeometry.py`: run `python3 -m unittest -v`."""
 
 import math
+import types
 import unittest
 
+import scgeometry
 from scgeometry import (
     SCArc,
     SCCorner,
     SCLine,
     SCLoop,
-    SCRoundPoly,
+    SCRoundedPolygon,
     SCSegment,
     distance_to,
     fraction_of,
@@ -20,14 +22,14 @@ from scgeometry import (
 
 
 # Function `notched()`:
-def notched() -> SCRoundPoly:
+def notched() -> SCRoundedPolygon:
     """Return a notched rectangle, a different radius at each corner.
 
     Returns:
-    * (`SCRoundPoly`): An 80 x 50 notched rectangle, going
+    * (`SCRoundedPolygon`): An 80 x 50 notched rectangle, going
       counter-clockwise, whose notch's inner corner turns the other way.
     """
-    return SCRoundPoly(
+    return SCRoundedPolygon(
         "Notched",
         [
             SCCorner(0.0, 0.0, 5.0),
@@ -42,7 +44,7 @@ def notched() -> SCRoundPoly:
 
 
 # Function `square()`:
-def square(side: float, radius: float, ccw: bool = True) -> SCRoundPoly:
+def square(side: float, radius: float, ccw: bool = True) -> SCRoundedPolygon:
     """Return a square with one corner at the origin.
 
     Arguments:
@@ -51,7 +53,7 @@ def square(side: float, radius: float, ccw: bool = True) -> SCRoundPoly:
     * `ccw` (`bool`): True to go counter-clockwise.
 
     Returns:
-    * (`SCRoundPoly`): The square.
+    * (`SCRoundedPolygon`): The square.
     """
     points: list[tuple[float, float]] = [
         (0.0, 0.0),
@@ -61,11 +63,15 @@ def square(side: float, radius: float, ccw: bool = True) -> SCRoundPoly:
     ]
     if not ccw:
         points.reverse()
-    return SCRoundPoly("Square", [SCCorner(x, y, radius) for x, y in points])
+    return SCRoundedPolygon(
+        "Square", [SCCorner(x, y, radius) for x, y in points]
+    )
 
 
 # Function `polygon()`:
-def polygon(*points: tuple[float, float], radius: float = 0.0) -> SCRoundPoly:
+def polygon(
+    *points: tuple[float, float], radius: float = 0.0
+) -> SCRoundedPolygon:
     """Return a polygon with the same radius at every corner.
 
     Arguments:
@@ -73,9 +79,11 @@ def polygon(*points: tuple[float, float], radius: float = 0.0) -> SCRoundPoly:
     * `radius` (`float`): The radius of every corner.
 
     Returns:
-    * (`SCRoundPoly`): The polygon.
+    * (`SCRoundedPolygon`): The polygon.
     """
-    return SCRoundPoly("Polygon", [SCCorner(x, y, radius) for x, y in points])
+    return SCRoundedPolygon(
+        "Polygon", [SCCorner(x, y, radius) for x, y in points]
+    )
 
 
 # Function `close()`:
@@ -92,16 +100,16 @@ def close(a: tuple[float, float], b: tuple[float, float]) -> bool:
     return math.dist(a, b) < 1e-9
 
 
-# Class `TestSCRoundPoly`:
-class TestSCRoundPoly(unittest.TestCase):
-    """The outline that `SCRoundPoly` computes."""
+# Class `TestSCRoundedPolygon`:
+class TestSCRoundedPolygon(unittest.TestCase):
+    """The outline that `SCRoundedPolygon` computes."""
 
-    # Method `TestSCRoundPoly.check_outline()`:
-    def check_outline(self, poly: SCRoundPoly) -> None:
+    # Method `TestSCRoundedPolygon.check_outline()`:
+    def check_outline(self, poly: SCRoundedPolygon) -> None:
         """Check that an outline is closed and its arcs are true.
 
         Arguments:
-        * `poly` (`SCRoundPoly`): The polygon to check.
+        * `poly` (`SCRoundedPolygon`): The polygon to check.
         """
         segments: tuple[SCSegment, ...] = poly.segments
         index: int
@@ -117,10 +125,10 @@ class TestSCRoundPoly(unittest.TestCase):
                     math.dist(segment.center, segment.end), segment.radius
                 )
 
-    # Method `TestSCRoundPoly.test_square_ccw()`:
+    # Method `TestSCRoundedPolygon.test_square_ccw()`:
     def test_square_ccw(self) -> None:
         """A rounded square: 4 lines and 4 counter-clockwise arcs."""
-        poly: SCRoundPoly = square(20.0, 3.0)
+        poly: SCRoundedPolygon = square(20.0, 3.0)
         self.check_outline(poly)
         self.assertTrue(poly.is_ccw())
         self.assertAlmostEqual(poly.signed_area, 400.0)
@@ -139,10 +147,10 @@ class TestSCRoundPoly(unittest.TestCase):
         length: float = sum(segment.length() for segment in poly.segments)
         self.assertAlmostEqual(length, 4 * 14.0 + 2 * math.pi * 3.0)
 
-    # Method `TestSCRoundPoly.test_square_cw()`:
+    # Method `TestSCRoundedPolygon.test_square_cw()`:
     def test_square_cw(self) -> None:
         """Going clockwise, every arc is clockwise."""
-        poly: SCRoundPoly = square(20.0, 3.0, ccw=False)
+        poly: SCRoundedPolygon = square(20.0, 3.0, ccw=False)
         self.check_outline(poly)
         self.assertFalse(poly.is_ccw())
         sweeps: list[float] = [
@@ -154,30 +162,30 @@ class TestSCRoundPoly(unittest.TestCase):
         for sweep in sweeps:
             self.assertAlmostEqual(sweep, -math.pi / 2)
 
-    # Method `TestSCRoundPoly.test_sharp()`:
+    # Method `TestSCRoundedPolygon.test_sharp()`:
     def test_sharp(self) -> None:
         """Sharp corners give just the polygon's edges."""
-        poly: SCRoundPoly = square(10.0, 0.0)
+        poly: SCRoundedPolygon = square(10.0, 0.0)
         self.check_outline(poly)
         self.assertTrue(
             all(isinstance(segment, SCLine) for segment in poly.segments)
         )
         self.assertEqual(len(poly.segments), 4)
 
-    # Method `TestSCRoundPoly.test_circle()`:
+    # Method `TestSCRoundedPolygon.test_circle()`:
     def test_circle(self) -> None:
         """Arcs that use up every edge leave no lines: a circle."""
-        poly: SCRoundPoly = square(10.0, 5.0)
+        poly: SCRoundedPolygon = square(10.0, 5.0)
         self.check_outline(poly)
         self.assertEqual(len(poly.segments), 4)
         self.assertTrue(
             all(isinstance(segment, SCArc) for segment in poly.segments)
         )
 
-    # Method `TestSCRoundPoly.test_notched()`:
+    # Method `TestSCRoundedPolygon.test_notched()`:
     def test_notched(self) -> None:
         """A notched shape, with one corner turning the other way."""
-        poly: SCRoundPoly = notched()
+        poly: SCRoundedPolygon = notched()
         self.check_outline(poly)
         sweeps: list[float] = [
             segment.sweep
@@ -196,7 +204,7 @@ class TestSCRoundPoly(unittest.TestCase):
         self.assertAlmostEqual(arc.sweep, math.radians(135.0))
         self.assertTrue(close(arc.end, (0.0, 50.0 - 6.0 * (1 + 2**0.5))))
 
-    # Method `TestSCRoundPoly.test_errors()`:
+    # Method `TestSCRoundedPolygon.test_errors()`:
     def test_errors(self) -> None:
         """Polygons that cannot be rounded are refused."""
         with self.assertRaises(ValueError):
@@ -212,7 +220,7 @@ class TestSCRoundPoly(unittest.TestCase):
         with self.assertRaises(ValueError):
             SCCorner(0, 0, -1.0)
 
-    # Method `TestSCRoundPoly.test_crossings()`:
+    # Method `TestSCRoundedPolygon.test_crossings()`:
     def test_crossings(self) -> None:
         """Outlines that cross or touch themselves are refused."""
         # A bow tie: two edges cross.
@@ -243,31 +251,31 @@ class TestSCRoundPoly(unittest.TestCase):
         corners: list[SCCorner] = [SCCorner(x, y) for x, y in slot]
         corners[2] = SCCorner(10, 10, 4.0)
         with self.assertRaisesRegex(ValueError, "cross at"):
-            SCRoundPoly("Slot", corners)
+            SCRoundedPolygon("Slot", corners)
 
-    # Method `TestSCRoundPoly.test_reversed()`:
+    # Method `TestSCRoundedPolygon.test_reversed()`:
     def test_reversed(self) -> None:
         """Reversing keeps the first corner and flips the direction."""
-        poly: SCRoundPoly = notched()
-        back: SCRoundPoly = poly.reversed()
+        poly: SCRoundedPolygon = notched()
+        back: SCRoundedPolygon = poly.reversed()
         self.check_outline(back)
         self.assertFalse(back.is_ccw())
         self.assertEqual(back.corners[0], poly.corners[0])
         self.assertEqual(back.corners[1], poly.corners[-1])
         self.assertAlmostEqual(back.signed_area, -poly.signed_area)
 
-    # Method `TestSCRoundPoly.test_offset_square()`:
+    # Method `TestSCRoundedPolygon.test_offset_square()`:
     def test_offset_square(self) -> None:
         """A rounded square, moved out and in."""
         # Moved out, both ways around, the corners' radii grow (the
         # clockwise square starts at its top left corner).
-        poly: SCRoundPoly
+        poly: SCRoundedPolygon
         first: tuple[float, float]
         for poly, first in (
             (square(20.0, 3.0), (-1.0, -1.0)),
             (square(20.0, 3.0, ccw=False), (-1.0, 21.0)),
         ):
-            out: SCRoundPoly = poly.offset(1.0)
+            out: SCRoundedPolygon = poly.offset(1.0)
             self.check_outline(out)
             self.assertEqual(out.is_ccw(), poly.is_ccw())
             self.assertAlmostEqual(abs(out.signed_area), 22.0**2)
@@ -277,7 +285,7 @@ class TestSCRoundPoly(unittest.TestCase):
             )
 
         # Moved in past a corner's radius, the corner becomes sharp.
-        inner: SCRoundPoly = square(20.0, 3.0).offset(-4.0)
+        inner: SCRoundedPolygon = square(20.0, 3.0).offset(-4.0)
         self.assertEqual(
             [corner.radius for corner in inner.corners], [0.0] * 4
         )
@@ -287,10 +295,10 @@ class TestSCRoundPoly(unittest.TestCase):
         with self.assertRaises(ValueError):
             square(20.0, 3.0).offset(-10.0)
 
-    # Method `TestSCRoundPoly.test_offset_notched()`:
+    # Method `TestSCRoundedPolygon.test_offset_notched()`:
     def test_offset_notched(self) -> None:
         """Moved out, the notch's inner corner shrinks its radius."""
-        out: SCRoundPoly = notched().offset(1.0)
+        out: SCRoundedPolygon = notched().offset(1.0)
         self.check_outline(out)
         radii: list[float] = [corner.radius for corner in out.corners]
         self.assertEqual(radii, [6.0, 11.0, 4.0, 3.0, 3.0, 0.0, 7.0])
@@ -308,16 +316,16 @@ class TestSCRoundPoly(unittest.TestCase):
         self.assertTrue(close(arc.center, (70.0, 10.0)))
 
         # The sharp concave corner is cut with the tool's own radius.
-        moved: SCRoundPoly = notched().offset(5.0)
+        moved: SCRoundedPolygon = notched().offset(5.0)
         self.assertEqual(moved.corners[4].radius, 0.0)
 
 
 # Function `dumbbell()`:
-def dumbbell() -> SCRoundPoly:
+def dumbbell() -> SCRoundedPolygon:
     """Return two 0.9 x 1.5 lobes joined by a 0.4 wide neck.
 
     Returns:
-    * (`SCRoundPoly`): The shape, with sharp corners.
+    * (`SCRoundedPolygon`): The shape, with sharp corners.
     """
     return polygon(
         (0.4, 0.4),
@@ -484,3 +492,144 @@ class TestSCLoop(unittest.TestCase):
         distance: float
         for distance in (1.0, 2.5, 4.0, 8.0):
             self.check_inset(shape, distance, inset([shape], distance, "N"))
+
+
+def _square(name, half, holes=(), regions=(), x=0.0):
+    """Return a square polygon centered on `(x, 0)`."""
+    return scgeometry.SCRoundedPolygon(
+        name,
+        [
+            scgeometry.SCCorner(x - half, -half),
+            scgeometry.SCCorner(x + half, -half),
+            scgeometry.SCCorner(x + half, half),
+            scgeometry.SCCorner(x - half, half),
+        ],
+        holes,
+        regions,
+    )
+
+
+class _Sketch:
+    """Stands in for SolidCraft's `sketch` commands, counting curves."""
+
+    def __init__(self):
+        self.circles = []
+        self.count = 0
+
+    def _curve(self):
+        self.count += 1
+        return {"curves": [f"c{self.count}"]}
+
+    def line(self, **_arguments):
+        """Draw a line."""
+        return self._curve()
+
+    def arc_center_point(self, **_arguments):
+        """Draw an arc."""
+        return self._curve()
+
+    def circle_center(self, **arguments):
+        """Draw a circle."""
+        self.circles.append(arguments)
+        return self._curve()
+
+
+class TestInside(unittest.TestCase):
+    """Holes and regions inside a rounded polygon."""
+
+    def test_holes(self) -> None:
+        """Round holes are kept, and stored as a tuple."""
+        hole = scgeometry.SCHole(1.0, 2.0, 1.0)
+        square = _square("S", 10.0, [hole])
+        self.assertEqual(square.holes, (hole,))
+
+    def test_no_size(self) -> None:
+        """A hole must have a size."""
+        with self.assertRaises(ValueError):
+            scgeometry.SCHole(0.0, 0.0, 0.0)
+
+    def test_hole_refused(self) -> None:
+        """A hole must stay clear of the outline, and of other holes."""
+        hole = scgeometry.SCHole
+        for holes in (
+            [hole(20.0, 0.0, 1.0)],
+            [hole(9.5, 0.0, 1.0)],
+            [hole(9.5, 0.0, 2.0)],
+            [hole(0.0, 0.0, 2.0), hole(1.0, 0.0, 2.0)],
+            [hole(0.0, 0.0, 2.0), hole(2.0, 0.0, 2.0)],
+        ):
+            with self.subTest(holes=holes), self.assertRaises(ValueError):
+                _square("S", 10.0, holes)
+
+    def test_rounded_corner_hole(self) -> None:
+        """A hole near a corner is judged by the rounded outline."""
+        corners = [
+            scgeometry.SCCorner(0.0, 0.0, 3.0),
+            scgeometry.SCCorner(10.0, 0.0, 3.0),
+            scgeometry.SCCorner(10.0, 10.0, 3.0),
+            scgeometry.SCCorner(0.0, 10.0, 3.0),
+        ]
+        hole = scgeometry.SCHole(0.5, 0.5, 0.5)
+        with self.assertRaises(ValueError):
+            scgeometry.SCRoundedPolygon("S", corners, [hole])
+
+    def test_region_refused(self) -> None:
+        """A region must stay clear of everything on its level."""
+        hole = scgeometry.SCHole
+        for holes, regions in (
+            ((), [_square("R", 20.0)]),
+            ((), [_square("R", 10.0)]),
+            ((), [_square("R", 2.0, x=9.0)]),
+            ((), [_square("R", 2.0, x=30.0)]),
+            ((), [_square("A", 2.0), _square("B", 2.0, x=3.0)]),
+            ((), [_square("A", 4.0), _square("B", 1.0)]),
+            ([hole(0.0, 0.0, 1.0)], [_square("R", 2.0)]),
+            ([hole(3.0, 0.0, 4.0)], [_square("R", 2.0)]),
+        ):
+            with self.subTest(regions=regions), self.assertRaises(ValueError):
+                _square("S", 10.0, holes, regions)
+
+    def test_island_with_holes(self) -> None:
+        """An island in an opening may have its own holes and openings."""
+        island = _square(
+            "Island",
+            5.0,
+            [scgeometry.SCHole(3.0, 3.0, 1.0)],
+            [_square("Inner opening", 1.0)],
+        )
+        opening = _square("Opening", 10.0, regions=[island])
+        plate = _square("Plate", 20.0, regions=[opening])
+        self.assertEqual(plate.regions[0].regions[0].holes[0].diameter, 1.0)
+
+    def test_island_checked(self) -> None:
+        """An island's own hole is checked against the island."""
+        with self.assertRaises(ValueError):
+            _square("Island", 5.0, [scgeometry.SCHole(5.0, 0.0, 1.0)])
+
+    def test_sketch(self) -> None:
+        """Everything inside is drawn, at every level, in millimeters."""
+        island = _square("Island", 5.0, [scgeometry.SCHole(1.0, 2.0, 0.5)])
+        plate = _square(
+            "Plate",
+            20.0,
+            [scgeometry.SCHole(15.0, 15.0, 1.0)],
+            [_square("Opening", 10.0, regions=[island])],
+        )
+        sketch = _Sketch()
+        curves = plate.sketch(types.SimpleNamespace(sketch=sketch), 25.4)
+        self.assertEqual(len(curves), 4 + 1 + 4 + 4 + 1)
+        self.assertEqual(len(set(curves)), len(curves))
+        self.assertEqual(
+            [circle["diameter"] for circle in sketch.circles], [25.4, 12.7]
+        )
+        self.assertEqual(sketch.circles[1]["center"], (25.4, 50.8))
+
+    def test_reversed_keeps_them(self) -> None:
+        """Going around the other way keeps what is inside."""
+        hole = scgeometry.SCHole(1.0, 2.0, 0.5)
+        self.assertEqual(_square("S", 10.0, [hole]).reversed().holes, (hole,))
+
+    def test_offset_drops_them(self) -> None:
+        """A tool path follows only the outline."""
+        hole = scgeometry.SCHole(1.0, 2.0, 0.5)
+        self.assertEqual(_square("S", 10.0, [hole]).offset(1.0).holes, ())

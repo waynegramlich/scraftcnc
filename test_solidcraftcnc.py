@@ -9,7 +9,7 @@ from scgeometry import (
     SCArc,
     SCCorner,
     SCLoop,
-    SCRoundPoly,
+    SCRoundedPolygon,
     SCSegment,
     distance_to,
 )
@@ -188,7 +188,7 @@ class TestSCCNC(unittest.TestCase):
     def test_profile_outside(self) -> None:
         """Outside a polygon, the tool climb mills clockwise."""
         cnc: SCCNC = milling(z_safe=0.5)
-        path: SCRoundPoly = cnc.profile(square(2.0, 0.25), -0.3, 0.125)
+        path: SCRoundedPolygon = cnc.profile(square(2.0, 0.25), -0.3, 0.125)
         self.assertFalse(path.is_ccw())
         self.assertEqual(path.corners[0].radius, 0.375)
 
@@ -238,8 +238,8 @@ class TestSCCNC(unittest.TestCase):
     def test_profile_inside(self) -> None:
         """Inside a polygon, the tool climb mills counter-clockwise."""
         cnc: SCCNC = milling()
-        hole: SCRoundPoly = square(1.0, 0.25, ccw=False)
-        path: SCRoundPoly = cnc.profile(hole, -0.1, 0.5, inside=True)
+        hole: SCRoundedPolygon = square(1.0, 0.25, ccw=False)
+        path: SCRoundedPolygon = cnc.profile(hole, -0.1, 0.5, inside=True)
         self.assertTrue(path.is_ccw())
         self.assertEqual(path.corners[0].radius, 0.125)
         gcode: str = cnc.gcode()
@@ -265,10 +265,10 @@ class TestSCCNC(unittest.TestCase):
         """A rougher leaves the allowance; the end mill finishes it."""
         cnc: SCCNC = milling()
         allowance: float = cnc.machine.finish_allowance
-        plate: SCRoundPoly = square(1.0, 0.25)
-        full: SCRoundPoly = cnc.profile(plate, -0.5, 0.25, through=True)
+        plate: SCRoundedPolygon = square(1.0, 0.25)
+        full: SCRoundedPolygon = cnc.profile(plate, -0.5, 0.25, through=True)
         start: int = len(cnc.commands)
-        rough: SCRoundPoly = cnc.profile(
+        rough: SCRoundedPolygon = cnc.profile(
             plate, -0.5, 0.25, through=True, stage="rough"
         )
 
@@ -287,7 +287,7 @@ class TestSCCNC(unittest.TestCase):
         # The finish goes down once, through, starting on the rougher's
         # path, in the slot it cut.
         start = len(cnc.commands)
-        finish: SCRoundPoly = cnc.profile(
+        finish: SCRoundedPolygon = cnc.profile(
             plate, -0.5, 0.25, through=True, stage="finish"
         )
         self.assertEqual(finish.corners, full.corners)
@@ -313,7 +313,7 @@ class TestSCCNC(unittest.TestCase):
         """A rougher stays off the walls and floor; the finish does not."""
         cnc: SCCNC = milling()
         allowance: float = cnc.machine.finish_allowance
-        pocket: SCRoundPoly = square(1.5, 0.25)
+        pocket: SCRoundedPolygon = square(1.5, 0.25)
         full: list[SCRing] = cnc.pocket(pocket, -0.25, 0.125)
         rough: list[SCRing] = cnc.pocket(pocket, -0.25, 0.125, stage="rough")
         finish: list[SCRing] = cnc.pocket(pocket, -0.25, 0.125, stage="finish")
@@ -377,20 +377,20 @@ def rings(roots: list[SCRing]) -> list[SCRing]:
 
 # Function `uncut()`:
 def uncut(
-    poly: SCRoundPoly,
+    poly: SCRoundedPolygon,
     stepover: float,
     spacing: float,
-    islands: Sequence[SCRoundPoly] = (),
+    islands: Sequence[SCRoundedPolygon] = (),
 ) -> list[tuple[float, float]]:
     """Return the points of a pocket that no ring's cut reaches.
 
     The tool is 0.25 in across.
 
     Arguments:
-    * `poly` (`SCRoundPoly`): The pocket.
+    * `poly` (`SCRoundedPolygon`): The pocket.
     * `stepover` (`float`): The rings' stepover.
     * `spacing` (`float`): How far apart the points tried are.
-    * `islands` (`Sequence[SCRoundPoly]`): Outlines left standing.
+    * `islands` (`Sequence[SCRoundedPolygon]`): Outlines left standing.
 
     Returns:
     * (`list[tuple[float, float]]`): The points left uncut.
@@ -446,24 +446,24 @@ def depth(ring: SCRing) -> int:
 
 
 # Function `island_pocket()`:
-def island_pocket() -> tuple[SCRoundPoly, list[SCRoundPoly]]:
+def island_pocket() -> tuple[SCRoundedPolygon, list[SCRoundedPolygon]]:
     """Return the demonstration's pocket with its three islands.
 
     Returns:
-    * (`SCRoundPoly`): The pocket.
-    * (`list[SCRoundPoly]`): Its islands.
+    * (`SCRoundedPolygon`): The pocket.
+    * (`list[SCRoundedPolygon]`): Its islands.
     """
     return demo_pocket(), demo_islands()
 
 
 # Function `rounded_dumbbell()`:
-def rounded_dumbbell() -> SCRoundPoly:
+def rounded_dumbbell() -> SCRoundedPolygon:
     """Return the dumbbell with its corners rounded as a pocket's are.
 
     Returns:
-    * (`SCRoundPoly`): The pocket.
+    * (`SCRoundedPolygon`): The pocket.
     """
-    return SCRoundPoly(
+    return SCRoundedPolygon(
         "Bell",
         [
             SCCorner(
@@ -501,10 +501,10 @@ class TestPocket(unittest.TestCase):
     # Method `TestPocket.test_coverage()`:
     def test_coverage(self) -> None:
         """The rings and spurs reach every point of a pocket."""
-        poly: SCRoundPoly
+        poly: SCRoundedPolygon
         for poly in (
             rounded_dumbbell(),
-            SCRoundPoly(
+            SCRoundedPolygon(
                 "Triangle",
                 [
                     SCCorner(0, 0, 0.2),
@@ -666,7 +666,7 @@ class TestDrill(unittest.TestCase):
     def test_drilled_pocket(self) -> None:
         """A drilled pocket plunges down its holes, not ramping."""
         cnc: SCCNC = milling()
-        poly: SCRoundPoly = rounded_dumbbell()
+        poly: SCRoundedPolygon = rounded_dumbbell()
         entries: list[tuple[float, float]] = cnc.pocket_entries(
             poly, cnc.cutter
         )
@@ -706,8 +706,8 @@ class TestIslands(unittest.TestCase):
     # Method `TestIslands.test_plan()`:
     def test_plan(self) -> None:
         """The wall ring goes around each island, clockwise."""
-        poly: SCRoundPoly
-        islands: list[SCRoundPoly]
+        poly: SCRoundedPolygon
+        islands: list[SCRoundedPolygon]
         poly, islands = island_pocket()
         cnc: SCCNC = milling()
         roots: list[SCRing] = cnc.pocket(poly, -0.1, 0.1, islands=islands)
@@ -732,8 +732,8 @@ class TestIslands(unittest.TestCase):
     # Method `TestIslands.test_coverage()`:
     def test_coverage(self) -> None:
         """Every point of the pocket outside the islands is reached."""
-        poly: SCRoundPoly
-        islands: list[SCRoundPoly]
+        poly: SCRoundedPolygon
+        islands: list[SCRoundedPolygon]
         poly, islands = island_pocket()
         stepover: float
         for stepover in (0.9, 1.0):
@@ -742,8 +742,8 @@ class TestIslands(unittest.TestCase):
     # Method `TestIslands.test_gcode()`:
     def test_gcode(self) -> None:
         """No cut comes nearer an island than the tool's radius."""
-        poly: SCRoundPoly
-        islands: list[SCRoundPoly]
+        poly: SCRoundedPolygon
+        islands: list[SCRoundedPolygon]
         poly, islands = island_pocket()
         cnc: SCCNC = milling()
         cnc.pocket(poly, -0.1, 0.1, islands=islands)
@@ -766,16 +766,16 @@ class TestIslands(unittest.TestCase):
     # Method `TestIslands.test_bad_islands()`:
     def test_bad_islands(self) -> None:
         """Islands outside the pocket, or crossing, are refused."""
-        poly: SCRoundPoly
-        islands: list[SCRoundPoly]
+        poly: SCRoundedPolygon
+        islands: list[SCRoundedPolygon]
         poly, islands = island_pocket()
         cnc: SCCNC = milling()
-        outside: SCRoundPoly = square(0.2, 0.0)
-        crossing: SCRoundPoly = SCRoundPoly(
+        outside: SCRoundedPolygon = square(0.2, 0.0)
+        crossing: SCRoundedPolygon = SCRoundedPolygon(
             "Across",
             [SCCorner(x, y) for x, y in ((0.2, 1), (0.5, 1), (0.5, 1.2))],
         )
-        bad: list[SCRoundPoly]
+        bad: list[SCRoundedPolygon]
         for bad in ([outside], [crossing], [islands[0], islands[0]]):
             with self.assertRaises(ValueError):
                 cnc.pocket(poly, -0.1, 0.1, islands=bad)
@@ -808,7 +808,7 @@ class TestEdges(unittest.TestCase):
         """A V-bit runs just off the wall, deep enough to bevel."""
         cnc: SCCNC = milling()
         cnc.change_tool(5)
-        path: SCRoundPoly = cnc.chamfer(square(1.0, 0.25), 0.03)
+        path: SCRoundedPolygon = cnc.chamfer(square(1.0, 0.25), 0.03)
         lines: list[str] = cnc.gcode().splitlines()
         self.assertIn("(Chamfer Square 0.03 wide outside)", lines)
 
@@ -821,7 +821,9 @@ class TestEdges(unittest.TestCase):
             cnc.chamfer(square(1.0, 0.25))
 
         # Inside a hole, it goes around the other way.
-        inner: SCRoundPoly = cnc.chamfer(square(1.0, 0.25), 0.03, inside=True)
+        inner: SCRoundedPolygon = cnc.chamfer(
+            square(1.0, 0.25), 0.03, inside=True
+        )
         self.assertTrue(inner.is_ccw())
         self.assertAlmostEqual(inner.corners[0].x, 0.015)
 
@@ -830,7 +832,7 @@ class TestEdges(unittest.TestCase):
         """A corner rounding bit rides its tip radius off the wall."""
         cnc: SCCNC = milling()
         cnc.change_tool(6)
-        path: SCRoundPoly = cnc.chamfer(square(1.0, 0.25))
+        path: SCRoundedPolygon = cnc.chamfer(square(1.0, 0.25))
         lines: list[str] = cnc.gcode().splitlines()
         self.assertIn("(Round over Square to 0.0625 outside)", lines)
         self.assertIn("G1 Z-0.0625 F4", lines)

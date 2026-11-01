@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
-from scgeometry import SCCorner, SCRoundPoly, point_at
+from scgeometry import SCCorner, SCRoundedPolygon, point_at
 from scmachine import SCMachine, SCTool
 from scplot import sketch_path, write_plot
 from scraftpybind import (
@@ -73,14 +73,14 @@ class Part:
     """The demonstration plate's shape, for modeling it in SolidCraft.
 
     Attributes:
-    * `outlines` (`list[SCRoundPoly]`):
+    * `outlines` (`list[SCRoundedPolygon]`):
       The plate's outline, then the outlines of its holes.
-    * `pocket` (`list[SCRoundPoly]`):
+    * `pocket` (`list[SCRoundedPolygon]`):
       The outline of the pocket in its top, then its islands.
     * `sizes` (`tuple[float, float, float]`):
       The Z of the plate's top, its thickness, and the pocket's depth.
-    * `edges` (`list[tuple[SCRoundPoly, Literal["chamfer", "fillet"],
-      float]]`):
+    * `edges` (`list[tuple[SCRoundedPolygon,
+      Literal["chamfer", "fillet"], float]]`):
       The outlines whose top edges are beveled (by their width) or
       rounded over (by their radius).
 
@@ -89,16 +89,16 @@ class Part:
     """
 
     # Constructor arguments:
-    outlines: list[SCRoundPoly] = field(init=True)
-    pocket: list[SCRoundPoly] = field(init=True)
+    outlines: list[SCRoundedPolygon] = field(init=True)
+    pocket: list[SCRoundedPolygon] = field(init=True)
     sizes: tuple[float, float, float] = field(init=True)
-    edges: list[tuple[SCRoundPoly, Literal["chamfer", "fillet"], float]] = (
-        field(init=True)
-    )
+    edges: list[
+        tuple[SCRoundedPolygon, Literal["chamfer", "fillet"], float]
+    ] = field(init=True)
 
 
 # Function `demo_plate()`:
-def demo_plate() -> SCRoundPoly:
+def demo_plate() -> SCRoundedPolygon:
     """Return the demonstration plate's outline.
 
     It is a 4 x 3 inch notched rectangle, going counter-clockwise, with
@@ -106,9 +106,9 @@ def demo_plate() -> SCRoundPoly:
     the other way.
 
     Returns:
-    * (`SCRoundPoly`): The outline.
+    * (`SCRoundedPolygon`): The outline.
     """
-    return SCRoundPoly(
+    return SCRoundedPolygon(
         "Plate",
         [
             SCCorner(0.0, 0.0, 0.25),
@@ -123,13 +123,13 @@ def demo_plate() -> SCRoundPoly:
 
 
 # Function `demo_hole()`:
-def demo_hole() -> SCRoundPoly:
+def demo_hole() -> SCRoundedPolygon:
     """Return the outline of the hole through the demonstration plate.
 
     Returns:
-    * (`SCRoundPoly`): A rounded 0.6 x 1.1 inch rectangle.
+    * (`SCRoundedPolygon`): A rounded 0.6 x 1.1 inch rectangle.
     """
-    return SCRoundPoly(
+    return SCRoundedPolygon(
         "Hole",
         [
             SCCorner(3.0, 0.5, 0.1875),
@@ -141,15 +141,15 @@ def demo_hole() -> SCRoundPoly:
 
 
 # Function `demo_pocket()`:
-def demo_pocket() -> SCRoundPoly:
+def demo_pocket() -> SCRoundedPolygon:
     """Return the outline of the pocket in the demonstration plate.
 
     Returns:
-    * (`SCRoundPoly`): A 2.45 x 1.75 inch rectangle with rounded
+    * (`SCRoundedPolygon`): A 2.45 x 1.75 inch rectangle with rounded
       corners.
     """
     corner: float = 0.1875
-    return SCRoundPoly(
+    return SCRoundedPolygon(
         "Pocket",
         [
             SCCorner(0.3, 0.3, corner),
@@ -161,16 +161,16 @@ def demo_pocket() -> SCRoundPoly:
 
 
 # Function `demo_islands()`:
-def demo_islands() -> list[SCRoundPoly]:
+def demo_islands() -> list[SCRoundedPolygon]:
     """Return the islands left standing in the demonstration's pocket.
 
     Returns:
-    * (`list[SCRoundPoly]`): A triangle and a square with slightly
+    * (`list[SCRoundedPolygon]`): A triangle and a square with slightly
       rounded corners, and a square whose corner arcs make a circle.
     """
     edge: float = 0.0625
     return [
-        SCRoundPoly(
+        SCRoundedPolygon(
             "Triangle",
             [
                 SCCorner(0.65, 0.65, edge),
@@ -178,7 +178,7 @@ def demo_islands() -> list[SCRoundPoly]:
                 SCCorner(0.95, 1.2, edge),
             ],
         ),
-        SCRoundPoly(
+        SCRoundedPolygon(
             "Square",
             [
                 SCCorner(1.65, 0.65, edge),
@@ -187,7 +187,7 @@ def demo_islands() -> list[SCRoundPoly]:
                 SCCorner(1.65, 1.15, edge),
             ],
         ),
-        SCRoundPoly(
+        SCRoundedPolygon(
             "Circle",
             [
                 SCCorner(1.2, 1.35, 0.2),
@@ -247,7 +247,7 @@ def model(  # pylint: disable=too-many-locals
     thickness: float
     depth: float
     top, thickness, depth = part.sizes
-    outlines: list[SCRoundPoly] = part.outlines
+    outlines: list[SCRoundedPolygon] = part.outlines
     with transport:
         solidcraft: SolidCraftPyBind = SolidCraftPyBind(transport)
         solidcraft.document.units(units="in")
@@ -293,7 +293,9 @@ def model(  # pylint: disable=too-many-locals
 # Function `_edges()`:
 def _edges(
     solidcraft: SolidCraftPyBind,
-    edges: Sequence[tuple[SCRoundPoly, Literal["chamfer", "fillet"], float]],
+    edges: Sequence[
+        tuple[SCRoundedPolygon, Literal["chamfer", "fillet"], float]
+    ],
     z: float,
 ) -> None:
     """Bevel or round over the top edges of outlines on the plate.
@@ -303,12 +305,12 @@ def _edges(
 
     Arguments:
     * `solidcraft` (`SolidCraftPyBind`): Where the plate is.
-    * `edges` (`Sequence[tuple[SCRoundPoly, Literal["chamfer",
+    * `edges` (`Sequence[tuple[SCRoundedPolygon, Literal["chamfer",
       "fillet"], float]]`):
       The outlines, how to finish each, and the size (inches).
     * `z` (`float`): The Z of the plate's top (mm).
     """
-    poly: SCRoundPoly
+    poly: SCRoundedPolygon
     kind: Literal["chamfer", "fillet"]
     size: float
     for poly, kind, size in edges:
@@ -328,13 +330,13 @@ def _edges(
 
 # Function `_sketch()`:
 def _sketch(
-    solidcraft: SolidCraftPyBind, outlines: list[SCRoundPoly], z: float
+    solidcraft: SolidCraftPyBind, outlines: list[SCRoundedPolygon], z: float
 ) -> list[str]:
     """Sketch outlines on a horizontal plane.
 
     Arguments:
     * `solidcraft` (`SolidCraftPyBind`): Where to sketch them.
-    * `outlines` (`list[SCRoundPoly]`): The outlines.
+    * `outlines` (`list[SCRoundedPolygon]`): The outlines.
     * `z` (`float`): The plane's Z (mm).
 
     Returns:
@@ -349,7 +351,7 @@ def _sketch(
         name=outlines[0].name,
     )
     curves: list[str] = outlines[0].sketch(solidcraft, MM_PER_INCH)
-    outline: SCRoundPoly
+    outline: SCRoundedPolygon
     for outline in outlines[1:]:
         outline.sketch(solidcraft, MM_PER_INCH)
     return curves
@@ -370,10 +372,10 @@ def cut_demo(material: str = MATERIAL) -> tuple[SCCNC, SCTool]:
     # Rough with the machine's rougher, if it has one, leaving its
     # finish allowance for the end mill; otherwise the end mill does
     # it all.
-    plate: SCRoundPoly = demo_plate()
-    hole: SCRoundPoly = demo_hole()
-    pocket: SCRoundPoly = demo_pocket()
-    islands: list[SCRoundPoly] = demo_islands()
+    plate: SCRoundedPolygon = demo_plate()
+    hole: SCRoundedPolygon = demo_hole()
+    pocket: SCRoundedPolygon = demo_pocket()
+    islands: list[SCRoundedPolygon] = demo_islands()
     machine: SCMachine = cnc_machine(read(SHOP_FILE), MACHINE, material)
     end_mill: SCTool = machine.named(END_MILL)
     rougher: SCTool | None = machine.rougher_for(end_mill)
@@ -412,7 +414,7 @@ def cut_demo(material: str = MATERIAL) -> tuple[SCCNC, SCTool]:
     # outside, round over the hole's, and then cut the plate out.
     cnc.change_tool(machine.named(CHAMFER_BIT).number)
     cnc.chamfer(pocket, BEVEL, inside=True)
-    island: SCRoundPoly
+    island: SCRoundedPolygon
     for island in islands:
         cnc.chamfer(island, BEVEL)
     cnc.chamfer(plate, BEVEL)
@@ -468,10 +470,10 @@ def main() -> int:
         return 2
 
     # Cut it.
-    plate: SCRoundPoly = demo_plate()
-    hole: SCRoundPoly = demo_hole()
-    pocket: SCRoundPoly = demo_pocket()
-    islands: list[SCRoundPoly] = demo_islands()
+    plate: SCRoundedPolygon = demo_plate()
+    hole: SCRoundedPolygon = demo_hole()
+    pocket: SCRoundedPolygon = demo_pocket()
+    islands: list[SCRoundedPolygon] = demo_islands()
     cnc: SCCNC
     rounding: SCTool
     cnc, rounding = cut_demo(material)

@@ -230,3 +230,50 @@ drill, and intersecting with a cone, both fail in SolidCraft 0.25.1.
 * Next: the user's choice.  `T.m~2.3` lists what else goes on the tables
   (clamps); nothing yet places the vise or parallels on a table, or a
   part in the vise.
+
+## 2026-10-31: Double end countersinks, from Shars page 24
+
+* The user: model double end countersinks from `SharsMD/page_024/page_024.md`,
+  four tables: 421-0130 (60), 421-0141 (82 and 90), 421-0388 (60), 421-0138 (60).
+  Asked whether SolidCraft revolves sketches: yes, `solid.revolve`.
+* 421-0138's table (left hand) was first only in the picture `page_024_7.png`.  The
+  user then extracted it into the `.md`, which also stops at size 7.  A one-off
+  script compared all 44 rows of the page against the code (not a test, as
+  `SharsMD` is in neither version control).
+* A plain outline once dropped its upper tip, so its closing line cut through the
+  tool; the volume check caught it (plain cylinders read 98.9 % here, it read 92-94
+  %).  Revolves measure low on small tools, so compare with that in mind.
+* `tools.py`: `DoubleEndCountersink`, `DOUBLE_END_COUNTERSINKS` (44, by order
+  number), `countersink_rows()`; `python3 tools.py 8080 countersinks`.  Outline on a
+  plane with sketch X out and Y up, with true arcs; `solid.revolve` with an axis
+  at the tip.  `sctoolmodel.model()` uses short lines, so it was not reused.
+* Not from the catalog, Claude's readings: the small drill reaches its own
+  diameter from the tip (the usual proportion, from memory); the
+  radius type's arc is tangent to the body, reaching the drill (its 60 degrees is
+  kept as data but does not shape it: 83-88 degrees where the arc meets the drill).
+  Flutes left out.  `left_hand` is data only, without flutes.
+
+## 2026-10-31: Countersink tips
+
+* The user saw errors at the tips in the GUI, where the revolve comes to a point on
+  its axis.  The user's first idea, flat ends and one 90 degree cut for both caps, was
+  tried: 44 of them did not finish in 2 minutes headless (about 3 s before), and the
+  user stopped it before finding out why.  The user: give up on a perfect point; "just
+  good enough".
+* Now each tip has a flat 5 % of the small drill's diameter across
+  (`COUNTERSINK_TIP_FLAT`), a 90 degree point (`COUNTERSINK_POINT_ANGLE`), all in one
+  revolve.  `largest_countersinks()`; `python3 tools.py 8080 largest`.
+
+## 2026-10-31: The radius type is now a plain cone
+
+* The user, looking at the largest (421-0261): the larger section should be a pure
+  cone, not curved.  So the arc from the catalog's Radius column is gone from all of
+  the radius type, each with a straight 60 degree cone; `radius` stays as data only.
+  Earlier entries' arc tangent to the body no longer applies.  With no arcs, all 44
+  are one closed line and one revolve.  `python3 tools.py 8080 421-0261` shows one.
+
+## 2026-10-31: Where things stand
+
+* The user on all 44 countersinks: "They look great."  Next tool: the user's choice.
+  Drills and end mills could share a grooved cylinder routine; countersinks have no
+  flutes.  The small drill's length is still from memory, not the catalog.

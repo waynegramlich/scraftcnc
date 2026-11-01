@@ -4,7 +4,8 @@
 So far, the tables of Tormach's three entry level mills, each with its
 T-slots and the pockets at their ends that T-nuts drop in through;
 the keep-out regions around them that a tool must not enter; generic
-drills; a vise; and a set of parallels.
+drills; double end countersinks; a vise; a set of parallels; and a
+tooling plate.
 
 Every table has its top at `Z = 0`, its length along X and its center
 on `X = 0`.  Run as a program, it shows them all in SolidCraft:
@@ -12,6 +13,9 @@ on `X = 0`.  Run as a program, it shows them all in SolidCraft:
 ```
 python3 tools.py 8080       # A GUI started with `--control 8080`.
 python3 tools.py headless   # No window; prints the bodies it made.
+python3 tools.py 8080 countersinks   # Only the double end countersinks.
+python3 tools.py 8080 largest        # The largest of each kind of them.
+python3 tools.py 8080 421-0261       # One of them, by its order number.
 ```
 """
 
@@ -23,11 +27,12 @@ python3 tools.py headless   # No window; prints the bodies it made.
 # `pylint`'s limit on a module's size.
 # pylint: disable=too-many-lines
 
+import itertools
 import math
 import sys
 from dataclasses import dataclass, field
 
-from scgeometry import SCCorner, SCRoundPoly
+from scgeometry import SCCorner, SCHole, SCRoundedPolygon
 from scraftpybind import JSON, SolidCraftPyBind, connect
 from sctoolmodel import MM_PER_INCH
 from shops import LENGTH, measure
@@ -74,6 +79,23 @@ DRILL_POINT_ANGLE: float = 118.0
 DRILL_SPACING: float = 80.0
 DRILL_ROW_Y: float = -100.0
 
+# How far apart the double end countersinks stand when shown, in a row
+# per catalog table (millimeters), and each table's color.
+COUNTERSINK_SPACING: float = 40.0
+COUNTERSINK_COLORS: dict[str, str] = {
+    "Radius": "#2f6fde",
+    "Plain": "#2fae5b",
+    "Metric": "#e0a82e",
+    "Left hand": "#8e4ec6",
+}
+
+# The included angle of the points on a double end countersink's small
+# drills (degrees), and how wide the flat on each tip is, as a fraction
+# of the drill's diameter.  A revolve that comes to a point on its axis
+# has errors at the tip, and this is good enough.
+COUNTERSINK_POINT_ANGLE: float = 90.0
+COUNTERSINK_TIP_FLAT: float = 0.05
+
 # Where the vise stands, clear of the drills (millimeters).
 VISE_ROW_Y: float = -250.0
 
@@ -96,6 +118,12 @@ PARALLEL_SET_GAP: float = 31.75
 
 # A machine tool blue gray.
 VISE_COLOR: str = "#4f6d8a"
+
+# How far a tooling plate's keep-out region is grown past the plate.
+TOOLING_PLATE_MARGIN: str = "1/8 in"
+
+# A bright, unpainted aluminum.
+ALUMINUM_COLOR: str = "#e4e7ea"
 
 
 # Function `_mm()`:
@@ -153,6 +181,28 @@ class MillTable:
     slot_depth: float = field(init=True)
     pocket_length: float = field(init=True)
     pocket_width: float = field(init=True)
+
+    # Method `MillTable.__post_init__()`:
+    def __post_init__(self) -> None:
+        """Check that the slots leave the plate in one piece.
+
+        Raises:
+        * `ValueError`: If the slots reach through the plate's bottom or
+          its edges, or into one another.
+        """
+        if self.slot_depth >= self.thickness:
+            raise ValueError(
+                f"{self.slot_depth=} must be less than {self.thickness=}"
+            )
+        reach: float = self.slot_spacing * (self.slots - 1) / 2.0
+        if (
+            reach + self.head_width / 2.0 >= self.width / 2.0
+            or self.head_width >= self.slot_spacing
+        ):
+            raise ValueError(
+                f"{self.slots=} of {self.head_width=} on "
+                f"{self.slot_spacing=} do not fit {self.width=}"
+            )
 
     # Method `MillTable.slot_centers()`:
     def slot_centers(self) -> list[float]:
@@ -277,6 +327,35 @@ MILL_TABLES: tuple[MillTable, ...] = (
     ),
 )
 
+# The table of the mill in the user's garage, a Mikini 1610L, as the user
+# measured it: 30 x 10-1/2 in, five slots 1 in deep, with an 11/16 in
+# throat and a 15/16 in foot, each 1/2 in high.  The user's 1 in height can
+# not be the plate's, since slots that deep would cut it in strips, so the
+# thickness is an estimate.  So is the spacing, which was not given: the
+# 2-1/2 in of the published specifications puts the outer feet through the
+# edges.  There are taken to be no pockets, with the slots running the
+# table's whole length.
+MIKINI_1610L: MillTable = MillTable(
+    name="Mikini 1610L",
+    length=_mm("30 in"),
+    width=_mm("10-1/2 in"),
+    thickness=_mm("2-1/2 in"),
+    slots=5,
+    slot_spacing=_mm("2 in"),
+    slot_length=_mm("30 in"),
+    throat_width=_mm("11/16 in"),
+    throat_depth=_mm("1/2 in"),
+    head_width=_mm("15/16 in"),
+    slot_depth=_mm("1 in"),
+    pocket_length=0.0,
+    pocket_width=0.0,
+)
+
+# How far the Mikini 1610L's axes travel, from its published
+# specifications (millimeters).
+MIKINI_X_TRAVEL: float = _mm("16.75 in")
+MIKINI_Y_TRAVEL: float = _mm("9.35 in")
+
 
 # Class `Prism`:
 @dataclass(frozen=True, slots=True)
@@ -307,6 +386,23 @@ class Prism:
         if not all(low < high for low, high in zip(self.low, self.high)):
             raise ValueError(f"{self.low=} must be below {self.high=}")
 
+    # Method `Prism.quarter_turned()`:
+    def quarter_turned(self, x: float, y: float) -> "Prism":
+        """Return the prism turned clockwise, seen from above: +X to -Y.
+
+        Arguments:
+        * `x` (`float`): The X of the vertical axis (millimeters).
+        * `y` (`float`): The Y of the vertical axis (millimeters).
+
+        Returns:
+        * (`Prism`): The turned prism, with the same name.
+        """
+        return Prism(
+            self.name,
+            (x + self.low[1] - y, y - self.high[0] + x, self.low[2]),
+            (x + self.high[1] - y, y - self.low[0] + x, self.high[2]),
+        )
+
     # Method `Prism.grown()`:
     def grown(self, margin: float) -> "Prism":
         """Return the prism grown on all six sides.
@@ -324,6 +420,28 @@ class Prism:
             (x0 - margin, y0 - margin, z0 - margin),
             (x1 + margin, y1 + margin, z1 + margin),
         )
+
+
+# Function `box_prism()`:
+def box_prism(name: str, size: Point, center: Point) -> Prism:
+    """Return the prism around a box, up from the center of its bottom.
+
+    Arguments:
+    * `name` (`str`): What it is.
+    * `size` (`Point`): Its size along X, Y and Z (millimeters).
+    * `center` (`Point`): The center of its bottom face (millimeters).
+
+    Returns:
+    * (`Prism`): The prism.
+    """
+    x, y, z = center
+    half_x: float = size[0] / 2.0
+    half_y: float = size[1] / 2.0
+    return Prism(
+        name,
+        (x - half_x, y - half_y, z),
+        (x + half_x, y + half_y, z + size[2]),
+    )
 
 
 # Class `Cylinder`:
@@ -821,6 +939,397 @@ def sample_drills(
     return bodies, keep_out
 
 
+# Class `DoubleEndCountersink`:
+@dataclass(frozen=True, slots=True)
+class DoubleEndCountersink:
+    """A combined drill and countersink, cut at both ends (a center drill).
+
+    A body with a small drill at each end, joined by a cone.  It stands
+    on one tip, with its axis along Z.  It is a solid of revolution,
+    with a small flat on each tip: its flutes are left out.  All lengths
+    are in millimeters.
+
+    The catalog gives no length for the small drill, so each is taken to
+    reach as far from its tip as it is wide, the usual proportion.
+
+    Attributes:
+    * `order_number` (`str`): The catalog's order number.
+    * `family` (`str`): Which of the catalog's tables it is from.
+    * `size` (`str`): The catalog's size number (empty if metric).
+    * `body_diameter` (`float`): The diameter of its body.
+    * `drill_diameter` (`float`): The diameter of the small drills.
+    * `overall_length` (`float`): Its length, from tip to tip.
+    * `angle` (`float`): The countersink's included angle (degrees).
+    * `radius` (`float`):
+      The catalog's radius, for the radius type (otherwise 0).  It is
+      only kept as data: the model has a plain cone, at the user's word.
+    * `left_hand` (`bool`): True if it cuts left handed.
+    * `point_angle` (`float`):
+      The included angle of the small drills' points (degrees).
+
+    Constructor:
+    * `DoubleEndCountersink(order_number, family, size, body_diameter,
+      drill_diameter, overall_length, angle, radius, left_hand,
+      point_angle)`
+    """
+
+    # Constructor arguments:
+    order_number: str = field(init=True)
+    family: str = field(init=True)
+    size: str = field(init=True)
+    body_diameter: float = field(init=True)
+    drill_diameter: float = field(init=True)
+    overall_length: float = field(init=True)
+    angle: float = field(init=True)
+    radius: float = field(init=True, default=0.0)
+    left_hand: bool = field(init=True, default=False)
+    point_angle: float = field(init=True, default=COUNTERSINK_POINT_ANGLE)
+
+    # Method `DoubleEndCountersink.__post_init__()`:
+    def __post_init__(self) -> None:
+        """Check that both ends fit on the body.
+
+        Raises:
+        * `ValueError`: If the sizes do not make a countersink.
+        """
+        if not 0.0 < self.drill_diameter < self.body_diameter:
+            raise ValueError(
+                f"{self.order_number}: {self.drill_diameter=} must be "
+                f"less than {self.body_diameter=}"
+            )
+        if not 0.0 < self.angle < 180.0:
+            raise ValueError(f"{self.order_number}: {self.angle=}")
+        if 2.0 * self.body_start() >= self.overall_length:
+            raise ValueError(
+                f"{self.order_number}: its ends need "
+                f"{2.0 * self.body_start():g} of {self.overall_length=}"
+            )
+
+    # Method `DoubleEndCountersink.name()`:
+    def name(self) -> str:
+        """Return a name for its body.
+
+        Returns:
+        * (`str`): The name, with its order number.
+        """
+        return f"Countersink {self.order_number}"
+
+    # Method `DoubleEndCountersink.step()`:
+    def step(self) -> float:
+        """Return how far the body's radius is past the small drill's.
+
+        Returns:
+        * (`float`): The difference (millimeters).
+        """
+        return (self.body_diameter - self.drill_diameter) / 2.0
+
+    # Method `DoubleEndCountersink.tip_radius()`:
+    def tip_radius(self) -> float:
+        """Return the radius of the flat on each tip.
+
+        Returns:
+        * (`float`): The radius (millimeters).
+        """
+        return COUNTERSINK_TIP_FLAT * self.drill_diameter / 2.0
+
+    # Method `DoubleEndCountersink.point_height()`:
+    def point_height(self) -> float:
+        """Return the height of the point, from the flat to the drill.
+
+        Returns:
+        * (`float`): The height (millimeters).
+        """
+        half: float = math.radians(self.point_angle / 2.0)
+        drop: float = self.drill_diameter / 2.0 - self.tip_radius()
+        return drop / math.tan(half)
+
+    # Method `DoubleEndCountersink.body_start()`:
+    def body_start(self) -> float:
+        """Return how far the full body starts from a tip.
+
+        Returns:
+        * (`float`): The distance (millimeters).
+        """
+        rise: float = self.step() / math.tan(math.radians(self.angle / 2.0))
+        return self.drill_diameter + rise
+
+    # Method `DoubleEndCountersink.profile()`:
+    def profile(self) -> list[tuple[float, float]]:
+        """Return its outline, from one tip along its side to the other.
+
+        Returns:
+        * (`list[tuple[float, float]]`):
+          The `(radius, height)` of each point (millimeters), starting
+          and ending on the axis.
+        """
+        drill: float = self.drill_diameter / 2.0
+        side: list[tuple[float, float]] = [
+            (0.0, 0.0),
+            (self.tip_radius(), 0.0),
+            (drill, self.point_height()),
+            (drill, self.drill_diameter),
+            (self.body_diameter / 2.0, self.body_start()),
+        ]
+        return side + [
+            (radius, self.overall_length - height)
+            for radius, height in reversed(side)
+        ]
+
+    # Method `DoubleEndCountersink.volume()`:
+    def volume(self) -> float:
+        """Return the volume the model should have.
+
+        Returns:
+        * (`float`): The volume (cubic millimeters).
+        """
+        points: list[tuple[float, float]] = self.profile()
+        return sum(
+            math.pi
+            / 3.0
+            * (top[1] - bottom[1])
+            * (bottom[0] ** 2 + bottom[0] * top[0] + top[0] ** 2)
+            for bottom, top in itertools.pairwise(points)
+        )
+
+    # Method `DoubleEndCountersink.cylinder()`:
+    def cylinder(self, tip: Point) -> Cylinder:
+        """Return the cylinder that just encloses it.
+
+        Arguments:
+        * `tip` (`Point`): Where its lower tip is (millimeters).
+
+        Returns:
+        * (`Cylinder`): The cylinder, named for it.
+        """
+        return Cylinder(
+            self.name(),
+            (tip[0], tip[1]),
+            tip[2],
+            tip[2] + self.overall_length,
+            self.body_diameter / 2.0,
+        )
+
+    # Method `DoubleEndCountersink.model()`:
+    def model(
+        self,
+        solidcraft: SolidCraftPyBind,
+        tip: Point = (0.0, 0.0, 0.0),
+        color: str = DRILL_COLOR,
+    ) -> str:
+        """Sketch its outline and revolve it about its axis.
+
+        Arguments:
+        * `solidcraft` (`SolidCraftPyBind`): The SolidCraft session.
+        * `tip` (`Point`): Where its lower tip is (millimeters).
+        * `color` (`str`): How it looks.
+
+        Returns:
+        * (`str`): The body's name (SolidCraft may change it, if the
+          name is taken).
+        """
+        # The plane has sketch X along the radius, and sketch Y up.
+        solidcraft.sketch.create(
+            plane={
+                "origin": list(tip),
+                "x_dir": [1.0, 0.0, 0.0],
+                "y_dir": [0.0, 0.0, 1.0],
+            },
+            name=f"{self.name()} profile",
+        )
+        drawn: JSON = solidcraft.sketch.line(
+            points=[[r, z] for r, z in self.profile()], closed=True
+        )
+        assert isinstance(drawn, dict)
+        solidcraft.sketch.finish()
+        made: JSON = solidcraft.solid.revolve(
+            axis={"origin": list(tip), "dir": [0.0, 0.0, 1.0]},
+            profiles=[{"curves": drawn["curves"]}],
+            body_name=self.name(),
+        )
+        assert isinstance(made, dict)
+        bodies: JSON = made["created_bodies"]
+        assert isinstance(bodies, list) and isinstance(bodies[0], str)
+        solidcraft.appearance.assign(bodies=[bodies[0]], color=color)
+        return bodies[0]
+
+
+# Rows of the catalog's tables: size, body, drill and overall length.
+_COUNTERSINK_SIZES: dict[str, tuple[str, str, str, str]] = {
+    "1": ("1/8 in", "3/64 in", "1-1/4 in", "5/32 in"),
+    "2": ("3/16 in", "5/64 in", "1-7/8 in", "7/32 in"),
+    "3": ("1/4 in", "7/64 in", "2 in", "9/32 in"),
+    "4": ("5/16 in", "1/8 in", "2-1/8 in", "3/8 in"),
+    "4-1/2": ("3/8 in", "9/64 in", "2-1/2 in", "7/16 in"),
+    "5": ("7/16 in", "3/16 in", "2-3/4 in", "1/2 in"),
+    "6": ("1/2 in", "7/32 in", "3 in", "9/16 in"),
+    "7": ("5/8 in", "1/4 in", "3-1/4 in", "45/64 in"),
+    "8": ("3/4 in", "5/16 in", "3-1/2 in", "7/8 in"),
+    "9": ("7/8 in", "11/32 in", "3-5/8 in", "1 in"),
+    "10": ("1 in", "3/8 in", "3-3/4 in", "1-7/64 in"),
+}
+
+
+# Function `_inch_countersink()`:
+def _inch_countersink(
+    order_number: str,
+    family: str,
+    size: str,
+    angle: float,
+) -> DoubleEndCountersink:
+    """Return a countersink with one of the catalog's inch sizes.
+
+    Arguments:
+    * `order_number` (`str`): The catalog's order number.
+    * `family` (`str`): Which of the tables it is from.
+    * `size` (`str`): Its size number.
+    * `angle` (`float`): Its included angle (degrees).
+
+    Returns:
+    * (`DoubleEndCountersink`): The countersink.
+    """
+    body, drill, length, radius = _COUNTERSINK_SIZES[size]
+    return DoubleEndCountersink(
+        order_number,
+        family,
+        size,
+        _mm(body),
+        _mm(drill),
+        _mm(length),
+        angle,
+        _mm(radius) if family == "Radius" else 0.0,
+        family == "Left hand",
+    )
+
+
+# The Shars 2026 catalog's page 24, with both ends cut: the radius type,
+# the plain 82 and 90 degree type (a row has an order number for each),
+# the metric DIN 333 type and the left hand type, which stops at size 7.
+DOUBLE_END_COUNTERSINKS: dict[str, DoubleEndCountersink] = {
+    countersink.order_number: countersink
+    for countersink in (
+        *(
+            _inch_countersink(order_number, "Radius", size, 60.0)
+            for size, order_number in (
+                ("1", "421-0130"),
+                ("2", "421-0145"),
+                ("3", "421-0160"),
+                ("4", "421-0175"),
+                ("4-1/2", "421-0379"),
+                ("5", "421-0190"),
+                ("6", "421-0205"),
+                ("7", "421-0220"),
+                ("8", "421-0235"),
+                ("9", "421-0250"),
+                ("10", "421-0261"),
+            )
+        ),
+        *(
+            _inch_countersink(order_number, "Plain", size, angle)
+            for size, order_82, order_90 in (
+                ("1", "421-0139", "421-0141"),
+                ("2", "421-0154", "421-0156"),
+                ("3", "421-0169", "421-0171"),
+                ("4", "421-0184", "421-0186"),
+                ("5", "421-0199", "421-0201"),
+                ("6", "421-0214", "421-0216"),
+                ("7", "421-0229", "421-0231"),
+                ("8", "421-0244", "421-0246"),
+            )
+            for order_number, angle in ((order_82, 82.0), (order_90, 90.0))
+        ),
+        *(
+            DoubleEndCountersink(
+                order_number,
+                "Metric",
+                "",
+                _mm(f"{body} mm"),
+                _mm(f"{drill} mm"),
+                _mm(f"{length} mm"),
+                60.0,
+            )
+            for body, drill, length, order_number in (
+                ("3.15", "0.50", "25.00", "421-0388"),
+                ("3.15", "1.00", "31.50", "421-0390"),
+                ("3.15", "1.25", "31.50", "421-0391"),
+                ("4.00", "1.60", "35.50", "421-0392"),
+                ("5.00", "2.00", "40.00", "421-0393"),
+                ("6.30", "2.50", "45.00", "421-0394"),
+                ("8.00", "3.15", "50.00", "421-0395"),
+                ("10.00", "4.00", "56.00", "421-0396"),
+                ("12.50", "5.00", "63.00", "421-0397"),
+                ("16.00", "6.30", "71.00", "421-0398"),
+            )
+        ),
+        *(
+            _inch_countersink(order_number, "Left hand", size, 60.0)
+            for size, order_number in (
+                ("1", "421-0138"),
+                ("2", "421-0153"),
+                ("3", "421-0168"),
+                ("4", "421-0183"),
+                ("5", "421-0198"),
+                ("6", "421-0213"),
+                ("7", "421-0228"),
+            )
+        ),
+    )
+}
+
+
+# Function `largest_countersinks()`:
+def largest_countersinks(solidcraft: SolidCraftPyBind) -> list[str]:
+    """Model the largest countersink of each table, side by side.
+
+    Arguments:
+    * `solidcraft` (`SolidCraftPyBind`): The SolidCraft session.
+
+    Returns:
+    * (`list[str]`): The names of the bodies.
+    """
+    bodies: list[str] = []
+    for column, (family, color) in enumerate(COUNTERSINK_COLORS.items()):
+        largest: DoubleEndCountersink = max(
+            (
+                countersink
+                for countersink in DOUBLE_END_COUNTERSINKS.values()
+                if countersink.family == family
+            ),
+            key=lambda countersink: countersink.body_diameter,
+        )
+        tip: Point = (column * COUNTERSINK_SPACING, 0.0, 0.0)
+        bodies.append(largest.model(solidcraft, tip, color))
+    return bodies
+
+
+# Function `countersink_rows()`:
+def countersink_rows(
+    solidcraft: SolidCraftPyBind,
+) -> list[str]:
+    """Model all of `DOUBLE_END_COUNTERSINKS`, a row for each table.
+
+    Arguments:
+    * `solidcraft` (`SolidCraftPyBind`): The SolidCraft session.
+
+    Returns:
+    * (`list[str]`): The names of the bodies.
+    """
+    bodies: list[str] = []
+    for row, (family, color) in enumerate(COUNTERSINK_COLORS.items()):
+        members: list[DoubleEndCountersink] = [
+            countersink
+            for countersink in DOUBLE_END_COUNTERSINKS.values()
+            if countersink.family == family
+        ]
+        for column, countersink in enumerate(members):
+            tip: Point = (
+                (column - (len(members) - 1) / 2.0) * COUNTERSINK_SPACING,
+                row * COUNTERSINK_SPACING,
+                0.0,
+            )
+            bodies.append(countersink.model(solidcraft, tip, color))
+    return bodies
+
+
 # Class `ViseNotches`:
 @dataclass(frozen=True, slots=True)
 class ViseNotches:
@@ -947,7 +1456,7 @@ class ViseBlock:
         name: str,
         center: tuple[float, float] = (0.0, 0.0),
         notches: ViseNotches | None = None,
-    ) -> SCRoundPoly:
+    ) -> SCRoundedPolygon:
         """Return the block's outline, as seen from above.
 
         Arguments:
@@ -956,7 +1465,7 @@ class ViseBlock:
         * `notches` (`ViseNotches | None`): The notches in its sides.
 
         Returns:
-        * (`SCRoundPoly`): The outline, counter-clockwise.
+        * (`SCRoundedPolygon`): The outline, counter-clockwise.
 
         Raises:
         * `ValueError`: If the notches do not fit the block.
@@ -980,7 +1489,7 @@ class ViseBlock:
             *high_side,
             SCCorner(-half_x, half_y, radius),
         ]
-        return SCRoundPoly(
+        return SCRoundedPolygon(
             name,
             [
                 SCCorner(x + corner.x, y + corner.y, corner.radius)
@@ -1355,6 +1864,21 @@ class Vise:
             + 2.0 * self.plate.length
             + opening
         )
+
+    # Method `Vise.gap_center()`:
+    def gap_center(self, opening: float) -> float:
+        """Return the X of the middle of the gap between the plates.
+
+        Arguments:
+        * `opening` (`float`): The gap between the plates (millimeters).
+
+        Returns:
+        * (`float`): Its X, from the center of the base (millimeters).
+
+        Raises:
+        * `ValueError`: If `opening` is out of range.
+        """
+        return self.moving_face(opening) - self.plate.length - opening / 2.0
 
     # Method `Vise.hexagon()`:
     def hexagon(self) -> list[tuple[float, float]]:
@@ -2016,6 +2540,299 @@ def parallel_set(
     return bodies, keep_out
 
 
+# Class `ScrewFit`:
+@dataclass(frozen=True, slots=True)
+class ScrewFit:
+    """The holes that a screw passes through.  Lengths are millimeters.
+
+    Attributes:
+    * `screw` (`str`): The screw's size (such as `"#6"`).
+    * `nominal` (`float`): The screw's nominal diameter.
+    * `close_drill` (`str`): The drill for a close fit.
+    * `close` (`float`): The diameter of a close fit hole.
+    * `loose_drill` (`str`): The drill for a loose (free) fit.
+    * `loose` (`float`): The diameter of a loose fit hole.
+
+    Constructor:
+    * `ScrewFit(screw, nominal, close_drill, close, loose_drill, loose)`
+    """
+
+    # Constructor arguments:
+    screw: str = field(init=True)
+    nominal: float = field(init=True)
+    close_drill: str = field(init=True)
+    close: float = field(init=True)
+    loose_drill: str = field(init=True)
+    loose: float = field(init=True)
+
+
+# The user's chart of close and loose holes for imperial screws.
+SCREW_FITS: dict[str, ScrewFit] = {
+    fit.screw: fit
+    for fit in (
+        ScrewFit(
+            "#2",
+            _mm("0.0860 in"),
+            "#43",
+            _mm("0.0890 in"),
+            "#41",
+            _mm("0.0960 in"),
+        ),
+        ScrewFit(
+            "#4",
+            _mm("0.1120 in"),
+            "#32",
+            _mm("0.1160 in"),
+            "#30",
+            _mm("0.1285 in"),
+        ),
+        ScrewFit(
+            "#6",
+            _mm("0.1380 in"),
+            "#27",
+            _mm("0.1440 in"),
+            "#25",
+            _mm("0.1495 in"),
+        ),
+        ScrewFit(
+            "#8",
+            _mm("0.1640 in"),
+            "#18",
+            _mm("0.1695 in"),
+            "#16",
+            _mm("0.1770 in"),
+        ),
+        ScrewFit(
+            "#10",
+            _mm("0.1900 in"),
+            "#9",
+            _mm("0.1960 in"),
+            "#7",
+            _mm("0.2010 in"),
+        ),
+        ScrewFit(
+            "#12",
+            _mm("0.2160 in"),
+            "#2",
+            _mm("0.2210 in"),
+            "#1",
+            _mm("0.2280 in"),
+        ),
+    )
+}
+
+
+# Class `ToolingPlate`:
+@dataclass(frozen=True, slots=True)
+class ToolingPlate:
+    """A plate with a grid of holes through it, for holding work down.
+
+    Its outline is an `SCRoundedPolygon` with its four corners rounded
+    and the holes inside, so that one extrude makes the whole plate.
+    The grid fills the plate, with its outer holes `edge` in from all
+    four sides.  All lengths are in millimeters.
+
+    Attributes:
+    * `name` (`str`): What it is.
+    * `length` (`float`): Its size along X.
+    * `width` (`float`): Its size along Y.
+    * `thickness` (`float`): Its size along Z.
+    * `hole_spacing` (`float`): The distance between hole centers.
+    * `edge` (`float`): The distance from a side to the nearest holes.
+    * `hole_diameter` (`float`): The diameter of the holes.
+    * `corner_radius` (`float`): The radius of its four corners.
+
+    Constructor:
+    * `ToolingPlate(name, length, width, thickness, hole_spacing, edge,
+      hole_diameter, corner_radius)`
+    """
+
+    # Constructor arguments:
+    name: str = field(init=True)
+    length: float = field(init=True)
+    width: float = field(init=True)
+    thickness: float = field(init=True)
+    hole_spacing: float = field(init=True)
+    edge: float = field(init=True)
+    hole_diameter: float = field(init=True)
+    corner_radius: float = field(init=True, default=0.0)
+
+    # Method `ToolingPlate.__post_init__()`:
+    def __post_init__(self) -> None:
+        """Check that the holes make a whole grid, inside the plate.
+
+        Raises:
+        * `ValueError`: If the grid does not reach `edge` from every
+          side, or the holes run into one another or a side.
+        """
+        for size in (self.length, self.width):
+            steps: float = (size - 2.0 * self.edge) / self.hole_spacing
+            if steps < 0.0 or abs(steps - round(steps)) > 1.0e-9:
+                raise ValueError(
+                    f"{self.hole_spacing=} does not divide {size=} less "
+                    f"{self.edge=} on both sides"
+                )
+        if not (
+            0.0 < self.hole_diameter < min(self.hole_spacing, 2.0 * self.edge)
+        ):
+            raise ValueError(
+                f"{self.hole_diameter=} does not fit {self.hole_spacing=} "
+                f"and {self.edge=}"
+            )
+
+    # Method `ToolingPlate.hole_centers()`:
+    def hole_centers(self) -> list[tuple[float, float]]:
+        """Return where the holes are, from the center of the plate.
+
+        Returns:
+        * (`list[tuple[float, float]]`):
+          Each hole's `(x, y)`, by rows from the most negative up.
+        """
+        columns: list[float] = _grid(self.length, self.edge, self.hole_spacing)
+        rows: list[float] = _grid(self.width, self.edge, self.hole_spacing)
+        return [(x, y) for y in rows for x in columns]
+
+    # Method `ToolingPlate.volume()`:
+    def volume(self) -> float:
+        """Return the volume the model should have.
+
+        Returns:
+        * (`float`): The volume (cubic millimeters).
+        """
+        area: float = (
+            self.length * self.width
+            - (4.0 - math.pi) * self.corner_radius**2
+            - len(self.hole_centers())
+            * math.pi
+            * (self.hole_diameter / 2.0) ** 2
+        )
+        return area * self.thickness
+
+    # Method `ToolingPlate.seat()`:
+    def seat(self) -> Point:
+        """Return the middle of the plate's top.
+
+        Returns:
+        * (`Point`): It, from the center of the plate's bottom (mm).
+        """
+        return (0.0, 0.0, self.thickness)
+
+    # Method `ToolingPlate.outline()`:
+    def outline(self, center: tuple[float, float]) -> SCRoundedPolygon:
+        """Return the plate's outline and holes, as seen from above.
+
+        Arguments:
+        * `center` (`tuple[float, float]`): Its center's X and Y (mm).
+
+        Returns:
+        * (`SCRoundedPolygon`): The outline, counter-clockwise.
+        """
+        x, y = center
+        half_x: float = self.length / 2.0
+        half_y: float = self.width / 2.0
+        radius: float = self.corner_radius
+        return SCRoundedPolygon(
+            self.name,
+            [
+                SCCorner(x - half_x, y - half_y, radius),
+                SCCorner(x + half_x, y - half_y, radius),
+                SCCorner(x + half_x, y + half_y, radius),
+                SCCorner(x - half_x, y + half_y, radius),
+            ],
+            [
+                SCHole(x + hole_x, y + hole_y, self.hole_diameter)
+                for hole_x, hole_y in self.hole_centers()
+            ],
+        )
+
+    # Method `ToolingPlate.model()`:
+    def model(self, solidcraft: SolidCraftPyBind, center: Point) -> list[str]:
+        """Model the plate, up from the center of its bottom face.
+
+        Arguments:
+        * `solidcraft` (`SolidCraftPyBind`): The SolidCraft session.
+        * `center` (`Point`): The center of its bottom face (mm).
+
+        Returns:
+        * (`list[str]`): The name of the plate's body.
+        """
+        x, y, z = center
+
+        # Sketch it all at the bottom face, and make it with one extrude.
+        solidcraft.sketch.create(plane="XY", offset=z, name=self.name)
+        self.outline((x, y)).sketch(solidcraft)
+        solidcraft.sketch.finish()
+        made: JSON = solidcraft.solid.extrude(
+            distance=self.thickness, body_name=self.name
+        )
+        assert isinstance(made, dict)
+        bodies: JSON = made["created_bodies"]
+        assert isinstance(bodies, list) and isinstance(bodies[0], str)
+        solidcraft.appearance.assign(bodies=[bodies[0]], color=ALUMINUM_COLOR)
+        return [bodies[0]]
+
+    # Method `ToolingPlate.prism()`:
+    def prism(self, center: Point) -> Prism:
+        """Return the rectangular prism that just encloses the plate.
+
+        Arguments:
+        * `center` (`Point`): The center of its bottom face (mm).
+
+        Returns:
+        * (`Prism`): The prism, named for the plate.
+        """
+        return box_prism(
+            self.name, (self.length, self.width, self.thickness), center
+        )
+
+    # Method `ToolingPlate.keep_out()`:
+    def keep_out(self, center: Point) -> KeepOut:
+        """Return the prism around the plate.
+
+        Arguments:
+        * `center` (`Point`): The center of its bottom face (mm).
+
+        Returns:
+        * (`KeepOut`): One grown prism.
+        """
+        keep_out: KeepOut = KeepOut()
+        keep_out.add_prism(self.prism(center), TOOLING_PLATE_MARGIN)
+        return keep_out
+
+
+# Function `_grid()`:
+def _grid(size: float, edge: float, spacing: float) -> list[float]:
+    """Return the places along a side for a grid of holes.
+
+    Arguments:
+    * `size` (`float`): The side's length (millimeters).
+    * `edge` (`float`): How far the outer holes are from its ends (mm).
+    * `spacing` (`float`): The distance between holes (millimeters).
+
+    Returns:
+    * (`list[float]`): The places, from the side's middle, lowest first.
+    """
+    count: int = round((size - 2.0 * edge) / spacing) + 1
+    first: float = -spacing * (count - 1) / 2.0
+    return [first + index * spacing for index in range(count)]
+
+
+# A tooling plate as the user described it, whose holes fill it at 1/2 in,
+# reaching 1/2 in from all four sides.  The user gave no thickness; 1/2 in
+# is an estimate.  Its corners are 1/4 in rounds.  Each hole is a close
+# fit for a #6 screw.
+TOOLING_PLATE: ToolingPlate = ToolingPlate(
+    name="Tooling plate",
+    length=_mm("5-1/2 in"),
+    width=_mm("10-1/2 in"),
+    thickness=_mm("1/2 in"),
+    hole_spacing=_mm("1/2 in"),
+    edge=_mm("1/2 in"),
+    hole_diameter=SCREW_FITS["#6"].close,
+    corner_radius=_mm("1/4 in"),
+)
+
+
 # Function `table_centers()`:
 def table_centers() -> list[float]:
     """Return where the tables go when they are shown side by side.
@@ -2110,10 +2927,11 @@ class Tormach:
         for slot_y in table.slot_centers():
             self._cut_slot(table, body, center_y + slot_y)
 
-        # The pockets at the ends of the slots.
+        # The pockets at the ends of the slots, if it has any.
         offset: float = (table.slot_length + table.pocket_length) / 2.0
-        for pocket_x in (-offset, offset):
-            self._cut_pocket(table, body, pocket_x, center_y)
+        if table.pocket_length > 0.0:
+            for pocket_x in (-offset, offset):
+                self._cut_pocket(table, body, pocket_x, center_y)
         solidcraft.appearance.assign(bodies=[body], color=TABLE_COLOR)
         return body
 
@@ -2184,6 +3002,22 @@ def main() -> None:
     with connect(target) as transport:
         solidcraft: SolidCraftPyBind = SolidCraftPyBind(transport)
         solidcraft.file.new()
+        if sys.argv[2:] == ["countersinks"]:
+            print(countersink_rows(solidcraft))
+            solidcraft.view.apply(view="iso")
+            return
+        if sys.argv[2:] and sys.argv[2] in DOUBLE_END_COUNTERSINKS:
+            print(
+                DOUBLE_END_COUNTERSINKS[sys.argv[2]].model(
+                    solidcraft, color=COUNTERSINK_COLORS["Radius"]
+                )
+            )
+            solidcraft.view.apply(view="iso")
+            return
+        if sys.argv[2:] == ["largest"]:
+            print(largest_countersinks(solidcraft))
+            solidcraft.view.apply(view="iso")
+            return
         tormach: Tormach = Tormach(solidcraft)
         print(tormach.mill_tables())
         print(tormach.mill_table_keep_out().model(solidcraft))

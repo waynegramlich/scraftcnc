@@ -1,0 +1,57 @@
+{
+  "name": "Tooling plate from a chunk of aluminum, in a Kurt vise",
+  "machine": {
+    "name": "Mikini 1610L",
+    "x_travel": "16.75 in",
+    "y_travel": "9.35 in"
+  },
+  "tooling": [
+    {
+      "kind": "mill_table",
+      "type": "Mikini 1610L",
+      "location": ["0 in", "0 in"],
+      "height": "-2-1/2 in",
+      "orientation": "0 deg"
+    },
+    {
+      "kind": "vise",
+      "type": "Kurt D688",
+      "opening": "6 in",
+      "location": ["0 in", "-3.15 in"],
+      "height": "0 in",
+      "orientation": "-90 deg"
+    },
+    {
+      "kind": "parallel",
+      "type": "Parallel 1-1/2 in A",
+      "location": ["0 in", "2.9375 in"],
+      "height": "2.64 in",
+      "orientation": "-90 deg"
+    },
+    {
+      "kind": "parallel",
+      "type": "Parallel 1-1/2 in B",
+      "location": ["0 in", "-2.9375 in"],
+      "height": "2.64 in",
+      "orientation": "-90 deg"
+    }
+  ],
+  "materials": [
+    {
+      "name": "Raw aluminum",
+      "material": "6061 aluminum",
+      "size": ["6 in", "11-1/2 in", "1/2 in"],
+      "location": ["0 in", "0 in"],
+      "height": "4.14 in",
+      "orientation": "90 deg",
+      "parts": [
+        {
+          "type": "Tooling plate",
+          "location": ["0 in", "0 in"],
+          "height": "4.14 in",
+          "orientation": "90 deg"
+        }
+      ]
+    }
+  ]
+}

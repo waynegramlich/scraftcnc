@@ -473,6 +473,113 @@ class TestParallels(unittest.TestCase):
 @unittest.skipUnless(
     CLI.exists() or shutil.which("solidcraft-cli"), "needs solidcraft-cli"
 )
+class TestCountersinks(unittest.TestCase):
+    """The double end countersinks of the catalog's page 24."""
+
+    def test_tables(self) -> None:
+        """All four tables are there, with their sizes."""
+        sinks = tools.DOUBLE_END_COUNTERSINKS
+        families = [sink.family for sink in sinks.values()]
+        self.assertEqual(families.count("Radius"), 11)
+        self.assertEqual(families.count("Plain"), 16)
+        self.assertEqual(families.count("Metric"), 10)
+        self.assertEqual(families.count("Left hand"), 7)
+        self.assertEqual(len(sinks), 44)
+
+    def test_rows(self) -> None:
+        """The four order numbers named match the catalog's rows."""
+        sinks = tools.DOUBLE_END_COUNTERSINKS
+        first = sinks["421-0130"]
+        self.assertAlmostEqual(first.body_diameter, 0.125 * 25.4)
+        self.assertAlmostEqual(first.drill_diameter, 3.0 / 64.0 * 25.4)
+        self.assertAlmostEqual(first.overall_length, 1.25 * 25.4)
+        self.assertAlmostEqual(first.radius, 5.0 / 32.0 * 25.4)
+        self.assertEqual(first.angle, 60.0)
+        self.assertEqual(sinks["421-0139"].angle, 82.0)
+        self.assertEqual(sinks["421-0141"].angle, 90.0)
+        self.assertEqual(sinks["421-0141"].radius, 0.0)
+        metric = sinks["421-0388"]
+        self.assertAlmostEqual(metric.body_diameter, 3.15)
+        self.assertAlmostEqual(metric.drill_diameter, 0.5)
+        self.assertAlmostEqual(metric.overall_length, 25.0)
+        self.assertTrue(sinks["421-0138"].left_hand)
+        self.assertFalse(first.left_hand)
+        self.assertAlmostEqual(sinks["421-0228"].body_diameter, 0.625 * 25.4)
+
+    def test_cone(self) -> None:
+        """A plain end's cone has the catalog's angle."""
+        sink = tools.DOUBLE_END_COUNTERSINKS["421-0141"]
+        step = sink.step()
+        self.assertAlmostEqual(sink.body_start() - sink.drill_diameter, step)
+        points = sink.profile()
+        self.assertEqual(points[0], (0.0, 0.0))
+        self.assertAlmostEqual(points[-1][1], sink.overall_length)
+        self.assertEqual(points[-1][0], 0.0)
+
+    def test_radius_type_is_conical(self) -> None:
+        """The radius type has a pure cone, at the catalog's 60 degrees."""
+        sink = tools.DOUBLE_END_COUNTERSINKS["421-0261"]
+        points = sink.profile()
+        self.assertEqual(len(points), 10)
+        (r_low, z_low), (r_high, z_high) = points[3], points[4]
+        self.assertAlmostEqual(r_low, sink.drill_diameter / 2.0)
+        self.assertAlmostEqual(r_high, sink.body_diameter / 2.0)
+        self.assertAlmostEqual(
+            2.0 * math.degrees(math.atan2(r_high - r_low, z_high - z_low)),
+            60.0,
+        )
+
+    def test_flat_tips(self) -> None:
+        """Each tip is flat, 5 % of the small drill's diameter across."""
+        for sink in tools.DOUBLE_END_COUNTERSINKS.values():
+            points = sink.profile()
+            self.assertEqual(points[0], (0.0, 0.0))
+            self.assertEqual(points[1][1], 0.0)
+            self.assertAlmostEqual(
+                2.0 * points[1][0], 0.05 * sink.drill_diameter
+            )
+            self.assertAlmostEqual(points[-2][1], sink.overall_length)
+            self.assertAlmostEqual(points[-2][0], points[1][0])
+
+    def test_point_angle(self) -> None:
+        """The point is a 90 degree cone, from the flat to the drill."""
+        sink = tools.DOUBLE_END_COUNTERSINKS["421-0141"]
+        points = sink.profile()
+        self.assertAlmostEqual(
+            points[2][0] - points[1][0], points[2][1] - points[1][1]
+        )
+
+    def test_symmetric(self) -> None:
+        """Both ends are the same."""
+        for sink in tools.DOUBLE_END_COUNTERSINKS.values():
+            points = sink.profile()
+            for (r_low, z_low), (r_high, z_high) in zip(
+                points, reversed(points)
+            ):
+                self.assertAlmostEqual(r_low, r_high)
+                self.assertAlmostEqual(z_low + z_high, sink.overall_length)
+
+    def test_cylinder(self) -> None:
+        """Its keep-out cylinder encloses it, from its tip up."""
+        sink = tools.DOUBLE_END_COUNTERSINKS["421-0138"]
+        cylinder = sink.cylinder((1.0, 2.0, 3.0))
+        self.assertEqual(cylinder.name, "Countersink 421-0138")
+        self.assertAlmostEqual(cylinder.radius, 0.0625 * 25.4)
+        self.assertAlmostEqual(cylinder.low, 3.0)
+        self.assertAlmostEqual(cylinder.high, 3.0 + 1.25 * 25.4)
+
+    def test_refused(self) -> None:
+        """Sizes that do not make a countersink are refused."""
+        sink = tools.DOUBLE_END_COUNTERSINKS["421-0130"]
+        for changes in (
+            {"drill_diameter": sink.body_diameter},
+            {"angle": 180.0},
+            {"overall_length": 2.0},
+        ):
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                dataclasses.replace(sink, **changes)
+
+
 class TestModels(unittest.TestCase):
     """The tables, modeled with no window."""
 
@@ -681,6 +788,80 @@ class TestModels(unittest.TestCase):
             - (fixed + vise.plate.length),
             VISE_OPENING,
         )
+
+    def test_countersinks(self) -> None:
+        """Every countersink revolves to the right volume and place."""
+        program = shutil.which("solidcraft-cli") or str(CLI)
+        with HeadlessTransport(program) as transport:
+            solidcraft = SolidCraftPyBind(transport)
+            names = tools.countersink_rows(solidcraft)
+            self.assertEqual(len(names), 44)
+            for sink in tools.DOUBLE_END_COUNTERSINKS.values():
+                with self.subTest(order_number=sink.order_number):
+                    result = solidcraft.inspect.center_of_mass(
+                        bodies=[sink.name()]
+                    )
+                    assert isinstance(result, dict)
+                    self.assertAlmostEqual(
+                        float(result["volume"]) / sink.volume(),
+                        1.0,
+                        delta=0.02,
+                    )
+                    self.assertAlmostEqual(
+                        result["center"][2],
+                        sink.overall_length / 2.0,
+                        delta=0.01,
+                    )
+
+                    # Exact surfaces: the body and both small drills.
+                    faces = solidcraft.model.faces(body=sink.name())
+                    assert isinstance(faces, dict)
+                    radii = [
+                        face["cylinder"]["radius"]
+                        for face in faces["faces"]
+                        if face.get("cylinder")
+                    ]
+                    self.assertEqual(len(radii), 2 * 3 + 3)
+                    self.assertAlmostEqual(
+                        max(radii), sink.body_diameter / 2.0, 6
+                    )
+                    self.assertAlmostEqual(
+                        min(radii), sink.drill_diameter / 2.0, 6
+                    )
+
+    def test_largest(self) -> None:
+        """The largest of each table, one body each."""
+        program = shutil.which("solidcraft-cli") or str(CLI)
+        with HeadlessTransport(program) as transport:
+            solidcraft = SolidCraftPyBind(transport)
+            names = tools.largest_countersinks(solidcraft)
+        self.assertEqual(
+            names,
+            [
+                "Countersink 421-0261",
+                "Countersink 421-0244",
+                "Countersink 421-0398",
+                "Countersink 421-0228",
+            ],
+        )
+
+    def test_countersink_faces(self) -> None:
+        """It lands at its tip, with only cones, cylinders and flats."""
+        program = shutil.which("solidcraft-cli") or str(CLI)
+        with HeadlessTransport(program) as transport:
+            solidcraft = SolidCraftPyBind(transport)
+            sink = tools.DOUBLE_END_COUNTERSINKS["421-0130"]
+            body = sink.model(solidcraft, (5.0, 6.0, 7.0))
+            result = solidcraft.inspect.center_of_mass(bodies=[body])
+            faces = solidcraft.model.faces(body=body)
+        assert isinstance(result, dict)
+        self.assertAlmostEqual(result["center"][0], 5.0, 3)
+        self.assertAlmostEqual(result["center"][1], 6.0, 3)
+        assert isinstance(faces, dict)
+
+        # Seven pieces of outline, each in the revolve's three sectors,
+        # and a single flat face on each tip.
+        self.assertEqual(len(faces["faces"]), 7 * 3 + 2)
 
     def test_vise_assembled(self) -> None:
         """With the jaws down on the rails, no two bodies overlap."""

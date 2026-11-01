@@ -3,8 +3,8 @@
 `SCCNC` collects RS-274 commands, each a plain dictionary of words
 (e.g. `{"G": 1, "X": 1.0, "F": 12.0}`), and writes them as G-code.  It
 works in inches, with a machine and its tool table (`scmachine`), and
-cuts the shapes of `scgeometry` (such as `SCRoundPoly`): along their
-outlines (`SCCNC.profile()`) and out of their insides
+cuts the shapes of `scgeometry` (such as `SCRoundedPolygon`): along
+their outlines (`SCCNC.profile()`) and out of their insides
 (`SCCNC.pocket()`).  It drills (`SCCNC.drill()`) where they go down
 (`SCCNC.pocket_entries()`, `SCCNC.profile_entry()`), so that an end
 mill can go straight down a hole instead of into solid material.
@@ -32,7 +32,7 @@ from scgeometry import (
     SCArc,
     SCLine,
     SCLoop,
-    SCRoundPoly,
+    SCRoundedPolygon,
     SCSegment,
     beyond,
     distance_to,
@@ -187,12 +187,12 @@ def _check_leads(
 
 # Function `_profile_path()`:
 def _profile_path(
-    poly: SCRoundPoly, inside: bool, offset: float, lead: float
-) -> tuple[SCRoundPoly, tuple[SCArc, list[SCSegment], SCArc]]:
+    poly: SCRoundedPolygon, inside: bool, offset: float, lead: float
+) -> tuple[SCRoundedPolygon, tuple[SCArc, list[SCSegment], SCArc]]:
     """Return the path a tool follows to cut along an outline.
 
     Arguments:
-    * `poly` (`SCRoundPoly`): The outline.
+    * `poly` (`SCRoundedPolygon`): The outline.
     * `inside` (`bool`): True to cut from inside the outline.
     * `offset` (`float`):
       How far off the outline the tool's center goes (its radius, for
@@ -200,12 +200,13 @@ def _profile_path(
     * `lead` (`float`): The radius of the lead-in and lead-out.
 
     Returns:
-    * (`SCRoundPoly`): The path of the tool's center: off the outline
-      by `offset`, going the climb milling way around.
+    * (`SCRoundedPolygon`):
+      The path of the tool's center: off the outline by `offset`, going
+      the climb milling way around.
     * (`tuple[SCArc, list[SCSegment], SCArc]`): Its lead-in, loop and
       lead-out (see `_leads()`).
     """
-    path: SCRoundPoly = poly.offset(-offset if inside else offset)
+    path: SCRoundedPolygon = poly.offset(-offset if inside else offset)
     if path.is_ccw() != inside:
         path = path.reversed()
     return path, _leads(SCLoop.from_poly(path), lead)
@@ -213,21 +214,21 @@ def _profile_path(
 
 # Function `_fitted_path()`:
 def _fitted_path(
-    poly: SCRoundPoly, inside: bool, offset: float, lead: float
-) -> tuple[SCRoundPoly, tuple[SCArc, list[SCSegment], SCArc]]:
+    poly: SCRoundedPolygon, inside: bool, offset: float, lead: float
+) -> tuple[SCRoundedPolygon, tuple[SCArc, list[SCSegment], SCArc]]:
     """Return a profile's path, with leads small enough to fit.
 
     The leads are halved (up to `LEAD_HALVINGS` times) until they do
     not cross the path, as in a narrow hole.
 
     Arguments:
-    * `poly` (`SCRoundPoly`): The outline.
+    * `poly` (`SCRoundedPolygon`): The outline.
     * `inside` (`bool`): True to cut from inside the outline.
     * `offset` (`float`): How far off the outline the tool's center is.
     * `lead` (`float`): The largest radius for the leads.
 
     Returns:
-    * (`SCRoundPoly`): The path (see `_profile_path()`).
+    * (`SCRoundedPolygon`): The path (see `_profile_path()`).
     * (`tuple[SCArc, list[SCSegment], SCArc]`): Its leads and loop.
 
     Raises:
@@ -1055,8 +1056,12 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
 
     # Method `SCCNC.chamfer()`:
     def chamfer(
-        self, poly: SCRoundPoly, size: float = 0.0, *, inside: bool = False
-    ) -> SCRoundPoly:
+        self,
+        poly: SCRoundedPolygon,
+        size: float = 0.0,
+        *,
+        inside: bool = False,
+    ) -> SCRoundedPolygon:
         """Bevel or round over the top edge of an outline.
 
         With a chamfer bit (a V-bit of included angle 2θ), the bevel is
@@ -1071,14 +1076,14 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         leads as a profile has, in one pass.
 
         Arguments:
-        * `poly` (`SCRoundPoly`): The outline whose top edge to do.
+        * `poly` (`SCRoundedPolygon`): The outline whose top edge to do.
         * `size` (`float`): The bevel's width across the top.
         * `inside` (`bool`):
           True for the edge of a hole or pocket (from inside the
           outline), False for the outside of the part (or an island).
 
         Returns:
-        * (`SCRoundPoly`): The path the tool's center followed.
+        * (`SCRoundedPolygon`): The path the tool's center followed.
 
         Raises:
         * `ValueError`:
@@ -1106,7 +1111,7 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
             raise ValueError(f"tool {tool.number} cannot chamfer")
 
         # Down at the lead-in's start, in, once around, out, and up.
-        path: SCRoundPoly
+        path: SCRoundedPolygon
         lead_in: SCArc
         loop: list[SCSegment]
         lead_out: SCArc
@@ -1227,14 +1232,14 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
     # ones are keyword-only, so there are more than `pylint` likes.
     def profile(  # pylint: disable=too-many-arguments
         self,
-        poly: SCRoundPoly,
+        poly: SCRoundedPolygon,
         bottom: float,
         step: float,
         *,
         inside: bool = False,
         through: bool = False,
         stage: Stage = "full",
-    ) -> SCRoundPoly:
+    ) -> SCRoundedPolygon:
         """Cut along a polygon's outline, from `z_top` down to `bottom`.
 
         The tool's edge follows the outline from outside it (cutting
@@ -1255,7 +1260,7 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         along the lead-out; finally it rises to `z_safe`.
 
         Arguments:
-        * `poly` (`SCRoundPoly`): The outline to cut along.
+        * `poly` (`SCRoundedPolygon`): The outline to cut along.
         * `bottom` (`float`): The deepest Z to cut to.
         * `step` (`float`): The most to go down between passes.
         * `inside` (`bool`): True to cut from inside the outline.
@@ -1268,7 +1273,7 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
           to size in one pass at full depth, or `"full"`.
 
         Returns:
-        * (`SCRoundPoly`): The path the tool's center followed.
+        * (`SCRoundedPolygon`): The path the tool's center followed.
 
         Raises:
         * `ValueError`:
@@ -1277,7 +1282,7 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         """
         # Plan the path and its leads.
         depths: list[float] = self._stage_depths(bottom, step, through, stage)
-        path: SCRoundPoly
+        path: SCRoundedPolygon
         lead_in: SCArc
         loop: list[SCSegment]
         lead_out: SCArc
@@ -1306,7 +1311,7 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
     # Method `SCCNC.profile_entry()`:
     def profile_entry(
         self,
-        poly: SCRoundPoly,
+        poly: SCRoundedPolygon,
         tool: SCTool,
         *,
         inside: bool = False,
@@ -1317,7 +1322,7 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         This is where to drill, so that the tool goes down a hole.
 
         Arguments:
-        * `poly` (`SCRoundPoly`): The outline.
+        * `poly` (`SCRoundedPolygon`): The outline.
         * `tool` (`SCTool`): The tool that will cut it.
         * `inside` (`bool`): True to cut from inside the outline.
         * `stage` (`Stage`): The stage of the cut (see `profile()`).
@@ -1333,11 +1338,11 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
     # ones are keyword-only, so there are more than `pylint` likes.
     def pocket(  # pylint: disable=too-many-arguments
         self,
-        poly: SCRoundPoly,
+        poly: SCRoundedPolygon,
         bottom: float,
         step: float,
         *,
-        islands: Sequence[SCRoundPoly] = (),
+        islands: Sequence[SCRoundedPolygon] = (),
         drilled: bool = False,
         through: bool = False,
         stage: Stage = "full",
@@ -1361,10 +1366,10 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         rises to `z_safe`, goes over, and comes back down.
 
         Arguments:
-        * `poly` (`SCRoundPoly`): The pocket's outline.
+        * `poly` (`SCRoundedPolygon`): The pocket's outline.
         * `bottom` (`float`): The pocket's floor.
         * `step` (`float`): The most to go down between depths.
-        * `islands` (`Sequence[SCRoundPoly]`):
+        * `islands` (`Sequence[SCRoundedPolygon]`):
           Outlines inside the pocket to leave standing.
         * `drilled` (`bool`):
           True when holes have been drilled at `pocket_entries()`.
@@ -1429,16 +1434,16 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
     # Method `SCCNC._plan()`:
     def _plan(
         self,
-        poly: SCRoundPoly,
-        islands: Sequence[SCRoundPoly],
+        poly: SCRoundedPolygon,
+        islands: Sequence[SCRoundedPolygon],
         diameter: float,
         stage: Stage = "full",
     ) -> list[SCRing]:
         """Plan the rings that clear a pocket with a tool.
 
         Arguments:
-        * `poly` (`SCRoundPoly`): The pocket's outline.
-        * `islands` (`Sequence[SCRoundPoly]`): Outlines to leave.
+        * `poly` (`SCRoundedPolygon`): The pocket's outline.
+        * `islands` (`Sequence[SCRoundedPolygon]`): Outlines to leave.
         * `diameter` (`float`): The tool's diameter.
         * `stage` (`Stage`):
           `"rough"` to keep the machine's `finish_allowance` away from
@@ -1458,7 +1463,7 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         if not wall.is_ccw():
             wall = wall.reversed()
         region: list[SCLoop] = [wall]
-        island: SCRoundPoly
+        island: SCRoundedPolygon
         for island in islands:
             loop: SCLoop = SCLoop.from_poly(island)
             region.append(loop.reversed() if loop.is_ccw() else loop)
@@ -1487,9 +1492,9 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
     # Method `SCCNC.pocket_entries()`:
     def pocket_entries(
         self,
-        poly: SCRoundPoly,
+        poly: SCRoundedPolygon,
         tool: SCTool,
-        islands: Sequence[SCRoundPoly] = (),
+        islands: Sequence[SCRoundedPolygon] = (),
         stage: Stage = "full",
     ) -> list[Point]:
         """Return where a pocket cut with a tool goes down into it.
@@ -1499,9 +1504,9 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         the rings that have nothing cut inside them.
 
         Arguments:
-        * `poly` (`SCRoundPoly`): The pocket's outline.
+        * `poly` (`SCRoundedPolygon`): The pocket's outline.
         * `tool` (`SCTool`): The tool that will clear it.
-        * `islands` (`Sequence[SCRoundPoly]`): Outlines to leave.
+        * `islands` (`Sequence[SCRoundedPolygon]`): Outlines to leave.
         * `stage` (`Stage`): The stage of the cut (see `pocket()`).
 
         Returns:

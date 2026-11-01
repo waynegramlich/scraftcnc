@@ -10,7 +10,8 @@ Python bindings.
 What it does today:
 
 * Outlines in the XY plane made of straight edges whose corners each
-  have their own radius (`SCRoundPoly`).
+  have their own radius (`SCRoundedPolygon`), with round holes and
+  internal regions, such as islands with holes of their own.
 * Outside and inside profiles, climb milled, with half circle lead-ins
   and lead-outs, in passes down to depth, and through cuts that go a
   little below the part.
@@ -116,13 +117,18 @@ Each step below needs a little more than the one before it.
 
 * `solidcraftcnc.py`: `SCCNC`, which writes the G-code (profiles,
   pockets, drilling, edge finishing).
-* `scgeometry.py`: outlines (`SCRoundPoly`, `SCLoop`) and the offsets
+* `scgeometry.py`: outlines (`SCRoundedPolygon`, `SCLoop`) and the offsets
   that tool paths are made from.
 * `shops.py`, `Shops.md` and `examples/shop/`: the shop description
   files, their reader (every problem reported at its file and line),
   and the example shop that the demonstration uses.
-* `tools.py`: 3D models of tooling (mill tables, drills, a vise) and
-  the keep-out regions around them.  Run it to see them in SolidCraft.
+* `tools.py`: 3D models of tooling (mill tables, drills, a vise, a
+  tooling plate) and the keep-out regions around them.  Run it to see
+  them in SolidCraft.
+* `mount.py`: stacks of tooling and material that hold work on a
+  machine, with their keep-out regions.  Run it to see the first one.
+* `scsetup.py` and `examples/setup/`: a whole setup, read from JSON:
+  where each piece of tooling, material and finished part goes.
 * `scmachine.py`: the machine and its tools as the G-code side sees
   them.
 * `scplot.py` and `scplot_template.html`: the tool path viewer, and the

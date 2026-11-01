@@ -57,3 +57,9 @@ with units is the better base.
 * Next session: the user picks which sub-task to open first, and may
   rewrite the draft `Details.md` files.  The user commits and pushes
   in git (including the removal of `machine.toml`).
+
+## 2026-10-31: Where things stand
+
+* `T.msaf~2.1` and `T.si~2.2` are closed.  `T.m~2.3` (Mounting) and `T.tm~2.5` (Tool
+  Models) are Open; `T.sm~2.4` (Stock Models) is Pending, though `scsetup.py` already
+  places raw material as a plain box.

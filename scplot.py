@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, TypeAlias, TypedDict
 
-from scgeometry import SCRoundPoly, point_at
+from scgeometry import SCRoundedPolygon, point_at
 from solidcraftcnc import RS274, SCCNC
 
 if TYPE_CHECKING:
@@ -346,14 +346,14 @@ def _arc_points(
 # Function `plot_html()`:
 def plot_html(
     cnc: SCCNC,
-    outlines: Sequence[tuple[SCRoundPoly, float]],
+    outlines: Sequence[tuple[SCRoundedPolygon, float]],
     title: str,
 ) -> str:
     """Return a page that plots a program's tool path.
 
     Arguments:
     * `cnc` (`SCCNC`): The program.
-    * `outlines` (`Sequence[tuple[SCRoundPoly, float]]`):
+    * `outlines` (`Sequence[tuple[SCRoundedPolygon, float]]`):
       Outlines of the part to draw faintly, each with its Z.
     * `title` (`str`): The page's title.
 
@@ -409,7 +409,7 @@ def plot_html(
 def write_plot(
     path: Path,
     cnc: SCCNC,
-    outlines: Sequence[tuple[SCRoundPoly, float]],
+    outlines: Sequence[tuple[SCRoundedPolygon, float]],
     title: str,
 ) -> None:
     """Save a plot of a program's tool path.
@@ -417,7 +417,7 @@ def write_plot(
     Arguments:
     * `path` (`Path`): The page's file (`.html`).
     * `cnc` (`SCCNC`): The program.
-    * `outlines` (`Sequence[tuple[SCRoundPoly, float]]`):
+    * `outlines` (`Sequence[tuple[SCRoundedPolygon, float]]`):
       Outlines of the part to draw faintly, each with its Z.
     * `title` (`str`): The page's title.
     """
