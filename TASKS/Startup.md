@@ -5,6 +5,8 @@
 @2.4_Stock_Models/Details.md
 @2.5_Tool_Models/Details.md
 @2.5_Tool_Models/Context.md
+@4_Implementing_Keepout_Zones/Details.md
+@4_Implementing_Keepout_Zones/Context.md
 @../ISSUES/1_PathRack_Hidden_Path_Shows_Again/Details.md
 @../ISSUES/1_PathRack_Hidden_Path_Shows_Again/Context.md
 @3_Simulation/Summary.md
