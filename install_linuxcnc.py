@@ -17,12 +17,14 @@ software, or a `sudo` that asks for a password) is shown as a
 command, also put on the clipboard when there is a way to, and this
 waits for the user to run it and then checks it; with `--yes` it
 runs the command itself instead (for test machines such as GitHub's
-runners).  Only the packages LinuxCNC needs are installed (`apt-get
---no-install-recommends`: no realtime kernel, no documentation), and
-the number installed is printed.  The last steps check that `import
-linuxcnc` works, that the AXIS screen's Python modules load (with no
-display), and that LinuxCNC's realtime layer starts (`halrun`, as a
-user that is not root).  Long commands print the time on every
+runners).  Only what the simulator and `lcnc_panel.py` need is
+installed: the package's `Depends` are replaced by `DEPENDS`, which
+leaves out LinuxCNC's own screens, and `apt-get
+--no-install-recommends` leaves out the realtime kernel and the
+documentation.  The number installed is printed.  The last steps check
+that `import linuxcnc` works, that the panel's Python modules load
+(with no display), and that LinuxCNC's realtime layer starts
+(`halrun`, as a user that is not root).  Long commands print the time on every
 line, and a progress line every few minutes.  `demo_linuxcnc.py`
 then runs a program in LinuxCNC in the same target:
 
@@ -97,33 +99,51 @@ HEARTBEAT: float = 300.0
 # Its Recommends (the documentation, `librsvg2-dev`,
 # `x11-xserver-utils`, `hostmot2-firmware-all`, the realtime kernel
 # with its initramfs, `python3-pil`, `python3-pil.imagetk`) are left
-# out: neither the AXIS screen nor its modules use `PIL` or `xset`
-# (checked in `/usr/bin/axis` and LinuxCNC's Python modules), and
-# the sample configurations come with `linuxcnc-uspace` itself.
+# out, and the sample configurations come with `linuxcnc-uspace`.
 INSTALL: tuple[str, ...] = ("install", "-y", "--no-install-recommends")
+
+# What the simulator and `lcnc_panel.py` need, which replaces the
+# package's `Depends`.  It is a list of what to keep, not of what to
+# drop, so a new dependency of LinuxCNC's screens is never installed.
+# A new one that the simulator does need fails this program's checks,
+# or `demo_linuxcnc.py`, and is added here.  `linuxcnc.so` links
+# `libepoxy0`, and the `linuxcnc` script shows errors with `wish8.6`,
+# from `tk8.6`.
+DEPENDS: tuple[str, ...] = (
+    "python3 (<< 3.14)",
+    "python3 (>= 3.13~)",
+    "python3:any",
+    "libboost-python1.83.0 (>= 1.83.0)",
+    "libboost-python1.83.0-py313",
+    "libc6 (>= 2.38)",
+    "libedit2 (>= 2.11-20080614-0)",
+    "libepoxy0 (>= 1.0)",
+    "libgcc-s1 (>= 4.0)",
+    "libgpiod3 (>= 2.1)",
+    "libmodbus5 (>= 3.1.4)",
+    "libpython3.13 (>= 3.13.0~rc3)",
+    "libstdc++6 (>= 13.1)",
+    "libtirpc3t64 (>= 1.0.2)",
+    "libudev1 (>= 183)",
+    "libusb-1.0-0 (>= 2:1.0.22)",
+    "tcl8.6",
+    "tk8.6",
+    "python3-tk",
+    "procps",
+    "psmisc",
+)
+
+# Where the package is rebuilt in the target.  It is not compressed,
+# since it is installed at once and then removed.
+TRIMMED_DIRECTORY: str = "/var/tmp/linuxcnc-trimmed"
+TRIMMED_PACKAGE: str = "/var/tmp/linuxcnc-trimmed.deb"
 
 # Lists the installed packages, to count what `apt-get` added.
 PACKAGES: list[str] = ["dpkg-query", "-W", "-f", "${Package}\\n"]
 
-# What the AXIS screen (`/usr/bin/axis`) imports, which must load
-# with no display.
-AXIS_MODULES: tuple[str, ...] = (
-    "tkinter",
-    "OpenGL.GL",
-    "OpenGL.GLU",
-    "gcode",
-    "rs274.OpenGLTk",
-    "rs274.interpret",
-    "rs274.glcanon",
-    "rs274.options",
-    "hershey",
-    "propertywindow",
-    "nf",
-    "bwidget",
-    "glnav",
-    "hal",
-    "linuxcnc",
-)
+# What `lcnc_panel.py` imports from the target, which must load with
+# no display.
+PANEL_MODULES: tuple[str, ...] = ("tkinter", "hal", "linuxcnc")
 
 # The `halrun` check: a thread loaded and listed.  `halrun` exits 0
 # even when a component fails to load, so its output is checked.
@@ -633,6 +653,27 @@ def send_file(target: SCTarget, path: Path) -> str:
     return inside
 
 
+# Function `trim_commands()`:
+def trim_commands(package: str) -> list[list[str]]:
+    """Return the commands that rebuild a package with `DEPENDS`.
+
+    Arguments:
+    * `package` (`str`): The package's path in the target.
+
+    Returns:
+    * (`list[list[str]]`): The commands, to run in order as root; they
+      leave `TRIMMED_PACKAGE`.
+    """
+    control = f"{TRIMMED_DIRECTORY}/DEBIAN/control"
+    depends = ", ".join(DEPENDS)
+    return [
+        ["rm", "-rf", TRIMMED_DIRECTORY, TRIMMED_PACKAGE],
+        ["dpkg-deb", "-R", package, TRIMMED_DIRECTORY],
+        ["sed", "-i", f"s|^Depends:.*|Depends: {depends}|", control],
+        ["dpkg-deb", "-Znone", "-b", TRIMMED_DIRECTORY, TRIMMED_PACKAGE],
+    ]
+
+
 # Function `apt_get()`:
 def apt_get(*arguments: str) -> list[str]:
     """Return an `apt-get` command that asks no questions.
@@ -833,7 +874,11 @@ def common_steps(target: SCTarget) -> list[SCStep]:
         inside = send_file(target, download(url, sha256))
         before = len(output(target.command(PACKAGES, root=True)).split())
         run(target.command(apt_get("update"), root=True))
-        run(target.command(apt_get(*INSTALL, inside), root=True))
+        for command in trim_commands(inside):
+            run(target.command(command, root=True))
+        run(target.command(apt_get(*INSTALL, TRIMMED_PACKAGE), root=True))
+        remove = ["rm", "-rf", TRIMMED_DIRECTORY, TRIMMED_PACKAGE]
+        run(target.command(remove, root=True))
         after = len(output(target.command(PACKAGES, root=True)).split())
         print(f"{stamp()} apt installed {after - before} packages.")
 
@@ -877,17 +922,17 @@ def common_steps(target: SCTarget) -> list[SCStep]:
     def cannot_import() -> None:
         raise SystemExit(f"`import linuxcnc` fails in {target.name}.")
 
-    def axis_loads() -> bool:
+    def panel_loads() -> bool:
         return run(
             target.command(["env", "-u", "DISPLAY", "python3", "-c",
-                            f"import {', '.join(AXIS_MODULES)}"]),
+                            f"import {', '.join(PANEL_MODULES)}"]),
             quiet=True,
         )  # fmt: skip
 
-    def axis_fails() -> None:
-        for module in AXIS_MODULES:
+    def panel_fails() -> None:
+        for module in PANEL_MODULES:
             run(target.command(["python3", "-c", f"import {module}"]))
-        raise SystemExit(f"AXIS's modules do not load in {target.name}.")
+        raise SystemExit(f"The panel's modules do not load in {target.name}.")
 
     def realtime_starts() -> bool:
         if run(target.command(["pgrep", "-x", "rtapi_app"]), quiet=True):
@@ -910,9 +955,7 @@ def common_steps(target: SCTarget) -> list[SCStep]:
             f"sample configurations in {configs}", have_samples, copy_samples
         ),
         SCStep(f"import linuxcnc in {target.name}", can_import, cannot_import),
-        SCStep(
-            "the AXIS screen's Python modules load", axis_loads, axis_fails
-        ),
+        SCStep("the panel's Python modules load", panel_loads, panel_fails),
         SCStep(
             "LinuxCNC's realtime layer starts (halrun)",
             realtime_starts,

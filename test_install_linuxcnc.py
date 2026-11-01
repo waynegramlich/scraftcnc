@@ -143,7 +143,7 @@ class TestInstallLinuxCNC(unittest.TestCase):
             options = install_linuxcnc.SCOptions(route, "b", "Debian", True)
             _, all_steps = install_linuxcnc.steps(options)
             self.assertEqual(len(all_steps), setup + 8, route)
-            self.assertIn("AXIS", all_steps[-2].title)
+            self.assertIn("panel", all_steps[-2].title)
             self.assertIn("halrun", all_steps[-1].title)
 
     def test_install_without_recommends(self) -> None:
@@ -155,7 +155,19 @@ class TestInstallLinuxCNC(unittest.TestCase):
             command[:2], ["env", "DEBIAN_FRONTEND=noninteractive"]
         )
         self.assertIn("--no-install-recommends", command)
-        self.assertIn("linuxcnc", install_linuxcnc.AXIS_MODULES)
+        self.assertIn("linuxcnc", install_linuxcnc.PANEL_MODULES)
+
+    def test_trim_commands(self) -> None:
+        """The package is rebuilt with only what the simulator needs."""
+        commands = install_linuxcnc.trim_commands("/tmp/p.deb")
+        self.assertEqual(commands[1][:3], ["dpkg-deb", "-R", "/tmp/p.deb"])
+        edit = commands[2][2]
+        self.assertIn("libepoxy0", edit)
+        self.assertIn("tk8.6", edit)
+        self.assertNotIn("pyqt5", edit)
+        self.assertNotIn("&", edit)
+        self.assertEqual(edit.count("|"), 3)
+        self.assertEqual(commands[-1][-1], install_linuxcnc.TRIMMED_PACKAGE)
 
     def test_send_file_shared(self) -> None:
         """A box sees the file where it is; nothing is sent."""

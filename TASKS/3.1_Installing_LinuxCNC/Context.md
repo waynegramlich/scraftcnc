@@ -387,3 +387,82 @@ Moved from `T.s2~3`'s `Context.md` on 2026-10-28, when it was split.
 * `windows-latest` (WSL 2): 6.6 min; 1546 samples in 77.4 s
   (`DISPLAY=127.0.0.1:0`, so the TCP route was the one needed).
 * Both: 0 errors, 0 delay messages, nothing left running.
+
+## 2026-11-01: Dropping the GUI packages (read only look, nothing changed)
+
+* The user: macOS stays out, and only the engine that talks to the mill is
+  wanted.  Asked whether dropping the GUI simplifies the install.
+* `linuxcnc-uspace` 2.9.10's `Depends` hard-codes the GUI stack (PyQt5 with
+  WebEngine, OpenCV, GTK, espeak, ...), so leaving it out adds a step; the
+  gain is size and time, not fewer steps.
+* Corrections to the 2026-10-28 backend list: `linuxcnc.so` links `libepoxy`,
+  so `libepoxy0` must stay (1.4 MB), or `import linuxcnc` should fail.  The
+  `linuxcnc` script runs `wish8.6` to show errors, so `tk8.6` should stay
+  (95 KB); `python3-tk` does not bring it.
+* Claude's suggestion, untried: rewrite the `.deb`'s `Depends` with `dpkg-deb
+  -R` and `-b` in place of `equivs` (`dpkg-deb` is in every Debian).
+* Not settled: a real mill needs realtime, which this install undoes
+  (`chmod u-s /usr/bin/rtapi_app`, no RT kernel, no `hostmot2-firmware-all`).
+
+## 2026-11-01: Simulator only; the aim is no GUI dependency creep
+
+* The user: only the simulator matters, so the real mill entry above is not
+  a concern here.  The aims are time, space and no "GUI dependency creep"
+  (upstream adding a GUI dependency that brings in bloat).
+* Claude's suggestion, for creep: the installer replaces `Depends` with a
+  fixed list of what the engine and panel need (an allow list), rather than
+  removing named GUI packages, so a new upstream GUI dependency is ignored.
+
+## 2026-11-01: Trimmed install measured; the demo passes
+
+* Throwaway boxes `lcnc-lean` and `lcnc-full` (both removed), one after the
+  other, each from 327 packages and 644 MB after `distrobox` set it up.  Both
+  with `--no-install-recommends`; `lcnc-lean` had its `.deb`'s `Depends` replaced
+  by `dpkg-deb -R`, `sed`, `dpkg-deb -Znone -b` (3 s, counted in its install).
+
+  | | Trimmed | Present |
+  |---|---|---|
+  | Box set up | 129 s | 118 s |
+  | LinuxCNC install | 18 s | 145 s |
+  | Packages added | 25 | 454 |
+  | Downloaded | 11.3 MB | 338 MB |
+  | Installed size added | 130 MB | 1421 MB |
+  | Container (with image) | 977 MB | 2.35 GB |
+
+* The list: `python3 (<< 3.14), python3 (>= 3.13~), python3:any,
+  libboost-python1.83.0 (>= 1.83.0), libboost-python1.83.0-py313, libc6 (>= 2.38),
+  libedit2 (>= 2.11-20080614-0), libepoxy0 (>= 1.0), libgcc-s1 (>= 4.0), libgpiod3
+  (>= 2.1), libmodbus5 (>= 3.1.4), libpython3.13 (>= 3.13.0~rc3), libstdc++6 (>=
+  13.1), libtirpc3t64 (>= 1.0.2), libudev1 (>= 183), libusb-1.0-0 (>= 2:1.0.22),
+  tcl8.6, tk8.6, python3-tk, procps, psmisc`.
+* `demo_linuxcnc.py --box lcnc-lean --yes`: PASS, 1737 samples in 87.0 s, 0 errors,
+  0 delay messages, nothing left running (panel on `Xvfb`, which it installed after
+  the sizes above).  The installer's AXIS check would fail on such a box.
+* Not changed: `install_linuxcnc.py`; the `lcnc` box.  Not tried: WSL.  The demo
+  rewrites `demo.ngc` and `sim_positions.txt` in the project; reverted.
+
+## 2026-11-01: The installer installs the trimmed package; `scraftlinuxcnc` planned
+
+* `install_linuxcnc.py`: `DEPENDS` (a list of what to keep), `trim_commands()`,
+  `PANEL_MODULES` and a panel check in place of the AXIS one.  Checkers clean;
+  `test_install_linuxcnc` passes.
+* From nothing on a throwaway `lcnc-test` box (removed): installer exit 0 in 148 s
+  (the LinuxCNC step 17 s, 25 packages; 977 MB with the image); demo passed in 1.5
+  min.  An existing box with LinuxCNC keeps its packages (`lcnc` is unchanged).
+* Left: the user's commit, then one probe run, since WSL has not seen this.
+* The user's decisions: `scraftlinuxcnc` is its own repository, `../scraftlinuxcnc`;
+  `scraftcnc` gets a `pyproject.toml` first; the new directory is made and debugged
+  before anything is deleted here.
+
+## 2026-11-01: `scraftlinuxcnc` started
+
+* `../scraftlinuxcnc`: `README.md`, `LICENSE`, ignore files, `git` and `hg`.  Private
+  repository https://github.com/waynegramlich/scraftlinuxcnc (empty; `origin` set); it
+  goes public later.  Nothing committed in `git`: the user writes those messages.
+* The user: everything goes up there and is tested with GitHub Actions while it is
+  private; the panel is expected to get `--headless` for tests.
+
+## 2026-11-01: `scraftlinuxcnc` has `ai_contexts`; waiting for commits
+
+* `T.mcfs~1` there holds the plan.  Next: the user commits both, Claude pushes and
+  runs `probe_linuxcnc.yml` here; the run covers WSL with the trimmed install.
