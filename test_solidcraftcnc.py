@@ -473,6 +473,8 @@ def rounded_dumbbell() -> SCRoundedPolygon:
             )
             for index, corner in enumerate(dumbbell().corners)
         ],
+        0.0,
+        1.0,
     )
 
 
@@ -511,6 +513,8 @@ class TestPocket(unittest.TestCase):
                     SCCorner(2, 0, 0.2),
                     SCCorner(0.5, 1.2, 0.2),
                 ],
+                0.0,
+                1.0,
             ),
             square(1.3, 0.125),
         ):
@@ -774,6 +778,8 @@ class TestIslands(unittest.TestCase):
         crossing: SCRoundedPolygon = SCRoundedPolygon(
             "Across",
             [SCCorner(x, y) for x, y in ((0.2, 1), (0.5, 1), (0.5, 1.2))],
+            0.0,
+            1.0,
         )
         bad: list[SCRoundedPolygon]
         for bad in ([outside], [crossing], [islands[0], islands[0]]):

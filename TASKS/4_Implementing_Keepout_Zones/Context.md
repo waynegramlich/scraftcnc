@@ -164,3 +164,59 @@
   `Details.md` brought up to date.
 * Question 5 (finished features as keep outs): the user does not yet understand it and is
   letting it slide for now.  Do not press it.
+
+## 2026-11-01: The user's layering, first reading
+
+* The user: an RP is recursive, with a list of child RPs, using absolute `(Zstart, Zend, [RPs])`.
+  Zstart < Zend extrudes material up; Zstart > Zend extrudes a hole down.  A child's Zstart must
+  EXACTLY match its parent's Zend, and it must be entirely enclosed by its parent.  (The user
+  wrote "SCRoundedPocket"; taken to mean `SCRoundedPolygon`, not yet confirmed.)
+* Claude's reading: since each child starts on its parent's surface and stays within it, nothing
+  can overhang, so the shape is a height field: the surface at (x, y) is the Zend of the innermost
+  RP there.  A tip at Z is blocked where that surface is above Z.
+* Checking a move at Z, a recursion with no merging: a blocked RP must not be entered once
+  `grown(R)`, unless the move stays inside a `shrunk(R)` of an unblocked child, which is then
+  checked the same way among its own children.  Not coded, not tried.
+* Questions put to the user: the form of the tuple; flush walls, which "entirely enclosed" may
+  forbid, and which `leaves()` could check; what replaces `regions` and `SCHole`.  No code yet.
+
+## 2026-11-01: Layering, second round
+
+* The user confirmed: it is `SCRoundedPolygon`; the first RP must go up; zero height is refused; an
+  RP literally holds `z_start: float`, `z_end: float`, `children: Sequence[RP]`; a child may touch
+  but not cross its parent's wall; `SCHole` is a subclass of RP, with a shortcut for speed.
+* `regions` are RPs inside an RP, whose levels swap solid and open.  Only `test_mount.py` and
+  `scgeometry.py` use them, so children replace them outright.
+* Claude overstated the cost of circles.  Measured with 200 in a plate: SCHole builds in 0.01 s, one
+  `enters()` 1.4 ms; circle RPs 0.17 s and 5.4 ms.
+* Found: a child is built before its parent, so "the first must go up" can not be checked by the
+  constructor, only where a root is used.  One sketch and extrude no longer fits children of
+  other depths.  `SCCNC` still takes flat outlines.
+* Open with the user: what `z_start` and `z_end` are on flat outlines (37 constructor calls).
+
+## 2026-11-01: Z is required
+
+* The user: `z_start` equal to `z_end` always raises an exception, so there is no flat RP (Claude's
+  option A is out).  Every RP has real heights: `circle()`, `SCHole` and `SCLoop.polygon()` take them;
+  `offset()`, `reversed()`, `grown()` and `shrunk()` keep their source's.  All 37 constructor calls
+  change.
+* The user: exact float matches also show what can combine into one cycle: a child hole whose `z_end`
+  equals its parent's `z_start` goes in the parent's sketch, and siblings with the same two heights
+  share one cut.  Agreed.  Sibling, `grown()`, `enters()` and height decisions stand.  Still no code.
+
+## 2026-11-01: `z_start`, `z_end`, `children`, and `hits()`
+
+* Done, as agreed: an RP holds `z_start`, `z_end`, `children`; equal heights raise; a child starts
+  exactly at `z_end`, may touch but not cross the outline, and siblings may touch but not overlap.
+  `regions`, `holes`, `_is_solid()` and `_all_edges()` are gone.  `enters()` and `leaves()` are outline
+  only.  `SCHole(x, y, diameter, z_start, z_end, children)` subclasses RP, refuses going up, and draws a
+  true circle.  `circle()` and `SCLoop.polygon()` take heights.  `grown()` and `shrunk()` keep theirs,
+  and cache by radius.
+* `hits(move, z, radius)` walks the tree, and refuses a root going down.  `model()` makes one body:
+  children running the whole height share the sketch; the rest are grouped by `z_end`, one sketch and
+  one join or cut each (a negative `distance` cuts down).  `box` and `overlaps()` are new.
+* Checked: 318 tests passed; 9 deliberate breaks caught; the demo's G-code is byte for byte the same;
+  random moves against a plain height formula, both ways; a live `model()` to within 1 %.
+* The demo's RPs have real heights (top at Z = 0), but `SCCNC` ignores them: still flat.  A move across
+  two touching holes is a false alarm, since it leaves each one's `shrunk()`.
+* Not started: the checker walking `SCCNC.commands`, `SCPrism` and the vise as roots, renames.

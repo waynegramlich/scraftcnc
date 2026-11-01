@@ -196,7 +196,7 @@ class TestToolingPlate(unittest.TestCase):
 
     def test_outline_has_the_holes(self) -> None:
         """The outline holds all of the grid, moved with its center."""
-        holes = tools.TOOLING_PLATE.outline((1.0, 2.0)).holes
+        holes = tools.TOOLING_PLATE.outline((1.0, 2.0)).children
         self.assertEqual(len(holes), 200)
         self.assertAlmostEqual(holes[0].x, 1.0 - 2.25 * INCH)
         self.assertAlmostEqual(holes[0].y, 2.0 - 4.75 * INCH)
@@ -325,33 +325,41 @@ class TestModel(unittest.TestCase):
             self.assertNotIn("operation", extrude.call_args.kwargs)
             self.assertEqual(len(names), 1)
 
-    def test_island_with_holes(self) -> None:
-        """A plate with an opening, an island and a hole in the island."""
+    def test_model(self) -> None:
+        """A plate with a pocket, an island, holes and a boss."""
 
-        def square(name, half, holes=(), regions=()):
+        def square(name, half, z_start, z_end, children=(), x=0.0):
             corners = [
-                SCCorner(-half, -half),
-                SCCorner(half, -half),
-                SCCorner(half, half),
-                SCCorner(-half, half),
+                SCCorner(x - half, -half),
+                SCCorner(x + half, -half),
+                SCCorner(x + half, half),
+                SCCorner(x - half, half),
             ]
-            return SCRoundedPolygon(name, corners, holes, regions)
+            return SCRoundedPolygon(name, corners, z_start, z_end, children)
 
-        island = square("Island", 15.0, [SCHole(0.0, 0.0, 10.0)])
-        opening = square("Opening", 30.0, regions=[island])
-        plate = square("Plate", 50.0, regions=[opening])
+        island = square(
+            "Island", 15.0, 5.0, 10.0, [SCHole(0.0, 0.0, 10.0, 10.0, 0.0)]
+        )
+        pocket = square("Pocket", 30.0, 10.0, 5.0, [island])
+        through = SCHole(40.0, 40.0, 10.0, 10.0, 0.0)
+        boss = square("Boss", 5.0, 10.0, 15.0, x=-40.0)
+        plate = square("Plate", 50.0, 0.0, 10.0, [pocket, through, boss])
         program = shutil.which("solidcraft-cli") or str(CLI)
         with HeadlessTransport(program) as transport:
             solidcraft = SolidCraftPyBind(transport)
-            solidcraft.sketch.create(plane="XY", name="Plate")
-            plate.sketch(solidcraft)
-            solidcraft.sketch.finish()
-            made = solidcraft.solid.extrude(distance=10.0, body_name="Plate")
-            bodies = made["created_bodies"]
-            self.assertEqual(len(bodies), 2)
-            volume = solidcraft.inspect.center_of_mass(bodies=bodies)["volume"]
-        expected = (100.0**2 - 60.0**2 + 30.0**2 - math.pi * 25.0) * 10.0
-        self.assertAlmostEqual(volume / expected, 1.0, 3)
+            self.assertEqual(plate.model(solidcraft), "Plate")
+            volume = solidcraft.inspect.center_of_mass(bodies=["Plate"])[
+                "volume"
+            ]
+        hole = math.pi * 25.0
+        expected = (
+            100.0**2 * 10.0
+            - (60.0**2 - 30.0**2) * 5.0
+            - hole * 10.0
+            - hole * 10.0
+            + 10.0**2 * 5.0
+        )
+        self.assertAlmostEqual(volume / expected, 1.0, 2)
 
 
 if __name__ == "__main__":

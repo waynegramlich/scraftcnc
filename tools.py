@@ -1495,6 +1495,8 @@ class ViseBlock:
                 SCCorner(x + corner.x, y + corner.y, corner.radius)
                 for corner in corners
             ],
+            0.0,
+            self.height,
         )
 
     # Method `ViseBlock.volume()`:
@@ -2739,8 +2741,16 @@ class ToolingPlate:
                 SCCorner(x + half_x, y + half_y, radius),
                 SCCorner(x - half_x, y + half_y, radius),
             ],
+            0.0,
+            self.thickness,
             [
-                SCHole(x + hole_x, y + hole_y, self.hole_diameter)
+                SCHole(
+                    x + hole_x,
+                    y + hole_y,
+                    self.hole_diameter,
+                    self.thickness,
+                    0.0,
+                )
                 for hole_x, hole_y in self.hole_centers()
             ],
         )

@@ -9,7 +9,6 @@ import random
 import types
 import unittest
 
-import scgeometry
 from scgeometry import (
     SLOP,
     SCArc,
@@ -48,6 +47,8 @@ def notched() -> SCRoundedPolygon:
             SCCorner(20.0, 30.0, 0.0),
             SCCorner(0.0, 50.0, 6.0),
         ],
+        0.0,
+        1.0,
     )
 
 
@@ -72,7 +73,7 @@ def square(side: float, radius: float, ccw: bool = True) -> SCRoundedPolygon:
     if not ccw:
         points.reverse()
     return SCRoundedPolygon(
-        "Square", [SCCorner(x, y, radius) for x, y in points]
+        "Square", [SCCorner(x, y, radius) for x, y in points], 0.0, 1.0
     )
 
 
@@ -90,7 +91,7 @@ def polygon(
     * (`SCRoundedPolygon`): The polygon.
     """
     return SCRoundedPolygon(
-        "Polygon", [SCCorner(x, y, radius) for x, y in points]
+        "Polygon", [SCCorner(x, y, radius) for x, y in points], 0.0, 1.0
     )
 
 
@@ -108,49 +109,61 @@ def close(a: tuple[float, float], b: tuple[float, float]) -> bool:
     return math.dist(a, b) < 1e-9
 
 
-# Function `plate_with_island()`:
-def plate_with_island() -> SCRoundedPolygon:
-    """Return a plate with a hole, an opening, an island, and its hole.
+# Function `box()`:
+# The arguments read like the constructor's, in the same order.
+# pylint: disable-next=too-many-arguments,too-many-positional-arguments
+def box(
+    name: str,
+    low: float,
+    high: float,
+    z_start: float,
+    z_end: float,
+    children: tuple[SCRoundedPolygon, ...] = (),
+) -> SCRoundedPolygon:
+    """Return a square with sharp corners.
+
+    Arguments:
+    * `name` (`str`): Its name.
+    * `low` (`float`): Its lowest X and Y.
+    * `high` (`float`): Its highest X and Y.
+    * `z_start` (`float`): The height it starts at.
+    * `z_end` (`float`): The height it ends at.
+    * `children` (`tuple[SCRoundedPolygon, ...]`): Its children.
 
     Returns:
-    * (`SCRoundedPolygon`): A 100 x 100 plate; a hole at (10, 10); an
-      opening from 30 to 90; an island from 50 to 70, with a hole at
-      (60, 60).
+    * (`SCRoundedPolygon`): The square.
     """
-
-    # Function `box()`:
-    def box(
-        name: str,
-        low: float,
-        high: float,
-        holes: tuple[SCHole, ...] = (),
-        regions: tuple[SCRoundedPolygon, ...] = (),
-    ) -> SCRoundedPolygon:
-        """Return a square with sharp corners.
-
-        Arguments:
-        * `name` (`str`): Its name.
-        * `low` (`float`): Its lowest X and Y.
-        * `high` (`float`): Its highest X and Y.
-        * `holes` (`tuple[SCHole, ...]`): Its holes.
-        * `regions` (`tuple[SCRoundedPolygon, ...]`): Its regions.
-
-        Returns:
-        * (`SCRoundedPolygon`): The square.
-        """
-        corners: tuple[SCCorner, ...] = (
-            SCCorner(low, low),
-            SCCorner(high, low),
-            SCCorner(high, high),
-            SCCorner(low, high),
-        )
-        return SCRoundedPolygon(name, corners, holes, regions)
-
-    island: SCRoundedPolygon = box(
-        "Island", 50.0, 70.0, (SCHole(60.0, 60.0, 10.0),)
+    corners: tuple[SCCorner, ...] = (
+        SCCorner(low, low),
+        SCCorner(high, low),
+        SCCorner(high, high),
+        SCCorner(low, high),
     )
-    opening: SCRoundedPolygon = box("Opening", 30.0, 90.0, (), (island,))
-    return box("Plate", 0.0, 100.0, (SCHole(10.0, 10.0, 10.0),), (opening,))
+    return SCRoundedPolygon(name, corners, z_start, z_end, children)
+
+
+# Function `plate_with_island()`:
+def plate_with_island() -> SCRoundedPolygon:
+    """Return a plate with a hole, a pocket, an island, and its hole.
+
+    Returns:
+    * (`SCRoundedPolygon`): A 100 x 100 plate, from Z = 0 up to 10; a
+      hole through it at (10, 10); a pocket from 30 to 90, down to Z = 5;
+      an island from 50 to 70, up to Z = 10; a hole through everything
+      at (60, 60).
+    """
+    island: SCRoundedPolygon = box(
+        "Island", 50.0, 70.0, 5.0, 10.0, (SCHole(60.0, 60.0, 10.0, 10.0, 0.0),)
+    )
+    pocket: SCRoundedPolygon = box("Pocket", 30.0, 90.0, 10.0, 5.0, (island,))
+    return box(
+        "Plate",
+        0.0,
+        100.0,
+        0.0,
+        10.0,
+        (SCHole(10.0, 10.0, 10.0, 10.0, 0.0), pocket),
+    )
 
 
 # Function `tip_over_strip()`:
@@ -176,6 +189,8 @@ def tip_over_strip() -> SCRoundedPolygon:
             SCCorner(-10.0, 60.0),
             SCCorner(-10.0, -17.63),
         ],
+        0.0,
+        1.0,
     )
 
 
@@ -331,7 +346,7 @@ class TestLineEnters(unittest.TestCase):
         # at (40, 30).  This line is in that fill, out of the sharp
         # shape.
         sharp: SCRoundedPolygon = SCRoundedPolygon(
-            "Sharp", [SCCorner(c.x, c.y) for c in poly.corners]
+            "Sharp", [SCCorner(c.x, c.y) for c in poly.corners], 0.0, 1.0
         )
         self.check(sharp, (39.5, 30.5), (39.2, 30.8), False)
         self.check(poly, (39.5, 30.5), (39.2, 30.8), True)
@@ -362,7 +377,9 @@ class TestLineEnters(unittest.TestCase):
         self.assertEqual(len(notched().bound), 8)
 
         # A circle's bound is its square; used up edges are dropped.
-        self.assertEqual(len(SCRoundedPolygon.circle("C", 0, 0, 1).bound), 4)
+        self.assertEqual(
+            len(SCRoundedPolygon.circle("C", 0, 0, 1, 0.0, 1.0).bound), 4
+        )
 
     # Method `TestLineEnters.test_crossing_bound()`:
     def test_crossing_bound(self) -> None:
@@ -379,44 +396,21 @@ class TestLineEnters(unittest.TestCase):
     # Method `TestLineEnters.test_circle()`:
     def test_circle(self) -> None:
         """A circle: its square's corners are clear."""
-        poly: SCRoundedPolygon = SCRoundedPolygon.circle("C", 3.0, 4.0, 2.0)
+        poly: SCRoundedPolygon = SCRoundedPolygon.circle(
+            "C", 3.0, 4.0, 2.0, 0.0, 1.0
+        )
         self.check(poly, (1.1, 2.1), (1.4, 2.1), False)
         self.check(poly, (0.0, 2.0), (6.0, 2.0), False)
         self.check(poly, (0.0, 4.0), (6.0, 4.0), True)
         self.check(poly, (3.0, 4.0), (3.5, 4.0), True)
         self.check(poly, (0.0, 2.01), (6.0, 2.01), True)
 
-    # Method `TestLineEnters.test_levels()`:
-    def test_levels(self) -> None:
-        """Holes, openings and islands decide what is solid."""
-        poly: SCRoundedPolygon = plate_with_island()
-
-        # Within the plate's hole, then out of it into the plate.
-        self.check(poly, (9.0, 10.0), (11.0, 10.0), False)
-        self.check(poly, (10.0, 10.0), (20.0, 10.0), True)
-
-        # Within the opening, then out of it into the plate or island.
-        self.check(poly, (35.0, 35.0), (85.0, 35.0), False)
-        self.check(poly, (35.0, 35.0), (20.0, 35.0), True)
-        self.check(poly, (35.0, 60.0), (55.0, 60.0), True)
-
-        # Along the island's edge, and in the island's hole.
-        self.check(poly, (50.0, 40.0), (50.0, 80.0), False)
-        self.check(poly, (58.0, 60.0), (62.0, 60.0), False)
-        self.check(poly, (52.0, 52.0), (54.0, 54.0), True)
-
-        # Over the whole lot, starting and ending in openings.
-        self.check(poly, (35.0, 60.0), (85.0, 60.0), True)
-
     # Method `TestLineEnters.test_point()`:
     def test_point(self) -> None:
         """A line with no length is a point, as for a vertical move."""
-        poly: SCRoundedPolygon = plate_with_island()
-        self.check(poly, (20.0, 20.0), (20.0, 20.0), True)
-        self.check(poly, (40.0, 40.0), (40.0, 40.0), False)
-        self.check(poly, (60.0, 52.0), (60.0, 52.0), True)
-        self.check(poly, (60.0, 60.0), (60.0, 60.0), False)
-        self.check(poly, (0.0, 20.0), (0.0, 20.0), False)
+        poly: SCRoundedPolygon = square(20.0, 0.0)
+        self.check(poly, (10.0, 10.0), (10.0, 10.0), True)
+        self.check(poly, (0.0, 10.0), (0.0, 10.0), False)
         self.check(poly, (200.0, 20.0), (200.0, 20.0), False)
 
     # Method `TestLineEnters.test_against_sampling()`:
@@ -429,11 +423,8 @@ class TestLineEnters(unittest.TestCase):
             notched(),
             tip_over_strip(),
             plate_with_island(),
-            SCRoundedPolygon.circle("C", 3.0, 4.0, 2.0),
+            SCRoundedPolygon.circle("C", 3.0, 4.0, 2.0, 0.0, 1.0),
         ):
-            edges: list[SCSegment] = list(poly.segments)
-            for region in poly.regions:
-                edges += region.segments
             xs: list[float] = [corner.x for corner in poly.corners]
             ys: list[float] = [corner.y for corner in poly.corners]
             for _ in range(200):
@@ -475,7 +466,10 @@ class TestLineEnters(unittest.TestCase):
         generator: random.Random = random.Random(5)
         for poly, past in (
             (square(20.0, 5.0), past_square),
-            (SCRoundedPolygon.circle("C", 10.0, 10.0, 7.0), past_circle),
+            (
+                SCRoundedPolygon.circle("C", 10.0, 10.0, 7.0, 0.0, 1.0),
+                past_circle,
+            ),
         ):
             answers: list[bool] = []
             for _ in range(500):
@@ -596,7 +590,7 @@ class TestArcEnters(unittest.TestCase):
         """A corner turning inward gains what rounding adds."""
         poly: SCRoundedPolygon = notched()
         sharp: SCRoundedPolygon = SCRoundedPolygon(
-            "Sharp", [SCCorner(c.x, c.y) for c in poly.corners]
+            "Sharp", [SCCorner(c.x, c.y) for c in poly.corners], 0.0, 1.0
         )
 
         # About the sharp corner at (40, 30), up in the notch.  It is
@@ -611,32 +605,15 @@ class TestArcEnters(unittest.TestCase):
     # Method `TestArcEnters.test_circle()`:
     def test_circle(self) -> None:
         """Arcs against a circle, including one of its own circle."""
-        poly: SCRoundedPolygon = SCRoundedPolygon.circle("C", 3.0, 4.0, 2.0)
+        poly: SCRoundedPolygon = SCRoundedPolygon.circle(
+            "C", 3.0, 4.0, 2.0, 0.0, 1.0
+        )
         self.check(poly, arc_at((3.0, 4.0), 2.0, 0.0, 360.0), False)
         self.check(poly, arc_at((3.0, 4.0), 2.0, 30.0, 200.0), False)
         self.check(poly, arc_at((3.0, 4.0), 1.0, 0.0, 360.0), True)
         self.check(poly, arc_at((3.0, 4.0), 3.0, 0.0, 360.0), False)
         self.check(poly, arc_at((6.0, 4.0), 1.0, 0.0, 360.0), False)
         self.check(poly, arc_at((6.0, 4.0), 1.1, 0.0, 360.0), True)
-
-    # Method `TestArcEnters.test_levels()`:
-    def test_levels(self) -> None:
-        """Holes, openings and islands decide what is solid."""
-        poly: SCRoundedPolygon = plate_with_island()
-
-        # In the plate's hole, along its wall, and around it.
-        self.check(poly, arc_at((10.0, 10.0), 4.0, 0.0, 360.0), False)
-        self.check(poly, arc_at((10.0, 10.0), 5.0, 0.0, 360.0), False)
-        self.check(poly, arc_at((10.0, 10.0), 6.0, 0.0, 360.0), True)
-
-        # In the opening, all the way around the island, and into it.
-        self.check(poly, arc_at((60.0, 60.0), 20.0, 0.0, 360.0), False)
-        self.check(poly, arc_at((60.0, 60.0), 12.0, 0.0, 360.0), True)
-        self.check(poly, arc_at((60.0, 60.0), 12.0, -20.0, 40.0), False)
-
-        # On the island, and in its hole.
-        self.check(poly, arc_at((60.0, 60.0), 7.0, 0.0, 360.0), True)
-        self.check(poly, arc_at((60.0, 60.0), 3.0, 0.0, 360.0), False)
 
     # Method `TestArcEnters.test_no_length()`:
     def test_no_length(self) -> None:
@@ -658,7 +635,10 @@ class TestArcEnters(unittest.TestCase):
         generator: random.Random = random.Random(6)
         for poly, past in (
             (square(20.0, 5.0), past_square),
-            (SCRoundedPolygon.circle("C", 10.0, 10.0, 7.0), past_circle),
+            (
+                SCRoundedPolygon.circle("C", 10.0, 10.0, 7.0, 0.0, 1.0),
+                past_circle,
+            ),
         ):
             answers: list[bool] = []
             for _ in range(500):
@@ -763,6 +743,8 @@ def slot_block(width: float) -> SCRoundedPolygon:
             SCCorner(10.0, 20.0),
             SCCorner(0.0, 20.0),
         ],
+        0.0,
+        1.0,
     )
 
 
@@ -791,7 +773,7 @@ def star(generator: random.Random) -> SCRoundedPolygon | None:
             )
         )
     try:
-        return SCRoundedPolygon("Star", corners)
+        return SCRoundedPolygon("Star", corners, 0.0, 1.0)
     except ValueError:
         return None
 
@@ -810,6 +792,62 @@ def bounds_of(poly: SCRoundedPolygon) -> tuple[float, float, float, float]:
     xs: list[float] = [corner.x for corner in poly.corners]
     ys: list[float] = [corner.y for corner in poly.corners]
     return min(xs), max(xs), min(ys), max(ys)
+
+
+# Function `plate_surface()`:
+def plate_surface(x: float, y: float) -> float:
+    """Return the height of `plate_with_island()`, by a plain formula.
+
+    Arguments:
+    * `x` (`float`): The X.
+    * `y` (`float`): The Y.
+
+    Returns:
+    * (`float`): The height of the surface there, or `-inf` off of it.
+    """
+    if not 0.0 <= x <= 100.0 or not 0.0 <= y <= 100.0:
+        return -math.inf
+    if math.hypot(x - 10.0, y - 10.0) < 5.0:
+        return 0.0
+    if math.hypot(x - 60.0, y - 60.0) < 5.0:
+        return 0.0
+    if 50.0 <= x <= 70.0 and 50.0 <= y <= 70.0:
+        return 10.0
+    if 30.0 <= x <= 90.0 and 30.0 <= y <= 90.0:
+        return 5.0
+    return 10.0
+
+
+# Function `tool_touches()`:
+def tool_touches(line: SCLine, z: float, reach: float) -> bool:
+    """Return whether a tool walked along a line finds `plate_surface()`.
+
+    Arguments:
+    * `line` (`SCLine`): The path of the tool's center.
+    * `z` (`float`): The height of its tip.
+    * `reach` (`float`): Its radius.
+
+    Returns:
+    * (`bool`): True when a point on or in its rim is below the surface.
+    """
+    steps: int = int(line.length() * 4) + 2
+    step: int
+    for step in range(steps + 1):
+        center: tuple[float, float] = point_at(line, step / steps)
+        turn: int
+        for turn in range(24):
+            angle: float = turn * math.pi / 12.0
+            if (
+                plate_surface(
+                    center[0] + reach * math.cos(angle),
+                    center[1] + reach * math.sin(angle),
+                )
+                > z
+            ):
+                return True
+        if plate_surface(*center) > z:
+            return True
+    return False
 
 
 # Class `TestGrown`:
@@ -831,7 +869,7 @@ class TestGrown(unittest.TestCase):
     def test_circle(self) -> None:
         """A circle stays a circle, about the same center."""
         moved: SCRoundedPolygon = SCRoundedPolygon.circle(
-            "C", 3.0, 4.0, 2.0
+            "C", 3.0, 4.0, 2.0, 0.0, 1.0
         ).grown(1.0)
         segment: SCSegment
         for segment in moved.segments:
@@ -901,6 +939,8 @@ class TestGrown(unittest.TestCase):
                     SCCorner(15.0, 19.0, 1.0),
                     SCCorner(0.0, 20.0),
                 ],
+                0.0,
+                1.0,
             )
             moved: SCRoundedPolygon = bent.grown(radius)
             self.assertEqual(moved.is_ccw(), bent.is_ccw())
@@ -927,6 +967,8 @@ class TestGrown(unittest.TestCase):
                             SCCorner(15.0, 20.0 - sag, corner),
                             SCCorner(0.0, 20.0),
                         ],
+                        0.0,
+                        1.0,
                     )
                 except ValueError:
                     continue
@@ -999,6 +1041,8 @@ class TestGrown(unittest.TestCase):
                 SCCorner(9.5, 20.0),
                 SCCorner(0.0, 20.0),
             ],
+            0.0,
+            1.0,
         )
 
         # In the middle of the cavity, the tool would really be clear.
@@ -1009,11 +1053,12 @@ class TestGrown(unittest.TestCase):
         # With a small enough tool, the mouth stays open.
         self.assertFalse(cavity.grown(0.25).enters(SCLine(middle, middle)))
 
-    # Method `TestGrown.test_holes_are_lost()`:
-    def test_holes_are_lost(self) -> None:
-        """Holes and regions are gone, so their insides are solid."""
+    # Method `TestGrown.test_children_are_lost()`:
+    def test_children_are_lost(self) -> None:
+        """Children are gone, so their insides count as solid."""
         moved: SCRoundedPolygon = plate_with_island().grown(1.0)
-        self.assertEqual((moved.holes, moved.regions), ((), ()))
+        self.assertEqual(moved.children, ())
+        self.assertEqual((moved.z_start, moved.z_end), (0.0, 10.0))
         center: tuple[float, float] = (10.0, 10.0)
         self.assertTrue(moved.enters(SCLine(center, center)))
 
@@ -1096,7 +1141,7 @@ class TestGrown(unittest.TestCase):
             slot_block(1.0),
             slot_block(2.0),
             slot_block(3.0),
-            SCRoundedPolygon.circle("C", 3.0, 4.0, 2.0),
+            SCRoundedPolygon.circle("C", 3.0, 4.0, 2.0, 0.0, 1.0),
         ):
             radius: float
             for radius in (0.0, 0.25, 1.0, 3.0, 12.0):
@@ -1180,7 +1225,9 @@ class TestShrunk(unittest.TestCase):
     # Method `TestShrunk.test_circle()`:
     def test_circle(self) -> None:
         """A circle shrinks about its center, until no tool fits."""
-        poly: SCRoundedPolygon = SCRoundedPolygon.circle("C", 3.0, 4.0, 2.0)
+        poly: SCRoundedPolygon = SCRoundedPolygon.circle(
+            "C", 3.0, 4.0, 2.0, 0.0, 1.0
+        )
         places: list[SCRoundedPolygon] = poly.shrunk(1.0)
         self.assertEqual(len(places), 1)
         segment: SCSegment
@@ -1229,6 +1276,8 @@ class TestShrunk(unittest.TestCase):
                 SCCorner(20.0, 20.0),
                 SCCorner(0.0, 20.0),
             ],
+            0.0,
+            1.0,
         )
         self.assertEqual(len(rooms.shrunk(0.5)), 1)
         places: list[SCRoundedPolygon] = rooms.shrunk(1.5)
@@ -1271,6 +1320,8 @@ class TestShrunk(unittest.TestCase):
                             SCCorner(20.0, 20.0),
                             SCCorner(0.0, 20.0),
                         ],
+                        0.0,
+                        1.0,
                     )
                     self.assertIn(len(neck.shrunk(1.0)), (1, 2), half)
 
@@ -1282,7 +1333,7 @@ class TestShrunk(unittest.TestCase):
         polys: list[SCRoundedPolygon | None] = [
             notched(),
             square(20.0, 5.0),
-            SCRoundedPolygon.circle("C", 0.0, 0.0, 9.0),
+            SCRoundedPolygon.circle("C", 0.0, 0.0, 9.0, 0.0, 1.0),
         ]
         polys += [star(generator) for _ in range(200)]
         poly: SCRoundedPolygon | None
@@ -1415,10 +1466,10 @@ class TestLoopPolygon(unittest.TestCase):
             notched(),
             square(20.0, 5.0),
             square(20.0, 5.0, ccw=False),
-            SCRoundedPolygon.circle("C", 1.1, -2.3, 0.37),
+            SCRoundedPolygon.circle("C", 1.1, -2.3, 0.37, 0.0, 1.0),
         ):
             loop: SCLoop = SCLoop.from_poly(poly)
-            again: SCRoundedPolygon = loop.polygon("Again")
+            again: SCRoundedPolygon = loop.polygon("Again", 0.0, 1.0)
             self.assertEqual(again.name, "Again")
             self.assertEqual(again.is_ccw(), poly.is_ccw())
             self.assertAlmostEqual(
@@ -1442,7 +1493,7 @@ class TestLoopPolygon(unittest.TestCase):
                 SCLine((0.0, 10.0), (0.0, 0.0)),
             ),
         )
-        poly: SCRoundedPolygon = loop.polygon("Z")
+        poly: SCRoundedPolygon = loop.polygon("Z", 0.0, 1.0)
         self.assertEqual(len(poly.corners), 4)
         self.assertAlmostEqual(
             SCLoop.from_poly(poly).signed_area(), 100.0, delta=0.01
@@ -1462,7 +1513,7 @@ class TestLoopPolygon(unittest.TestCase):
                 SCLine((0.0, 10.0), (0.0, 0.0)),
             ),
         )
-        self.assertEqual(len(loop.polygon("Step").corners), 6)
+        self.assertEqual(len(loop.polygon("Step", 0.0, 1.0).corners), 6)
 
     # Method `TestLoopPolygon.test_tiny()`:
     def test_tiny(self) -> None:
@@ -1477,7 +1528,7 @@ class TestLoopPolygon(unittest.TestCase):
                 SCLine((0.0, 10.0), (0.0, 0.0)),
             ),
         )
-        self.assertEqual(len(loop.polygon("Tiny").corners), 4)
+        self.assertEqual(len(loop.polygon("Tiny", 0.0, 1.0).corners), 4)
 
     # Method `TestLoopPolygon.test_near_fit()`:
     def test_near_fit(self) -> None:
@@ -1502,7 +1553,9 @@ class TestLoopPolygon(unittest.TestCase):
         self.assertEqual(
             [corner.radius for corner in moved.corners].count(0.0), 1
         )
-        rebuilt: SCRoundedPolygon = SCLoop.from_poly(moved).polygon("Again")
+        rebuilt: SCRoundedPolygon = SCLoop.from_poly(moved).polygon(
+            "Again", 0.0, 1.0
+        )
         self.assertEqual(
             [corner.radius for corner in rebuilt.corners].count(0.0), 1
         )
@@ -1597,7 +1650,9 @@ class TestSCRoundedPolygon(unittest.TestCase):
     # Method `TestSCRoundedPolygon.test_circle_method()`:
     def test_circle_method(self) -> None:
         """`circle()` is four quarter arcs around the given center."""
-        poly: SCRoundedPolygon = SCRoundedPolygon.circle("C", 1.1, -2.3, 0.37)
+        poly: SCRoundedPolygon = SCRoundedPolygon.circle(
+            "C", 1.1, -2.3, 0.37, 0.0, 1.0
+        )
         self.check_outline(poly)
         self.assertEqual(poly.name, "C")
         self.assertTrue(poly.is_ccw())
@@ -1627,7 +1682,7 @@ class TestSCRoundedPolygon(unittest.TestCase):
         for x, y in ((0.0, 0.0), (0.1, 0.7), (-123.456, 789.012)):
             for radius in (0.001, 1.0 / 3.0, 0.0625, 7.0, 1234.5678):
                 poly: SCRoundedPolygon = SCRoundedPolygon.circle(
-                    "C", x, y, radius
+                    "C", x, y, radius, 0.0, 1.0
                 )
                 self.assertEqual(len(poly.segments), 4)
                 self.check_outline(poly)
@@ -1638,12 +1693,14 @@ class TestSCRoundedPolygon(unittest.TestCase):
         radius: float
         for radius in (0.0, -1.0):
             with self.assertRaisesRegex(ValueError, "above zero"):
-                SCRoundedPolygon.circle("C", 0.0, 0.0, radius)
+                SCRoundedPolygon.circle("C", 0.0, 0.0, radius, 0.0, 1.0)
 
     # Method `TestSCRoundedPolygon.test_circle_offset()`:
     def test_circle_offset(self) -> None:
         """Growing or shrinking a circle gives a circle, until it is gone."""
-        poly: SCRoundedPolygon = SCRoundedPolygon.circle("C", 3.0, 4.0, 2.0)
+        poly: SCRoundedPolygon = SCRoundedPolygon.circle(
+            "C", 3.0, 4.0, 2.0, 0.0, 1.0
+        )
         distance: float
         for distance in (0.25, -0.25):
             moved: SCRoundedPolygon = poly.offset(distance)
@@ -1666,27 +1723,6 @@ class TestSCRoundedPolygon(unittest.TestCase):
         self.assertEqual(len(out), 1)
         self.assertAlmostEqual(out[0].length(), 2.0 * math.pi * 2.25)
         self.assertEqual(inset([SCLoop.from_poly(poly)], 2.5, "Gone"), [])
-
-    # Method `TestSCRoundedPolygon.test_circle_inside()`:
-    def test_circle_inside(self) -> None:
-        """A circle can be a region, and clearance is checked for it."""
-        plate: list[SCCorner] = [
-            SCCorner(0.0, 0.0),
-            SCCorner(10.0, 0.0),
-            SCCorner(10.0, 10.0),
-            SCCorner(0.0, 10.0),
-        ]
-        SCRoundedPolygon(
-            "Plate",
-            plate,
-            regions=[SCRoundedPolygon.circle("C", 5.0, 5.0, 2.0)],
-        )
-        with self.assertRaisesRegex(ValueError, "not clear inside"):
-            SCRoundedPolygon(
-                "Plate",
-                plate,
-                regions=[SCRoundedPolygon.circle("C", 9.0, 5.0, 2.0)],
-            )
 
     # Method `TestSCRoundedPolygon.test_notched()`:
     def test_notched(self) -> None:
@@ -1757,7 +1793,7 @@ class TestSCRoundedPolygon(unittest.TestCase):
         corners: list[SCCorner] = [SCCorner(x, y) for x, y in slot]
         corners[2] = SCCorner(10, 10, 4.0)
         with self.assertRaisesRegex(ValueError, "cross at"):
-            SCRoundedPolygon("Slot", corners)
+            SCRoundedPolygon("Slot", corners, 0.0, 1.0)
 
     # Method `TestSCRoundedPolygon.test_reversed()`:
     def test_reversed(self) -> None:
@@ -2000,21 +2036,6 @@ class TestSCLoop(unittest.TestCase):
             self.check_inset(shape, distance, inset([shape], distance, "N"))
 
 
-def _square(name, half, holes=(), regions=(), x=0.0):
-    """Return a square polygon centered on `(x, 0)`."""
-    return scgeometry.SCRoundedPolygon(
-        name,
-        [
-            scgeometry.SCCorner(x - half, -half),
-            scgeometry.SCCorner(x + half, -half),
-            scgeometry.SCCorner(x + half, half),
-            scgeometry.SCCorner(x - half, half),
-        ],
-        holes,
-        regions,
-    )
-
-
 class _Sketch:
     """Stands in for SolidCraft's `sketch` commands, counting curves."""
 
@@ -2040,102 +2061,277 @@ class _Sketch:
         return self._curve()
 
 
-class TestInside(unittest.TestCase):
-    """Holes and regions inside a rounded polygon."""
+class TestChildren(unittest.TestCase):
+    """The heights and children of a rounded polygon."""
 
-    def test_holes(self) -> None:
-        """Round holes are kept, and stored as a tuple."""
-        hole = scgeometry.SCHole(1.0, 2.0, 1.0)
-        square = _square("S", 10.0, [hole])
-        self.assertEqual(square.holes, (hole,))
+    def test_same_heights(self) -> None:
+        """Equal heights raise an exception, however it is made."""
+        with self.assertRaisesRegex(ValueError, "both 2.0"):
+            box("B", 0.0, 1.0, 2.0, 2.0)
+        with self.assertRaisesRegex(ValueError, "both"):
+            SCRoundedPolygon.circle("C", 0.0, 0.0, 1.0, 0.5, 0.5)
+        with self.assertRaisesRegex(ValueError, "go down"):
+            SCHole(0.0, 0.0, 1.0, 0.5, 0.5)
 
-    def test_no_size(self) -> None:
-        """A hole must have a size."""
-        with self.assertRaises(ValueError):
-            scgeometry.SCHole(0.0, 0.0, 0.0)
+    def test_kept(self) -> None:
+        """Children are kept as a tuple, and heights carry over."""
+        hole = SCHole(5.0, 5.0, 1.0, 1.0, 0.0)
+        plate = box("P", 0.0, 10.0, 0.0, 1.0, [hole])
+        self.assertEqual(plate.children, (hole,))
+        self.assertEqual(plate.reversed().children, (hole,))
+        self.assertEqual(plate.reversed().z_end, 1.0)
+        self.assertEqual(plate.offset(1.0).children, ())
+        self.assertEqual(plate.offset(1.0).z_end, 1.0)
 
-    def test_hole_refused(self) -> None:
-        """A hole must stay clear of the outline, and of other holes."""
-        hole = scgeometry.SCHole
-        for holes in (
-            [hole(20.0, 0.0, 1.0)],
-            [hole(9.5, 0.0, 1.0)],
-            [hole(9.5, 0.0, 2.0)],
-            [hole(0.0, 0.0, 2.0), hole(1.0, 0.0, 2.0)],
-            [hole(0.0, 0.0, 2.0), hole(2.0, 0.0, 2.0)],
-        ):
-            with self.subTest(holes=holes), self.assertRaises(ValueError):
-                _square("S", 10.0, holes)
-
-    def test_rounded_corner_hole(self) -> None:
-        """A hole near a corner is judged by the rounded outline."""
-        corners = [
-            scgeometry.SCCorner(0.0, 0.0, 3.0),
-            scgeometry.SCCorner(10.0, 0.0, 3.0),
-            scgeometry.SCCorner(10.0, 10.0, 3.0),
-            scgeometry.SCCorner(0.0, 10.0, 3.0),
-        ]
-        hole = scgeometry.SCHole(0.5, 0.5, 0.5)
-        with self.assertRaises(ValueError):
-            scgeometry.SCRoundedPolygon("S", corners, [hole])
-
-    def test_region_refused(self) -> None:
-        """A region must stay clear of everything on its level."""
-        hole = scgeometry.SCHole
-        for holes, regions in (
-            ((), [_square("R", 20.0)]),
-            ((), [_square("R", 10.0)]),
-            ((), [_square("R", 2.0, x=9.0)]),
-            ((), [_square("R", 2.0, x=30.0)]),
-            ((), [_square("A", 2.0), _square("B", 2.0, x=3.0)]),
-            ((), [_square("A", 4.0), _square("B", 1.0)]),
-            ([hole(0.0, 0.0, 1.0)], [_square("R", 2.0)]),
-            ([hole(3.0, 0.0, 4.0)], [_square("R", 2.0)]),
-        ):
-            with self.subTest(regions=regions), self.assertRaises(ValueError):
-                _square("S", 10.0, holes, regions)
-
-    def test_island_with_holes(self) -> None:
-        """An island in an opening may have its own holes and openings."""
-        island = _square(
-            "Island",
-            5.0,
-            [scgeometry.SCHole(3.0, 3.0, 1.0)],
-            [_square("Inner opening", 1.0)],
+    def test_exact_match(self) -> None:
+        """A child must start exactly where its parent ends."""
+        with self.assertRaisesRegex(ValueError, "not at z_end"):
+            box(
+                "P",
+                0.0,
+                10.0,
+                0.0,
+                1.0,
+                [SCHole(5.0, 5.0, 1.0, 1.0 + 1e-12, 0.0)],
+            )
+        with self.assertRaisesRegex(ValueError, "not at z_end"):
+            box("P", 0.0, 10.0, 0.0, 1.0, [box("B", 2.0, 3.0, 0.0, 2.0)])
+        box(
+            "P",
+            0.0,
+            10.0,
+            0.0,
+            0.1 + 0.2,
+            [box("B", 2.0, 3.0, 0.1 + 0.2, 2.0)],
         )
-        opening = _square("Opening", 10.0, regions=[island])
-        plate = _square("Plate", 20.0, regions=[opening])
-        self.assertEqual(plate.regions[0].regions[0].holes[0].diameter, 1.0)
+        with self.assertRaisesRegex(ValueError, "not at z_end"):
+            box("P", 0.0, 10.0, 0.0, 0.1 + 0.2, [box("B", 2.0, 3.0, 0.3, 2.0)])
 
-    def test_island_checked(self) -> None:
-        """An island's own hole is checked against the island."""
-        with self.assertRaises(ValueError):
-            _square("Island", 5.0, [scgeometry.SCHole(5.0, 0.0, 1.0)])
+    def test_enclosed(self) -> None:
+        """A child stays within its parent, but may touch its wall."""
+        for bad in (
+            box("B", 5.0, 15.0, 1.0, 2.0),
+            box("B", 20.0, 30.0, 1.0, 2.0),
+            box("B", -5.0, 15.0, 1.0, 2.0),
+        ):
+            with self.assertRaisesRegex(ValueError, "not inside"):
+                box("P", 0.0, 10.0, 0.0, 1.0, [bad])
+        with self.assertRaisesRegex(ValueError, "not inside"):
+            box("P", 0.0, 10.0, 0.0, 1.0, [SCHole(9.9, 5.0, 1.0, 1.0, 0.0)])
+
+        # Flush with one wall, with two, and the same outline.
+        box("P", 0.0, 10.0, 0.0, 1.0, [box("B", 0.0, 5.0, 1.0, 2.0)])
+        box("P", 0.0, 10.0, 0.0, 1.0, [box("B", 0.0, 10.0, 1.0, 2.0)])
+        box("P", 0.0, 10.0, 0.0, 1.0, [SCHole(9.5, 5.0, 1.0, 1.0, 0.0)])
+
+    def test_siblings(self) -> None:
+        """Siblings may touch, but not overlap."""
+        first = box("A", 1.0, 4.0, 1.0, 2.0)
+        for bad in (
+            box("B", 3.0, 6.0, 1.0, 2.0),
+            box("B", 2.0, 3.0, 1.0, 2.0),
+            box("B", 1.0, 4.0, 1.0, 2.0),
+        ):
+            with self.assertRaisesRegex(ValueError, "overlaps"):
+                box("P", 0.0, 10.0, 0.0, 1.0, [first, bad])
+            with self.assertRaisesRegex(ValueError, "overlaps"):
+                box("P", 0.0, 10.0, 0.0, 1.0, [bad, first])
+        box("P", 0.0, 10.0, 0.0, 1.0, [first, box("B", 5.0, 6.0, 1.0, 0.5)])
+
+        # Corners that touch, and a square beside it sharing a wall: the
+        # square's corners only touch along that wall, with no overlap.
+        beside = SCRoundedPolygon(
+            "C",
+            [
+                SCCorner(4.0, 1.0),
+                SCCorner(6.0, 1.0),
+                SCCorner(6.0, 4.0),
+                SCCorner(4.0, 4.0),
+            ],
+            1.0,
+            2.0,
+        )
+        box("P", 0.0, 10.0, 0.0, 1.0, [first, beside])
+        with self.assertRaisesRegex(ValueError, "overlaps"):
+            box(
+                "P",
+                0.0,
+                10.0,
+                0.0,
+                1.0,
+                [
+                    SCHole(5.0, 5.0, 2.0, 1.0, 0.0),
+                    SCHole(6.0, 5.0, 2.0, 1.0, 0.0),
+                ],
+            )
+
+    def test_hole(self) -> None:
+        """An `SCHole` is a rounded polygon that goes down."""
+        hole = SCHole(1.0, 2.0, 0.5, 3.0, 1.0)
+        self.assertIsInstance(hole, SCRoundedPolygon)
+        self.assertEqual((hole.x, hole.y, hole.diameter), (1.0, 2.0, 0.5))
+        self.assertTrue(hole.enters(SCLine((1.0, 2.0), (1.0, 2.0))))
+        self.assertEqual(len(hole.shrunk(0.1)), 1)
+        with self.assertRaisesRegex(ValueError, "above zero"):
+            SCHole(1.0, 2.0, 0.0, 3.0, 1.0)
+        with self.assertRaisesRegex(ValueError, "go down"):
+            SCHole(1.0, 2.0, 0.5, 1.0, 3.0)
+        counterbore = SCHole(
+            1.0, 2.0, 2.0, 3.0, 2.0, [SCHole(1.0, 2.0, 1.0, 2.0, 1.0)]
+        )
+        self.assertEqual(len(counterbore.children), 1)
 
     def test_sketch(self) -> None:
-        """Everything inside is drawn, at every level, in millimeters."""
-        island = _square("Island", 5.0, [scgeometry.SCHole(1.0, 2.0, 0.5)])
-        plate = _square(
-            "Plate",
-            20.0,
-            [scgeometry.SCHole(15.0, 15.0, 1.0)],
-            [_square("Opening", 10.0, regions=[island])],
+        """The sketch has the outline, and what runs the whole height."""
+        through = SCHole(5.0, 5.0, 1.0, 1.0, 0.0)
+        blind = SCHole(2.0, 2.0, 0.5, 1.0, 0.5)
+        counterbore = box(
+            "Cut", 6.0, 9.0, 1.0, 0.0, [box("In", 7.0, 8.0, 0.0, 1.0)]
         )
+        plate = box("P", 0.0, 10.0, 0.0, 1.0, [through, blind, counterbore])
         sketch = _Sketch()
-        curves = plate.sketch(types.SimpleNamespace(sketch=sketch), 25.4)
-        self.assertEqual(len(curves), 4 + 1 + 4 + 4 + 1)
-        self.assertEqual(len(set(curves)), len(curves))
-        self.assertEqual(
-            [circle["diameter"] for circle in sketch.circles], [25.4, 12.7]
+        solidcraft = types.SimpleNamespace(sketch=sketch)
+        curves = plate.sketch(solidcraft, 25.4)
+        self.assertEqual(len(curves), 4 + 1 + 4)
+        self.assertEqual(len(sketch.circles), 1)
+        self.assertEqual(sketch.circles[0]["diameter"], 25.4)
+        self.assertEqual(sketch.circles[0]["center"], (127.0, 127.0))
+
+
+# Class `TestHits`:
+class TestHits(unittest.TestCase):
+    """Whether a tool hits a root or its descendants."""
+
+    def setUp(self) -> None:
+        """Make the plate, with its pocket, island and holes."""
+        self.plate: SCRoundedPolygon = plate_with_island()
+
+    def hit(self, start, end, z, radius=1.0, poly=None) -> bool:
+        """Return whether a line move at a height hits."""
+        return (poly or self.plate).hits(SCLine(start, end), z, radius)
+
+    def test_above(self) -> None:
+        """Above everything, or just at its top, nothing is hit."""
+        self.assertFalse(self.hit((-5.0, 50.0), (105.0, 50.0), 11.0))
+        self.assertFalse(self.hit((-5.0, 50.0), (105.0, 50.0), 10.0))
+        self.assertTrue(self.hit((-5.0, 50.0), (105.0, 50.0), 9.99))
+
+    def test_outside(self) -> None:
+        """Beside the plate, at any height, is clear, until it touches."""
+        self.assertFalse(self.hit((-5.0, 0.0), (-5.0, 100.0), -50.0))
+        self.assertFalse(self.hit((-1.1, 0.0), (-1.1, 100.0), 5.0))
+        self.assertTrue(self.hit((-1.0, 0.0), (-1.0, 100.0), 5.0))
+        self.assertTrue(self.hit((-0.9, 0.0), (-0.9, 100.0), 5.0))
+
+    def test_pocket(self) -> None:
+        """In the pocket, above its floor, clear of its walls and island."""
+        self.assertFalse(self.hit((35.0, 35.0), (85.0, 35.0), 6.0))
+        self.assertFalse(self.hit((35.0, 35.0), (85.0, 35.0), 5.0))
+        self.assertTrue(self.hit((35.0, 35.0), (85.0, 35.0), 4.9))
+
+        # Touching the wall, across it, and starting outside it.
+        self.assertTrue(self.hit((31.0, 35.0), (31.0, 85.0), 6.0))
+        self.assertTrue(self.hit((35.0, 35.0), (25.0, 35.0), 6.0))
+        self.assertTrue(self.hit((20.0, 35.0), (35.0, 35.0), 6.0))
+
+        # The island, whose top is level with the plate's.
+        self.assertTrue(self.hit((35.0, 60.0), (55.0, 60.0), 6.0))
+        self.assertTrue(self.hit((49.5, 40.0), (49.5, 80.0), 6.0))
+        self.assertFalse(self.hit((48.5, 40.0), (48.5, 80.0), 6.0))
+        self.assertFalse(self.hit((48.5, 40.0), (48.5, 80.0), 11.0))
+        self.assertFalse(self.hit((48.5, 40.0), (48.5, 80.0), 10.0))
+        self.assertFalse(self.hit((47.0, 40.0), (47.0, 80.0), 6.0))
+        self.assertFalse(self.hit((47.0, 40.0), (47.0, 80.0), 9.0))
+
+    def test_holes(self) -> None:
+        """A hole lets a tool down, as far as its floor."""
+        # The plate's hole, diameter 10: a tool of radius 1 at its center.
+        self.assertFalse(self.hit((10.0, 10.0), (10.0, 10.0), 1.0))
+        self.assertFalse(self.hit((10.0, 10.0), (10.0, 10.0), 0.0))
+        self.assertTrue(self.hit((10.0, 10.0), (10.0, 10.0), -0.1))
+        self.assertFalse(self.hit((8.0, 10.0), (12.0, 10.0), 1.0))
+        self.assertTrue(self.hit((5.0, 10.0), (12.0, 10.0), 1.0))
+
+        # A tool too big for it.
+        self.assertTrue(self.hit((10.0, 10.0), (10.0, 10.0), 1.0, 5.0))
+        self.assertFalse(self.hit((10.0, 10.0), (10.0, 10.0), 1.0, 4.9))
+
+        # The hole in the island, below the pocket's floor.
+        self.assertFalse(self.hit((60.0, 60.0), (60.0, 60.0), 1.0))
+        self.assertTrue(self.hit((60.0, 60.0), (54.0, 60.0), 1.0))
+
+    def test_below_floor_in_deep_hole(self) -> None:
+        """A hole below a pocket's floor is reached through that floor."""
+        hole = SCHole(50.0, 50.0, 10.0, 5.0, 2.0)
+        pocket = box("Pocket", 30.0, 70.0, 10.0, 5.0, (hole,))
+        plate = box("Plate", 0.0, 100.0, 0.0, 10.0, (pocket,))
+        self.assertFalse(self.hit((50.0, 50.0), (50.0, 50.0), 3.0, 1.0, plate))
+        self.assertFalse(self.hit((50.0, 50.0), (50.0, 50.0), 2.0, 1.0, plate))
+        self.assertTrue(self.hit((50.0, 50.0), (50.0, 50.0), 1.9, 1.0, plate))
+        self.assertTrue(self.hit((40.0, 40.0), (40.0, 40.0), 3.0, 1.0, plate))
+
+    def test_boss(self) -> None:
+        """A boss on a plate blocks where the plate does not."""
+        step = box("Boss", 40.0, 60.0, 10.0, 20.0)
+        plate = box("Plate", 0.0, 100.0, 0.0, 10.0, (step,))
+        self.assertFalse(self.hit((0.0, 50.0), (30.0, 50.0), 12.0, 1.0, plate))
+        self.assertTrue(self.hit((0.0, 50.0), (39.5, 50.0), 12.0, 1.0, plate))
+        self.assertFalse(
+            self.hit((0.0, 50.0), (100.0, 50.0), 20.0, 1.0, plate)
         )
-        self.assertEqual(sketch.circles[1]["center"], (25.4, 50.8))
 
-    def test_reversed_keeps_them(self) -> None:
-        """Going around the other way keeps what is inside."""
-        hole = scgeometry.SCHole(1.0, 2.0, 0.5)
-        self.assertEqual(_square("S", 10.0, [hole]).reversed().holes, (hole,))
+        # Flush with the plate's wall, the tool stays off of it too.
+        flush = box("Boss", 0.0, 60.0, 10.0, 20.0)
+        plate = box("Plate", 0.0, 100.0, 0.0, 10.0, (flush,))
+        self.assertTrue(self.hit((-0.5, 30.0), (-0.5, 40.0), 12.0, 1.0, plate))
+        self.assertFalse(
+            self.hit((-5.0, 30.0), (-5.0, 40.0), 12.0, 1.0, plate)
+        )
 
-    def test_offset_drops_them(self) -> None:
-        """A tool path follows only the outline."""
-        hole = scgeometry.SCHole(1.0, 2.0, 0.5)
-        self.assertEqual(_square("S", 10.0, [hole]).offset(1.0).holes, ())
+    def test_arcs(self) -> None:
+        """Arcs work the same as lines."""
+        arc = arc_at((60.0, 60.0), 20.0, 0.0, 360.0)
+        self.assertFalse(self.plate.hits(arc, 6.0, 1.0))
+        self.assertTrue(self.plate.hits(arc, 4.0, 1.0))
+        self.assertTrue(
+            self.plate.hits(arc_at((60.0, 60.0), 12.0, 0.0, 360.0), 6.0, 1.0)
+        )
+        self.assertFalse(
+            self.plate.hits(arc_at((60.0, 60.0), 12.0, 0.0, 360.0), 11.0, 1.0)
+        )
+
+    def test_root_must_go_up(self) -> None:
+        """A root going down is refused where it is used."""
+        hole = SCHole(5.0, 5.0, 1.0, 1.0, 0.0)
+        with self.assertRaisesRegex(ValueError, "must go up"):
+            hole.hits(SCLine((0.0, 0.0), (1.0, 0.0)), 0.5, 0.1)
+        with self.assertRaisesRegex(ValueError, "must go up"):
+            hole.model(None)
+
+    def test_against_height_field(self) -> None:
+        """Random moves agree with walking a tool over the surface."""
+        generator = random.Random(21)
+        answers = []
+        for _ in range(250):
+            start = (generator.uniform(-5, 105), generator.uniform(-5, 105))
+            if generator.random() < 0.5:
+                end = (
+                    start[0] + generator.uniform(-15, 15),
+                    start[1] + generator.uniform(-15, 15),
+                )
+            else:
+                end = (generator.uniform(-5, 105), generator.uniform(-5, 105))
+            z = generator.choice((-1.0, 1.0, 4.0, 6.0, 9.0, 11.0))
+            radius = generator.choice((0.5, 1.0, 2.0, 4.0))
+            line = SCLine(start, end)
+
+            # A real touch must be found, and with room to spare it must
+            # be clear: this plate gives no false alarms.
+            answer = self.plate.hits(line, z, radius)
+            answers.append(answer)
+            if tool_touches(line, z, radius * 0.99):
+                self.assertTrue(answer, (start, end, z, radius))
+            elif not tool_touches(line, z, radius + 0.1):
+                self.assertFalse(answer, (start, end, z, radius))
+        self.assertGreater(answers.count(True), 30)
+        self.assertGreater(answers.count(False), 30)

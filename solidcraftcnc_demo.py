@@ -119,6 +119,8 @@ def demo_plate() -> SCRoundedPolygon:
             SCCorner(1.0, 2.25, 0.0),
             SCCorner(0.0, 3.0, 0.25),
         ],
+        -0.5,
+        0.0,
     )
 
 
@@ -137,6 +139,8 @@ def demo_hole() -> SCRoundedPolygon:
             SCCorner(3.6, 1.6, 0.1875),
             SCCorner(3.0, 1.6, 0.1875),
         ],
+        0.0,
+        -0.5,
     )
 
 
@@ -157,6 +161,8 @@ def demo_pocket() -> SCRoundedPolygon:
             SCCorner(2.75, 2.05, corner),
             SCCorner(0.3, 2.05, corner),
         ],
+        0.0,
+        -0.25,
     )
 
 
@@ -177,6 +183,8 @@ def demo_islands() -> list[SCRoundedPolygon]:
                 SCCorner(1.25, 0.65, edge),
                 SCCorner(0.95, 1.2, edge),
             ],
+            -0.25,
+            0.0,
         ),
         SCRoundedPolygon(
             "Square",
@@ -186,6 +194,8 @@ def demo_islands() -> list[SCRoundedPolygon]:
                 SCCorner(2.15, 1.15, edge),
                 SCCorner(1.65, 1.15, edge),
             ],
+            -0.25,
+            0.0,
         ),
         SCRoundedPolygon(
             "Circle",
@@ -195,6 +205,8 @@ def demo_islands() -> list[SCRoundedPolygon]:
                 SCCorner(1.6, 1.75, 0.2),
                 SCCorner(1.2, 1.75, 0.2),
             ],
+            -0.25,
+            0.0,
         ),
     ]
 

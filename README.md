@@ -10,8 +10,9 @@ Python bindings.
 What it does today:
 
 * Outlines in the XY plane made of straight edges whose corners each
-  have their own radius (`SCRoundedPolygon`), with round holes and
-  internal regions, such as islands with holes of their own.
+  have their own radius (`SCRoundedPolygon`), each with a range of
+  heights, going up (material) or down (a hole), and children that
+  start on its surface, such as islands with holes of their own.
 * Outside and inside profiles, climb milled, with half circle lead-ins
   and lead-outs, in passes down to depth, and through cuts that go a
   little below the part.
