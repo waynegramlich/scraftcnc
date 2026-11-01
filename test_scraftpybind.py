@@ -1,7 +1,7 @@
 """Tests for `scraftpybind` and `scraftpybind_generate`.
 
-The offline tests always run.  `ControlTransport` is tested against a
-fake control port, and `HeadlessTransport` against a fake
+The offline tests always run.  `SCControlTransport` is tested against a
+fake control port, and `SCHeadlessTransport` against a fake
 `solidcraft-cli` (a Python script that speaks enough MCP).
 
 The live tests run only when `solidcraft-cli` is on the `PATH`; they
@@ -42,12 +42,12 @@ import scraftpybind
 import scraftpybind_generate
 from scraftpybind import (
     JSON,
-    ControlTransport,
-    HeadlessTransport,
-    Namespace,
-    SolidCraftError,
-    SolidCraftPyBind,
-    Transport,
+    SCControlTransport,
+    SCHeadlessTransport,
+    SCNamespace,
+    SCPyBind,
+    SCSolidCraftError,
+    SCTransport,
 )
 
 # Where things are.
@@ -149,8 +149,8 @@ if deaf:
 '''
 
 
-# Class `RecordingTransport`:
-class RecordingTransport(Transport):
+# Class `SCRecordingTransport`:
+class SCRecordingTransport(SCTransport):
     """A transport that records each request and answers `{}`.
 
     Attributes:
@@ -158,12 +158,12 @@ class RecordingTransport(Transport):
       Each request's method and parameters, in order.
     """
 
-    # Method `RecordingTransport.__init__()`:
+    # Method `SCRecordingTransport.__init__()`:
     def __init__(self) -> None:
         """Start with no requests."""
         self.requests: list[tuple[str, Mapping[str, JSON]]] = []
 
-    # Method `RecordingTransport.request()`:
+    # Method `SCRecordingTransport.request()`:
     def request(self, method: str, params: Mapping[str, JSON]) -> JSON:
         """Record one request.
 
@@ -178,17 +178,17 @@ class RecordingTransport(Transport):
         return {}
 
 
-# Class `LoggingHeadlessTransport`:
+# Class `SCLoggingHeadlessTransport`:
 @dataclass(slots=True)
-class LoggingHeadlessTransport(HeadlessTransport):
-    """A `HeadlessTransport` that also notes each command it sends.
+class SCLoggingHeadlessTransport(SCHeadlessTransport):
+    """A `SCHeadlessTransport` that also notes each command it sends.
 
     Attributes:
     * `sent` (`list[tuple[str, Mapping[str, JSON]]]`):
       Each command and its parameters, in order.
 
     Constructor:
-    * `LoggingHeadlessTransport(cli, allow_paths)`
+    * `SCLoggingHeadlessTransport(cli, allow_paths)`
     """
 
     # Remaining attributes (alphabetized):
@@ -196,7 +196,7 @@ class LoggingHeadlessTransport(HeadlessTransport):
         init=False, default_factory=list
     )
 
-    # Method `LoggingHeadlessTransport.request()`:
+    # Method `SCLoggingHeadlessTransport.request()`:
     def request(self, method: str, params: Mapping[str, JSON]) -> JSON:
         """Note the command, then send it.
 
@@ -210,11 +210,11 @@ class LoggingHeadlessTransport(HeadlessTransport):
         command_params: JSON = params.get("params")
         assert isinstance(command_params, Mapping)
         self.sent.append((str(params.get("command")), command_params))
-        return HeadlessTransport.request(self, method, params)
+        return SCHeadlessTransport.request(self, method, params)
 
 
-# Class `FakeControlPort`:
-class FakeControlPort:
+# Class `SCFakeControlPort`:
+class SCFakeControlPort:
     """A one-connection fake of a SolidCraft GUI's control port.
 
     Each request line is decoded, recorded and given to `answer`, whose
@@ -229,7 +229,7 @@ class FakeControlPort:
     * `thread` (`threading.Thread`): Serves the connection.
     """
 
-    # Method `FakeControlPort.__init__()`:
+    # Method `SCFakeControlPort.__init__()`:
     def __init__(self, answer: Callable[[dict[str, Any]], JSON]) -> None:
         """Start listening on a free local port.
 
@@ -246,7 +246,7 @@ class FakeControlPort:
         )
         self.thread.start()
 
-    # Method `FakeControlPort.serve()`:
+    # Method `SCFakeControlPort.serve()`:
     def serve(self) -> None:
         """Answer the requests of one connection."""
         # Accept one connection, and answer it line by line.
@@ -263,7 +263,7 @@ class FakeControlPort:
                 stream.write(json.dumps(reply) + "\n")
                 stream.flush()
 
-    # Method `FakeControlPort.close()`:
+    # Method `SCFakeControlPort.close()`:
     def close(self) -> None:
         """Stop listening, once the connection has been served."""
         self.thread.join(timeout=10)
@@ -347,33 +347,33 @@ def run_python(  # pragma: no cover
 
 
 # Function `namespaces()`:
-def namespaces(solidcraft: SolidCraftPyBind) -> dict[str, Namespace]:
-    """Return the namespaces of a `SolidCraftPyBind`, by attribute name.
+def namespaces(solidcraft: SCPyBind) -> dict[str, SCNamespace]:
+    """Return the namespaces of a `SCPyBind`, by attribute name.
 
     Arguments:
-    * `solidcraft` (`SolidCraftPyBind`): The bindings.
+    * `solidcraft` (`SCPyBind`): The bindings.
 
     Returns:
-    * (`dict[str, Namespace]`): Each namespace object.
+    * (`dict[str, SCNamespace]`): Each namespace object.
     """
-    found: dict[str, Namespace] = {}
+    found: dict[str, SCNamespace] = {}
     name: str
     for name in dir(solidcraft):
         value: object = getattr(solidcraft, name)
-        if isinstance(value, Namespace):
+        if isinstance(value, SCNamespace):
             found[name] = value
     return found
 
 
 # Class `TestNamespace`:
 class TestNamespace(unittest.TestCase):
-    """The generated methods and `Namespace.execute()`."""
+    """The generated methods and `SCNamespace.execute()`."""
 
     # Method `TestNamespace.test_none_is_not_sent()`:
     def test_none_is_not_sent(self) -> None:
         """Parameters left at `None` are left out; `extra` is sent."""
-        transport: RecordingTransport = RecordingTransport()
-        solidcraft: SolidCraftPyBind = SolidCraftPyBind(transport)
+        transport: SCRecordingTransport = SCRecordingTransport()
+        solidcraft: SCPyBind = SCPyBind(transport)
         solidcraft.sketch.rectangle_center(
             center=(0, 0), corner=(50, 30), color="red"
         )
@@ -396,9 +396,9 @@ class TestNamespace(unittest.TestCase):
 
     # Method `TestNamespace.test_top_level_execute()`:
     def test_top_level_execute(self) -> None:
-        """`SolidCraftPyBind.execute()` leaves out `None`, too."""
-        transport: RecordingTransport = RecordingTransport()
-        solidcraft: SolidCraftPyBind = SolidCraftPyBind(transport)
+        """`SCPyBind.execute()` leaves out `None`, too."""
+        transport: SCRecordingTransport = SCRecordingTransport()
+        solidcraft: SCPyBind = SCPyBind(transport)
         solidcraft.execute("sketch.create", {"plane": "XY", "name": None})
         self.assertEqual(
             transport.requests,
@@ -421,11 +421,11 @@ class TestNamespace(unittest.TestCase):
 
         # Call every method (giving its required arguments a 0), and
         # note the command each one sends.
-        transport: RecordingTransport = RecordingTransport()
-        solidcraft: SolidCraftPyBind = SolidCraftPyBind(transport)
+        transport: SCRecordingTransport = SCRecordingTransport()
+        solidcraft: SCPyBind = SCPyBind(transport)
         sent: list[str] = []
         namespace_name: str
-        namespace: Namespace
+        namespace: SCNamespace
         for namespace_name, namespace in namespaces(solidcraft).items():
             method_name: str
             for method_name in dir(namespace):
@@ -460,26 +460,26 @@ class TestNamespace(unittest.TestCase):
     # Method `TestNamespace.test_namespaces_share_the_transport()`:
     def test_namespaces_share_the_transport(self) -> None:
         """Every namespace sends through the one transport."""
-        transport: RecordingTransport = RecordingTransport()
-        solidcraft: SolidCraftPyBind = SolidCraftPyBind(transport)
-        found: dict[str, Namespace] = namespaces(solidcraft)
+        transport: SCRecordingTransport = SCRecordingTransport()
+        solidcraft: SCPyBind = SCPyBind(transport)
+        found: dict[str, SCNamespace] = namespaces(solidcraft)
         self.assertIn("sketch", found)
         self.assertIn("solid", found)
-        namespace: Namespace
+        namespace: SCNamespace
         for namespace in found.values():
             self.assertIs(namespace.transport, transport)
 
 
 # Class `TestTransport`:
 class TestTransport(unittest.TestCase):
-    """The `Transport` base class."""
+    """The `SCTransport` base class."""
 
     # Method `TestTransport.test_request()`:
     def test_request(self) -> None:
         """The base class has no way to send a request."""
         with (
-            Transport() as transport,
-            self.assertRaisesRegex(NotImplementedError, "Transport.request"),
+            SCTransport() as transport,
+            self.assertRaisesRegex(NotImplementedError, "SCTransport.request"),
         ):
             transport.request("engine.execute", {})
 
@@ -491,12 +491,12 @@ class TestConnect(unittest.TestCase):
     # Method `TestConnect.test_connect()`:
     def test_connect(self) -> None:
         """A port number, `headless`, and anything else."""
-        transport: Transport = scraftpybind.connect("8080")
-        assert isinstance(transport, ControlTransport)
+        transport: SCTransport = scraftpybind.connect("8080")
+        assert isinstance(transport, SCControlTransport)
         self.assertEqual(transport.port, 8080)
         self.assertIsNone(transport.sock)
         self.assertIsInstance(
-            scraftpybind.connect("headless"), HeadlessTransport
+            scraftpybind.connect("headless"), SCHeadlessTransport
         )
         with self.assertRaises(ValueError):
             scraftpybind.connect("gui")
@@ -526,13 +526,13 @@ class TestConnect(unittest.TestCase):
 
 # Class `TestControlTransport`:
 class TestControlTransport(unittest.TestCase):
-    """`ControlTransport`, against a fake control port."""
+    """`SCControlTransport`, against a fake control port."""
 
     # Method `TestControlTransport.test_requests()`:
     def test_requests(self) -> None:
         """Ids count up, and only the first request has the token."""
-        fake: FakeControlPort = FakeControlPort(ok)
-        with ControlTransport(fake.port, token="secret") as transport:
+        fake: SCFakeControlPort = SCFakeControlPort(ok)
+        with SCControlTransport(fake.port, token="secret") as transport:
             first: JSON = transport.request("engine.execute", {"a": 1})
             second: JSON = transport.request("ui.ping", {})
         fake.close()
@@ -558,7 +558,7 @@ class TestControlTransport(unittest.TestCase):
     # Method `TestControlTransport.test_port_and_token_files()`:
     def test_port_and_token_files(self) -> None:
         """Port 0 reads `current.port`; the token comes from a file."""
-        fake: FakeControlPort = FakeControlPort(ok)
+        fake: SCFakeControlPort = SCFakeControlPort(ok)
         with tempfile.TemporaryDirectory() as folder:
             control: Path = Path(folder)
             (control / "current.port").write_text(f"{fake.port}\n")
@@ -571,7 +571,7 @@ class TestControlTransport(unittest.TestCase):
                         "SOLIDCRAFT_CONTROL_TOKEN": "",
                     },
                 ),
-                ControlTransport() as transport,
+                SCControlTransport() as transport,
             ):
                 transport.request("engine.execute", {})
                 self.assertEqual(transport.port, fake.port)
@@ -581,12 +581,12 @@ class TestControlTransport(unittest.TestCase):
     # Method `TestControlTransport.test_token_variable()`:
     def test_token_variable(self) -> None:
         """`SOLIDCRAFT_CONTROL_TOKEN` wins over the token file."""
-        fake: FakeControlPort = FakeControlPort(ok)
+        fake: SCFakeControlPort = SCFakeControlPort(ok)
         with (
             mock.patch.dict(
                 os.environ, {"SOLIDCRAFT_CONTROL_TOKEN": "from-variable"}
             ),
-            ControlTransport(fake.port) as transport,
+            SCControlTransport(fake.port) as transport,
         ):
             transport.request("engine.execute", {})
         fake.close()
@@ -607,12 +607,12 @@ class TestControlTransport(unittest.TestCase):
         ):
             # No `current.port` file.
             with self.assertRaises(FileNotFoundError) as caught:
-                ControlTransport().connect()
+                SCControlTransport().connect()
             self.assertIn("default port", str(caught.exception))
 
             # No token file for the port.
             with self.assertRaises(FileNotFoundError) as caught:
-                ControlTransport(8080).connect()
+                SCControlTransport(8080).connect()
             self.assertIn("`--control 8080`", str(caught.exception))
 
             # A port that nothing listens on.
@@ -621,7 +621,7 @@ class TestControlTransport(unittest.TestCase):
             port: int = probe.getsockname()[1]
             probe.close()
             with self.assertRaises(ConnectionRefusedError) as refused:
-                ControlTransport(port, token="t").connect()
+                SCControlTransport(port, token="t").connect()
             self.assertIn("nothing is listening", str(refused.exception))
 
             # The demonstration reports it in one line.
@@ -636,7 +636,7 @@ class TestControlTransport(unittest.TestCase):
 
     # Method `TestControlTransport.test_error()`:
     def test_error(self) -> None:
-        """An `"ok": false` reply raises `SolidCraftError`."""
+        """An `"ok": false` reply raises `SCSolidCraftError`."""
 
         # Function `refuse()`:
         def refuse(request: dict[str, Any]) -> JSON:
@@ -656,10 +656,10 @@ class TestControlTransport(unittest.TestCase):
                 "busy": True,
             }
 
-        fake: FakeControlPort = FakeControlPort(refuse)
+        fake: SCFakeControlPort = SCFakeControlPort(refuse)
         with (
-            ControlTransport(fake.port, token="t") as transport,
-            self.assertRaises(SolidCraftError) as caught,
+            SCControlTransport(fake.port, token="t") as transport,
+            self.assertRaises(SCSolidCraftError) as caught,
         ):
             transport.request("engine.execute", {})
         fake.close()
@@ -672,9 +672,9 @@ class TestControlTransport(unittest.TestCase):
     # Method `TestControlTransport.test_closed()`:
     def test_closed(self) -> None:
         """A port that closes raises `ConnectionError`."""
-        fake: FakeControlPort = FakeControlPort(lambda request: None)
+        fake: SCFakeControlPort = SCFakeControlPort(lambda request: None)
         with (
-            ControlTransport(fake.port, token="t") as transport,
+            SCControlTransport(fake.port, token="t") as transport,
             self.assertRaisesRegex(ConnectionError, "closed the port"),
         ):
             transport.request("engine.execute", {})
@@ -683,11 +683,11 @@ class TestControlTransport(unittest.TestCase):
     # Method `TestControlTransport.test_wrong_id()`:
     def test_wrong_id(self) -> None:
         """A reply to another request raises `ConnectionError`."""
-        fake: FakeControlPort = FakeControlPort(
+        fake: SCFakeControlPort = SCFakeControlPort(
             lambda request: {"id": 99, "ok": True, "result": None}
         )
         with (
-            ControlTransport(fake.port, token="t") as transport,
+            SCControlTransport(fake.port, token="t") as transport,
             self.assertRaisesRegex(ConnectionError, "unexpected reply"),
         ):
             transport.request("engine.execute", {})
@@ -696,7 +696,7 @@ class TestControlTransport(unittest.TestCase):
 
 # Class `TestHeadlessTransport`:
 class TestHeadlessTransport(unittest.TestCase):
-    """`HeadlessTransport`, against a fake `solidcraft-cli`.
+    """`SCHeadlessTransport`, against a fake `solidcraft-cli`.
 
     Attributes:
     * `folder` (`tempfile.TemporaryDirectory[str]`): Holds the fake.
@@ -725,8 +725,8 @@ class TestHeadlessTransport(unittest.TestCase):
     # Method `TestHeadlessTransport.test_execute()`:
     def test_execute(self) -> None:
         """A command's result comes back parsed, past a notification."""
-        with HeadlessTransport(self.cli, ["/tmp"]) as transport:
-            solidcraft: SolidCraftPyBind = SolidCraftPyBind(transport)
+        with SCHeadlessTransport(self.cli, ["/tmp"]) as transport:
+            solidcraft: SCPyBind = SCPyBind(transport)
             first: JSON = solidcraft.sketch.execute("echo", {"x": 1})
             second: JSON = solidcraft.sketch.execute("echo", {"y": None})
             process: subprocess.Popen[str] | None = transport.process
@@ -748,7 +748,7 @@ class TestHeadlessTransport(unittest.TestCase):
     # Method `TestHeadlessTransport.test_default_allow_path()`:
     def test_default_allow_path(self) -> None:
         """With no `allow_paths`, the current folder is allowed."""
-        with HeadlessTransport(self.cli) as transport:
+        with SCHeadlessTransport(self.cli) as transport:
             result: JSON = transport.request(
                 "engine.execute", {"command": "echo", "params": {}}
             )
@@ -760,7 +760,7 @@ class TestHeadlessTransport(unittest.TestCase):
     # Method `TestHeadlessTransport.test_text_result()`:
     def test_text_result(self) -> None:
         """A result that is not JSON comes back as its text."""
-        with HeadlessTransport(self.cli) as transport:
+        with SCHeadlessTransport(self.cli) as transport:
             result: JSON = transport.request(
                 "engine.execute", {"command": "text", "params": {}}
             )
@@ -768,14 +768,14 @@ class TestHeadlessTransport(unittest.TestCase):
 
     # Method `TestHeadlessTransport.test_errors()`:
     def test_errors(self) -> None:
-        """Tool errors and JSON-RPC errors raise `SolidCraftError`."""
-        with HeadlessTransport(self.cli) as transport:
-            with self.assertRaises(SolidCraftError) as caught:
+        """Tool errors and JSON-RPC errors raise `SCSolidCraftError`."""
+        with SCHeadlessTransport(self.cli) as transport:
+            with self.assertRaises(SCSolidCraftError) as caught:
                 transport.request(
                     "engine.execute", {"command": "fail", "params": {}}
                 )
             self.assertEqual(caught.exception.error, "it failed")
-            with self.assertRaises(SolidCraftError) as caught:
+            with self.assertRaises(SCSolidCraftError) as caught:
                 transport.request(
                     "engine.execute", {"command": "rpc_error", "params": {}}
                 )
@@ -793,8 +793,8 @@ class TestHeadlessTransport(unittest.TestCase):
     # Method `TestHeadlessTransport.test_needs_the_gui()`:
     def test_needs_the_gui(self) -> None:
         """A method other than `engine.execute` is refused unsent."""
-        with HeadlessTransport(self.cli) as transport:
-            with self.assertRaisesRegex(SolidCraftError, "needs the GUI"):
+        with SCHeadlessTransport(self.cli) as transport:
+            with self.assertRaisesRegex(SCSolidCraftError, "needs the GUI"):
                 transport.request("ui.screenshot", {})
             self.assertIsNone(transport.process)
 
@@ -802,7 +802,7 @@ class TestHeadlessTransport(unittest.TestCase):
     def test_stopped(self) -> None:
         """A session that stops reports its status and error text."""
         with (
-            HeadlessTransport(self.cli) as transport,
+            SCHeadlessTransport(self.cli) as transport,
             self.assertRaisesRegex(
                 ConnectionError, r"status=3\).*dying words"
             ),
@@ -815,7 +815,7 @@ class TestHeadlessTransport(unittest.TestCase):
     def test_not_an_object(self) -> None:
         """A tool result that is not an object raises."""
         with (
-            HeadlessTransport(self.cli) as transport,
+            SCHeadlessTransport(self.cli) as transport,
             self.assertRaisesRegex(ConnectionError, "unexpected reply"),
         ):
             transport.request(
@@ -826,7 +826,7 @@ class TestHeadlessTransport(unittest.TestCase):
     def test_never_exits(self) -> None:
         """A session that ends its output but never exits is killed."""
         with mock.patch.object(scraftpybind, "EXIT_TIMEOUT", 0.2):
-            transport: HeadlessTransport = HeadlessTransport(self.cli)
+            transport: SCHeadlessTransport = SCHeadlessTransport(self.cli)
             with (
                 transport,
                 self.assertRaisesRegex(ConnectionError, r"status=None\)"),
@@ -840,7 +840,7 @@ class TestHeadlessTransport(unittest.TestCase):
     def test_killed(self) -> None:
         """A session that ignores the end of its input is killed."""
         # Time the `close()` that kills it, instead of waiting a minute.
-        transport: HeadlessTransport = HeadlessTransport(self.cli)
+        transport: SCHeadlessTransport = SCHeadlessTransport(self.cli)
         transport.request("engine.execute", {"command": "deaf", "params": {}})
         process: subprocess.Popen[str] | None = transport.process
         started: float = time.monotonic()
@@ -854,7 +854,7 @@ class TestHeadlessTransport(unittest.TestCase):
     def test_main(self) -> None:
         """`main()` sends the plate's commands, then names its file."""
         # Run `main()` headless, on the fake.
-        transport: LoggingHeadlessTransport = LoggingHeadlessTransport(
+        transport: SCLoggingHeadlessTransport = SCLoggingHeadlessTransport(
             self.cli
         )
         output: io.StringIO = io.StringIO()
@@ -905,7 +905,7 @@ class TestHeadlessTransport(unittest.TestCase):
     def test_not_found(self) -> None:
         """A `cli` that cannot be found raises `FileNotFoundError`."""
         with (
-            HeadlessTransport("no-such-solidcraft-cli") as transport,
+            SCHeadlessTransport("no-such-solidcraft-cli") as transport,
             self.assertRaises(FileNotFoundError) as caught,
         ):
             transport.request("engine.execute", {})
@@ -1051,15 +1051,15 @@ class TestHeadlessLive(unittest.TestCase):  # pragma: no cover
     # Method `TestHeadlessLive.test_results_and_errors()`:
     def test_results_and_errors(self) -> None:
         """Results come back as JSON; a failed command raises."""
-        with HeadlessTransport() as transport:
-            solidcraft: SolidCraftPyBind = SolidCraftPyBind(transport)
+        with SCHeadlessTransport() as transport:
+            solidcraft: SCPyBind = SCPyBind(transport)
             solidcraft.sketch.create(plane="XY", name="Square")
             square: JSON = solidcraft.sketch.rectangle_center(
                 center=(0, 0), corner=(5, 5)
             )
             assert isinstance(square, dict)
             self.assertEqual(len(square["curves"]), 4)
-            with self.assertRaises(SolidCraftError) as caught:
+            with self.assertRaises(SCSolidCraftError) as caught:
                 solidcraft.sketch.execute("no.such.command", {})
             self.assertEqual(caught.exception.method, "engine.execute")
             self.assertFalse(caught.exception.running)
