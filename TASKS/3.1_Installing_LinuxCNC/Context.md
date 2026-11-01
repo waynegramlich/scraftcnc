@@ -481,3 +481,45 @@ Moved from `T.s2~3`'s `Context.md` on 2026-10-28, when it was split.
   FAIL there for "left running": all were zombies (`ps` state `Z`), since that
   container's PID 1 is `sleep`, which reaps nothing.  Only a flaw of that test.
 * Waiting: the user's commit, then one more probe run.
+
+## 2026-11-01: Probe run 41349899125 (1090b54): both pass with the trimmed install
+
+* `windows-latest` (WSL 2): 2.8 min (was 6.6); 43 packages; 1737 samples in 87.0 s.
+* `ubuntu-latest`: 2.7 min (was 3.1); 25 packages; 1737 samples in 87.0 s, on a rerun of
+  that job.  Its first try failed before installing: `urlopen` of linuxcnc.org's package
+  index timed out in `newest_package()`, which does not retry.
+* Both: 0 errors, 0 delay messages, nothing left running.  Next: `pyproject.toml` for
+  `scraftcnc`, then the copy (`T.mcfs~1` in `../scraftlinuxcnc`).
+
+## 2026-11-01: `pyproject.toml`: plain top level modules do not work
+
+* Tried in a scratch virtual environment (nothing changed here), modeled on
+  `scraftpybind`'s `py-modules`: all 9 modules tried import, but `scplot.TEMPLATE`,
+  `scsetup.EXAMPLE` and `sckeepout.DEMO_SETUP` do not exist once installed, as they
+  sit beside the modules; `SHOP_FILE` (also in `lcnc_panel.py`, `sim_linuxcnc.py`) is
+  built the same way.  `tools`, `mount` and `shops` are also names taken on PyPI.
+* Recommended to the user, waiting for an answer: a real `scraftcnc/` package.
+
+## 2026-11-01: Where things stand; paused by the user
+
+The user is doing too much at once and paused for a `/clear`; nothing is waiting on a
+run.  Done: the trimmed install, committed, pushed and passing on both runners.  The
+order agreed: `pyproject.toml` for `scraftcnc`; copy to `../scraftlinuxcnc` and debug,
+with its own probe run; only then delete here.  It has not started beyond the scratch
+trial above, and no `.py` file is in `../scraftlinuxcnc` yet.
+
+The five issues last put to the user, none answered yet (restart from these, as a top
+five numbered 1 to 5, each described in full under its number):
+
+1. Package layout (blocks the rest): a real `scraftcnc/` directory (Claude's
+   recommendation; imports become `from scraftcnc.shops import ...`, the demo `python3
+   -m scraftcnc.solidcraftcnc_demo`; check with the whole suite and one probe run), or
+   keep top level modules plus a separate data directory (name clashes remain).  The
+   LinuxCNC files would get their imports updated here, as a one-time edit.
+2. Rebuild the `lcnc` box with the trimmed install: still 941 packages, 2412 MB; about
+   977 MB after, about 3 minutes; AXIS would no longer start.  Recommended: yes.
+3. A retry in `newest_package()`: recommended after the move, about 10 lines.
+4. `lcnc_panel.py --headless`: recommended after the move, as the first new feature in
+   `scraftlinuxcnc`.  Not confirmed: the `linuxcnc` script accepting a `DISPLAY` program
+   with no window.  It would drop `Xvfb` (225 MB on WSL) from the tests.
+5. Close this task (`T.il`) with a `Summary.md` pointing at `T.mcfs~1`: recommended.
