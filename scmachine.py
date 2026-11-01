@@ -59,10 +59,13 @@ class SCTool:  # pylint: disable=too-many-instance-attributes
       (degrees; 90 makes 45 degree bevels).
     * `radius` (`float`):
       For a corner rounding bit, the radius it rounds edges to.
+    * `widest` (`float`):
+      Its widest cutting diameter (inches), when wider than `diameter`
+      (0 when it is not).
 
     Constructor:
     * `SCTool(number, name, kind, diameter, rpm, feed, plunge, peck,
-      angle, radius)`
+      angle, radius, widest)`
     """
 
     # Constructor arguments:
@@ -76,6 +79,7 @@ class SCTool:  # pylint: disable=too-many-instance-attributes
     peck: float = field(init=True, default=0.0)
     angle: float = field(init=True, default=0.0)
     radius: float = field(init=True, default=0.0)
+    widest: float = field(init=True, default=0.0)
 
     # Method `SCTool.__post_init__()`:
     def __post_init__(self) -> None:
@@ -105,6 +109,15 @@ class SCTool:  # pylint: disable=too-many-instance-attributes
             raise ValueError(f"{where}: angle must be in (0, 180) deg")
         if self.kind == "corner round" and self.radius <= 0.0:
             raise ValueError(f"{where}: radius must be positive")
+
+    # Method `SCTool.widest_radius()`:
+    def widest_radius(self) -> float:
+        """Return the radius of the widest part that cuts.
+
+        Returns:
+        * (`float`): It (inches), for keeping the tool out of things.
+        """
+        return max(self.diameter, self.widest) / 2.0
 
 
 # Class `SCMachine`:

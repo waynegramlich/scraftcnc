@@ -47,6 +47,29 @@ class TestPlot(unittest.TestCase):
         self.assertEqual(arc[-1], [0.0, 1.0, -0.2])
 
     # Method `TestPlot.test_drilling()`:
+    def test_cycle_with_no_axes(self) -> None:
+        """A cycle with no X or Y drills where the tool is."""
+        moves = command_moves(
+            [
+                {"G": 0, "Z": 1.0},
+                {"G": 0, "X": 2.0, "Y": 3.0},
+                {"G": 98},
+                {"G": 83, "Z": -0.5, "R": 0.05, "Q": 0.1, "F": 4.0},
+                {"G": 80},
+                {"G": 0, "X": 4.0},
+            ]
+        )
+        self.assertEqual(
+            [move["pts"][-1] for move in moves],
+            [
+                [2.0, 3.0, 1.0],
+                [2.0, 3.0, 0.05],
+                [2.0, 3.0, -0.5],
+                [2.0, 3.0, 1.0],
+                [4.0, 3.0, 1.0],
+            ],
+        )
+
     def test_drilling(self) -> None:
         """A canned cycle is drawn as over, down, through and up."""
         cnc: SCCNC = milling()
@@ -118,12 +141,12 @@ class TestPlot(unittest.TestCase):
         self.assertEqual(
             names,
             [
-                "Profile Square outside to Z-0.1 rapids",
                 "Profile Square outside to Z-0.1 cuts",
+                "Profile Square outside to Z-0.1 rapids",
             ],
         )
         self.assertEqual(len(fake.transport.batches), 2)
-        steps: list[dict[str, Any]] = fake.transport.batches[1]
+        steps: list[dict[str, Any]] = fake.transport.batches[0]
         commands: list[str] = [step["command"] for step in steps]
         self.assertEqual(commands[:2], ["sketch.create", "sketch.options"])
         self.assertEqual(commands[-1], "sketch.finish")
@@ -135,8 +158,9 @@ class TestPlot(unittest.TestCase):
         # The cuts, in millimeters: down from above the part to the
         # depth, then around (the corners as points along them).
         first: list[list[float]] = steps[2]["params"]["points"]
-        self.assertAlmostEqual(first[0][2], 0.05 * 25.4)
-        self.assertAlmostEqual(first[1][2], -0.1 * 25.4)
+        self.assertAlmostEqual(first[0][2], 1.0 * 25.4)
+        self.assertAlmostEqual(first[1][2], 0.05 * 25.4)
+        self.assertAlmostEqual(first[2][2], -0.1 * 25.4)
         self.assertGreater(len(first), 20)
 
 

@@ -208,6 +208,20 @@ class SCPlacedWork:
         """
         return self.placement.turned(self.solid.prism(self.placement.center()))
 
+    # Method `SCPlacedWork.work_origin()`:
+    def work_origin(self) -> Point:
+        """Return where the G-code's X0 Y0 Z0 is: the middle of its top.
+
+        Returns:
+        * (`Point`): It, in the setup's coordinates (millimeters).
+        """
+        bounds: SCPrism = self.bounds()
+        return (
+            (bounds.low[0] + bounds.high[0]) / 2.0,
+            (bounds.low[1] + bounds.high[1]) / 2.0,
+            bounds.high[2],
+        )
+
 
 # Class `_SCReader`:
 @dataclass(slots=True)

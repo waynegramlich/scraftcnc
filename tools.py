@@ -162,7 +162,7 @@ class SCMillTable:
     * `pocket_width` (`float`): An end pocket's size along Y.
 
     Constructor:
-    * `MillTable(name, length, width, thickness, slots, slot_spacing,
+    * `SCMillTable(name, length, width, thickness, slots, slot_spacing,
       slot_length, throat_width, throat_depth, head_width, slot_depth,
       pocket_length, pocket_width)`
     """
@@ -658,7 +658,7 @@ class SCDrill:
       The included angle at the tip (degrees); 180 makes it flat.
 
     Constructor:
-    * `Drill(name, diameter, overall_length, flutes, shank_length,
+    * `SCDrill(name, diameter, overall_length, flutes, shank_length,
       shank_diameter, point_angle)`
     """
 
@@ -967,7 +967,7 @@ class SCDoubleEndCountersink:
       The included angle of the small drills' points (degrees).
 
     Constructor:
-    * `DoubleEndCountersink(order_number, family, size, body_diameter,
+    * `SCDoubleEndCountersink(order_number, family, size, body_diameter,
       drill_diameter, overall_length, angle, radius, left_hand,
       point_angle)`
     """
@@ -1607,7 +1607,7 @@ class SCVise:
     * `hex_length` (`float`): The hexagon's size along X.
 
     Constructor:
-    * `Vise(name, bottom, middle, bottom_notches, middle_notches,
+    * `SCVise(name, bottom, middle, bottom_notches, middle_notches,
       rail_width, rail_height, rail_gap, end_block_length, fixed_jaw,
       moving_jaw, plate, plate_hole_spacing, plate_hole_diameter,
       plate_hole_height, max_opening, screw_diameter, screw_stick_out,
@@ -2645,7 +2645,7 @@ class SCToolingPlate:
     * `corner_radius` (`float`): The radius of its four corners.
 
     Constructor:
-    * `ToolingPlate(name, length, width, thickness, hole_spacing, edge,
+    * `SCToolingPlate(name, length, width, thickness, hole_spacing, edge,
       hole_diameter, corner_radius)`
     """
 

@@ -130,6 +130,10 @@ Each step below needs a little more than the one before it.
   machine, with their keep-out regions.  Run it to see the first one.
 * `scsetup.py` and `examples/setup/`: a whole setup, read from JSON:
   where each piece of tooling, material and finished part goes.
+* `sckeepout.py`: checks every move of a program against a setup's
+  keep-outs, and that rapids stay at `z_safe`.  Run it to check two
+  programs in `examples/setup/`: the demonstration plate is clear of
+  everything, and the tooling plate's long edges deliberately are not.
 * `scmachine.py`: the machine and its tools as the G-code side sees
   them.
 * `scplot.py` and `scplot_template.html`: the tool path viewer, and the

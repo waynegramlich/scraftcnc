@@ -593,6 +593,69 @@ def _uncut_reach(
     return 0.0
 
 
+# Function `_turned_pair()`:
+def _turned_pair(
+    one: float | None, two: float | None, turns: int
+) -> tuple[float | None, float | None]:
+    """Return two words of an axis pair, turned clockwise (+X to -Y).
+
+    Arguments:
+    * `one` (`float | None`): The first word (`X` or `I`), if there.
+    * `two` (`float | None`): The second word (`Y` or `J`), if there.
+    * `turns` (`int`): How many quarter turns, from 0 to 3.
+
+    Returns:
+    * (`tuple[float | None, float | None]`): The new first and second.
+    """
+    minus_one: float | None = None if one is None else -one
+    minus_two: float | None = None if two is None else -two
+    return (
+        (one, two),
+        (two, minus_one),
+        (minus_one, minus_two),
+        (minus_two, one),
+    )[turns]
+
+
+# Function `_remapped()`:
+def _remapped(command: RS274, turns: int, dx: float, dy: float) -> RS274:
+    """Return a command turned about the origin, then moved.
+
+    Arguments:
+    * `command` (`RS274`): The command.
+    * `turns` (`int`): How many quarter turns clockwise.
+    * `dx` (`float`): How far to move it along X, once turned.
+    * `dy` (`float`): How far to move it along Y, once turned.
+
+    Returns:
+    * (`RS274`): The new command, with its words in the same order.
+    """
+    # Turn each pair of words; only `X` and `Y` then move.
+    words: dict[str, float] = {}
+    first: str
+    second: str
+    for first, second in ("XY", "IJ"):
+        one: float | int | str | None = command.get(first)
+        two: float | int | str | None = command.get(second)
+        assert not isinstance(one, str) and not isinstance(two, str)
+        new_one, new_two = _turned_pair(one, two, turns)
+        if new_one is not None:
+            words[first] = new_one + (dx if first == "X" else 0.0)
+        if new_two is not None:
+            words[second] = new_two + (dy if second == "Y" else 0.0)
+
+    # Put them where the words they replace were.
+    result: RS274 = {}
+    for letter, value in command.items():
+        if letter in ("X", "Y"):
+            result.update({k: words[k] for k in "XY" if k in words})
+        elif letter in ("I", "J"):
+            result.update({k: words[k] for k in "IJ" if k in words})
+        else:
+            result[letter] = value
+    return result
+
+
 # Class `SCCNC`:
 # A program's state, and the job's heights, are each an attribute.
 @dataclass(slots=True)
@@ -688,7 +751,7 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
     # Method `SCCNC.clearance()`:
     @property
     def clearance(self) -> float:
-        """Return how far above `z_top` rapids down stop.
+        """Return how far above `z_top` a drill's rapids stop.
 
         Returns:
         * (`float`): The job's `clearance`, or else the machine's.
@@ -928,7 +991,9 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         The machine's `drill_cycle` says how: a canned cycle (`G81`,
         `G73` or `G83`, returning to `z_safe` between holes with
         `G98`), or the pecks written out as moves.  Each peck goes the
-        drill's `peck` deeper (all the way when it is 0).
+        drill's `peck` deeper (all the way when it is 0).  Commands are
+        not combined: a cycle's hole is a `G0` over it, the cycle with
+        no X or Y (which LinuxCNC drills where the tool is), and `G80`.
 
         Arguments:
         * `points` (`Sequence[Point]`): Where the holes go.
@@ -961,21 +1026,21 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
                 self._peck(point, bottom, retract)
             return
 
-        # A canned cycle: one line for the first hole, then just where
-        # each of the others is.
+        # A canned cycle: over each hole at `z_safe`, then the cycle.
         self.add({"G": 98})
-        index: int
-        for index, point in enumerate(points):
-            command: RS274 = {"X": point[0], "Y": point[1]}
-            if index == 0:
-                command = {"G": int(cycle[1:]), **command}
-                command.update({"Z": bottom, "R": retract})
-                if cycle != "G81":
-                    command["Q"] = peck
-                command["F"] = tool.plunge
+        for point in points:
+            self.rapid(x=point[0], y=point[1])
+            command: RS274 = {
+                "G": int(cycle[1:]),
+                "Z": bottom,
+                "R": retract,
+            }
+            if cycle != "G81":
+                command["Q"] = peck
+            command["F"] = tool.plunge
             self.add(command)
-            self._time_hole(point, (retract, bottom), peck)
-        self.add({"G": 80})
+            self.add({"G": 80})
+            self._time_hole((retract, bottom), peck)
 
     # Method `SCCNC._peck()`:
     def _peck(self, point: Point, bottom: float, retract: float) -> None:
@@ -1003,32 +1068,23 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         self.rapid(z=self.z_safe)
 
     # Method `SCCNC._time_hole()`:
-    def _time_hole(
-        self, point: Point, heights: tuple[float, float], peck: float
-    ) -> None:
-        """Count the time a canned cycle takes for one hole.
+    def _time_hole(self, heights: tuple[float, float], peck: float) -> None:
+        """Count the time a canned cycle takes for one hole, once over it.
 
         Arguments:
-        * `point` (`Point`): Where the hole is.
         * `heights` (`tuple[float, float]`):
           The cycle's `R` (retract) Z and its bottom.
         * `peck` (`float`): How deep each peck goes.
         """
-        # Over to the hole at `z_safe`, then down, the pecks, and back.
+        # Down, the pecks, and back.
         retract: float
         bottom: float
         retract, bottom = heights
-        x: float | None
-        y: float | None
-        x, y, _ = self.position
         rapids: float = 2.0 * (self.z_safe - retract)
-        if x is not None and y is not None:
-            rapids += math.dist((x, y), point)
         pecks: int = max(1, math.ceil((retract - bottom) / peck - EPSILON))
         rapids += pecks * 2.0 * (retract - bottom) / 2.0
         self.minutes += rapids / self.machine.rapid_speed
         self.minutes += (retract - bottom) / self.cutter.plunge
-        self.position = (point[0], point[1], self.z_safe)
 
     # Method `SCCNC.below()`:
     def below(self, bottom: float, through: bool = True) -> float:
@@ -1121,7 +1177,7 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         self.comment(f"{what} {'inside' if inside else 'outside'}")
         self.rapid(z=self.z_safe)
         self.rapid(x=lead_in.start[0], y=lead_in.start[1])
-        self.rapid(z=self.z_top + self.clearance)
+        self.plunge(self.z_top + self.clearance)
         self.plunge(self.z_top - depth)
         self._follow([lead_in, *loop, lead_out], [])
         self.rapid(z=self.z_safe)
@@ -1298,7 +1354,7 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         )
         self.rapid(z=self.z_safe)
         self.rapid(x=lead_in.start[0], y=lead_in.start[1])
-        self.rapid(z=self.z_top + self.clearance)
+        self.plunge(self.z_top + self.clearance)
 
         # At each depth, go down, in, once around, and out.
         z: float
@@ -1622,20 +1678,17 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
                 for wall in walls
                 for segment in wall.segments
             ):
-                # Above the material the way over is a rapid.
+                # Rapids belong at `z_safe`, so the way over is a cut.
                 if height < z:
                     self.rapid(z=z)
-                if z >= self.z_top + self.clearance:
-                    self.rapid(x=target[0], y=target[1])
-                else:
-                    self.linear(x=target[0], y=target[1])
+                self.linear(x=target[0], y=target[1])
                 self.linear(z=z)
                 return
 
         # Otherwise go up, over, and down.
         self.rapid(z=self.z_safe)
         self.rapid(x=target[0], y=target[1])
-        self.rapid(z=self.z_top + self.clearance)
+        self.plunge(self.z_top + self.clearance)
         self.linear(z=z)
 
     # Method `SCCNC._ramp()`:
@@ -1681,6 +1734,32 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         self.rapid(z=self.z_safe)
         self.add({"M": 5})
         self.add({"M": 2})
+
+    # Method `SCCNC.remap()`:
+    def remap(self, turns: int = 0, dx: float = 0.0, dy: float = 0.0) -> None:
+        """Turn the whole program about its origin, then move it.
+
+        This is how a part that was cut from its own coordinates goes on
+        a machine turned.  `X` and `Y` turn and move; `I` and `J`, being
+        offsets, only turn.  A rotation is not a mirror, so `G2` and `G3`
+        keep their directions and climb milling stays climb milling.  In
+        quarter turns, each word depends on only one other, so a word
+        left out stays left out, and no sine or cosine is needed.
+
+        Arguments:
+        * `turns` (`int`):
+          How many quarter turns clockwise (+X to -Y), from 0 to 3.
+        * `dx` (`float`): How far to move it along X, once turned.
+        * `dy` (`float`): How far to move it along Y, once turned.
+
+        Raises:
+        * `ValueError`: If `turns` is not from 0 to 3.
+        """
+        if turns not in (0, 1, 2, 3):
+            raise ValueError(f"{turns=} must be from 0 to 3")
+        self.commands = [
+            _remapped(command, turns, dx, dy) for command in self.commands
+        ]
 
     # Method `SCCNC.gcode()`:
     def gcode(self) -> str:

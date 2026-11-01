@@ -162,7 +162,9 @@ def command_moves(commands: Sequence[RS274]) -> list[SCMove]:
             state.start_cycle(command)
 
         # A hole of a cycle, or an ordinary move.
-        if state.cycle is not None and ("X" in command or "Y" in command):
+        if state.cycle is not None and (
+            code in (73, 81, 83) or "X" in command or "Y" in command
+        ):
             moves += state.hole(command, line)
         elif code in (0, 1, 2, 3):
             assert isinstance(code, int)

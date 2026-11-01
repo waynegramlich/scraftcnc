@@ -243,3 +243,51 @@
   work origin in the JSON, the checker, the tests.
 * Seen once: after the suite, a `mcp --headless` process was left, its parent `systemd`.  Killed it.  Not
   looked into; check `pgrep` after the next suite.
+
+## 2026-11-01: `sckeepout.py`: the first checks on Table/Vise/Parallels
+
+* `python3 sckeepout.py` checks two programs.  The demo plate, in `examples/setup/demo_plate.json` (a 6 x
+  5-1/2 x 1/2 in chunk): no keep out hits, 27 rapid reports, all going down to `z_top + clearance`, none
+  sideways (its pockets are drilled, not ramped).  The tooling plate: 38 keep out reports (lines), all T1,
+  starting with the second pass; the first pass is at Z-0.11, the next at Z-0.22, as 0.55 goes in 5 steps of
+  0.125 or less.  All 200 holes and the short ends are clear: the hand prediction held.  It is meant to stay
+  failing (the user's #4); `test_tooling_plate_fails_as_predicted` holds it to that.
+* `sckeepout`: `prism_zone()`, `cylinder_zone()`, `work_zones()`, `arc_segments()`, `check_program()`,
+  `report()`; kinds `keep out`, `rapid`, `unchecked`.  Each zone is an unmerged root.  A move is tested at its
+  lowest Z, so a `G0` rising out of a zone is reported too (it started in there).
+* `SCCNC.remap(turns, dx, dy)`: clockwise quarter turns only, about the origin, then a move, on the finished
+  commands.  `X`/`Y` turn and move, `I`/`J` only turn, `G2`/`G3` stay.  The demo uses it to move its corner
+  origin to the middle of the chunk; the tooling plate uses it for its turn.
+* `SCPlacedWork.work_origin()` is computed (center of the top), so nothing was added to the JSON.
+* Canned cycles: `G98` once, then for each hole `G0 X Y`, the cycle with no X or Y, `G80`.  LinuxCNC's
+  `rs274` runs it right (`rs274 -t shop_mill.tbl -g FILE` in `lcnc_sim/`; with no tool table it stops
+  quietly at the first `M6`, with no "error" in its message).  Run time still rounds to 9.9 minutes.
+* `SCTool.widest`, `widest_radius()`, from `shops._widest()`.
+* Checked: 351 tests pass; 9 deliberate breaks each caught; the brute force test measures random moves
+  against plain box distances.  `tools.py`: five `Constructor:` lines that the rename missed are fixed.
+* Rule: step 12's rapid fixes are not done; the 27 + 1 reports are what they should empty.  Not done: seeing
+  violations in SolidCraft or the viewer (step 7); the panel (step 10); tools' holders.
+
+## 2026-11-01: The rapid rule holds on both programs
+
+* Step 12's rapids: descents from `z_safe` to `z_top + clearance` are `plunge()`s; sideways moves in a pocket
+  are `linear()`s.  Rising rapids stay.  Demo: 27 rapid reports to 0, run time 9.9 to 11.7 minutes.  Tooling
+  plate: 1 to 0, its 38 keep out reports unchanged.
+* `drill_cycle = "moves"` still rapids back into its hole between pecks (`_peck()`), which only `G83` is
+  exempted from, so the checker reports it.  No example shop uses it.
+* The user: limit runs to about 5 minutes; tokens matter.
+
+## 2026-11-01: Where things stand
+
+* Done: steps 11 (rename, here and in `scraftpybind`), 12 (the generator follows the rules), the checker of
+  steps 2 to 6 for prisms and flat zones.  `python3 sckeepout.py`: demo 0 violations; tooling plate 38 keep out
+  reports, on purpose.  The tooling plate stays failing until the user says how to fix it.
+* Last whole suite: 350 of 351, at about 10:58; the failure, `test_drilled_pocket`, was a test's count, since
+  fixed, and `test_solidcraftcnc` passes.  Run the whole suite first next session.
+* `Details.md` is behind (only the user edits it, or asks): question 9 (arcs in XY), question 11, step order.
+* Turned parts: settled for now as `SCCNC.remap()`, with quarter turns only.
+* Next, the user's choice: violations in the tool path viewer and SolidCraft (step 7), or the fixed jaw as the
+  work origin, which the user will explain.  Later: nested depths in programs (step 8), `SCMount` (step 9), the
+  panel (step 10; Home's `G0 Z0` is still a bug).  Question 5 is still let slide.
+* Numbers still estimates: the Mikini table's thickness and slot spacing, whether its Y travel is centered.
+* The user: keep each run to about 5 minutes; tokens matter.

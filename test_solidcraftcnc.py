@@ -205,8 +205,8 @@ class TestSCCNC(unittest.TestCase):
                 "(Profile Square outside to Z-0.3)",
                 "G0 Z0.5",
                 "G0 X-0.375 Y1",
-                "G0 Z0.05",
-                "G1 Z-0.1 F6",
+                "G1 Z0.05 F6",
+                "G1 Z-0.1",
                 "G3 X-0.125 I0.125 J0",
                 "G1 Y1.75 F12",
                 "G2 X0.25 Y2.125 I0.375 J0 F18",
@@ -224,7 +224,7 @@ class TestSCCNC(unittest.TestCase):
         # two leads each.
         self.assertEqual(
             [line for line in lines if line.startswith("G1 Z")],
-            ["G1 Z-0.1 F6", "G1 Z-0.2", "G1 Z-0.3"],
+            ["G1 Z0.05 F6", "G1 Z-0.1", "G1 Z-0.2", "G1 Z-0.3"],
         )
         self.assertEqual(
             len([line for line in lines if line.startswith("G2 ")]), 12
@@ -296,7 +296,7 @@ class TestSCCNC(unittest.TestCase):
             for command in cnc.commands[start:]
             if command.get("G") == 1 and "X" not in command and "Z" in command
         ]
-        self.assertEqual(plunges, [cnc.below(-0.5)])
+        self.assertEqual(plunges, [0.05, cnc.below(-0.5)])
         entry: tuple[float, float] = cnc.profile_entry(
             plate, cnc.cutter, stage="finish"
         )
@@ -605,6 +605,82 @@ class TestPocket(unittest.TestCase):
         self.assertLess(len(steep.commands), len(wide.commands))
 
 
+# Class `TestRemap`:
+class TestRemap(unittest.TestCase):
+    """Turning and moving a finished program."""
+
+    # Method `TestRemap.test_quarter_turns()`:
+    def test_quarter_turns(self) -> None:
+        """Each turn maps X, Y, I and J, without sine or cosine."""
+        command = {"G": 2, "X": 1.0, "Y": 2.0, "Z": -0.5, "I": 3.0, "J": 4.0}
+        expected = {
+            0: (1.0, 2.0, 3.0, 4.0),
+            1: (2.0, -1.0, 4.0, -3.0),
+            2: (-1.0, -2.0, -3.0, -4.0),
+            3: (-2.0, 1.0, -4.0, 3.0),
+        }
+        for turns, (x, y, i, j) in expected.items():
+            cnc = SCCNC("Test", machine())
+            cnc.commands = [dict(command)]
+            cnc.remap(turns)
+            self.assertEqual(
+                cnc.commands,
+                [{"G": 2, "X": x, "Y": y, "Z": -0.5, "I": i, "J": j}],
+            )
+
+    # Method `TestRemap.test_move()`:
+    def test_move(self) -> None:
+        """`X` and `Y` move, `I`, `J` and `Z` do not, after turning."""
+        cnc = SCCNC("Test", machine())
+        cnc.commands = [{"G": 3, "X": 1.0, "Y": 2.0, "I": 3.0, "J": 4.0}]
+        cnc.remap(1, 10.0, 20.0)
+        self.assertEqual(
+            cnc.commands,
+            [{"G": 3, "X": 12.0, "Y": 19.0, "I": 4.0, "J": -3.0}],
+        )
+
+    # Method `TestRemap.test_left_out_words()`:
+    def test_left_out_words(self) -> None:
+        """A word left out stays left out on the axis it turned to."""
+        cnc = SCCNC("Test", machine())
+        cnc.commands = [{"G": 1, "X": 1.0, "F": 5.0}, {"G": 1, "Y": 1.0}]
+        cnc.remap(1)
+        self.assertEqual(
+            cnc.commands,
+            [{"G": 1, "Y": -1.0, "F": 5.0}, {"G": 1, "X": 1.0}],
+        )
+
+    # Method `TestRemap.test_other_words()`:
+    def test_other_words(self) -> None:
+        """Comments, tool changes and a cycle's words are not touched."""
+        cnc = milling()
+        before = [dict(command) for command in cnc.commands]
+        cnc.remap(1)
+        self.assertEqual(cnc.commands, before)
+        cnc = SCCNC("Test", machine())
+        cnc.commands = [{"G": 83, "Z": -1.0, "R": 0.05, "Q": 0.1, "F": 4.0}]
+        cnc.remap(2)
+        self.assertEqual(
+            cnc.commands, [{"G": 83, "Z": -1.0, "R": 0.05, "Q": 0.1, "F": 4.0}]
+        )
+
+    # Method `TestRemap.test_round_trip()`:
+    def test_round_trip(self) -> None:
+        """Four quarter turns come back to the same program."""
+        cnc = milling()
+        cnc.profile(square(2.0, 0.125), -0.1, 0.1)
+        before = [dict(command) for command in cnc.commands]
+        for _ in range(4):
+            cnc.remap(1)
+        self.assertEqual(cnc.commands, before)
+
+    # Method `TestRemap.test_refused()`:
+    def test_refused(self) -> None:
+        """Only quarter turns are done."""
+        with self.assertRaises(ValueError):
+            SCCNC("Test", machine()).remap(4)
+
+
 # Class `TestDrill`:
 class TestDrill(unittest.TestCase):
     """Drilling where the end mill goes down."""
@@ -618,7 +694,7 @@ class TestDrill(unittest.TestCase):
             cnc.change_tool(2)
             cnc.drill([(1.0, 1.0), (2.0, 1.5)], -0.2)
             lines: list[str] = cnc.gcode().splitlines()[10:]
-            first: str = f"{cycle} X1 Y1 Z-0.2 R0.05"
+            first: str = f"{cycle} Z-0.2 R0.05"
             if cycle != "G81":
                 first += " Q0.05"
             self.assertEqual(
@@ -627,8 +703,11 @@ class TestDrill(unittest.TestCase):
                     "(Drill 2 holes to Z-0.2)",
                     "G0 Z1",
                     "G98",
+                    "G0 X1 Y1",
                     f"{first} F4",
-                    "X2 Y1.5",
+                    "G80",
+                    "G0 X2 Y1.5",
+                    f"{first} F4",
                     "G80",
                 ],
             )
@@ -686,7 +765,7 @@ class TestDrill(unittest.TestCase):
         plunges: list[int] = [
             index
             for index, line in enumerate(lines)
-            if line.startswith("G1 Z-") and "F6" in line
+            if line.startswith("G1 Z-") and "F12" not in line
         ]
         self.assertEqual(len(plunges), 4)
         for index in plunges:
@@ -820,7 +899,7 @@ class TestEdges(unittest.TestCase):
 
         # 45 degrees: as deep as it is wide (plus the clearance); the
         # tip's center is its radius plus the clearance off the wall.
-        self.assertIn("G1 Z-0.035 F4", lines)
+        self.assertIn("G1 Z-0.035", lines)
         self.assertAlmostEqual(path.corners[0].x, -0.015)
         self.assertFalse(path.is_ccw())
         with self.assertRaises(ValueError):
@@ -841,7 +920,7 @@ class TestEdges(unittest.TestCase):
         path: SCRoundedPolygon = cnc.chamfer(square(1.0, 0.25))
         lines: list[str] = cnc.gcode().splitlines()
         self.assertIn("(Round over Square to 0.0625 outside)", lines)
-        self.assertIn("G1 Z-0.0625 F4", lines)
+        self.assertIn("G1 Z-0.0625", lines)
         self.assertAlmostEqual(path.corners[0].x, -0.0625)
 
         # An end mill cannot chamfer.

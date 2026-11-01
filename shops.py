@@ -2770,6 +2770,7 @@ def _cnc_tool(number: int, kind: ToolKind, tool: dict[str, object]) -> SCTool:
         peck=measure(tool.get("peck_depth", "0 in"), LENGTH),
         angle=measure(tool.get("angle", "0 deg"), ANGLE),
         radius=measure(tool.get("radius", "0 in"), LENGTH),
+        widest=_widest(tool),
     )
 
 
