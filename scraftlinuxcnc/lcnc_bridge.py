@@ -33,10 +33,17 @@ The calls are:
 * `program.write`: Writes a file (`[name, text]`) into `programs/`
   beside the INI file, and returns the path to give
   `command.program_open`, which can only read files in the target.
+* `program.read`: Returns the text of a file in `programs/`, given the
+  path that `program.write` returned (or `stat`'s `file`).
+* `tool_table.write`: Replaces the INI file's tool table with the text
+  given, and returns its path.  `command.load_tool_table` then reads it.
 * `shutdown`: Replies, then exits, which shuts LinuxCNC down.
 
-One request runs at a time, so a `command.wait_complete` holds up the
-other connections until it finishes.
+A connection's requests run in order, each answered before the next.
+Requests from different connections go between each other, so a
+`command.wait_complete` (timeout in seconds, 5 by default) holds up
+only its own connection.  It returns `-1` if the command is still
+running then, and a timeout of 0 asks without waiting.
 """
 
 import argparse
@@ -53,7 +60,7 @@ from types import FrameType, ModuleType
 from typing import Any
 
 # The protocol's number, changed when a change would break a client.
-PROTOCOL: int = 1
+PROTOCOL: int = 2
 
 # The port, which `sim/lcnc_sim.ini` also names.
 PORT: int = 5008
@@ -63,6 +70,11 @@ MAX_LINE: int = 64 * 1024 * 1024
 
 # How long `milltask` gets to start answering (seconds).
 READY_SECONDS: float = 30.0
+
+# What `linuxcnc.command.wait_complete` waits for by default, and how
+# often this asks in its place, so that others can go between (seconds).
+WAIT_SECONDS: float = 5.0
+WAIT_POLL: float = 0.005
 
 
 # Function `to_json()`:
@@ -221,6 +233,16 @@ class SCBridge:
             ]
         return {name: public_name(self.stat, name) for name in names}
 
+    # Method `SCBridge.programs()`:
+    def programs(self) -> Path:
+        """Return the directory that programs are written to.
+
+        Returns:
+        * (`Path`): `programs/`, beside the INI file.
+        """
+        self.stat.poll()
+        return Path(self.stat.ini_filename).parent / "programs"
+
     # Method `SCBridge.write_program()`:
     def write_program(self, name: str, text: str) -> str:
         """Write a file into `programs/`, beside the INI file.
@@ -237,12 +259,75 @@ class SCBridge:
         """
         if name in ("", ".", "..") or Path(name).name != name or "\\" in name:
             raise ValueError(f"{name!r} is not a plain file name")
-        self.stat.poll()
-        directory: Path = Path(self.stat.ini_filename).parent / "programs"
+        directory: Path = self.programs()
         directory.mkdir(exist_ok=True)
         path: Path = directory / name
         path.write_text(text, encoding="utf-8", newline="\n")
         return str(path)
+
+    # Method `SCBridge.read_program()`:
+    def read_program(self, path: str) -> str:
+        """Return the text of a file in `programs/`.
+
+        Arguments:
+        * `path` (`str`): Its path.
+
+        Returns:
+        * (`str`): Its contents.
+
+        Raises:
+        * `ValueError`: If it is not directly in `programs/`.
+        * `OSError`: If it can not be read.
+        """
+        file: Path = Path(path)
+        if file.parent != self.programs() or file.name in ("", ".", ".."):
+            raise ValueError(f"{path!r} is not in programs/")
+        return file.read_text(encoding="utf-8")
+
+    # Method `SCBridge.write_tool_table()`:
+    def write_tool_table(self, text: str) -> str:
+        """Replace the tool table that the INI file names.
+
+        Arguments:
+        * `text` (`str`): Its new contents.
+
+        Returns:
+        * (`str`): Its path.
+
+        Raises:
+        * `ValueError`: If the INI file names none.
+        """
+        self.stat.poll()
+        ini_file: Path = Path(self.stat.ini_filename)
+        name: str | None = self.linuxcnc.ini(str(ini_file)).find(
+            "EMCIO", "TOOL_TABLE"
+        )
+        if not name:
+            raise ValueError(f"{ini_file} names no tool table")
+        path: Path = ini_file.parent / name
+        path.write_text(text, encoding="utf-8", newline="\n")
+        return str(path)
+
+    # Method `SCBridge.wait_complete()`:
+    def wait_complete(self, timeout: float = WAIT_SECONDS) -> int:
+        """Wait for the last command, letting other requests go between.
+
+        Nothing is held while waiting, so that (say) `command.abort`
+        from another connection is not held up by a long move.
+
+        Arguments:
+        * `timeout` (`float`): How long to wait (seconds).
+
+        Returns:
+        * (`int`): The command's status, or -1 if it is not done yet.
+        """
+        deadline: float = time.monotonic() + timeout
+        while True:
+            with self.lock:
+                status: int = self.command.wait_complete(0.0)
+            if status != -1 or time.monotonic() >= deadline:
+                return status
+            time.sleep(WAIT_POLL)
 
     # Method `SCBridge.dispatch()`:
     # A flat list of calls reads best, so it has many returns.
@@ -275,6 +360,10 @@ class SCBridge:
             return self.linuxcnc.ini(self.stat.ini_filename).find(*args)
         if call == "program.write":
             return self.write_program(*args)
+        if call == "program.read":
+            return self.read_program(*args)
+        if call == "tool_table.write":
+            return self.write_tool_table(*args)
         if call == "shutdown":
             self.on_shutdown()
             return None
@@ -309,8 +398,13 @@ class SCBridge:
             args: Any = request.get("args", [])
             if not isinstance(args, list):
                 raise TypeError("`args` must be a list")
-            with self.lock:
-                result: Any = self.dispatch(str(request.get("call")), args)
+            call: str = str(request.get("call"))
+            result: Any
+            if call == "command.wait_complete":
+                result = self.wait_complete(*args)
+            else:
+                with self.lock:
+                    result = self.dispatch(call, args)
             reply["result"] = to_json(result)
         # pylint: disable-next=broad-exception-caught
         except Exception as error:  # noqa: BLE001

@@ -39,12 +39,11 @@ PROGRAMS: frozenset[str] = frozenset(
         "rtapi_app",
         "axis",
         "lcnc_bridge.py",
-        "lcnc_panel.py",
     }
 )
 
 # The displays that quit on `SIGTERM`.
-DISPLAYS: tuple[bytes, ...] = (b"lcnc_bridge.py", b"lcnc_panel.py")
+DISPLAYS: tuple[bytes, ...] = (b"lcnc_bridge.py",)
 
 # The lock file `linuxcnc` makes, and looks for when it starts.
 LOCK: Path = Path("/tmp/linuxcnc.lock")

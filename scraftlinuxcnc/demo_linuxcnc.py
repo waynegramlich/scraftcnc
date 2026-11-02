@@ -163,6 +163,9 @@ def move_by_mdi(lcnc: SCClient) -> None:
     """
     lcnc.call("command.mode", constant("MODE_MDI"))
     lcnc.call("command.wait_complete")
+    # LinuxCNC keeps G54 from its last run, whoever set it.
+    lcnc.call("command.mdi", "G20 G10 L2 P1 X0 Y0 Z0")
+    lcnc.call("command.wait_complete")
     lcnc.call("command.mdi", "G20 G90 G0 X1 Y1")
     lcnc.call("command.wait_complete", MOVE_TIME)
     check_position(lcnc, (1.0, 1.0, 0.0))

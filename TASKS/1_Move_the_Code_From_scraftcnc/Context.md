@@ -200,3 +200,35 @@ Open issues, numbers kept, all waiting on the user (no answers yet):
 19. A real Windows desktop has not been tried (only the user can): `localhostForwarding` off,
     another WSL networking mode, a first install's restart.  Claude recommends it before the
     repository goes public.
+
+## 2026-11-01: Protocol 2, for `scraftcnc`'s panel
+
+The user: `lcnc_panel.py` talks to this bridge; Claude may edit here and use `hg`; this
+`README.md` follows every protocol change.  This settles issue 15's need differently: nothing
+needs `--ini`, as `scraftcnc`'s mill has the same numbers as `lcnc_sim.ini`.
+
+* `program.read` (only directly in `programs/`), `tool_table.write`.  `command.wait_complete`
+  runs in the bridge as `wait_complete(0)` in a loop, holding the lock only for each ask, so it
+  holds up only its own connection; timeout 0 asks once.  `PROTOCOL` is 2.
+* `lcnc_client.py` imports nothing from the package (`PORT` is its own, and a test compares
+  them), so `scraftcnc` links that one file.
+* `stop_linuxcnc.py` no longer lists `lcnc_panel.py`, which it was killing outside the box.
+  `demo_linuxcnc` sets G54 itself, since the `.var` file keeps another client's.
+* Shown in the `lcnc` box: `demo_linuxcnc` passes, 42 offline tests pass.  Not run on WSL: needs
+  the user's commit and a probe run.  Issue 17 was met: a new bridge reaches the target only by
+  rerunning `install_linuxcnc`; the panel says so when `ping` shows an old protocol.
+
+## 2026-11-01: Saved for the user's commits and a `/clear`; start here
+
+`scraftcnc`'s `lcnc_panel.py` and `show_demo.py` now use this package (`T.hlp~3.3.1` there has the
+state of all of it).  This is to be committed and pushed before `scraftcnc`, whose `lcnc_client.py`
+links here.  A new bridge reaches the target only through `install_linuxcnc`; `show_demo.py` runs that
+each time.
+
+Not run: protocol 2 on WSL.  The probe (`gh workflow run probe_linuxcnc.yml --repo
+waynegramlich/scraftlinuxcnc`) comes near the end, at the user's word.
+
+The issues listed above in "Saved again" still stand, numbers kept, except 15 (`--ini`: not needed, as
+`scraftcnc`'s mill has the same numbers) and 14 (rebuilding `lcnc`: the panel no longer needs
+`python3-tk` in the box, so it waits only on the user, after the demo of 2026-11-02).  The user
+has not decided on one repository or two; the aim is isolating the package download.

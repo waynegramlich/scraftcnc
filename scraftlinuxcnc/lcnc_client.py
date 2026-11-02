@@ -1,7 +1,9 @@
 """Talk to `lcnc_bridge.py`, from any Python on this computer.
 
-It needs only the standard library, so it runs on the host (Linux or
-Windows), outside the target that LinuxCNC is in:
+It needs only the standard library, and imports nothing else from this
+package, so another project can use this one file through a symbolic
+link.  It runs on the host (Linux or Windows), outside the target that
+LinuxCNC is in:
 
 ```python
 with SCClient() as lcnc:
@@ -15,7 +17,8 @@ import socket
 from types import TracebackType
 from typing import Any, Self
 
-from scraftlinuxcnc.lcnc_bridge import PORT
+# The port that `lcnc_bridge.py` serves, by default.
+PORT: int = 5008
 
 
 # Class `SCBridgeError`:

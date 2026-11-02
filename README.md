@@ -60,11 +60,22 @@ are each one line of JSON, and `id` is returned as it was sent:
 | `error_channel.poll` | | The next error as `[kind, text]`, or `null` |
 | `ini.find` | Section, option | The running INI file's value, or `null` |
 | `program.write` | Name, text | The path to give `command.program_open` |
+| `program.read` | A path from `program.write` or `stat`'s `file` | The file's text |
+| `tool_table.write` | Text | Its path; `command.load_tool_table` then reads it |
 | `shutdown` | | `null`; LinuxCNC then shuts down |
 
 In `command` arguments, `{"constant": "MODE_MDI"}` stands for that
-constant.  One request runs at a time, so a `command.wait_complete`
-holds up other connections until it finishes.  The meanings of the
+constant.  A connection's requests run in order, each answered before
+the next, while requests from other connections go between them.  So
+`command.wait_complete` holds up only its own connection, and a program
+that must stay responsive either waits on a second connection or never
+waits: `command.wait_complete` with a timeout of 0 returns at once, with
+`-1` if the command is still running.  An error goes to whichever
+connection reads `error_channel.poll` first.
+
+The tool table and the programs are sent as text, since the files are
+in the target.  The INI file is fixed (three axes, X 18, Y 9 and Z 16
+inches of travel).  The meanings of the
 `stat` attributes and `command` methods are LinuxCNC's, in its [Python
 interface](https://linuxcnc.org/docs/2.9/html/config/python-interface.html).
 

@@ -4,6 +4,7 @@ import json
 import os
 import tempfile
 import threading
+import time
 import types
 import unittest
 from collections import namedtuple
@@ -36,10 +37,17 @@ class FakeCommand:
 
     def __init__(self) -> None:
         self.modes: list[int] = []
+        self.done: threading.Event = threading.Event()
+        self.timeouts: list[float] = []
 
     def mode(self, mode: int) -> None:
         """Remember the mode."""
         self.modes.append(mode)
+
+    def wait_complete(self, timeout: float) -> int:
+        """Return 1 once `done` is set, and -1 until then."""
+        self.timeouts.append(timeout)
+        return 1 if self.done.is_set() else -1
 
 
 def fake_module() -> types.ModuleType:
@@ -51,6 +59,9 @@ def fake_module() -> types.ModuleType:
         stat=FakeStat,
         command=FakeCommand,
         error_channel=lambda: types.SimpleNamespace(poll=lambda: None),
+        ini=lambda _file: types.SimpleNamespace(
+            find=lambda _section, _option: "x.tbl"
+        ),
     )
     return module
 
@@ -151,6 +162,48 @@ class TestBridge(unittest.TestCase):
                 reply = self.ask("program.write", name, "M2\n")
                 self.assertIn("error", reply, name)
 
+    def test_read_program(self) -> None:
+        """A program comes back; nothing else can be read."""
+        with tempfile.TemporaryDirectory() as directory:
+            self.bridge.stat.ini_filename = f"{directory}/x.ini"
+            path = self.ask("program.write", "a.ngc", "M2\n")["result"]
+            self.assertEqual(self.ask("program.read", path)["result"], "M2\n")
+            secret = Path(directory, "secret.txt")
+            secret.write_text("no", encoding="utf-8")
+            programs = Path(directory, "programs")
+            for name in (
+                str(secret),
+                str(programs / ".." / "secret.txt"),
+                str(programs / "missing.ngc"),
+                "a.ngc",
+            ):
+                self.assertIn("error", self.ask("program.read", name), name)
+
+    def test_write_tool_table(self) -> None:
+        """The tool table goes where the INI file says."""
+        with tempfile.TemporaryDirectory() as directory:
+            self.bridge.stat.ini_filename = f"{directory}/x.ini"
+            text = "T1 P1 Z1.0 D0.25 ;a\n"
+            path = self.ask("tool_table.write", text)["result"]
+            self.assertEqual(path, str(Path(directory, "x.tbl")))
+            self.assertEqual(Path(path).read_bytes().decode(), text)
+
+    def test_wait_complete_times_out(self) -> None:
+        """A command still running gives -1, after the time asked for."""
+        reply = self.ask("command.wait_complete", 0.02)
+        self.assertEqual(reply["result"], -1)
+        self.assertGreater(len(self.bridge.command.timeouts), 1)
+
+    def test_wait_complete_asks_once_with_zero(self) -> None:
+        """A timeout of 0 asks once, and does not wait."""
+        self.assertEqual(self.ask("command.wait_complete", 0)["result"], -1)
+        self.assertEqual(self.bridge.command.timeouts, [0.0])
+
+    def test_wait_complete_done(self) -> None:
+        """A finished command gives its status."""
+        self.bridge.command.done.set()
+        self.assertEqual(self.ask("command.wait_complete")["result"], 1)
+
 
 class TestWaitUntilReady(unittest.TestCase):
     """Waiting for `milltask` before opening the port."""
@@ -201,7 +254,9 @@ class TestClient(unittest.TestCase):
             with self.assertRaises(lcnc_client.SCBridgeError) as caught:
                 lcnc.call("eval")
             self.assertEqual(caught.exception.kind, "ValueError")
-            self.assertEqual(lcnc.call("ping")["protocol"], 1)
+            self.assertEqual(
+                lcnc.call("ping")["protocol"], lcnc_bridge.PROTOCOL
+            )
 
     def test_big_program_line(self) -> None:
         """A request far bigger than a socket buffer gets through."""
@@ -220,6 +275,39 @@ class TestClient(unittest.TestCase):
             lcnc_client.SCClient("127.0.0.1", self.port) as two,
         ):
             self.assertEqual(one.call("ping"), two.call("ping"))
+
+    def test_wait_does_not_hold_up_others(self) -> None:
+        """Another connection is answered during a long wait."""
+        assert self.server.bridge is not None
+        command = self.server.bridge.command
+        with (
+            lcnc_client.SCClient("127.0.0.1", self.port) as one,
+            lcnc_client.SCClient("127.0.0.1", self.port) as two,
+        ):
+            results: list[int] = []
+            waiter = threading.Thread(
+                target=lambda: results.append(
+                    one.call("command.wait_complete", 30.0)
+                )
+            )
+            waiter.start()
+            self.addCleanup(waiter.join)
+            self.addCleanup(command.done.set)
+            while not command.timeouts:
+                time.sleep(0.001)
+
+            # It answers while the other still waits, then that ends.
+            started = time.monotonic()
+            self.assertEqual(two.call("ping")["version"], "2.9.10")
+            self.assertLess(time.monotonic() - started, 5.0)
+            self.assertEqual(results, [])
+            command.done.set()
+            waiter.join()
+            self.assertEqual(results, [1])
+
+    def test_client_port_matches(self) -> None:
+        """The client, which imports nothing, has the bridge's port."""
+        self.assertEqual(lcnc_client.PORT, lcnc_bridge.PORT)
 
 
 class TestServe(unittest.TestCase):
