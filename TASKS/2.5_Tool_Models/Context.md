@@ -277,3 +277,8 @@ drill, and intersecting with a cone, both fail in SolidCraft 0.25.1.
 * The user on all 44 countersinks: "They look great."  Next tool: the user's choice.
   Drills and end mills could share a grooved cylinder routine; countersinks have no
   flutes.  The small drill's length is still from memory, not the catalog.
+
+## 2026-11-02: Holders
+
+`sctoolmodel.py` draws a rough holder for each tool of the shop, in the resistor color code of its `unique_id`,
+under `T.ctfs~5.1`, which has the details.

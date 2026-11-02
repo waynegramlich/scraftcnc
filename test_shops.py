@@ -277,14 +277,114 @@ class TestReader(SCCopiedShop):
         self.assertIn("also the name of the tool at", problems[2])
         self.assertIn('no tool named "1/8 in drill"', problems[3])
 
+    def test_unique_ids(self) -> None:
+        """A tool's `unique_id`: positive, unique and required."""
+        self.change("tools.toml", "unique_id = 1\n", "unique_id = 0\n")
+        self.change("tools.toml", "unique_id = 2\n", "unique_id = -2\n")
+        self.change("tools.toml", "unique_id = 3\n", 'unique_id = "3"\n')
+        self.change("tools.toml", "unique_id = 4\n", "unique_id = 4.5\n")
+        self.change("tools.toml", "unique_id = 5\n", "unique_id = true\n")
+        self.change("tools.toml", "unique_id = 9\n", "unique_id = 1\n")
+        self.change("tools.toml", "unique_id = 7\n", "unique_id = 6\n")
+        self.change("tools.toml", "unique_id = 8\n", "")
+        problems = self.problems()
+        self.assertEqual(
+            [p.split(": ")[1] for p in problems],
+            [
+                "end_mills[0].unique_id",
+                "end_mills[1].unique_id",
+                "end_mills[2].unique_id",
+                "end_mills[3].unique_id",
+                "drills[0].unique_id",
+                "chamfer_mills[0].unique_id",
+                "corner_rounding_mills[0]",
+            ],
+        )
+        for problem in problems[:5]:
+            self.assertIn("is not a whole number of 1 or more", problem)
+        self.assertIn(
+            "6 is also the unique id of the tool at "
+            + self.at("tools.toml", "unique_id = 6"),
+            problems[5].replace(self.directory.as_posix() + "/", ""),
+        )
+        self.assertIn("`unique_id` is missing", problems[6])
+
+    def test_example_unique_ids(self) -> None:
+        """The example's unique ids run from 1, with no gaps."""
+        tools = shops.read(EXAMPLES / "home_shop.toml")["tools"][0]
+        numbers = [
+            tool["unique_id"] for key in shops.CNC_KINDS for tool in tools[key]
+        ]
+        self.assertEqual(sorted(numbers), list(range(1, len(numbers) + 1)))
+
+    def test_holder(self) -> None:
+        """`holder`: entries in any capitals, others ending in `!`."""
+        self.change(
+            "tools.toml",
+            'holder = ["r8", "1/4 in"]',
+            'holder = ["CAT40", "ER32", "1/4 in"]',
+        )
+        self.change(
+            "tools.toml",
+            'holder = ["er20", "1/2 in"]',
+            'holder = ["Tormach", "12 mm"]',
+        )
+        self.change(
+            "tools.toml",
+            'holder = ["r8", "3/8 in"]',
+            'holder = ["capto-c6!", "hsk-a100", "drill-chuck", "3/8 in"]',
+        )
+        tools = shops.read(self.directory / "home_shop.toml")["tools"][0]
+        self.assertEqual(
+            [tool["holder"] for tool in tools["end_mills"][:3]],
+            [
+                ["cat40", "er32", "1/4 in"],
+                ["tormach", "12 mm"],
+                ["capto-c6!", "hsk-a100", "drill-chuck", "3/8 in"],
+            ],
+        )
+
+    def test_holder_problems(self) -> None:
+        """A `holder` that is not understood, at its own line."""
+        bad = (
+            ('holder = ["r8", "1/4 in"]', 'holder = ["capto", "1/4 in"]'),
+            ('holder = ["er20", "1/2 in"]', 'holder = ["r8", "1/2"]'),
+            ('holder = ["r8", "3/8 in"]', 'holder = ["r8", "er32"]'),
+            ('holder = ["r8", "3/8 in"]', 'holder = ["r8"]'),
+            ('holder = ["r8", "er32", "1/4 in"]', 'holder = "r8"'),
+        )
+        for old, new in bad:
+            self.change("tools.toml", old, new)
+        problems = self.problems()
+        self.assertEqual(
+            [p.split(": ")[:2] for p in problems],
+            [
+                [self.at("tools.toml", new), f"{key}.holder"]
+                for (_, new), key in zip(
+                    bad,
+                    (
+                        "end_mills[0]",
+                        "end_mills[1]",
+                        "end_mills[2]",
+                        "end_mills[3]",
+                        "drills[0]",
+                    ),
+                )
+            ],
+        )
+        self.assertIn("or another ending in !", problems[0])
+        self.assertIn("is the wrong unit", problems[1])
+        self.assertIn("is not a list of what holds", problems[3])
+        self.assertIn("is not a list of what holds", problems[4])
+
     def test_choices(self) -> None:
         """Choices in any capitals; `!` only where the list is open."""
         self.change("shop_mill.toml", 'interface = "R8"', 'interface = "r8"')
         self.change("shop_router.toml", '"ER20"', '"HSK100A!"')
         self.change(
             "tools.toml",
-            'collet = "ER32"\nmaterial = "HSS"',
-            'collet = "ER32"\nmaterial = "unobtainium"',
+            '"1/4 in"]\nmaterial = "HSS"',
+            '"1/4 in"]\nmaterial = "unobtainium"',
         )
         self.change("tools.toml", '"47.02 USD"', '"64.10 CAD"')
         self.change("shop_mill.toml", 'machine = "mill"', 'machine = "lathe!"')

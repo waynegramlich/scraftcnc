@@ -63,3 +63,7 @@ with units is the better base.
 * `T.msaf~2.1` and `T.si~2.2` are closed.  `T.m~2.3` (Mounting) and `T.tm~2.5` (Tool
   Models) are Open; `T.sm~2.4` (Stock Models) is Pending, though `scsetup.py` already
   places raw material as a plain box.
+
+## 2026-11-02: Tools: `unique_id`, `holder`
+
+`T.ctfs~5.1` gave tools a `unique_id` and a `holder` list, and removed `collet`.

@@ -121,6 +121,8 @@ UNITS: dict[str, dict[str, float]] = {
 FORMS: tuple[str, ...] = (
     "string",
     "integer",
+    "positive_integer",
+    "holder_list",
     "boolean",
     "choice",
     "version",
@@ -267,7 +269,7 @@ HEADER: tuple[SCField, ...] = (
 )
 
 # The common spindle interfaces (a router's spindle may take ER
-# collets itself), collets and tool materials.
+# collets itself), what holds a tool, and tool materials.
 INTERFACES: tuple[str, ...] = (
     "R8",
     "BT30",
@@ -286,17 +288,29 @@ INTERFACES: tuple[str, ...] = (
     "ER32",
     "ER40",
 )
-COLLETS: tuple[str, ...] = (
-    "ER8",
-    "ER11",
-    "ER16",
-    "ER20",
-    "ER25",
-    "ER32",
-    "ER40",
-    "ER50",
-    "R8",
-    "5C",
+HOLDERS: tuple[str, ...] = (
+    "tormach",
+    "r8",
+    "5c",
+    "cat40",
+    "cat50",
+    "bt30",
+    "bt40",
+    "bt50",
+    "sk40",
+    "sk50",
+    "hsk-a63",
+    "hsk-a100",
+    "er8",
+    "er11",
+    "er16",
+    "er20",
+    "er25",
+    "er32",
+    "er40",
+    "er50",
+    "drill-chuck",
+    "shell-mill",
 )
 MATERIALS: tuple[str, ...] = (
     "HSS",
@@ -306,6 +320,15 @@ MATERIALS: tuple[str, ...] = (
     "ceramic",
     "CBN",
     "PCD",
+)
+
+# One entry of a `holder` list, other than its bore.
+HOLDER_PART: SCField = SCField(
+    "holder",
+    "choice",
+    "What holds a tool.",
+    choices=HOLDERS,
+    open=True,
 )
 
 # The kinds of tools, which a machine's `tool_table` names.
@@ -332,10 +355,22 @@ def _tool_fields(*special: SCField) -> tuple[SCField, ...]:
       and how to cut with it.
     """
     return (
+        SCField(
+            "unique_id",
+            "positive_integer",
+            "Its unique id, a number from 1, unique among all the tools "
+            "of the shop (this is not a T number).",
+            True,
+        ),
         SCField("description", "string", "What it is, in a few words."),
         *special,
         SCField("shank", "length", "The shank diameter, if not `diameter`."),
         SCField("overall_length", "length", "Its whole length (OAL).", True),
+        SCField(
+            "holder",
+            "holder_list",
+            "What holds it, from the spindle to its bore (see Tool Holders).",
+        ),
         SCField(
             "material",
             "choice",
@@ -376,27 +411,6 @@ def _size_fields(*, length_of_cut: bool = True) -> tuple[SCField, ...]:
     return (
         diameter,
         SCField("length_of_cut", "length", "How deep it can cut (LOC).", True),
-    )
-
-
-# Function `_collet_field()`:
-def _collet_field(*, required: bool) -> SCField:
-    """Return the `collet` key of a kind of tool.
-
-    Arguments:
-    * `required` (`bool`):
-      True if the tool is always held in a collet (a drill).
-
-    Returns:
-    * (`SCField`): The key.
-    """
-    return SCField(
-        "collet",
-        "choice",
-        "The collet it is held in, if it is.",
-        required=required,
-        choices=COLLETS,
-        open=True,
     )
 
 
@@ -803,13 +817,12 @@ version = "0.0.1"
             "to cut with each (`rpm`, `feed`, `plunge`) is given with "
             "the tool for now, until it can be worked out from the "
             "material being cut.  Only "
-            "the bits are described, not their holders (a drill goes in "
-            "a collet; an end mill in a collet or an end mill holder of "
-            "its shank's size).  Tools are shared by machines, so they "
+            "the bits are described; `holder` only says what holds "
+            "each one.  Tools are shared by machines, so they "
             "are not listed by machine: a machine's `tool_table` names "
-            "the ones it has loaded, and every tool's `name` is unique "
-            "among all the tools (T numbers are only unique within one "
-            "machine).",
+            "the ones it has loaded, and every tool's `name` and "
+            "`unique_id` are unique among all the tools (T numbers are "
+            "only unique within one machine).",
             (
                 SCField("end_mills", "list", "The end mills.", of="end_mill"),
                 SCField("drills", "list", "The drills.", of="drill"),
@@ -841,6 +854,7 @@ version = "0.0.1"
 
 [[end_mills]]
 name = "1/4 in 2 flute carbide end mill"
+unique_id = 1
 diameter = "1/4 in"
 length_of_cut = "3/4 in"
 overall_length = "2-1/2 in"
@@ -850,11 +864,12 @@ material = "carbide"
 
 [[drills]]
 name = "15/64 in HSS jobber drill"
+unique_id = 5
 diameter = "15/64 in"
 length_of_cut = "2-5/8 in"
 overall_length = "3-7/8 in"
 point_angle = "118 deg"
-collet = "ER32"
+holder = ["r8", "er32", "1/4 in"]
 material = "HSS"
 """,
         ),
@@ -883,12 +898,12 @@ material = "HSS"
                     "boolean",
                     "True for a rougher (serrated flutes).",
                 ),
-                _collet_field(required=False),
                 _cutting_field(),
             ),
             True,
             """\
 name = "1/2 in 2 flute carbide end mill"
+unique_id = 2
 diameter = "1/2 in"
 length_of_cut = "1 in"
 overall_length = "3 in"
@@ -912,7 +927,6 @@ acquired = 2026-10-27
                     "flutes", "integer", "How many flutes (2 if not given)."
                 ),
                 SCField("point_angle", "angle", "The included angle.", True),
-                _collet_field(required=True),
                 SCField(
                     "split_point", "boolean", "True if it has a split point."
                 ),
@@ -926,12 +940,13 @@ acquired = 2026-10-27
             True,
             """\
 name = "1/8 in cobalt jobber drill"
+unique_id = 6
 diameter = "1/8 in"
 length_of_cut = "1-5/8 in"
 overall_length = "2-3/4 in"
 point_angle = "135 deg"
 split_point = true
-collet = "ER32"
+holder = ["r8", "er32", "1/8 in"]
 material = "cobalt"
 grade = "M42"
 coating = "straw"
@@ -979,11 +994,11 @@ feed = "4 in/min"
                     True,
                 ),
                 SCField("flutes", "integer", "How many flutes."),
-                _collet_field(required=False),
             ),
             True,
             """\
 name = "1/8 in 90 deg carbide chamfer mill"
+unique_id = 7
 diameter = "1/8 in"
 tip_diameter = "0.020 in"
 angle = "90 deg"
@@ -1006,11 +1021,11 @@ vendor_pn = "416-3509"
                     "tip_diameter", "length", "The diameter at its tip.", True
                 ),
                 SCField("flutes", "integer", "How many flutes."),
-                _collet_field(required=False),
             ),
             True,
             """\
 name = "1/16 in radius carbide corner rounding mill"
+unique_id = 8
 radius = "0.0625 in"
 tip_diameter = "0.0469 in"
 flutes = 2
@@ -1047,11 +1062,11 @@ vendor_pn = "417-1112"
                     "How far below the shank the cutter reaches (L3).",
                 ),
                 SCField("flutes", "integer", "How many flutes."),
-                _collet_field(required=False),
             ),
             True,
             """\
 name = "1/4 in 90 deg double angle shank cutter"
+unique_id = 9
 diameter = "1/4 in"
 angle = "90 deg"
 width = "0.125 in"
@@ -1351,6 +1366,37 @@ The number may be a decimal (`"0.5 in"`), a fraction (`"1/2 in"`), or
 a whole number and a fraction joined by `-` (`"1-1/2 in"`).
 
 {units}
+
+### Tool Holders
+
+A tool's `holder` lists what holds it, from the spindle down to the
+tool, ending in the bore, with its unit:
+
+```toml
+holder = ["tormach", "er16", "3/8 in"]  # A Tormach ER16 holder.
+holder = ["tormach", "1/4 in"]          # A Tormach fixed bore holder.
+holder = ["cat40", "er32", "1/2 in"]    # A CAT40 ER32 collet chuck.
+holder = ["r8", "6 mm"]                 # A plain R8 collet.
+holder = ["er20", "1/2 in"]             # A spindle that takes ER20.
+```
+
+Every entry but the last is one of these, in any capitals, or another
+ending in `!`.  The last is a length.  Nothing else is checked: not
+whether a holder fits the spindle, nor a bore the collet or the tool.
+
+* `tormach`: The Tormach Tooling System, a 3/4 in straight shank held
+  in a 3/4 in R8 collet.  Fixed bores and set screw holders, or ER16,
+  ER20 and ER32 collets.
+* `r8`, `5c`: A collet of that kind, or anything with that shank.
+* `cat40`, `cat50`: CAT V-flange tapers (ANSI/ASME B5.50).
+* `bt30`, `bt40`, `bt50`: BT tapers (the Japanese MAS standard).
+* `sk40`, `sk50`: SK tapers (DIN 69871).
+* `hsk-a63`, `hsk-a100`: HSK form A hollow tapers (ISO 12164, DIN
+  69893).
+* `er8` to `er50`: ER collets.  By one vendor's chart, the largest bores
+  are 5, 7, 10, 13, 16, 20, 26 and 34 mm, for `er8`, `er11`, `er16`,
+  `er20`, `er25`, `er32`, `er40` and `er50`.
+* `drill-chuck`, `shell-mill`: A drill chuck; a shell mill arbor.
 
 ### Keys and Problems
 
@@ -1769,8 +1815,9 @@ class _SCSource:
 
 
 # Class `_SCReader`:
+# It keeps one record per kind of thing checked, so the count is fine.
 @dataclass(slots=True)
-class _SCReader:
+class _SCReader:  # pylint: disable=too-many-instance-attributes
     """Read Nested TOML files, checking them against `KINDS`.
 
     Attributes:
@@ -1787,6 +1834,8 @@ class _SCReader:
       Every tool named in a `tool_table`: where, and its name.
     * `tools` (`dict[str, tuple[_SCSource, KeyPath]]`):
       Every tool read, by name: where it is.
+    * `unique_ids` (`dict[int, tuple[_SCSource, KeyPath]]`):
+      Every tool read, by `unique_id`: where it is.
 
     Constructor:
     * `_SCReader(directory)`
@@ -1808,6 +1857,9 @@ class _SCReader:
         init=False, default_factory=list
     )
     tools: dict[str, tuple[_SCSource, KeyPath]] = field(
+        init=False, default_factory=dict
+    )
+    unique_ids: dict[int, tuple[_SCSource, KeyPath]] = field(
         init=False, default_factory=dict
     )
 
@@ -1998,6 +2050,7 @@ class _SCReader:
         # each machine's tool table, which no other machine may share.
         if kind.kind in TOOL_KINDS:
             self.name_tool(value.get("name"), path, source)
+            self.note_unique_id(value.get("unique_id"), path, source)
         elif kind.kind == "machine" and "tool_table" in contents:
             self.machine_tables.append(
                 (
@@ -2035,6 +2088,35 @@ class _SCReader:
             )
         else:
             self.tools[name] = (source, path)
+
+    # Method `_SCReader.note_unique_id()`:
+    def note_unique_id(
+        self, number: object, path: KeyPath, source: _SCSource
+    ) -> None:
+        """Note a tool's `unique_id`, refusing a number already taken.
+
+        Arguments:
+        * `number` (`object`): Its `unique_id` (checked already).
+        * `path` (`KeyPath`): Where the tool is.
+        * `source` (`_SCSource`): The file it is in.
+        """
+        if not isinstance(number, int) or isinstance(number, bool):
+            return
+        if number < 1:
+            return
+        if number in self.unique_ids:
+            other: _SCSource
+            where: KeyPath
+            other, where = self.unique_ids[number]
+            line: int = locate(other.lines, where)
+            self.problem(
+                source,
+                path + ("unique_id",),
+                f"{number} is also the unique id of the tool at "
+                f"{other.shown}:{line}",
+            )
+        else:
+            self.unique_ids[number] = (source, path + ("unique_id",))
 
     # Method `_SCReader.value()`:
     def value(
@@ -2083,6 +2165,10 @@ class _SCReader:
             self.problem(source, path, problem)
         elif form == "choice" and isinstance(value, str):
             value = _chosen(value, schema)
+        elif form == "holder_list" and isinstance(value, list):
+            value = [
+                _chosen(part, HOLDER_PART) for part in value[:-1]
+            ] + value[-1:]
         elif form == "t_numbers" and isinstance(value, dict):
             for number, name in value.items():
                 self.tool_uses.append((source, path + (number,), name))
@@ -2149,6 +2235,11 @@ def _scalar_problem(value: object, schema: SCField) -> str:
     elif form == "integer":
         if not isinstance(value, int) or isinstance(value, bool):
             problem = f"{value!r} is not a whole number"
+    elif form == "positive_integer":
+        if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+            problem = f"{value!r} is not a whole number of 1 or more"
+    elif form == "holder_list":
+        problem = _holder_problem(value)
     elif form == "boolean":
         if not isinstance(value, bool):
             problem = f"{value!r} is not `true` or `false`"
@@ -2217,6 +2308,28 @@ def _string_problem(value: object, schema: SCField) -> str:
         ):
             return f'version "{value}" can not be read (only {FORMAT_VERSION})'
     return ""
+
+
+# Function `_holder_problem()`:
+def _holder_problem(value: object) -> str:
+    """Return what is wrong with a `holder` list.
+
+    Arguments:
+    * `value` (`object`): The value.
+
+    Returns:
+    * (`str`): The problem, or `""` if there is none.
+    """
+    if not isinstance(value, list) or len(value) < 2:
+        return (
+            f"{value!r} is not a list of what holds the tool, ending in "
+            'its bore (such as ["r8", "1/4 in"])'
+        )
+    for part in value[:-1]:
+        problem: str = _string_problem(part, HOLDER_PART)
+        if problem:
+            return problem
+    return measurement_problem(value[-1], LENGTH)
 
 
 # Function `_t_numbers_problem()`:

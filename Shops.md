@@ -87,6 +87,37 @@ a whole number and a fraction joined by `-` (`"1-1/2 in"`).
 | fraction      | `%`                                              |
 | money         | `USD`, `CAD`, `EUR`, `GBP`, or any ISO 4217 code |
 
+### Tool Holders
+
+A tool's `holder` lists what holds it, from the spindle down to the
+tool, ending in the bore, with its unit:
+
+```toml
+holder = ["tormach", "er16", "3/8 in"]  # A Tormach ER16 holder.
+holder = ["tormach", "1/4 in"]          # A Tormach fixed bore holder.
+holder = ["cat40", "er32", "1/2 in"]    # A CAT40 ER32 collet chuck.
+holder = ["r8", "6 mm"]                 # A plain R8 collet.
+holder = ["er20", "1/2 in"]             # A spindle that takes ER20.
+```
+
+Every entry but the last is one of these, in any capitals, or another
+ending in `!`.  The last is a length.  Nothing else is checked: not
+whether a holder fits the spindle, nor a bore the collet or the tool.
+
+* `tormach`: The Tormach Tooling System, a 3/4 in straight shank held
+  in a 3/4 in R8 collet.  Fixed bores and set screw holders, or ER16,
+  ER20 and ER32 collets.
+* `r8`, `5c`: A collet of that kind, or anything with that shank.
+* `cat40`, `cat50`: CAT V-flange tapers (ANSI/ASME B5.50).
+* `bt30`, `bt40`, `bt50`: BT tapers (the Japanese MAS standard).
+* `sk40`, `sk50`: SK tapers (DIN 69871).
+* `hsk-a63`, `hsk-a100`: HSK form A hollow tapers (ISO 12164, DIN
+  69893).
+* `er8` to `er50`: ER collets.  By one vendor's chart, the largest bores
+  are 5, 7, 10, 13, 16, 20, 26 and 34 mm, for `er8`, `er11`, `er16`,
+  `er20`, `er25`, `er32`, `er40` and `er50`.
+* `drill-chuck`, `shell-mill`: A drill chuck; a shell mill arbor.
+
 ### Keys and Problems
 
 * Keys are `snake_case`.
@@ -386,12 +417,11 @@ version = "0.0.1"
 Tools: the bits that go in a holder in the spindle.  How to cut with
 each (`rpm`, `feed`, `plunge`) is given with the tool for now, until it
 can be worked out from the material being cut.  Only the bits are
-described, not their holders (a drill goes in a collet; an end mill in a
-collet or an end mill holder of its shank's size).  Tools are shared by
+described; `holder` only says what holds each one.  Tools are shared by
 machines, so they are not listed by machine: a machine's `tool_table`
-names the ones it has loaded, and every tool's `name` is unique among
-all the tools (T numbers are only unique within one machine).  It has a
-`name` even when it is not a file of its own.
+names the ones it has loaded, and every tool's `name` and `unique_id`
+are unique among all the tools (T numbers are only unique within one
+machine).  It has a `name` even when it is not a file of its own.
 
 | Key                     | Value                  | Required | Meaning       |
 | ----------------------- | ---------------------- | -------- | ------------- |
@@ -415,6 +445,7 @@ version = "0.0.1"
 
 [[end_mills]]
 name = "1/4 in 2 flute carbide end mill"
+unique_id = 1
 diameter = "1/4 in"
 length_of_cut = "3/4 in"
 overall_length = "2-1/2 in"
@@ -424,11 +455,12 @@ material = "carbide"
 
 [[drills]]
 name = "15/64 in HSS jobber drill"
+unique_id = 5
 diameter = "15/64 in"
 length_of_cut = "2-5/8 in"
 overall_length = "3-7/8 in"
 point_angle = "118 deg"
-collet = "ER32"
+holder = ["r8", "er32", "1/4 in"]
 material = "HSS"
 ```
 
@@ -440,6 +472,11 @@ file of its own.
 
 | Key               | Value                | Required | Meaning               |
 | ----------------- | -------------------- | -------- | --------------------- |
+| `unique_id`       | positive integer     | yes      | Its unique id, a      |
+|                   |                      |          | number from 1, unique |
+|                   |                      |          | among all the tools   |
+|                   |                      |          | of the shop (this is  |
+|                   |                      |          | not a T number).      |
 | `description`     | string               | no       | What it is, in a few  |
 |                   |                      |          | words.                |
 | `diameter`        | length               | yes      | The cutting diameter. |
@@ -454,13 +491,6 @@ file of its own.
 |                   |                      |          | straight down.        |
 | `roughing`        | boolean              | no       | True for a rougher    |
 |                   |                      |          | (serrated flutes).    |
-| `collet`          | one of `ER8`,        | no       | The collet it is held |
-|                   | `ER11`, `ER16`,      |          | in, if it is.         |
-|                   | `ER20`, `ER25`,      |          |                       |
-|                   | `ER32`, `ER40`,      |          |                       |
-|                   | `ER50`, `R8`, `5C`,  |          |                       |
-|                   | or another ending in |          |                       |
-|                   | `!`                  |          |                       |
 | `cutting`         | material name to     | no       | Its own speed and     |
 |                   | `cutting`            |          | feed for a material,  |
 |                   |                      |          | which win over those  |
@@ -473,6 +503,10 @@ file of its own.
 |                   |                      |          | if not `diameter`.    |
 | `overall_length`  | length               | yes      | Its whole length      |
 |                   |                      |          | (OAL).                |
+| `holder`          | holder list          | no       | What holds it, from   |
+|                   |                      |          | the spindle to its    |
+|                   |                      |          | bore (see Tool        |
+|                   |                      |          | Holders).             |
 | `material`        | one of `HSS`,        | yes      | What it is made of.   |
 |                   | `cobalt`, `carbide`, |          |                       |
 |                   | `cermet`, `ceramic`, |          |                       |
@@ -500,6 +534,7 @@ file of its own.
 
 ```toml
 name = "1/2 in 2 flute carbide end mill"
+unique_id = 2
 diameter = "1/2 in"
 length_of_cut = "1 in"
 overall_length = "3 in"
@@ -520,6 +555,11 @@ A twist drill.  It has a `name` even when it is not a file of its own.
 
 | Key               | Value                | Required | Meaning               |
 | ----------------- | -------------------- | -------- | --------------------- |
+| `unique_id`       | positive integer     | yes      | Its unique id, a      |
+|                   |                      |          | number from 1, unique |
+|                   |                      |          | among all the tools   |
+|                   |                      |          | of the shop (this is  |
+|                   |                      |          | not a T number).      |
 | `description`     | string               | no       | What it is, in a few  |
 |                   |                      |          | words.                |
 | `diameter`        | length               | yes      | The cutting diameter. |
@@ -528,13 +568,6 @@ A twist drill.  It has a `name` even when it is not a file of its own.
 | `flutes`          | integer              | no       | How many flutes (2 if |
 |                   |                      |          | not given).           |
 | `point_angle`     | angle                | yes      | The included angle.   |
-| `collet`          | one of `ER8`,        | yes      | The collet it is held |
-|                   | `ER11`, `ER16`,      |          | in, if it is.         |
-|                   | `ER20`, `ER25`,      |          |                       |
-|                   | `ER32`, `ER40`,      |          |                       |
-|                   | `ER50`, `R8`, `5C`,  |          |                       |
-|                   | or another ending in |          |                       |
-|                   | `!`                  |          |                       |
 | `split_point`     | boolean              | no       | True if it has a      |
 |                   |                      |          | split point.          |
 | `peck_depth`      | length               | no       | How deep each peck    |
@@ -551,6 +584,10 @@ A twist drill.  It has a `name` even when it is not a file of its own.
 |                   |                      |          | if not `diameter`.    |
 | `overall_length`  | length               | yes      | Its whole length      |
 |                   |                      |          | (OAL).                |
+| `holder`          | holder list          | no       | What holds it, from   |
+|                   |                      |          | the spindle to its    |
+|                   |                      |          | bore (see Tool        |
+|                   |                      |          | Holders).             |
 | `material`        | one of `HSS`,        | yes      | What it is made of.   |
 |                   | `cobalt`, `carbide`, |          |                       |
 |                   | `cermet`, `ceramic`, |          |                       |
@@ -578,12 +615,13 @@ A twist drill.  It has a `name` even when it is not a file of its own.
 
 ```toml
 name = "1/8 in cobalt jobber drill"
+unique_id = 6
 diameter = "1/8 in"
 length_of_cut = "1-5/8 in"
 overall_length = "2-3/4 in"
 point_angle = "135 deg"
 split_point = true
-collet = "ER32"
+holder = ["r8", "er32", "1/8 in"]
 material = "cobalt"
 grade = "M42"
 coating = "straw"
@@ -620,6 +658,11 @@ when it is not a file of its own.
 
 | Key               | Value                | Required | Meaning               |
 | ----------------- | -------------------- | -------- | --------------------- |
+| `unique_id`       | positive integer     | yes      | Its unique id, a      |
+|                   |                      |          | number from 1, unique |
+|                   |                      |          | among all the tools   |
+|                   |                      |          | of the shop (this is  |
+|                   |                      |          | not a T number).      |
 | `description`     | string               | no       | What it is, in a few  |
 |                   |                      |          | words.                |
 | `diameter`        | length               | yes      | The cutting diameter. |
@@ -629,17 +672,14 @@ when it is not a file of its own.
 |                   |                      |          | (90 deg makes 45 deg  |
 |                   |                      |          | bevels).              |
 | `flutes`          | integer              | no       | How many flutes.      |
-| `collet`          | one of `ER8`,        | no       | The collet it is held |
-|                   | `ER11`, `ER16`,      |          | in, if it is.         |
-|                   | `ER20`, `ER25`,      |          |                       |
-|                   | `ER32`, `ER40`,      |          |                       |
-|                   | `ER50`, `R8`, `5C`,  |          |                       |
-|                   | or another ending in |          |                       |
-|                   | `!`                  |          |                       |
 | `shank`           | length               | no       | The shank diameter,   |
 |                   |                      |          | if not `diameter`.    |
 | `overall_length`  | length               | yes      | Its whole length      |
 |                   |                      |          | (OAL).                |
+| `holder`          | holder list          | no       | What holds it, from   |
+|                   |                      |          | the spindle to its    |
+|                   |                      |          | bore (see Tool        |
+|                   |                      |          | Holders).             |
 | `material`        | one of `HSS`,        | yes      | What it is made of.   |
 |                   | `cobalt`, `carbide`, |          |                       |
 |                   | `cermet`, `ceramic`, |          |                       |
@@ -667,6 +707,7 @@ when it is not a file of its own.
 
 ```toml
 name = "1/8 in 90 deg carbide chamfer mill"
+unique_id = 7
 diameter = "1/8 in"
 tip_diameter = "0.020 in"
 angle = "90 deg"
@@ -685,6 +726,11 @@ is not a file of its own.
 
 | Key               | Value                | Required | Meaning               |
 | ----------------- | -------------------- | -------- | --------------------- |
+| `unique_id`       | positive integer     | yes      | Its unique id, a      |
+|                   |                      |          | number from 1, unique |
+|                   |                      |          | among all the tools   |
+|                   |                      |          | of the shop (this is  |
+|                   |                      |          | not a T number).      |
 | `description`     | string               | no       | What it is, in a few  |
 |                   |                      |          | words.                |
 | `radius`          | length               | yes      | The radius it rounds  |
@@ -692,17 +738,14 @@ is not a file of its own.
 | `tip_diameter`    | length               | yes      | The diameter at its   |
 |                   |                      |          | tip.                  |
 | `flutes`          | integer              | no       | How many flutes.      |
-| `collet`          | one of `ER8`,        | no       | The collet it is held |
-|                   | `ER11`, `ER16`,      |          | in, if it is.         |
-|                   | `ER20`, `ER25`,      |          |                       |
-|                   | `ER32`, `ER40`,      |          |                       |
-|                   | `ER50`, `R8`, `5C`,  |          |                       |
-|                   | or another ending in |          |                       |
-|                   | `!`                  |          |                       |
 | `shank`           | length               | no       | The shank diameter,   |
 |                   |                      |          | if not `diameter`.    |
 | `overall_length`  | length               | yes      | Its whole length      |
 |                   |                      |          | (OAL).                |
+| `holder`          | holder list          | no       | What holds it, from   |
+|                   |                      |          | the spindle to its    |
+|                   |                      |          | bore (see Tool        |
+|                   |                      |          | Holders).             |
 | `material`        | one of `HSS`,        | yes      | What it is made of.   |
 |                   | `cobalt`, `carbide`, |          |                       |
 |                   | `cermet`, `ceramic`, |          |                       |
@@ -730,6 +773,7 @@ is not a file of its own.
 
 ```toml
 name = "1/16 in radius carbide corner rounding mill"
+unique_id = 8
 radius = "0.0625 in"
 tip_diameter = "0.0469 in"
 flutes = 2
@@ -749,6 +793,11 @@ file of its own.
 
 | Key               | Value                | Required | Meaning               |
 | ----------------- | -------------------- | -------- | --------------------- |
+| `unique_id`       | positive integer     | yes      | Its unique id, a      |
+|                   |                      |          | number from 1, unique |
+|                   |                      |          | among all the tools   |
+|                   |                      |          | of the shop (this is  |
+|                   |                      |          | not a T number).      |
 | `description`     | string               | no       | What it is, in a few  |
 |                   |                      |          | words.                |
 | `diameter`        | length               | yes      | The cutting diameter. |
@@ -763,17 +812,14 @@ file of its own.
 |                   |                      |          | shank the cutter      |
 |                   |                      |          | reaches (L3).         |
 | `flutes`          | integer              | no       | How many flutes.      |
-| `collet`          | one of `ER8`,        | no       | The collet it is held |
-|                   | `ER11`, `ER16`,      |          | in, if it is.         |
-|                   | `ER20`, `ER25`,      |          |                       |
-|                   | `ER32`, `ER40`,      |          |                       |
-|                   | `ER50`, `R8`, `5C`,  |          |                       |
-|                   | or another ending in |          |                       |
-|                   | `!`                  |          |                       |
 | `shank`           | length               | no       | The shank diameter,   |
 |                   |                      |          | if not `diameter`.    |
 | `overall_length`  | length               | yes      | Its whole length      |
 |                   |                      |          | (OAL).                |
+| `holder`          | holder list          | no       | What holds it, from   |
+|                   |                      |          | the spindle to its    |
+|                   |                      |          | bore (see Tool        |
+|                   |                      |          | Holders).             |
 | `material`        | one of `HSS`,        | yes      | What it is made of.   |
 |                   | `cobalt`, `carbide`, |          |                       |
 |                   | `cermet`, `ceramic`, |          |                       |
@@ -801,6 +847,7 @@ file of its own.
 
 ```toml
 name = "1/4 in 90 deg double angle shank cutter"
+unique_id = 9
 diameter = "1/4 in"
 angle = "90 deg"
 width = "0.125 in"

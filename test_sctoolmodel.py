@@ -1,5 +1,6 @@
 """Tests for `sctoolmodel`: the tools' profiles and their models."""
 
+import itertools
 import math
 import shutil
 import unittest
@@ -140,6 +141,72 @@ class TestModel(unittest.TestCase):
             strict=True,
         ):
             self.assertAlmostEqual(got, want, places=3)
+
+
+class TestHolders(unittest.TestCase):
+    """The holders: truncated cones with resistor color code bands."""
+
+    def setUp(self) -> None:
+        self.shop = shops.read(SHOP)
+        self.tools = sctoolmodel.shop_tools(self.shop)
+        self.tool = dict(self.tools[0][1])
+
+    def test_tools_in_order(self) -> None:
+        """Every tool, loaded or not, comes in `unique_id` order."""
+        self.assertEqual(
+            [tool["unique_id"] for _, tool in self.tools],
+            list(range(1, 13)),
+        )
+
+    def test_digits(self) -> None:
+        """The longest number sets the number of bands."""
+        self.assertEqual(sctoolmodel.unique_id_digits(self.tools), 2)
+        self.assertEqual(sctoolmodel.unique_id_digits(self.tools[:9]), 1)
+        self.assertEqual(sctoolmodel.unique_id_digits([]), 1)
+
+    def test_colors(self) -> None:
+        """Bands read from the base, with leading zeros."""
+        colors = sctoolmodel.RESISTOR_COLORS
+        for number, digits, expected in (
+            (1, 2, (0, 1)),
+            (47, 2, (4, 7)),
+            (305, 3, (3, 0, 5)),
+            (9, 1, (9,)),
+        ):
+            self.tool["unique_id"] = number
+            bands = sctoolmodel.holder_bands(self.tool, digits)
+            self.assertEqual(
+                [color for color, _ in bands],
+                [colors[digit] for digit in expected],
+            )
+
+    def test_cone(self) -> None:
+        """The bands stack up into one straight truncated cone."""
+        self.tool["unique_id"] = 123
+        self.tool["holder"] = ["r8", "1/4 in"]
+        bands = sctoolmodel.holder_bands(self.tool, 3)
+
+        # They meet, from the base at the top down to the tool end.
+        length = sctoolmodel.HOLDER_LENGTH
+        self.assertAlmostEqual(bands[0][1][2][1], length)
+        self.assertAlmostEqual(bands[-1][1][0][1], 0.0)
+        for upper, lower in itertools.pairwise(bands):
+            self.assertAlmostEqual(upper[1][0][1], lower[1][3][1])
+            self.assertAlmostEqual(upper[1][1][0], lower[1][2][0])
+
+        # The ends have the right radii.
+        self.assertAlmostEqual(
+            bands[0][1][2][0], sctoolmodel.HOLDER_BASE_DIAMETER / 2
+        )
+        self.assertAlmostEqual(
+            bands[-1][1][1][0], (0.25 + sctoolmodel.HOLDER_WALL) / 2
+        )
+
+    def test_wide_bore(self) -> None:
+        """A bore wider than the base widens the base: no upside down cone."""
+        self.tool["holder"] = ["cat50", "2 in"]
+        bands = sctoolmodel.holder_bands(self.tool, 1)
+        self.assertEqual(bands[0][1][1][0], bands[0][1][2][0])
 
 
 if __name__ == "__main__":

@@ -11,7 +11,9 @@
 @3.3.1_Headless_LinuxCNC_Panel/Context.md
 @4_Implementing_Keepout_Zones/Details.md
 @5_Integration/Details.md
+@5_Integration/Context.md
 @5.1_Create_tools_from_Shop.md/Details.md
+@5.1_Create_tools_from_Shop.md/Context.md
 @../ISSUES/1_PathRack_Hidden_Path_Shows_Again/Details.md
 @../ISSUES/1_PathRack_Hidden_Path_Shows_Again/Context.md
 @3_Simulation/Summary.md
