@@ -151,3 +151,12 @@ is not shown either: it runs Windows too.
   `install_linuxcnc` is rerun.
 * Next: the user's commit and push, then `gh workflow run probe_linuxcnc.yml --repo
   waynegramlich/scraftlinuxcnc`, as in "Saved for a `/clear`" above.
+
+## 2026-11-01: The first probe run, on `09246bb`
+
+* `ubuntu-latest` passes all of it, including `install_linuxcnc --yes` and `demo_linuxcnc`.
+* `windows-latest` failed three offline tests, so WSL was not reached and is still not shown.
+  All three were the tests' portability (`\` in paths, `\r\n` on writing), on code that only
+  runs on Linux.  Fixed, not committed; `write_program()` now writes `newline="\n"`.
+* The workflow now runs the install and demo after a failed offline test; the job still fails.
+* Next: the user's commit and push, then `gh workflow run probe_linuxcnc.yml`.

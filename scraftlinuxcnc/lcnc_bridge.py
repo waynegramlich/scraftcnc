@@ -241,7 +241,7 @@ class SCBridge:
         directory: Path = Path(self.stat.ini_filename).parent / "programs"
         directory.mkdir(exist_ok=True)
         path: Path = directory / name
-        path.write_text(text, encoding="utf-8")
+        path.write_text(text, encoding="utf-8", newline="\n")
         return str(path)
 
     # Method `SCBridge.dispatch()`:

@@ -214,9 +214,10 @@ class TestInstallLinuxCNC(unittest.TestCase):
         """A box sees the file where it is; nothing is sent."""
         options = install_linuxcnc.SCOptions("distrobox", "b", "Debian", True)
         target = install_linuxcnc.box_steps(options)[0]
+        path = Path("/x/p.deb")
         with mock.patch("scraftlinuxcnc.install_linuxcnc.run") as run:
-            inside = install_linuxcnc.send_file(target, Path("/x/p.deb"))
-        self.assertEqual(inside, "/x/p.deb")
+            inside = install_linuxcnc.send_file(target, path)
+        self.assertEqual(inside, str(path))
         run.assert_not_called()
 
     def test_run_streams_with_time(self) -> None:

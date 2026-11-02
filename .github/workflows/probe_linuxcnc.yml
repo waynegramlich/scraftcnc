@@ -2,7 +2,8 @@
 # with it (`--yes` runs the commands it would ask the user to run), then
 # run a G-code program by JSON from outside the target, with no display.
 # The programs print the time on every line, so a timeout still shows
-# how far it got.
+# how far it got.  A failed offline test still fails the job, but does
+# not hide what the install and the demo would have shown.
 name: probe linuxcnc
 
 on:
@@ -51,7 +52,10 @@ jobs:
         run: python -m unittest discover tests
 
       - name: install_linuxcnc --yes
+        id: install
+        if: ${{ !cancelled() }}
         run: install_linuxcnc --yes
 
       - name: demo_linuxcnc
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: demo_linuxcnc

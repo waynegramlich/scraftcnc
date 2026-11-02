@@ -138,7 +138,7 @@ class TestBridge(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             self.bridge.stat.ini_filename = f"{directory}/x.ini"
             path = self.ask("program.write", "a.ngc", "M2\n")["result"]
-            self.assertEqual(path, f"{directory}/programs/a.ngc")
+            self.assertEqual(path, str(Path(directory, "programs", "a.ngc")))
             self.assertEqual(Path(path).read_text("utf-8"), "M2\n")
             for name in (
                 "../b.ngc",
