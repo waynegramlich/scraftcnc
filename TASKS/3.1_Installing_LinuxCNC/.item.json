@@ -1,7 +1,7 @@
 {
-  "state": "Open",
+  "state": "Closed",
   "created": "2026-10-28T14:15:46Z",
-  "updated": "2026-11-01T19:06:43Z",
+  "updated": "2026-11-02T21:45:32Z",
   "history": [
     {
       "state": "Pending",
@@ -26,6 +26,10 @@
     {
       "state": "Open",
       "time": "2026-11-01T19:06:43Z"
+    },
+    {
+      "state": "Closed",
+      "time": "2026-11-02T21:45:32Z"
     }
   ],
   "tag": "il"
