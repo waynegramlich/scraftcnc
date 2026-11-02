@@ -17,6 +17,7 @@ from scraftlinuxcnc.install_linuxcnc import SCTarget
 Tool = namedtuple("Tool", "id zoffset")
 
 
+# pylint: disable-next=too-few-public-methods
 class FakeStat:
     """Stands in for `linuxcnc.stat`."""
 
@@ -29,6 +30,7 @@ class FakeStat:
         """Do nothing, as the real one reads shared memory."""
 
 
+# pylint: disable-next=too-few-public-methods
 class FakeCommand:
     """Stands in for `linuxcnc.command`."""
 
@@ -137,7 +139,7 @@ class TestBridge(unittest.TestCase):
             self.bridge.stat.ini_filename = f"{directory}/x.ini"
             path = self.ask("program.write", "a.ngc", "M2\n")["result"]
             self.assertEqual(path, f"{directory}/programs/a.ngc")
-            self.assertEqual(Path(path).read_text(), "M2\n")
+            self.assertEqual(Path(path).read_text("utf-8"), "M2\n")
             for name in (
                 "../b.ngc",
                 "/tmp/c.ngc",
@@ -148,6 +150,28 @@ class TestBridge(unittest.TestCase):
             ):
                 reply = self.ask("program.write", name, "M2\n")
                 self.assertIn("error", reply, name)
+
+
+class TestWaitUntilReady(unittest.TestCase):
+    """Waiting for `milltask` before opening the port."""
+
+    def test_waits_for_ini_filename(self) -> None:
+        """It returns only once `poll()` has filled in the name."""
+        stat = types.SimpleNamespace(ini_filename="", polls=0)
+
+        def poll() -> None:
+            stat.polls += 1
+            if stat.polls == 3:
+                stat.ini_filename = "x.ini"
+
+        stat.poll = poll
+        lcnc_bridge.wait_until_ready(stat)
+        self.assertEqual(stat.polls, 3)
+
+    def test_gives_up(self) -> None:
+        """A LinuxCNC that never becomes ready is an error."""
+        with self.assertRaises(TimeoutError):
+            lcnc_bridge.wait_until_ready(FakeStat(), timeout=0.0)
 
 
 class TestClient(unittest.TestCase):

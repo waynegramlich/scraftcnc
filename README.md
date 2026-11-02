@@ -37,7 +37,7 @@ are each one line of JSON, and `id` is returned as it was sent:
 
 ```
 {"id": 1, "call": "command.mdi", "args": ["G0 X1"]}
-{"id": 1, "result": 1}
+{"id": 1, "result": null}
 {"id": 2, "call": "stat", "args": [["actual_position"]]}
 {"id": 2, "result": {"actual_position": [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]}}
 {"id": 3, "call": "command.nope"}

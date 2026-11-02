@@ -129,3 +129,25 @@ terminal renumbers them):
 
 Not this package's: `scraftcnc` is the user's, including `T.hlp~3.3.1`, `T.il~3.1`, its
 copies of these files and its unpushed `c841ddc`.
+
+## 2026-11-01: Everything run on Linux; WSL is next
+
+The user asked for all of Linux before WSL.  The workflow has not been run, so `ubuntu-latest`
+is not shown either: it runs Windows too.
+
+* Shown, from a new virtual environment, a wheel, and no box or `~/.local/share/scraftlinuxcnc`,
+  with `DISPLAY` unset, in throwaway box `lcnc-linux` (removed): install 172 s, 21 packages;
+  `demo_linuxcnc` passes; a raw JSON client outside the box gets every row of the protocol's
+  table right; exit 0 on `shutdown`, `SIGINT` to the group and `SIGTERM`, with a client
+  connected; nothing left running; a restart at once works.  A killed bridge gives exit 1.
+* Fixed, not committed (the user commits): the port opened about 0.14 s before `milltask` had
+  filled in `stat.ini_filename`, so `ini.find` failed and `program.write` would have returned
+  a relative path; now `wait_until_ready()` in `lcnc_bridge.py`, and 5 first requests all work.
+  `README.md` showed `command.mdi` returning 1; it returns `null`.  Three `pylint` messages
+  in `tests/test_lcnc_bridge.py`.
+* Open issues, numbers kept: 14 and 15 as above; 16, `milltask` dying leaves `serve_linuxcnc`
+  running with `ping` answering, `command.state` returning `null` and `wait_complete` -1
+  (`shutdown` still stops it); 17, `serve_linuxcnc` runs the old bridge after an upgrade until
+  `install_linuxcnc` is rerun.
+* Next: the user's commit and push, then `gh workflow run probe_linuxcnc.yml --repo
+  waynegramlich/scraftlinuxcnc`, as in "Saved for a `/clear`" above.

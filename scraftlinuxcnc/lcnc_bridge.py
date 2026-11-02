@@ -46,6 +46,7 @@ import signal
 import socketserver
 import sys
 import threading
+import time
 from collections.abc import Callable
 from pathlib import Path
 from types import FrameType, ModuleType
@@ -59,6 +60,9 @@ PORT: int = 5008
 
 # The longest request line (bytes), which holds a whole G-code file.
 MAX_LINE: int = 64 * 1024 * 1024
+
+# How long `milltask` gets to start answering (seconds).
+READY_SECONDS: float = 30.0
 
 
 # Function `to_json()`:
@@ -110,6 +114,32 @@ def public_name(item: object, name: str) -> Any:
     if name.startswith("_") or not hasattr(item, name):
         raise ValueError(f"{type(item).__name__} has no {name!r}")
     return getattr(item, name)
+
+
+# Function `wait_until_ready()`:
+def wait_until_ready(stat: Any, timeout: float = READY_SECONDS) -> None:
+    """Wait until `milltask` has filled in `linuxcnc.stat`.
+
+    LinuxCNC starts its `DISPLAY` program before that happens, and until
+    then `ini_filename` is empty, which `ini.find` and `program.write`
+    need.  So the port stays closed until then, and a client that can
+    connect need not wait for anything.
+
+    Arguments:
+    * `stat` (`Any`): The `linuxcnc.stat` object.
+    * `timeout` (`float`): How long to wait (seconds).
+
+    Raises:
+    * `TimeoutError`: If `milltask` did not fill it in by then.
+    """
+    deadline: float = time.monotonic() + timeout
+    while True:
+        stat.poll()
+        if stat.ini_filename:
+            return
+        if time.monotonic() >= deadline:
+            raise TimeoutError(f"LinuxCNC is not ready after {timeout} s.")
+        time.sleep(0.02)
 
 
 # Class `SCBridge`:
@@ -344,6 +374,7 @@ def main() -> int:
     # pylint: disable-next=import-outside-toplevel,import-error
     import linuxcnc  # type: ignore[import-not-found]
 
+    wait_until_ready(linuxcnc.stat())
     with SCServer(("127.0.0.1", options.port), SCHandler) as server:
         # `server.shutdown()` waits for `serve_forever()` to return, so
         # it can not be called from the thread running that.
