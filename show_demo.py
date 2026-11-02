@@ -3,9 +3,11 @@
 
 On Linux, this starts LinuxCNC's simulator (`serve_linuxcnc`, from
 `../scraftlinuxcnc`, in its `lcnc` box), a SolidCraft window with the
-demonstration's plate in it, the watcher that moves the tool in
-SolidCraft (`sim_linuxcnc.py --watch`, in the box), and last the panel
-(`lcnc_panel.py`), stopped, with the demonstration's program open:
+demonstration's plate in it, standing on the table, vise, parallels and
+tooling plate of `examples/setup/demo_stack.json`, the watcher that
+moves the tool in SolidCraft (`sim_linuxcnc.py --watch`, in the box),
+and last the panel (`lcnc_panel.py`), stopped, with the demonstration's
+program open:
 
 ```
 ./show_demo.py
@@ -26,6 +28,7 @@ files are removed; their names hold its process ID.
 
 import argparse
 import getpass
+import json
 import os
 import shutil
 import signal
@@ -39,6 +42,8 @@ from types import FrameType
 
 from lcnc_client import PORT as LINUXCNC_PORT
 from lcnc_client import SCBridgeError, SCClient
+from scraftpybind import SCPyBind, SCSolidCraftError, connect
+from scsetup import SCSetup
 
 # Where everything is.
 PROJECT: Path = Path(__file__).resolve().parent
@@ -46,6 +51,7 @@ SERVER_PROJECT: Path = PROJECT.parent / "scraftlinuxcnc"
 SOLIDCRAFT_BESIDE: Path = (
     PROJECT.parent / "solidcraft" / "solidcraft-linux-x86_64.AppImage"
 )
+STACK: Path = PROJECT / "examples" / "setup" / "demo_stack.json"
 WORK: Path = Path.home() / ".cache" / "scraftcnc" / "show"
 SOLIDCRAFT_DATA: Path = Path.home() / ".local" / "share" / "solidcraft"
 
@@ -435,6 +441,35 @@ class SCShow:
                 f"Modeling the plate failed.\n{self.log_end('model')}"
             )
 
+    # Method `SCShow.model_stack()`:
+    def model_stack(self) -> None:
+        """Model what the plate stands on, in the plate's coordinates.
+
+        It comes after the plate, so that the plate's pocket can not cut
+        anything else, and the view is set again to take it all in.
+
+        Raises:
+        * `SCShowFailed`: If it fails.
+        """
+        say("Modeling the table, vise, parallels and tooling plate.")
+        try:
+            setup: SCSetup = SCSetup(
+                json.loads(STACK.read_text(encoding="utf-8"))
+            )
+            with connect(str(self.options.solidcraft_port)) as transport:
+                solidcraft: SCPyBind = SCPyBind(transport)
+
+                # The plate leaves the design in inches, while a setup's
+                # bare numbers are millimeters.
+                solidcraft.document.units(units="mm")
+                setup.model(solidcraft)
+                solidcraft.document.units(units="in")
+                solidcraft.view.apply(view="iso")
+        except (OSError, ValueError, SCSolidCraftError) as error:
+            raise SCShowFailed(
+                f"Modeling the stack failed: {error}"
+            ) from error
+
     # Method `SCShow.start_watcher()`:
     def start_watcher(self) -> None:
         """Start the watcher, and wait until the tools are modeled.
@@ -510,6 +545,7 @@ class SCShow:
         self.wait_for_port("linuxcnc", LINUXCNC_PORT)
         self.start_solidcraft()
         self.model_part()
+        self.model_stack()
         self.start_watcher()
         self.start_panel()
 

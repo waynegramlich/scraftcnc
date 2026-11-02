@@ -123,8 +123,9 @@ Each step below needs a little more than the one before it.
    ./show_demo.py
    ```
 
-   It starts LinuxCNC, SolidCraft with the plate in it, and the panel,
-   stopped.  Press Start in the panel, and the tool cuts the plate in
+   It starts LinuxCNC, SolidCraft with the plate in it (on the table,
+   vise, parallels and tooling plate of
+   `examples/setup/demo_stack.json`), and the panel, stopped.  Press Start in the panel, and the tool cuts the plate in
    SolidCraft.  The panel's Quit button closes everything.
 
 ## The Files

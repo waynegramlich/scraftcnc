@@ -186,3 +186,9 @@ with each page's pictures beside it as PNG files.
   and regions.
 * Last whole test suite: 251 passed, before the conical radius type; `test_tools.py`
   passed after it (55 tests).  The user: run the suite at most once in 10 minutes.
+
+## 2026-11-01: A stack for `show_demo.py`
+
+* `examples/setup/demo_stack.json` (`T.hlp~3.3.1`): the demonstration plate on the tooling plate, clamped directly
+  in the vise (5-1/2 in), on 1-1/2 in parallels, on the Mikini table, in the program's coordinates.  `scsetup.py`
+  has a `tooling_plate` kind of tooling for it.  It is for looks: how the plate is held down is not worked out.

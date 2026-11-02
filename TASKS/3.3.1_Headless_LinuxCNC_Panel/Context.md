@@ -81,3 +81,24 @@ Issues the user put on hold, keeping their numbers:
 Also: the WSL probe is to come near the end (the user's word).  The user has not decided on one
 repository or two; the aim is isolating the LinuxCNC package download.  `I.phpsa~1` (a hidden path
 showing again near the end of a run) is not fixed.
+
+## 2026-11-01: `show_demo.py` stands the plate on a stack
+
+* The user asked for the table, vise, parallels, tooling plate and demonstration plate, stacked.  New:
+  `examples/setup/demo_stack.json`, in the program's coordinates (SolidCraft's are the same), so nothing is
+  moved afterward: Mikini table, Kurt D688 turned along Y and closed on the tooling plate (5-1/2 in), 1-1/2 in
+  parallels, tooling plate, all centered under the plate at X 2, Y 1.5.  `scsetup.py` takes the kind
+  `tooling_plate`.  `SCShow.model_stack()` models it after the plate.
+* Found: the plate leaves the design in inches, and a setup's bare numbers are millimeters, so without
+  `document.units(units="mm")` around it the stack comes out 25.4 times too big.
+* Shown: no overlaps, a whole run with no messages, Quit closes all (the user pressed it).  It adds about 17 s.
+* The through cuts go to Z-0.55, 0.05 in into the tooling plate: `sckeepout` gives 64 moves in its keep-out and
+  none in the jaws'.  Nothing fastens the plate to the tooling plate in the model.  Not changed.
+* A run's length was a non-issue: the user had slowed it with the slider.
+
+## 2026-11-01: Saved for the user's commit and a `/clear`; start here
+
+The user: the stack is the eye candy wanted for the showing on 2026-11-02, and the issues in the last entry
+(through cuts into the tooling plate, no hold-down, the vise past the table, the Mikini table under a Shop mill
+program) "will all be worked out", later.  So leave `show_demo.py` alone unless the user asks.  The issues on hold
+in "Saved for the user's commits and a `/clear`" above still stand, with their numbers.  Nothing is running.

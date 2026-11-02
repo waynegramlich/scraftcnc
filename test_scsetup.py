@@ -223,6 +223,55 @@ class TestOtherSetups(unittest.TestCase):
         self.assertEqual(len(setup.materials), 2)
 
 
+class TestDemoStack(unittest.TestCase):
+    """The stack that `show_demo.py` stands the demonstration plate on."""
+
+    def setUp(self) -> None:
+        path = HERE / "examples/setup/demo_stack.json"
+        self.setup = scsetup.SCSetup(
+            json.loads(path.read_text(encoding="utf-8"))
+        )
+
+    def test_each_rests_on_the_last(self) -> None:
+        """Each piece stands on the one below, up to the plate's bottom."""
+        table, vise, first, second, plate = self.setup.tooling
+        rails = table.placement.z + tools.MIKINI_1610L.thickness
+        self.assertAlmostEqual(vise.placement.z, rails)
+        rails += tools.KURT_D688.base_height()
+        self.assertAlmostEqual(first.placement.z, rails)
+        self.assertAlmostEqual(second.placement.z, rails)
+        self.assertAlmostEqual(
+            plate.placement.z, rails + first.layer.parallel.height
+        )
+
+        # The demonstration plate is 1/2 in thick, with its top at Z 0.
+        self.assertAlmostEqual(
+            plate.placement.z + tools.TOOLING_PLATE.thickness, -0.5 * INCH
+        )
+
+    def test_centered_under_the_demonstration_plate(self) -> None:
+        """The stack is centered on the 4 x 3 in plate, at X 2 and Y 1.5."""
+        table, vise, first, second, plate = self.setup.tooling
+        center = (2.0 * INCH, 1.5 * INCH)
+        self.assertAlmostEqual(table.placement.x, center[0])
+        self.assertAlmostEqual(table.placement.y, center[1])
+        self.assertAlmostEqual(plate.placement.x, center[0])
+        self.assertAlmostEqual(plate.placement.y, center[1])
+
+        # The vise's gap, which is as wide as the tooling plate.
+        layer = vise.layer
+        self.assertAlmostEqual(layer.opening, tools.TOOLING_PLATE.length)
+        self.assertAlmostEqual(
+            vise.placement.y - layer.vise.gap_center(layer.opening), center[1]
+        )
+        self.assertAlmostEqual(vise.placement.x, center[0])
+
+        # The parallels are next to the jaws, under the tooling plate.
+        half = (layer.opening - first.layer.parallel.thickness) / 2.0
+        self.assertAlmostEqual(first.placement.y, center[1] + half)
+        self.assertAlmostEqual(second.placement.y, center[1] - half)
+
+
 class TestModel(unittest.TestCase):
     """The setup in SolidCraft, with no window."""
 

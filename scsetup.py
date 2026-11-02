@@ -417,7 +417,9 @@ class _SCReader:
             layer = SCParallelLayer(PARALLEL_TYPES[name])
         elif kind == "vise" and name in VISES:
             layer = self.vise(VISES[name], item["opening"], path)
-        elif kind not in ("mill_table", "parallel", "vise"):
+        elif kind == "tooling_plate" and name in PARTS:
+            layer = PARTS[name]
+        elif kind not in ("mill_table", "parallel", "tooling_plate", "vise"):
             self.problem(f"{path}.kind", f"{kind!r} is not a kind of tooling")
         else:
             self.problem(f"{path}.type", f"{name!r} is not a known {kind}")

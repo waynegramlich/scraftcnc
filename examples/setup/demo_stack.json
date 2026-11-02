@@ -1,0 +1,47 @@
+{
+  "name": "The demonstration plate on a tooling plate, in a Kurt vise",
+  "machine": {
+    "name": "Mikini 1610L",
+    "x_travel": "16.75 in",
+    "y_travel": "9.35 in"
+  },
+  "tooling": [
+    {
+      "kind": "mill_table",
+      "type": "Mikini 1610L",
+      "location": ["2 in", "1-1/2 in"],
+      "height": "-7.64 in",
+      "orientation": "0 deg"
+    },
+    {
+      "kind": "vise",
+      "type": "Kurt D688",
+      "opening": "5-1/2 in",
+      "location": ["2 in", "-1.9 in"],
+      "height": "-5.14 in",
+      "orientation": "-90 deg"
+    },
+    {
+      "kind": "parallel",
+      "type": "Parallel 1-1/2 in A",
+      "location": ["2 in", "4.1875 in"],
+      "height": "-2-1/2 in",
+      "orientation": "-90 deg"
+    },
+    {
+      "kind": "parallel",
+      "type": "Parallel 1-1/2 in B",
+      "location": ["2 in", "-1.1875 in"],
+      "height": "-2-1/2 in",
+      "orientation": "-90 deg"
+    },
+    {
+      "kind": "tooling_plate",
+      "type": "Tooling plate",
+      "location": ["2 in", "1-1/2 in"],
+      "height": "-1 in",
+      "orientation": "90 deg"
+    }
+  ],
+  "materials": []
+}
