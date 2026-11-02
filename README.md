@@ -1,15 +1,22 @@
-# `scraftlinuxcnc`: LinuxCNC's Simulator, on a Port
+# `scraftlinuxcnc`: SolidCraft LinuxCNC Simulator Access
 
-`scraftlinuxcnc` installs LinuxCNC's simulator (`linuxcnc-uspace`, with
-no realtime) on Linux or on Windows, and runs it so that any program
-on the same computer can drive it by sending JSON to a port.  The
-program does not need LinuxCNC's Python module, Debian, or to know
-about `distrobox` or WSL.  This package holds all of that pain, and
-depends on nothing else.
+When working on a system that generates G code for a CNC machine, it is
+extremely desirable to be able to simulate what the G code actually does.
+The open source [LinuxCNC](https://linuxcnc.org/) project is used to control
+actual CNC machines in real-time.  For fairly obvious reasons, the LinuxCNC
+development team has a version that runs on a regular version of Linux rather
+than requiring the real-time version of Linux running on real hardware.  This
+technology is used to test CNC code generation for use in conjunction with
+[SolidCraft Open-source parametric CAD](https://solidcraft.io/).
 
-**LinuxCNC's own screens are not used or installed.**  It does not set
-up LinuxCNC to drive a real mill: that needs a realtime kernel and
-hardware drivers, which the installer deliberately leaves out.
+This package encapsulates the installation of the Linux User Space
+(`linuxcnc-uspace`) package for both regular Linux and Microsoft via their
+WSL [Windows Subsystem for Linux](
+https://learn.microsoft.com/en-us/windows/wsl/).  This Linux package provides a
+complete Python interface to all of the LinuxCNC functionality.  There is
+a light-weight program that provides a bi-directional JSON message protocol
+controlling the LinuxCNC simulator via the Python interface.  At no point
+does any of this software need access to a display screen, mouse or keyboard.
 
 ## Status
 
@@ -29,13 +36,13 @@ LinuxCNC goes in a `distrobox` box named `lcnc` on Linux, and in WSL 2's
 that needs you (such as a `sudo`).  `demo_linuxcnc` runs a program from
 start to finish as a test.
 
-## The Protocol
+## The JSON Protocol
 
 `serve_linuxcnc` listens on port 5008 of `localhost`.  Anyone on the
 same computer can connect, with no password.  A request and a reply
 are each one line of JSON, and `id` is returned as it was sent:
 
-```
+```json
 {"id": 1, "call": "command.mdi", "args": ["G0 X1"]}
 {"id": 1, "result": null}
 {"id": 2, "call": "stat", "args": [["actual_position"]]}
@@ -67,20 +74,12 @@ homing, MDI, and running a program.
 
 ## Why the Installation Is Small
 
-LinuxCNC's package depends on all of its screens, whether or not they
-are used.  The installer replaces that list with only what the
-simulator needs, so a new dependency of those screens is never
-installed.  One measurement, in a `distrobox` box on Ubuntu 24.04, of
-LinuxCNC 2.9.10, while the list also held `python3-tk`:
-
-| | Trimmed | LinuxCNC's own list |
-|---|---|---|
-| Time to install LinuxCNC | 18 s | 145 s |
-| Packages added | 25 | 454 |
-| Downloaded | 11.3 MB | 338 MB |
-| Installed size added | 130 MB | 1421 MB |
-
-(Both leave out LinuxCNC's recommended packages.)
+The main LinuxCNC package also provides a Graphical User Interface (GUI)
+that is not need for simulation purposes.  Since only the simulator is
+accessed there the huge set of packages needed to support a graphical
+user interface are not fetched.  This results in a large time saving:
+* Download Time: 18 seconds vs. 145 seconds.
+* Download Storage: 130 MB vs. 1421 MB
 
 ## Probe runs
 
