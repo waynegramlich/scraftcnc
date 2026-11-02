@@ -282,3 +282,86 @@ drill, and intersecting with a cone, both fail in SolidCraft 0.25.1.
 
 `sctoolmodel.py` draws a rough holder for each tool of the shop, in the resistor color code of its `unique_id`,
 under `T.ctfs~5.1`, which has the details.
+
+## 2026-11-02: Drills as plain bodies with lines for flutes (experiment)
+
+* The user: simplify the drills by drawing lines or arcs on the surface in place of flutes; three examples, 2 and
+  3 flutes.  `probe_helix.py` (nothing else changed): a plain cylinder with `SCDrill`'s cone cut, and a 3D sketch of
+  each flute edge: a right hand helix from shoulder to shank, closing to the flute's center over the last diameter,
+  then a straight lip to the tip.  1/4 x 4 with one line per flute; 1/2 x 6 and 3/4 x 8 (3 flute) with two.
+* `sketch.spline3d` and `sketch.arc3d` exist in SolidCraft 0.25.1, so a helix need not be short lines: `--spline`
+  (12 points a turn, `sketch.spline3d`) looks smoother in a capture than 48 lines a turn, in the same time.
+* Lines stand 1 % of the radius off the surface (`LIFT`), since facets cut inside the circle.  Body about 0.5 s, the
+  lines about 0.01 s a drill (grooved drills were about 3 s, as noted above).  The lines are sketches, not on the body:
+  moving a drill means moving its sketch too (not tried), and `SCDrill.model()` is unchanged.
+* Helix angle: 30 degrees, from memory.  No drill page of `SharsMD` converted so far gives one: "helix", "spiral" and
+  "parabolic" do not appear on pages 1-33, where the index (pages 451-455) puts the twist drills.  They give flute
+  length, overall length and point angle (118, 135).  End mill pages often do give a helix (30, 32, 45).
+* Seen in captures, from above only: helices on all three.  The tips and the run-outs were not in view.
+
+## 2026-11-02: Sub-assemblies: components, nested
+
+* SolidCraft has components with occurrences, nested with `parent`.  Tried on the open drills (`probe_helix.py --spline`):
+  `component.from_bodies` plus `component.move_sketches` on the 1/2 x 6, moved -50 mm; `component.create` of `T1 assembly`
+  with child `T1 drill`, `component.move_bodies` and `component.move_sketches` into the child, the parent's occurrence moved
+  -100 mm.  `occurrence.ground(grounded=False)` first where the occurrence is grounded (`from_bodies`' first one was; a
+  created one is not).  `component.list` shows each component owning its body and sketch.
+* `inspect.center_of_mass` reads exactly -50.000 and -100.000 mm, so bodies follow, nested too.  Whether the sketch lines
+  follow on screen: not seen by Claude, the window was covered; there is no command that captures a window.
+* The moves are `pending` (`capture=False`), as `SCToolModel.move_to()` has them.
+
+## 2026-11-02: Moving the drills live; line colors
+
+* The user watched two occurrences (body and flute sketch in one component, one nested) moved by `occurrence.move`, asked
+  for up to 20 Hz each; about 45 s, until SolidCraft closed.  Per move: about 109 ms for the first 200, 62 ms for the next
+  200, then about 14 ms, by which point the 20 Hz was met.  Why it sped up is not known.  The last move timed out as
+  SolidCraft closed.  Whether the lines followed: waiting on the user's word.
+* Sketch lines have no color in 0.25.1: none of `engine.commands`' 493 entries sets one.  Why they look white here, against
+  the black noted for tool paths, is not known.
+
+## 2026-11-02: The lines follow; a covered window is what was slow
+
+* The user: the lines "are beautiful and move in sync", so a component holding a body and its flute sketch moves as one.
+* Rerun with the window raised from the start: 757 moves in 19 s, 13.3 ms each, worst 21 ms, the full 20 Hz from the first
+  move (two occurrences).  Covered, it was about 109 ms.  So the slowness was the covered window, as the user thought.
+* No `wmctrl` or `xdotool` here: Claude raises the window by sending `_NET_ACTIVE_WINDOW` through `libX11` with `ctypes`.
+
+## 2026-11-02: Every tool's flutes as lines
+
+* The user: lines in place of grooves on the other tools, and an example of each moving.  Only `SCDrill` ever had grooves; the others
+  were plain revolves.  `sctoolmodel.py`: `flute_path()`, `flute_runs()`, `tool_flute_runs()`, `flute_steps()`, `as_component()`;
+  `SCDoubleEndCountersink.flute_runs()` in `tools.py`.  `model_shop_tools()` and the countersinks' `model()` now draw them.
+* Claude's choices: two edges a flute for a helix, one line for straight flutes; helix 30 degrees for end mills and drills, others
+  straight; 2 flutes for drills and countersink ends (all from memory; the tools files have no helix key, and drills no `flutes`).
+* `probe_flutes.py` (replaces `probe_helix.py`): one of each kind as a component, moved by one `engine.batch` a frame.  Eight tools at
+  20 Hz, about 16 ms a frame, window in front.  Whether the lines look right on the small tools: the user's eye.
+* Not changed: `SCDrill.model()` (grooved), `SCToolModel` in `sim_solidcraft.py` (no lines).
+
+## 2026-11-02: No lines on the tips
+
+* The user: the tip ends "didn't look so good", so they are gone.  Helical flutes start at the shoulder (the end of a square end mill, a
+  ball's and a drill's point are bare); straight fluted tools start past the flat on the tip, so the V or hollow keeps its line; a
+  countersink's lines start where its small drill's point ends.
+
+## 2026-11-02: One way to model a shop's tool
+
+* The user asked why the fix needed two places.  `sctoolmodel.model_tool()` (returns `SCModeledTool`: `body`, `sketch`, `occurrence`,
+  `items()`) is now the one path: body, color, lines, component.  `SCToolModel`, `model_shop_tools()` and `probe_flutes.py` all call it, so
+  `show_demo.py`'s tool has lines, hidden and shown with its body.  `SCDrill` (grooved) and `SCDoubleEndCountersink` remain outside it: they
+  are not read from the shop files, the very thing `T.ctfs~5.1` is to change.
+* Checked: `SCToolRack` built all 8 tools in the GUI; T1, T2, T1 in turn; a capture shows T1 with its lines.  `show_demo.py` came up with the
+  panel stopped.  A whole run with lines has not been seen by Claude.  Tests not run (the user's word: not on each small change).
+
+## 2026-11-02: Where things stand; saved for the user's commit and a `/clear`
+
+The user ran `./show_demo.py` with Start: "It was very good."  Done: `sctoolmodel.model_tool()` models a shop's tool as a plain body with flute
+lines, in one component, used by `show_demo.py` (`SCToolModel`), `./sctoolmodel.py 8080` and `./probe_flutes.py 8080`.  No lines on tips (the user's
+word).  Whole suite: 401 tests pass, 10 skipped (the `SCRAFTCNC_LINUXCNC` ones; so `test_lcnc_end_to_end` was not run).
+
+Still to do: `SCDrill.model()` cuts real grooves (`./tools.py 8080`), and `SCDoubleEndCountersink` builds its own body; both wait on `T.ctfs~5.1`.
+The helix angle (30 degrees), and 2 flutes for drills and countersink ends, are from memory; the tools files have no helix key.  Not known: why sketch
+lines look white here, against the black noted for tool paths; SolidCraft has no command to color a sketch line (0.25.1), and its release notes to
+0.30.1 mention none.  SolidCraft 0.30.1 is out; 0.25.1 is what runs here.
+
+Claude's ways, for next time: a covered SolidCraft window is slow (about 109 ms a move against 13 ms), so raise it.  There is no `wmctrl` or `xdotool`:
+send `_NET_ACTIVE_WINDOW` with `ctypes` and `libX11`.  `xwd -root` piped through Pillow captures it once it is in front.

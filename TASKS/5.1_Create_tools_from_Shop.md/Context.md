@@ -67,3 +67,8 @@ Next, as this task's title has it: the other things in the shop that are used fo
 parallels, tooling plates, countersinks) are still only in Python (`tools.py`), and need kinds in the shop files.
 Not started.  The user expects missing features to turn up all over.  Tool changers, with a mapping of their own,
 come later; the holder topic will be revisited eventually.
+
+## 2026-11-02: Flutes as lines
+
+`T.tm~2.5` made flutes lines on a plain body, in one component, by `sctoolmodel.model_tool()`.  Next here is unchanged: tables, vises, parallels, tooling
+plates and countersinks need kinds in the shop files.  Countersinks and `SCDrill` then come under `model_tool()`, and the grooved drill can go.

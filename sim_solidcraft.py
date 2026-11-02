@@ -38,13 +38,12 @@ from typing import Protocol
 from probe_batch import path_steps, send_batch, sketch_steps
 from scplot import SCMove, command_moves, read_gcode
 from scraftpybind import (
-    JSON,
     SCHeadlessTransport,
     SCPyBind,
     SCTransport,
     connect,
 )
-from sctoolmodel import model, profile
+from sctoolmodel import SCModeledTool, model_tool
 from shops import loaded_tools, read
 
 # SolidCraft's coordinates are millimeters.
@@ -104,8 +103,7 @@ class SCToolModel:  # pylint: disable=too-few-public-methods
     is sent only when the tool has moved.
 
     Attributes:
-    * `body` (`str`): Its body.
-    * `occurrence` (`str`): Its component's occurrence.
+    * `modeled` (`SCModeledTool`): Its body, flute lines and occurrence.
     * `position` (`Position`): Where its tip was last sent.
     * `solidcraft` (`SCPyBind`): The SolidCraft session.
     """
@@ -131,32 +129,12 @@ class SCToolModel:  # pylint: disable=too-few-public-methods
         # The tool, standing on its tip at the program's zero.
         self.solidcraft: SCPyBind = solidcraft
         self.position: Position = (0.0, 0.0, 0.0)
-        self.body: str = model(solidcraft, f"T{number}", profile(*tool))
-        solidcraft.appearance.assign(bodies=[self.body], color=TOOL_COLOR)
-
-        # Make it a component, find its occurrence by name, and unground
-        # it (a design's first component is grounded, and can not move).
-        made: JSON = solidcraft.component.from_bodies(bodies=[self.body])
-        assert isinstance(made, dict) and isinstance(made["components"], list)
-        component: JSON = made["components"][0]
-        assert isinstance(component, dict)
-        listed: JSON = solidcraft.component.list(compact=True)
-        assert isinstance(listed, dict) and isinstance(
-            listed["components"], list
+        self.modeled: SCModeledTool = model_tool(
+            solidcraft, f"T{number}", tool, color=TOOL_COLOR
         )
-        self.occurrence: str = next(
-            str(occurrence["name"])
-            for entry in listed["components"]
-            if isinstance(entry, dict)
-            and entry["id"] == component["component"]
-            and isinstance(entry["occurrences"], list)
-            for occurrence in entry["occurrences"]
-            if isinstance(occurrence, dict)
+        solidcraft.browser.visibility(
+            visible=False, items=self.modeled.items()
         )
-        solidcraft.occurrence.ground(
-            occurrence=self.occurrence, grounded=False
-        )
-        solidcraft.browser.visibility(visible=False, items=[self.body])
 
     # Method `SCToolModel.move_to()`:
     def move_to(self, position: Position) -> None:
@@ -172,7 +150,7 @@ class SCToolModel:  # pylint: disable=too-few-public-methods
             for new, old in zip(position, self.position, strict=True)
         )
         self.solidcraft.occurrence.move(
-            occurrence=self.occurrence,
+            occurrence=self.modeled.occurrence,
             space="world",
             translate=(dx, dy, dz),
             capture=False,
@@ -228,13 +206,14 @@ class SCToolRack:  # pylint: disable=too-few-public-methods
         if number != self.current:
             if self.current in self.tools:
                 self.solidcraft.browser.visibility(
-                    visible=False, items=[self.tools[self.current].body]
+                    visible=False,
+                    items=self.tools[self.current].modeled.items(),
                 )
             self.current = number
             if number in self.tools:
                 self.tools[number].move_to(position)
                 self.solidcraft.browser.visibility(
-                    visible=True, items=[self.tools[number].body]
+                    visible=True, items=self.tools[number].modeled.items()
                 )
         if number in self.tools:
             self.tools[number].move_to(position)

@@ -102,3 +102,7 @@ The user: the stack is the eye candy wanted for the showing on 2026-11-02, and t
 (through cuts into the tooling plate, no hold-down, the vise past the table, the Mikini table under a Shop mill
 program) "will all be worked out", later.  So leave `show_demo.py` alone unless the user asks.  The issues on hold
 in "Saved for the user's commits and a `/clear`" above still stand, with their numbers.  Nothing is running.
+
+## 2026-11-02: `show_demo.py`'s tools have flute lines
+
+Through `SCToolModel` and `sctoolmodel.model_tool()` (`T.tm~2.5`); the user ran it with Start: "It was very good."

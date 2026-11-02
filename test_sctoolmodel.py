@@ -5,6 +5,7 @@ import math
 import shutil
 import unittest
 from pathlib import Path
+from typing import cast
 
 import sctoolmodel
 import shops
@@ -141,6 +142,117 @@ class TestModel(unittest.TestCase):
             strict=True,
         ):
             self.assertAlmostEqual(got, want, places=3)
+
+
+class TestFlutes(unittest.TestCase):
+    """The lines that stand for a tool's flutes."""
+
+    def setUp(self) -> None:
+        """Index the example shop's tools by their `unique_id`."""
+        self.tools = {
+            tool["unique_id"]: (key, tool)
+            for key, tool in sctoolmodel.shop_tools(shops.read(SHOP))
+        }
+
+    def test_every_tool_has_lines(self) -> None:
+        """Every tool's lines stay on the tool, and none is degenerate."""
+        for key, tool in self.tools.values():
+            with self.subTest(tool=tool["name"]):
+                length = shops.measure(tool["overall_length"], shops.LENGTH)
+                runs = sctoolmodel.tool_flute_runs(key, tool)
+                self.assertTrue(runs)
+                for _, points in runs:
+                    self.assertGreaterEqual(len(points), 2)
+                    for _, _, z in points:
+                        self.assertLess(z, length)
+
+    def test_path_stops_at_length_of_cut(self) -> None:
+        """A drill's flutes end at its `length_of_cut`, on its side."""
+        key, tool = self.tools[5]
+        path = sctoolmodel.flute_path(key, tool)
+        cut = shops.measure(tool["length_of_cut"], shops.LENGTH)
+        radius = shops.measure(tool["diameter"], shops.LENGTH) / 2
+        self.assertEqual(path[0], (0.0, 0.0))
+        self.assertAlmostEqual(path[-1][0], radius)
+        self.assertAlmostEqual(path[-1][1], cut)
+
+    def test_helical_edges(self) -> None:
+        """Each helical flute has two edges, splines, off the tip."""
+        key, tool = self.tools[4]
+        runs = sctoolmodel.tool_flute_runs(key, tool)
+        self.assertEqual(len(runs), 2 * cast(int, tool["flutes"]))
+        for command, points in runs:
+            self.assertEqual(command, "sketch.spline3d")
+            self.assertGreater(points[0][0] ** 2 + points[0][1] ** 2, 0.01)
+
+    def test_helix_lead(self) -> None:
+        """A helix turns by the rise over its lead, right handed."""
+        points = sctoolmodel.flute_runs(
+            [(0.0, 0.0), (1.0, 0.0), (1.0, 10.0)], 1, 30.0
+        )[0][1]
+        lifted = 1.0 + sctoolmodel.FLUTE_LIFT
+        lead = 2.0 * math.pi * lifted / math.tan(math.radians(30.0))
+        rise = points[1][2] - points[0][2]
+        turned = math.atan2(points[1][1], points[1][0]) - math.atan2(
+            points[0][1], points[0][0]
+        )
+        self.assertAlmostEqual(turned, 2.0 * math.pi * rise / lead)
+        self.assertGreater(turned, 0.0)
+
+    def test_runout_closes(self) -> None:
+        """A flute's two edges meet where the flute ends."""
+        runs = sctoolmodel.flute_runs(
+            [(0.0, 0.0), (1.0, 0.0), (1.0, 10.0)], 1, 30.0
+        )
+        for first, second in zip(runs[0][1][-1], runs[1][1][-1], strict=True):
+            self.assertAlmostEqual(first, second)
+
+    def test_straight_flutes(self) -> None:
+        """Straight flutes are one line each, off the surface."""
+        key, tool = self.tools[7]
+        runs = sctoolmodel.tool_flute_runs(key, tool)
+        self.assertEqual(len(runs), tool["flutes"])
+        for command, points in runs:
+            self.assertEqual(command, "sketch.line3d")
+            self.assertLess(points[0][2], 0.0)
+
+    def test_no_line_on_the_flat(self) -> None:
+        """A straight fluted tool's line starts past the flat on its tip."""
+        key, tool = self.tools[7]
+        tip = shops.measure(tool["tip_diameter"], shops.LENGTH) / 2
+        self.assertEqual(sctoolmodel.flute_path(key, tool)[0], (tip, 0.0))
+
+    def test_no_known_flutes(self) -> None:
+        """A kind of tool with no known flutes gets no lines."""
+        self.assertEqual(sctoolmodel.tool_flute_runs("other", {}), [])
+
+    def test_steps(self) -> None:
+        """The steps place the lines, in millimeters, in one sketch."""
+        steps = sctoolmodel.flute_steps(
+            "T",
+            [("sketch.line3d", [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])],
+            (1.0, 2.0, 3.0),
+        )
+        self.assertEqual(steps[0]["command"], "sketch.create")
+        self.assertEqual(steps[-1]["command"], "sketch.finish")
+        params = cast(dict[str, list[list[float]]], steps[2]["params"])
+        for found, expected in zip(
+            itertools.chain(*params["points"]),
+            (25.4, 50.8, 76.2, 50.8, 50.8, 76.2),
+            strict=True,
+        ):
+            self.assertAlmostEqual(found, expected)
+
+    def test_lift(self) -> None:
+        """A flat end and a side each stand off by the whole lift."""
+        lift = sctoolmodel.FLUTE_LIFT
+        points = sctoolmodel.flute_runs(
+            [(0.0, 0.0), (1.0, 0.0), (1.0, 0.1)], 1
+        )[0][1]
+        self.assertAlmostEqual(points[0][2], -lift)
+        self.assertAlmostEqual(points[1][0], 1.0 + lift)
+        self.assertAlmostEqual(points[1][2], -lift)
+        self.assertAlmostEqual(points[2][0], 1.0 + lift)
 
 
 class TestHolders(unittest.TestCase):

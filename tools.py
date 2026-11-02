@@ -33,8 +33,9 @@ import sys
 from dataclasses import dataclass, field
 
 from scgeometry import SCCorner, SCHole, SCRoundedPolygon
+from scplot import send_batch
 from scraftpybind import JSON, SCPyBind, connect
-from sctoolmodel import MM_PER_INCH
+from sctoolmodel import MM_PER_INCH, FluteRun, flute_runs, flute_steps
 from shops import LENGTH, measure
 
 # A point: `(x, y, z)`, in millimeters.
@@ -94,6 +95,10 @@ COUNTERSINK_COLORS: dict[str, str] = {
 # of the drill's diameter.  A revolve that comes to a point on its axis
 # has errors at the tip, and this is good enough.
 COUNTERSINK_POINT_ANGLE: float = 90.0
+
+# How many flutes each end of a countersink has.  The catalog does not
+# say, so this is the common number, from memory.
+COUNTERSINK_FLUTES: int = 2
 COUNTERSINK_TIP_FLAT: float = 0.05
 
 # Where the vise stands, clear of the drills (millimeters).
@@ -945,8 +950,8 @@ class SCDoubleEndCountersink:
 
     A body with a small drill at each end, joined by a cone.  It stands
     on one tip, with its axis along Z.  It is a solid of revolution,
-    with a small flat on each tip: its flutes are left out.  All lengths
-    are in millimeters.
+    with a small flat on each tip, and its flutes are lines drawn on
+    its surface.  All lengths are in millimeters.
 
     The catalog gives no length for the small drill, so each is taken to
     reach as far from its tip as it is wide, the usual proportion.
@@ -1074,6 +1079,26 @@ class SCDoubleEndCountersink:
             for radius, height in reversed(side)
         ]
 
+    # Method `SCDoubleEndCountersink.flute_runs()`:
+    def flute_runs(self) -> list[FluteRun]:
+        """Return the lines that stand for the flutes at both ends.
+
+        Returns:
+        * (`list[FluteRun]`): The lines (millimeters), straight along
+          the outline from each point's shoulder to the full body.
+        """
+        lower: list[FluteRun] = flute_runs(
+            self.profile()[2:5], COUNTERSINK_FLUTES
+        )
+        upper: list[FluteRun] = [
+            (
+                command,
+                [[x, y, self.overall_length - z] for x, y, z in points],
+            )
+            for command, points in lower
+        ]
+        return lower + upper
+
     # Method `SCDoubleEndCountersink.volume()`:
     def volume(self) -> float:
         """Return the volume the model should have.
@@ -1149,6 +1174,12 @@ class SCDoubleEndCountersink:
         bodies: JSON = made["created_bodies"]
         assert isinstance(bodies, list) and isinstance(bodies[0], str)
         solidcraft.appearance.assign(bodies=[bodies[0]], color=color)
+
+        # Draw the flutes on it.
+        send_batch(
+            solidcraft,
+            flute_steps(f"{self.name()} flutes", self.flute_runs(), tip, 1.0),
+        )
         return bodies[0]
 
 
