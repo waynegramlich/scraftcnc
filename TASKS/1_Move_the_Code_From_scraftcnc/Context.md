@@ -160,3 +160,43 @@ is not shown either: it runs Windows too.
   runs on Linux.  Fixed, not committed; `write_program()` now writes `newline="\n"`.
 * The workflow now runs the install and demo after a failed offline test; the job still fails.
 * Next: the user's commit and push, then `gh workflow run probe_linuxcnc.yml`.
+
+## 2026-11-01: WSL works; the first passing probe run, on `81779bd`
+
+* Run 41368399256 passes on both runners: Windows Server 2025, Windows' own Python 3.13.16,
+  `install_linuxcnc --yes` 55 s (39 packages, 148 MB), `demo_linuxcnc` 16 s.  So Windows' Python
+  does reach port 5008 in WSL as `localhost`, with the bridge bound to 127.0.0.1 there.
+* Not run on Windows: the raw protocol check and the stop paths (`SIGINT`, `SIGTERM`, a killed
+  bridge), only the demo's `shutdown`.  Control-C under `wsl.exe` is untested.
+
+## 2026-11-01: Saved again; start here
+
+The user is editing `README.md`, so leave it alone until they say otherwise, and read it again
+first.  The code is as committed in `81779bd`.  The only other uncommitted change is this file.
+
+Nothing is running.  The throwaway box `lcnc-linux` is removed; `lcnc` is untouched.
+`~/.local/share/scraftlinuxcnc` is left from the runs, and the next install refreshes it.
+
+Open issues, numbers kept, all waiting on the user (no answers yet):
+
+14. When to rebuild the `lcnc` box: held until the user says `scraftcnc` installs `python3-tk`.
+15. `serve_linuxcnc --ini FILE`: Claude recommends adding it when `scraftcnc` needs it.
+16. `milltask` dying is not noticed (details above): Claude recommends leaving it for now.
+17. `serve_linuxcnc` runs the old bridge after an upgrade until `install_linuxcnc` is rerun:
+    Claude recommends that it refresh the bridge when it starts.
+18. Stopping and the full protocol are unproven on Windows: Claude recommends a program in
+    `tests/` that the probe runs on both systems.  The scratch script that held this is gone
+    with its session; rewrite it, with a raw socket and no `lcnc_client`, from outside the
+    target:
+    * Every row of the README's table, bad requests (not JSON, not an object, a bad constant,
+      a private name, `../x.ngc`), and a client that leaves in the middle of a line.
+    * Two connections at once.  A travel error read back from `error_channel.poll` until `null`.
+    * Each stop, with a client connected, checking the exit status and that the port closes:
+      `shutdown`, Control-C, `SIGTERM`, and a killed bridge (exit 1), then a restart at once.
+    Z's travel is -16 to 0, so a move to `Z3` is correctly refused.  One bad move puts two
+    messages on the error channel.  Never `pkill -f lcnc_bridge.py`: it matches the shell running
+    it; use `-f '^python3 ./lcnc_bridge.py'`.  Killing processes by name also hits any other
+    LinuxCNC on this computer, as boxes share the host's process IDs, so check first.
+19. A real Windows desktop has not been tried (only the user can): `localhostForwarding` off,
+    another WSL networking mode, a first install's restart.  Claude recommends it before the
+    repository goes public.
