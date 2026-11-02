@@ -1,0 +1,4 @@
+[flake8]
+max-line-length = 79
+# `ruff format` puts spaces around `:` in complex slices (PEP 8 allows it).
+extend-ignore = E203
