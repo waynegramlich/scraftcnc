@@ -10,27 +10,36 @@ line (-Tool and +Tool, which move the line Start runs from to the
 previous or next tool change; Start, Pause and Reset), a speed slider
 (the feed override) with Open, and the work
 position and tool in the spindle.  The LinuxCNC calls are kept in
-`SCPanelMachine`, which imports `linuxcnc` (through `sim_linuxcnc`)
-only when it connects, so the window can be built and tested where
-LinuxCNC is not installed (it exists only in the `lcnc` box).
-
-`lcnc_sim/shop_mill.ini` names it as its `[DISPLAY] DISPLAY`, so
-LinuxCNC starts it (with `-ini FILE`), and closing it closes LinuxCNC
-quietly.  When it starts, the machine is taken out of E-stop, turned
-on and homed, G54 is set to `sim_linuxcnc.py`'s origin, and the INI
-file's `MAX_FEED_OVERRIDE` limits the slider:
+`SCPanelMachine`, a client (through `lcnc_client.py`, a link) of
+`serve_linuxcnc` from `../scraftlinuxcnc`, which runs LinuxCNC in its
+`lcnc` box, or in WSL on Windows.  So this runs outside the box, and
+needs only `tkinter`.  Closing it leaves LinuxCNC running, for another
+panel.  When it starts, the machine is taken out of E-stop, turned on
+and homed if it needs to be (G54 is then set to `ORIGIN`), it is sent
+the shop's tool table, and the INI file's `MAX_FEED_OVERRIDE` limits
+the slider:
 
 ```
-distrobox enter lcnc -- linuxcnc lcnc_sim/shop_mill.ini
+(cd ../scraftlinuxcnc && python3 -m scraftlinuxcnc.serve_linuxcnc) &
+./lcnc_panel.py demo.ngc
 ./lcnc_panel.py --dry-run demo.ngc      # The window alone.
+./lcnc_panel.py --headless --port 5007  # No window: for tests.
 ```
 
-A program is opened from the command line (`DISPLAY = ... PROGRAM` in
-the INI file, or by hand), with Open, or through the command port
+With `--headless`, the panel is built from `lcnc_headless.py` in place
+of `tkinter`, so it needs no display and no `tkinter`, and otherwise
+runs the same code, with its buttons pressed through the command port.
+
+A program is opened from the command line, with Open, or through the
+command port
 (`--port PORT`, on 127.0.0.1), which takes one line per connection and
 answers one line: `ping`, `open FILE`, `start` (or `run`), `pause`,
 `reset` (or `stop`), `tool+`, `tool-` (the start line to the next or
-previous tool change), `speed X`, `status`, `messages` (every message
+previous tool change), `speed X`, `press LABEL` (presses a button,
+as a person would; refused when it is greyed out), `type LINE` (into
+the MDI line), `show` (all that the window shows, as JSON), `answer
+VALUE` (with `--headless`, the answer to the next question: `yes` or a
+file), `status`, `messages` (every message
 LinuxCNC has sent, as `messages: A | B`) or `quit`:
 
 ```
@@ -44,19 +53,43 @@ echo "open demo.ngc" | nc -q 1 127.0.0.1 5007
 
 import argparse
 import functools
-import importlib
+import json
 import math
 import re
 import signal
 import socket
 import sys
-import tkinter as tk
+import time
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
 from typing import Any, cast
 
+import lcnc_headless
 import shops
+from lcnc_client import PORT, SCBridgeError, SCClient, constant
+
+# A computer with no `tkinter` can still run `--headless`.
+try:
+    import tkinter as tk
+    from tkinter import filedialog, messagebox, ttk
+except ImportError:
+    # pylint: disable=reimported,ungrouped-imports
+    import lcnc_headless as filedialog  # type: ignore[no-redef]
+    import lcnc_headless as messagebox  # type: ignore[no-redef]
+    import lcnc_headless as tk  # type: ignore[no-redef]
+    import lcnc_headless as ttk  # type: ignore[no-redef]
+
+# The protocol of `serve_linuxcnc` that this needs, at least.
+PROTOCOL: int = 2
+
+# How long a new LinuxCNC gets to turn on and to home (seconds).
+START_SECONDS: float = 60.0
+
+# The machine coordinates (inches) of the program's zero, on a new
+# LinuxCNC, as `sim_linuxcnc.ORIGIN` (which can not be imported, as it
+# needs the `linuxcnc` module).
+ORIGIN: tuple[float, float, float] = (4.0, 3.0, -6.0)
 
 # The steps a jog button can move (inches), the one chosen at start,
 # and how fast a jog moves (inches per second).
@@ -102,10 +135,22 @@ SHOP_FILE: Path = (
 SHOP_MACHINE: str = "Shop mill"
 MATERIAL: str = "6061 aluminum"
 
+# The classes of the widgets that `press` can press.
+BUTTONS: tuple[str, ...] = ("TButton", "Radiobutton")
+
 # The MDI line's backgrounds: empty, RS-274, and not.
 BLANK: str = "white"
 GOOD: str = "#d8f5d0"
 BAD: str = "#f8d0d0"
+
+
+# Function `use_headless()`:
+def use_headless() -> None:
+    """Build every window from now on with `lcnc_headless`."""
+    # The window code stays the same, by using the same names.
+    # pylint: disable-next=global-statement
+    global tk, ttk, filedialog, messagebox
+    tk = ttk = filedialog = messagebox = lcnc_headless
 
 
 # Function `material_names()`:
@@ -219,38 +264,64 @@ class SCStatus:
 class SCPanelMachine:
     """The LinuxCNC back end, as the panel sees it.
 
-    With `dry_run`, nothing is sent anywhere and every call only
-    records what it would have done, so the window can be built and
-    tested without LinuxCNC.
+    It is a client of `scraftlinuxcnc`'s `serve_linuxcnc`, which runs
+    LinuxCNC wherever that is installed.  With `dry_run`, nothing is
+    sent anywhere and every call only records what it would have done,
+    so the window can be built and tested without LinuxCNC.
+
+    Nothing here waits for a move, so the window stays alive and Reset
+    works during one: `status()` starts the next line of a run of MDI
+    lines (such as Home's) when the one before it has finished.
 
     Attributes:
+    * `constants` (`dict[str, Any]`): The `linuxcnc` module's constants.
     * `dry_run` (`bool`): True when no LinuxCNC is used.
-    * `file` (`str`): The program opened (kept for a dry run).
-    * `linuxcnc` (`Any`): The `linuxcnc` module, or `None`.
+    * `file` (`str`): The program opened: where it is on the server,
+      or its own path for a dry run.
+    * `lcnc` (`SCClient | None`): The connection, or `None`.
     * `log` (`list[str]`): What was asked of the machine, in order.
+    * `mdi_lines` (`list[str]`): The MDI lines waiting to be run.
     * `messages` (`list[str]`): Every message LinuxCNC has sent.
-    * `sim` (`Any`): A `sim_linuxcnc.SCSimulator`, or `None`.
     """
 
     # Method `SCPanelMachine.__init__()`:
-    def __init__(self, dry_run: bool) -> None:
-        """Connect to LinuxCNC, unless `dry_run`.
+    def __init__(self, dry_run: bool, port: int = PORT) -> None:
+        """Connect to `serve_linuxcnc`, unless `dry_run`.
 
         Arguments:
         * `dry_run` (`bool`):
           True to use no LinuxCNC at all.
+        * `port` (`int`):
+          The port that `serve_linuxcnc` is on.
+
+        Raises:
+        * `RuntimeError`: If it does not answer, or is out of date.
         """
+        self.constants: dict[str, Any] = {}
         self.dry_run: bool = dry_run
         self.file: str = ""
+        self.lcnc: SCClient | None = None
         self.log: list[str] = []
+        self.mdi_lines: list[str] = []
         self.messages: list[str] = []
-        self.linuxcnc: Any = None
-        self.sim: Any = None
+        if dry_run:
+            return
 
-        # Import `linuxcnc` only here, since only the `lcnc` box has it.
-        if not dry_run:
-            self.linuxcnc = importlib.import_module("linuxcnc")
-            self.sim = importlib.import_module("sim_linuxcnc").SCSimulator()
+        # Connect, and check that it knows the calls used here.
+        try:
+            self.lcnc = SCClient(port=port)
+        except OSError as error:
+            raise RuntimeError(
+                f"No LinuxCNC on port {port} ({error}); "
+                "start it with serve_linuxcnc."
+            ) from error
+        protocol: int = self.lcnc.call("ping")["protocol"]
+        if protocol < PROTOCOL:
+            raise RuntimeError(
+                f"serve_linuxcnc speaks protocol {protocol}, not {PROTOCOL}; "
+                "stop it, run install_linuxcnc, and start it again."
+            )
+        self.constants = self.lcnc.call("constants")
 
     # Method `SCPanelMachine._mode()`:
     def _mode(self, name: str) -> None:
@@ -260,63 +331,160 @@ class SCPanelMachine:
         * `name` (`str`):
           The name of the mode constant in `linuxcnc`.
         """
-        if self.sim is not None:
-            self.sim.command.mode(getattr(self.linuxcnc, name))
-            self.sim.command.wait_complete()
+        if self.lcnc is not None:
+            self.lcnc.call("command.mode", constant(name))
+            self.lcnc.call("command.wait_complete")
+
+    # Method `SCPanelMachine._wait_for()`:
+    def _wait_for(self, what: str, test: Callable[[], bool]) -> None:
+        """Wait, as LinuxCNC starts up, until something is true.
+
+        Arguments:
+        * `what` (`str`): What is waited for, for the error message.
+        * `test` (`Callable[[], bool]`): Tells whether it is true yet.
+
+        Raises:
+        * `TimeoutError`: If it is not true in `START_SECONDS`.
+        """
+        end: float = time.monotonic() + START_SECONDS
+        while not test():
+            if time.monotonic() > end:
+                raise TimeoutError(f"Timed out waiting for {what}.")
+            time.sleep(POLL_MS / 1000.0)
+
+    # Method `SCPanelMachine._home()`:
+    def _home(self) -> bool:
+        """Take it out of E-stop, turn it on, and home every joint.
+
+        A machine already on and homed is left alone, since it may be
+        running a program for a panel that has since closed.
+
+        Returns:
+        * (`bool`): True if it had to be homed, as a new LinuxCNC does.
+        """
+        lcnc: SCClient = cast(SCClient, self.lcnc)
+        state_on: int = self.constants["STATE_ON"]
+
+        def homed() -> bool:
+            stat: dict[str, Any] = lcnc.stat("homed", "joints")
+            return all(stat["homed"][: stat["joints"]])
+
+        # Out of E-stop, and on.
+        if lcnc.stat("task_state")["task_state"] != state_on:
+            lcnc.call("command.state", constant("STATE_ESTOP_RESET"))
+            lcnc.call("command.state", constant("STATE_ON"))
+            self._wait_for(
+                "the machine to turn on",
+                lambda: lcnc.stat("task_state")["task_state"] == state_on,
+            )
+
+        # Home in joint mode, in the configuration's `HOME_SEQUENCE`.
+        if homed():
+            return False
+        self._mode("MODE_MANUAL")
+        lcnc.call("command.teleop_enable", False)
+        lcnc.call("command.wait_complete")
+        lcnc.call("command.home", -1)
+        self._wait_for("homing", homed)
+        return True
 
     # Method `SCPanelMachine.start()`:
     def start(self) -> None:
-        """Take it out of E-stop, turn it on, home it and set G54.
+        """Get LinuxCNC ready, keeping what it has if already running.
 
-        LinuxCNC does not keep G54 from one start to the next, so it is
-        set to `sim_linuxcnc.ORIGIN` (low enough for the longest tool
-        to rise to the tool change height), as `sim_linuxcnc.py` does.
+        It is turned on and homed if it needs to be, and then has
+        just started, so G54 is set to `ORIGIN`, whatever LinuxCNC kept
+        from its last run or another client set.  `serve_linuxcnc`
+        outlives the panel, so a panel opened later keeps the origin.
+        The shop's tool table is sent unless a program is running.
+
+        Raises:
+        * `ValueError`: If the shop can not give a tool table.
         """
         self.log.append("start")
-        if self.sim is not None:
-            self.sim.home()
-            self.sim.set_origin(importlib.import_module("sim_linuxcnc").ORIGIN)
+        if self.lcnc is None:
+            return
+        started: bool = self._home()
+        interp_state: int = self.lcnc.stat("interp_state")["interp_state"]
+        if interp_state != self.constants["INTERP_IDLE"]:
+            return
+
+        # The tool table, from the shop.
+        self.lcnc.call(
+            "tool_table.write",
+            shops.tool_table_text(
+                shops.read(SHOP_FILE), SHOP_MACHINE, MATERIAL
+            ),
+        )
+        self.lcnc.call("command.load_tool_table")
+        self.lcnc.call("command.wait_complete")
+
+        # The origin.  `G20` first: otherwise the numbers may be read
+        # as millimeters.
+        if started:
+            x, y, z = ORIGIN
+            self._mode("MODE_MDI")
+            self.lcnc.call("command.mdi", f"G20 G10 L2 P1 X{x} Y{y} Z{z}")
+            self.lcnc.call("command.wait_complete")
 
     # Method `SCPanelMachine.max_speed()`:
-    def max_speed(self, ini_file: str) -> float:
+    def max_speed(self) -> float:
         """Return the highest feed override the INI file allows.
-
-        Arguments:
-        * `ini_file` (`str`): The INI file ("" for LinuxCNC's own).
 
         Returns:
         * (`float`): Its `[DISPLAY] MAX_FEED_OVERRIDE`, or
           `MAX_SPEED` when there is none.
         """
-        if self.sim is None:
+        if self.lcnc is None:
             return MAX_SPEED
-        if not ini_file:
-            self.sim.stat.poll()
-            ini_file = self.sim.stat.ini_filename
-        found: str | None = self.linuxcnc.ini(ini_file).find(
-            "DISPLAY", "MAX_FEED_OVERRIDE"
+        found: str | None = self.lcnc.call(
+            "ini.find", "DISPLAY", "MAX_FEED_OVERRIDE"
         )
         return float(found) if found else MAX_SPEED
 
     # Method `SCPanelMachine.open()`:
     def open(self, path: str) -> None:
-        """Open a program, ready to run from its start.
+        """Send a program to LinuxCNC, ready to run from its start.
 
         Arguments:
-        * `path` (`str`): The G-code file (a relative path is from
-          the panel's directory: `lcnc_sim/` when LinuxCNC starts it).
+        * `path` (`str`): The G-code file, here (a relative path is
+          from the panel's directory).
 
         Raises:
         * `FileNotFoundError`: If there is no such file.
         """
         if not Path(path).is_file():
             raise FileNotFoundError(f"no file {path}")
-        self.file = str(Path(path).resolve())
+        local: Path = Path(path).resolve()
+        self.file = str(local)
         self.log.append(f"open {self.file}")
-        if self.sim is not None:
+        if self.lcnc is not None:
             self._mode("MODE_AUTO")
-            self.sim.command.program_open(self.file)
-            self.sim.command.wait_complete()
+            self.file = self.lcnc.call(
+                "program.write", local.name, local.read_text(encoding="utf-8")
+            )
+            self.lcnc.call("command.program_open", self.file)
+            self.lcnc.call("command.wait_complete")
+
+    # Method `SCPanelMachine.program_lines()`:
+    def program_lines(self, file: str) -> list[str]:
+        """Return the lines of the program that LinuxCNC has open.
+
+        Arguments:
+        * `file` (`str`): Its file, from `status()`.
+
+        Returns:
+        * (`list[str]`): Its lines, or none if it can not be read.
+        """
+        try:
+            text: str = (
+                Path(file).read_text(encoding="utf-8")
+                if self.lcnc is None
+                else self.lcnc.call("program.read", file)
+            )
+        except (OSError, SCBridgeError):
+            return []
+        return text.splitlines()
 
     # Method `SCPanelMachine.run()`:
     def run(self, start: int) -> None:
@@ -328,53 +496,60 @@ class SCPanelMachine:
           before it are read, not run, so their modes still hold.
         """
         self.log.append(f"run {start}")
-        if self.sim is not None:
+        if self.lcnc is not None:
             self._mode("MODE_AUTO")
-            self.sim.command.auto(self.linuxcnc.AUTO_RUN, start)
+            self.lcnc.call("command.auto", constant("AUTO_RUN"), start)
 
     # Method `SCPanelMachine.pause()`:
     def pause(self) -> None:
         """Pause the running program."""
         self.log.append("pause")
-        if self.sim is not None:
-            self.sim.command.auto(self.linuxcnc.AUTO_PAUSE)
+        if self.lcnc is not None:
+            self.lcnc.call("command.auto", constant("AUTO_PAUSE"))
 
     # Method `SCPanelMachine.resume()`:
     def resume(self) -> None:
-        """Resume a paused program."""
+        """Resume a paused program.
+
+        It is in `MODE_AUTO` already; setting that again can end the
+        program, with no message, so the mode is left alone.
+        """
         self.log.append("resume")
-        if self.sim is not None:
-            self._mode("MODE_AUTO")
-            self.sim.command.auto(self.linuxcnc.AUTO_RESUME)
+        if self.lcnc is not None:
+            self.lcnc.call("command.auto", constant("AUTO_RESUME"))
 
     # Method `SCPanelMachine.stop()`:
     def stop(self) -> None:
-        """Stop at once (`command.abort()`)."""
+        """Stop at once (`command.abort()`), with any MDI lines waiting."""
         self.log.append("stop")
-        if self.sim is not None:
-            self.sim.stop()
+        self.mdi_lines.clear()
+        if self.lcnc is not None:
+            self.lcnc.call("command.abort")
+            self.lcnc.call("command.wait_complete")
 
     # Method `SCPanelMachine.mdi()`:
-    def mdi(self, line: str) -> None:
-        """Run one line of G-code as a manual (MDI) command.
+    def mdi(self, *lines: str) -> None:
+        """Start lines of G-code as manual (MDI) commands, one at a time.
+
+        This returns as the first starts; `status()` starts the others.
 
         Arguments:
-        * `line` (`str`):
-          The G-code line.
+        * `lines` (`str`):
+          The G-code lines.
 
         Raises:
         * `RuntimeError`: If LinuxCNC will not switch to MDI, as while
           a program runs or is paused (LinuxCNC 2.9 does not allow
           MDI then, and says nothing).
         """
-        self.log.append(f"mdi {line}")
-        if self.sim is not None:
+        self.log.extend(f"mdi {line}" for line in lines)
+        if self.lcnc is not None:
             self._mode("MODE_MDI")
-            self.sim.stat.poll()
-            if self.sim.stat.task_mode != self.linuxcnc.MODE_MDI:
+            task_mode: int = self.lcnc.stat("task_mode")["task_mode"]
+            if task_mode != self.constants["MODE_MDI"]:
                 raise RuntimeError("Reset the program first")
-            self.sim.command.mdi(line)
-            self.sim.command.wait_complete()
+            self.mdi_lines = list(lines[1:])
+            self.lcnc.call("command.mdi", lines[0])
 
     # Method `SCPanelMachine.set_origin()`:
     def set_origin(self) -> None:
@@ -394,11 +569,12 @@ class SCPanelMachine:
           How far (inches).
         """
         self.log.append(f"jog {'XYZ'[axis]} {direction:+d}")
-        if self.sim is not None:
+        if self.lcnc is not None:
             self._mode("MODE_MANUAL")
-            self.sim.command.teleop_enable(True)
-            self.sim.command.jog(
-                self.linuxcnc.JOG_INCREMENT,
+            self.lcnc.call("command.teleop_enable", True)
+            self.lcnc.call(
+                "command.jog",
+                constant("JOG_INCREMENT"),
                 False,
                 axis,
                 JOG_SPEED,
@@ -412,9 +588,7 @@ class SCPanelMachine:
         Arguments:
         * `z` (`float`): The work Z now (inches).
         """
-        self.mdi(f"G20 G90 G0 Z{max(z, 0.0):.4f}")
-        self.mdi("G0 X0 Y0")
-        self.mdi("G0 Z0")
+        self.mdi(f"G20 G90 G0 Z{max(z, 0.0):.4f}", "G0 X0 Y0", "G0 Z0")
 
     # Method `SCPanelMachine.set_speed()`:
     def set_speed(self, speed: float) -> None:
@@ -425,8 +599,8 @@ class SCPanelMachine:
           The feed override (1.0 is the programmed feed).
         """
         self.log.append(f"speed {speed:.2f}")
-        if self.sim is not None:
-            self.sim.command.feedrate(speed)
+        if self.lcnc is not None:
+            self.lcnc.call("command.feedrate", speed)
 
     # Method `SCPanelMachine.top_z()`:
     def top_z(self) -> float:
@@ -436,30 +610,29 @@ class SCPanelMachine:
         * (`float`): Z's upper travel limit less the G5x, G92 and tool
           length offsets (inches).
         """
-        stat: Any = self.sim.stat
+        stat: dict[str, Any] = cast(SCClient, self.lcnc).stat(
+            "axis", "g5x_offset", "g92_offset", "tool_offset"
+        )
         return float(
-            stat.axis[2]["max_position_limit"]
-            - stat.g5x_offset[2]
-            - stat.g92_offset[2]
-            - stat.tool_offset[2]
+            stat["axis"][2]["max_position_limit"]
+            - stat["g5x_offset"][2]
+            - stat["g92_offset"][2]
+            - stat["tool_offset"][2]
         )
 
-    # Method `SCPanelMachine.status()`:
-    def status(self) -> SCStatus:
-        """Poll LinuxCNC.
+    # Method `SCPanelMachine._read_messages()`:
+    def _read_messages(self) -> list[str]:
+        """Read LinuxCNC's new messages, and keep them.
 
         Returns:
-        * (`SCStatus`): The program, line, position, tool and messages.
+        * (`list[str]`): The new messages.
         """
-        if self.sim is None:
-            return SCStatus(self.file, 0, (0.0, 0.0, 0.0), 0, [], "")
-        stat: Any = self.sim.stat
-        stat.poll()
+        lcnc: SCClient = cast(SCClient, self.lcnc)
         messages: list[str] = []
-        error: Any = self.sim.errors.poll()
+        error: Any = lcnc.call("error_channel.poll")
         while error:
             messages.append(str(error[1]))
-            error = self.sim.errors.poll()
+            error = lcnc.call("error_channel.poll")
 
         # LinuxCNC's message for a move outside the travel says
         # nothing of why; say how high work Z can go (the usual cause
@@ -472,16 +645,74 @@ class SCPanelMachine:
             for message in messages
         ]
         self.messages += messages
+        return messages
+
+    # Method `SCPanelMachine._next_mdi()`:
+    def _next_mdi(self, idle: bool, messages: list[str]) -> bool:
+        """Start the next MDI line waiting, if its time has come.
+
+        A message means that something went wrong, so the lines still
+        waiting (which assumed otherwise) are dropped.
+
+        Arguments:
+        * `idle` (`bool`): True if the interpreter is idle.
+        * `messages` (`list[str]`): LinuxCNC's new messages.
+
+        Returns:
+        * (`bool`): True if lines are still to be finished.
+        """
+        lcnc: SCClient = cast(SCClient, self.lcnc)
+        if messages:
+            self.mdi_lines.clear()
+        if not self.mdi_lines:
+            return False
+        if idle and lcnc.call("command.wait_complete", 0) != -1:
+            lcnc.call("command.mdi", self.mdi_lines.pop(0))
+        return True
+
+    # Method `SCPanelMachine.status()`:
+    def status(self) -> SCStatus:
+        """Poll LinuxCNC, and start the next MDI line when it is time.
+
+        Returns:
+        * (`SCStatus`): The program, line, position, tool and messages.
+        """
+        if self.lcnc is None:
+            return SCStatus(self.file, 0, (0.0, 0.0, 0.0), 0, [], "")
+        stat: dict[str, Any] = self.lcnc.stat(
+            "actual_position",
+            "file",
+            "g5x_offset",
+            "g92_offset",
+            "interp_state",
+            "motion_line",
+            "paused",
+            "tool_in_spindle",
+            "tool_offset",
+        )
+        messages: list[str] = self._read_messages()
+        idle: bool = stat["interp_state"] == self.constants["INTERP_IDLE"]
+        busy: bool = self._next_mdi(idle, messages)
+
+        # The position in work (program) coordinates: the machine's
+        # less the G54 (or other G5x), G92 and tool length offsets.
+        x, y, z = (
+            stat["actual_position"][axis]
+            - stat["g5x_offset"][axis]
+            - stat["g92_offset"][axis]
+            - stat["tool_offset"][axis]
+            for axis in range(3)
+        )
         return SCStatus(
-            str(stat.file),
-            int(stat.motion_line),
-            self.sim.work_position(),
-            int(stat.tool_in_spindle),
+            str(stat["file"]),
+            int(stat["motion_line"]),
+            (x, y, z),
+            int(stat["tool_in_spindle"]),
             messages,
             "idle"
-            if stat.interp_state == self.linuxcnc.INTERP_IDLE
+            if idle and not busy
             else "paused"
-            if stat.paused
+            if stat["paused"]
             else "running",
         )
 
@@ -535,7 +766,8 @@ class SCCommandPort:  # pylint: disable=too-few-public-methods
 
 
 # Class `SCPanel`:
-class SCPanel:  # pylint: disable=too-many-instance-attributes
+# pylint: disable-next=too-many-instance-attributes,too-many-public-methods
+class SCPanel:
     """The control panel window, laid out as in `T.mlcp~3.4`.
 
     Attributes:
@@ -729,6 +961,9 @@ class SCPanel:  # pylint: disable=too-many-instance-attributes
         )
         ttk.Button(slider, text="Tools", command=self.on_tools).pack(
             side="left", padx=1
+        )
+        ttk.Button(slider, text="Quit", command=root.destroy).pack(
+            side="left", padx=(12, 1)
         )
         root.after(POLL_MS, self.poll)
 
@@ -966,7 +1201,78 @@ class SCPanel:  # pylint: disable=too-many-instance-attributes
             except RuntimeError as error:
                 self.message.configure(text=str(error))
 
+    # Method `SCPanel.widgets()`:
+    def widgets(self, parent: Any = None) -> Iterator[Any]:
+        """Walk every widget, top windows and their insides.
+
+        Arguments:
+        * `parent` (`Any`): Where to start (`None` for the root).
+
+        Yields:
+        * (`Any`): Each widget inside it.
+        """
+        for widget in (parent or self.root).winfo_children():
+            yield widget
+            yield from self.widgets(widget)
+
+    # Method `SCPanel.press()`:
+    def press(self, label: str) -> str:
+        """Press a button, as a person would.
+
+        Arguments:
+        * `label` (`str`): The text on it.
+
+        Returns:
+        * (`str`): `ok`, or `error: ...` when there is no such button
+          or it is greyed out.
+        """
+        for widget in self.widgets():
+            if (
+                widget.winfo_class() in BUTTONS
+                and str(widget.cget("text")) == label
+            ):
+                if str(widget.cget("state")) == "disabled":
+                    return f"error: {label} is greyed out"
+                widget.invoke()
+                return "ok"
+        return f"error: no button {label}"
+
+    # Method `SCPanel.show()`:
+    def show(self) -> dict[str, Any]:
+        """Return what the window shows.
+
+        Returns:
+        * (`dict[str, Any]`): `executed` and `coming` (the G-code
+          windows), `position`, `message`, `mdi` and `mdi_color` (the
+          MDI line), `step` and `speed` (those shown), `buttons` (each
+          button's state, by its text) and `texts` (the contents of
+          every text window, such as Tools).
+        """
+        widgets: list[Any] = list(self.widgets())
+        return {
+            "executed": self.executed.get("1.0", "end-1c"),
+            "coming": self.coming.get("1.0", "end-1c"),
+            "position": str(self.position.cget("text")),
+            "message": str(self.message.cget("text")),
+            "mdi": self.mdi.get(),
+            "mdi_color": str(self.mdi_entry.cget("background")),
+            "step": self.step.get(),
+            "speed": self.speed_text.get(),
+            "buttons": {
+                str(widget.cget("text")): str(widget.cget("state") or "normal")
+                for widget in widgets
+                if widget.winfo_class() in BUTTONS
+            },
+            "texts": [
+                widget.get("1.0", "end-1c")
+                for widget in widgets
+                if widget.winfo_class() == "Text"
+            ],
+        }
+
     # Method `SCPanel.handle()`:
+    # A flat list of commands reads best, so it has many returns.
+    # pylint: disable-next=too-many-return-statements
     def handle(self, line: str) -> str:
         """Answer one command from the command port.
 
@@ -991,6 +1297,14 @@ class SCPanel:  # pylint: disable=too-many-instance-attributes
         try:
             if word in actions:
                 actions[word]()
+            elif word == "press" and rest:
+                return self.press(rest.strip())
+            elif word == "type":
+                self.mdi.set(rest)
+            elif word == "show":
+                return json.dumps(self.show())
+            elif word == "answer" and tk is lcnc_headless:
+                lcnc_headless.ANSWERS.append(rest.strip())
             elif word == "open" and rest:
                 self.open(rest.strip())
             elif word == "speed" and rest:
@@ -1001,29 +1315,34 @@ class SCPanel:  # pylint: disable=too-many-instance-attributes
                 return (
                     f"file={status.file} line={status.line} "
                     f"x={x:.4f} y={y:.4f} z={z:.4f} tool={status.tool} "
-                    f"start={self.start}"
+                    f"start={self.start} state={status.state}"
                 )
             elif word == "messages":
                 return f"messages: {' | '.join(self.machine.messages)}"
             else:
                 return f"error: unknown command {line!r}"
-        except (ValueError, OSError) as error:
+        except (ValueError, OSError, SCBridgeError) as error:
             return f"error: {error}"
         return "ok"
 
     # Method `SCPanel.poll()`:
     def poll(self) -> None:
         """Show the machine's state, answer the port, then poll again."""
+        # A LinuxCNC that has gone is reported, while the port still
+        # answers, and the window stays up to be read.
+        try:
+            status: SCStatus = self.machine.status()
+        except (OSError, SCBridgeError) as error:
+            self.message.configure(text=f"LinuxCNC is not answering: {error}")
+            if self.port is not None:
+                self.port.poll(self.handle)
+            self.root.after(POLL_MS, self.poll)
+            return
+
         # The program around the line being run, read once per file.
-        status: SCStatus = self.machine.status()
         if status.file != self.lines_file:
             self.lines_file = status.file
-            try:
-                self.lines = (
-                    Path(status.file).read_text(encoding="utf-8").splitlines()
-                )
-            except OSError:
-                self.lines = []
+            self.lines = self.machine.program_lines(status.file)
         # The buttons follow LinuxCNC's state (a program may end, or be
         # stopped, without the panel).
         if status.state and (
@@ -1071,28 +1390,6 @@ class SCPanel:  # pylint: disable=too-many-instance-attributes
         self.root.after(POLL_MS, self.poll)
 
 
-# Function `split_ini()`:
-def split_ini(arguments: list[str]) -> tuple[str, list[str]]:
-    """Take LinuxCNC's `-- -ini FILE` off the arguments.
-
-    LinuxCNC starts its display as `DISPLAY ARGS... -- -ini FILE`
-    (from the INI file's `[DISPLAY] DISPLAY` line).
-
-    Arguments:
-    * `arguments` (`list[str]`): The command line arguments.
-
-    Returns:
-    * (`tuple[str, list[str]]`): The INI file ("" for none) and the
-      other arguments.
-    """
-    rest: list[str] = [word for word in arguments if word != "--"]
-    if "-ini" in rest:
-        index: int = rest.index("-ini")
-        ini_file: str = rest[index + 1] if index + 1 < len(rest) else ""
-        return ini_file, rest[:index] + rest[index + 2 :]
-    return "", rest
-
-
 # Function `main()`:
 def main(arguments: list[str]) -> int:
     """Show the panel until its window is closed.
@@ -1104,29 +1401,53 @@ def main(arguments: list[str]) -> int:
     Returns:
     * (`int`): The exit status.
     """
-    # The command line, less LinuxCNC's `-ini FILE`.
-    ini_file, arguments = split_ini(arguments)
+    # The command line.
     parser: argparse.ArgumentParser = argparse.ArgumentParser(
         description=__doc__.splitlines()[0]
     )
     parser.add_argument("program", nargs="?", help="G-code to open")
     parser.add_argument("--port", type=int, help="a command port on 127.0.0.1")
     parser.add_argument(
+        "--lcnc-port",
+        type=int,
+        default=PORT,
+        help="the port of serve_linuxcnc (default: %(default)s)",
+    )
+    parser.add_argument(
         "--dry-run", action="store_true", help="use no LinuxCNC"
     )
+    parser.add_argument(
+        "--headless",
+        action="store_true",
+        help="use no display or tkinter, for tests through --port",
+    )
     options: argparse.Namespace = parser.parse_args(arguments)
+    if options.headless:
+        use_headless()
+    elif tk is lcnc_headless:
+        print("lcnc_panel.py: tkinter is not installed.", file=sys.stderr)
+        return 1
 
     # The machine, on and homed, and the command port.
-    machine: SCPanelMachine = SCPanelMachine(options.dry_run)
-    machine.start()
+    try:
+        machine: SCPanelMachine = SCPanelMachine(
+            options.dry_run, options.lcnc_port
+        )
+        machine.start()
+        top_speed: float = machine.max_speed()
+    except (OSError, RuntimeError, ValueError, SCBridgeError) as error:
+        print(f"lcnc_panel.py: {error}", file=sys.stderr)
+        return 1
     port: SCCommandPort | None = (
         SCCommandPort(options.port) if options.port else None
     )
 
-    # The window.  A `SIGTERM` (`stop_linuxcnc.py`) closes it as the
-    # window's close button does, so LinuxCNC shuts down quietly.
+    # The window.  A `SIGTERM` closes it as its close button does.  An
+    # earlier panel may have left another speed, and the slider starts
+    # at the programmed feed.
     root: tk.Tk = tk.Tk()
-    panel: SCPanel = SCPanel(root, machine, machine.max_speed(ini_file), port)
+    panel: SCPanel = SCPanel(root, machine, top_speed, port)
+    panel.set_speed(1.0)
     signal.signal(signal.SIGTERM, lambda *_: root.destroy())
     if options.program:
         panel.open(options.program)

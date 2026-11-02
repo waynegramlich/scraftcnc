@@ -52,7 +52,9 @@ screen.
 
 `scraftcnc` and `scraftpybind` are cloned side by side, into the same
 directory, since `scraftcnc/scraftpybind.py` is a symbolic link to
-`../scraftpybind/scraftpybind.py`:
+`../scraftpybind/scraftpybind.py`.  `lcnc_panel.py` and its tests also
+need `scraftlinuxcnc` beside them (`lcnc_client.py` is a link into it),
+a repository that is still private:
 
 ```
 git clone https://github.com/waynegramlich/scraftpybind.git
@@ -114,6 +116,17 @@ Each step below needs a little more than the one before it.
    takes 15 to 35 seconds to build).  The cuts and the rapids are
    separate sketches, which can be hidden one at a time.
 
+5. All of it connected, in one command, on Linux, with LinuxCNC's
+   simulator (`../scraftlinuxcnc`) and no other SolidCraft on its port:
+
+   ```
+   ./show_demo.py
+   ```
+
+   It starts LinuxCNC, SolidCraft with the plate in it, and the panel,
+   stopped.  Press Start in the panel, and the tool cuts the plate in
+   SolidCraft.  The panel's Quit button closes everything.
+
 ## The Files
 
 * `solidcraftcnc.py`: `SCCNC`, which writes the G-code (profiles,
@@ -149,7 +162,15 @@ Each step below needs a little more than the one before it.
 python3 -m unittest -v
 ```
 
-The tests need no SolidCraft.
+The tests need no SolidCraft, and no display.  One more suite follows
+the whole path, from the demonstration's G-code, through
+`lcnc_panel.py --headless` and `serve_linuxcnc`, to a real LinuxCNC
+simulator, in about two minutes, when asked (it needs LinuxCNC, from
+`install_linuxcnc` in `scraftlinuxcnc`):
+
+```
+SCRAFTCNC_LINUXCNC=1 python3 -m unittest -v test_lcnc_end_to_end
+```
 
 ## License
 

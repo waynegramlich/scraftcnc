@@ -2,5 +2,5 @@
 max-line-length = 79
 # `ruff format` puts spaces around `:` in complex slices (PEP 8 allows it).
 extend-ignore = E203
-# The `scraftpybind` project checks its own `scraftpybind.py`.
-exclude = scraftpybind.py, solidcraft, rs274
+# `scraftpybind` and `scraftlinuxcnc` check their own files, linked here.
+exclude = scraftpybind.py, lcnc_client.py, solidcraft, rs274

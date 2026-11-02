@@ -17,7 +17,7 @@ It is used through `sim_linuxcnc.py`'s `--solidcraft PORT` (or
 `--solidcraft headless`), whose options `add_arguments()` adds:
 
 ```
-distrobox enter lcnc -- linuxcnc lcnc_sim/shop_mill.ini &
+(cd ../scraftlinuxcnc && python3 -m scraftlinuxcnc.serve_linuxcnc) &
 solidcraft --control 8080 &
 ./solidcraftcnc_demo.py --no-path --opaque 8080 > demo.ngc
 distrobox enter lcnc -- ./sim_linuxcnc.py demo.ngc --solidcraft 8080
@@ -246,7 +246,9 @@ class SCPathRack:  # pylint: disable=too-few-public-methods
 
     A path is drawn one tool ahead of the run: the first tool's before
     it starts, and the next tool's when a tool goes into the spindle,
-    so no tool change waits for a drawing.
+    so no tool change waits for a drawing.  The first tool's path is
+    shown from the start, so that there is something to see before a
+    tool is in the spindle, and an empty spindle changes nothing.
 
     Attributes:
     * `current` (`int`): The T number whose path is shown (0 for none).
@@ -284,9 +286,10 @@ class SCPathRack:  # pylint: disable=too-few-public-methods
         for move in moves:
             self.moves.setdefault(move["tool"], []).append(move)
 
-        # The first tool's path, ready for the start.
-        if self.moves:
-            self.draw(next(iter(self.moves)))
+        # The first tool's path, shown ready for the start.
+        tools: list[int] = [number for number in self.moves if number]
+        if tools:
+            self.show(tools[0])
 
     # Method `SCPathRack.draw()`:
     def draw(self, number: int) -> None:
@@ -312,9 +315,10 @@ class SCPathRack:  # pylint: disable=too-few-public-methods
         """Show only the path of the tool in the spindle.
 
         Arguments:
-        * `number` (`int`): The T number of the tool in the spindle.
+        * `number` (`int`): The T number of the tool in the spindle (0
+          for none, which leaves shown what is shown).
         """
-        if number == self.current:
+        if number in (0, self.current):
             return
         if self.current in self.sketches:
             self.solidcraft.browser.visibility(

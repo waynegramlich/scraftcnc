@@ -22,24 +22,24 @@ spindle follows the position; the whole planned path is the
 demo's own sketches:
 
 ```
-distrobox enter lcnc -- linuxcnc lcnc_sim/shop_mill.ini &
+(cd ../scraftlinuxcnc && python3 -m scraftlinuxcnc.serve_linuxcnc) &
 solidcraft --control 8080 &
 ./solidcraftcnc_demo.py --no-path --opaque 8080 > demo.ngc
 distrobox enter lcnc -- ./sim_linuxcnc.py demo.ngc --solidcraft 8080
-distrobox enter lcnc -- ./stop_linuxcnc.py    # Close LinuxCNC quietly.
 ```
 
 With `--watch`, it sends LinuxCNC nothing and only follows what
-LinuxCNC's display runs (`lcnc_panel.py`, which `shop_mill.ini`
-starts in place of AXIS), until Ctrl-C; the program whose paths are
-drawn is the one named, or else the one the panel has open:
+another program runs (`lcnc_panel.py`, say), until Ctrl-C; the program
+whose paths are drawn is the one named, or else the one the panel has
+open:
 
 ```
 distrobox enter lcnc -- ./sim_linuxcnc.py --watch demo.ngc \
     --solidcraft 8080
 ```
 
-`lcnc_sim/shop_mill.ini` simulates the example shop's mill.  The
+`scraftlinuxcnc`'s `lcnc_sim.ini` simulates a mill with the example
+shop's travel.  The
 `linuxcnc` module comes with LinuxCNC, which is installed only in the
 `lcnc` Debian Trixie box (see `TASKS/3_Simulation/Context.md`), so
 this runs there.  The positions are work coordinates (the program's,
@@ -63,13 +63,14 @@ import linuxcnc  # type: ignore[import-not-found]
 
 import sim_solidcraft
 from scraftpybind import SCSolidCraftError
-from shops import LENGTH, cnc_machine, loaded_tools, measure, read
+from shops import read, tool_table_text
 
 # How often to poll (seconds).
 POLL: float = 0.05
 
 # The feed override, by default: 10 times, which is pleasant to watch
-# (`lcnc_sim/shop_mill.ini` allows up to 100, its `MAX_FEED_OVERRIDE`).
+# (`lcnc_sim.ini` in `scraftlinuxcnc` allows up to 100, its
+# `MAX_FEED_OVERRIDE`).
 SPEED: float = 10.0
 
 # The tool table needs no speeds and feeds, but drills are only
@@ -83,7 +84,7 @@ SHOP_FILE: Path = (
 MACHINE: str = "Shop mill"
 
 # The machine coordinates (inches) of the program's zero, by default:
-# well inside `lcnc_sim/shop_mill.ini`'s travel (X 0 to 18, Y 0 to 9,
+# well inside `lcnc_sim.ini`'s travel (X 0 to 18, Y 0 to 9,
 # Z -16 to 0), with room above the work for a 2 inch tool change
 # height with the longest tool (3-7/8 in).
 ORIGIN: tuple[float, float, float] = (4.0, 3.0, -6.0)
@@ -258,22 +259,10 @@ class SCSimulator:
             linuxcnc.ini(str(ini_file)).find("EMCIO", "TOOL_TABLE")
         )
 
-        # Write it, and read it back in.  The real length (the gauge
-        # length) is how far the tip sticks out of the spindle, which
-        # depends on the holder and on how far the tool sticks out of
-        # it; the shop files do not have those yet, so the tool's
-        # overall length stands in for it.
-        described: dict[str, object] = read(shop)
-        lengths: dict[int, float] = {
-            number: measure(tool["overall_length"], LENGTH)
-            for number, (_, tool) in loaded_tools(described, machine).items()
-        }
-        lines: list[str] = [
-            f"T{tool.number} P{tool.number} Z{lengths[tool.number]:.4f} "
-            f"D{tool.diameter:.4f} ;{tool.name}"
-            for tool in cnc_machine(described, machine, MATERIAL).tools
-        ]
-        table.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        # Write it, and read it back in.
+        table.write_text(
+            tool_table_text(read(shop), machine, MATERIAL), encoding="utf-8"
+        )
         self.command.load_tool_table()
         self.command.wait_complete()
         return table
@@ -579,7 +568,7 @@ def main() -> int:
         type=float,
         default=SPEED,
         help="feed override (default: %(default)s, the most "
-        "shop_mill.ini allows; 1 for the programmed feeds)",
+        "lcnc_sim.ini allows; 1 for the programmed feeds)",
     )
     parser.add_argument(
         "--shop",

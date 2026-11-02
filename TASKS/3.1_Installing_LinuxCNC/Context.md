@@ -530,3 +530,41 @@ The user: `scraftlinuxcnc` takes only the pain of getting userspace LinuxCNC, wi
 dependency on `scraftcnc`.  `lcnc_panel.py` and the modules that import `scraftcnc` stay
 here, and packaging `scraftcnc` no longer blocks the move.  `T.il` is not closed.
 Headless panel work is `T.hlp~3.3.1`.  The rest is in `T.mcfs~1` there.
+
+## 2026-11-01: The panel is a client of `serve_linuxcnc`
+
+The user's goal: `lcnc_panel.py` talks to the process in `../scraftlinuxcnc`, which they
+linked here.  The user's answers: symbolic links are fine; the protocol may change and is
+sent over the wire; Claude may edit there and take `hg` snapshots; its `README.md` follows
+every protocol change; closing the panel leaves the server up.
+
+* There: protocol 2, in `T.mcfs~1`'s log.  Here: `lcnc_client.py` is a link, like
+  `scraftpybind.py`; `SCPanelMachine` calls it directly, with no `sim_linuxcnc`; the panel runs
+  on the host.  `shops.tool_table_text()` is shared with `sim_linuxcnc.py`.
+* The panel never waits for a move: `status()` starts each next MDI line (Home has three) when
+  `wait_complete` with timeout 0 says the last is done; a message or Reset drops the rest.
+* Claude's choices: a panel on a machine already homed keeps its origin; the slider resets
+  the override to 1x when a panel opens; a lost server shows in the message line, with the
+  window staying up.  No INI goes over the wire: `lcnc_sim.ini` and `shop_mill.ini` have the same
+  travel, speeds and `MAX_FEED_OVERRIDE`.  Added to the command port: `mdi LINE`, `home`,
+  `state=` in `status`.
+* Live, in the `lcnc` box: the demo (616 lines, four tools, about 75 s at 10x) with pause and
+  resume, 0 messages; `status()` 0.45 ms; Reset during a long move 102 ms, with another
+  connection in `wait_complete`; Home's lines in order; a bad line drops the rest; jog; panel
+  closed and reopened with the server up; server stopped under the panel.  The panel's window
+  opened on `:0` and answered its port, but no person or screen capture has looked at it, and
+  a whole program has run through `SCPanelMachine`, not through the window.  `sim_linuxcnc.py`
+  (a run at 100x, and `--watch`) still works in the box against `serve_linuxcnc`.  WSL: not run.
+* Found: LinuxCNC keeps G54 in its `.var` file, despite what the older notes here say.  The
+  panel's `SIGTERM` came from `stop_linuxcnc.py` by name, as boxes share the host's processes.
+* Stale here now, not deleted (they need the user's word): `install_linuxcnc.py`,
+  `demo_linuxcnc.py`, `stop_linuxcnc.py`, their tests, `probe_linuxcnc.yml` and
+  `lcnc_sim/shop_mill.*`.  `shop_mill.ini` starts the panel as a display, which can no longer work.
+
+## 2026-11-01: The old files removed; the user's answers
+
+* Removed at the user's word: `install_linuxcnc.py`, `demo_linuxcnc.py`, `stop_linuxcnc.py`, their
+  tests, `probe_linuxcnc.yml`, `lcnc_sim/`.  The installer and probe now live only in
+  `../scraftlinuxcnc`.
+* The user: not decided on one repository or two; the aim was isolating the LinuxCNC package
+  download.  Not sure `sim_linuxcnc.py` is still needed.  The WSL probe comes near the end.

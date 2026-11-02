@@ -2479,6 +2479,41 @@ CUT_KEYS: tuple[str, ...] = (
 )
 
 
+# Function `tool_table_text()`:
+def tool_table_text(shop: dict[str, object], name: str, material: str) -> str:
+    """Return a machine's loaded tools as a LinuxCNC tool table.
+
+    The real length (the gauge length) is how far the tip sticks out of
+    the spindle, which depends on the holder and on how far the tool
+    sticks out of it; the shop files do not have those yet, so the
+    tool's overall length stands in for it, as the `Z` that `G43` takes
+    off.
+
+    Arguments:
+    * `shop` (`dict[str, object]`): The shop, from `read()`.
+    * `name` (`str`): The machine's name.
+    * `material` (`str`):
+      Any material of the shop's: the table needs no speeds and feeds,
+      but drills are only built for a material.
+
+    Returns:
+    * (`str`): The tool table file's text.
+
+    Raises:
+    * `ValueError`: As for `cnc_machine()`.
+    """
+    lengths: dict[int, float] = {
+        number: measure(tool["overall_length"], LENGTH)
+        for number, (_, tool) in loaded_tools(shop, name).items()
+    }
+    lines: list[str] = [
+        f"T{tool.number} P{tool.number} Z{lengths[tool.number]:.4f} "
+        f"D{tool.diameter:.4f} ;{tool.name}"
+        for tool in cnc_machine(shop, name, material).tools
+    ]
+    return "\n".join(lines) + "\n"
+
+
 # Function `tool_cutting()`:
 def tool_cutting(
     shop: dict[str, object],
