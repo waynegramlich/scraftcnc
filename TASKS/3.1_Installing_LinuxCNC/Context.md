@@ -523,3 +523,10 @@ five numbered 1 to 5, each described in full under its number):
    `scraftlinuxcnc`.  Not confirmed: the `linuxcnc` script accepting a `DISPLAY` program
    with no window.  It would drop `Xvfb` (225 MB on WSL) from the tests.
 5. Close this task (`T.il`) with a `Summary.md` pointing at `T.mcfs~1`: recommended.
+
+## 2026-11-01: The scope changed; this task stays open
+
+The user: `scraftlinuxcnc` takes only the pain of getting userspace LinuxCNC, with no
+dependency on `scraftcnc`.  `lcnc_panel.py` and the modules that import `scraftcnc` stay
+here, and packaging `scraftcnc` no longer blocks the move.  `T.il` is not closed.
+Headless panel work is `T.hlp~3.3.1`.  The rest is in `T.mcfs~1` there.

@@ -7,6 +7,7 @@
 @2.5_Tool_Models/Context.md
 @3.1_Installing_LinuxCNC/Details.md
 @3.1_Installing_LinuxCNC/Context.md
+@3.3.1_Headless_LinuxCNC_Panel/Details.md
 @4_Implementing_Keepout_Zones/Details.md
 @../ISSUES/1_PathRack_Hidden_Path_Shows_Again/Details.md
 @../ISSUES/1_PathRack_Hidden_Path_Shows_Again/Context.md
