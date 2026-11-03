@@ -98,3 +98,7 @@ package itself is clean; every error is in a test.
   (`hole.model(None)`, refused before SolidCraft is used).
 * After: 174 errors, in `tests/test_keepout.py` and
   `tests/test_setups.py` only.  Next chunk: those two.
+
+## 2026-11-03: mypy, chunk 9
+
+174 -> 0.  `tests/test_keepout.py` (87) and `tests/test_setups.py` (87, after chunk 8) are clean: annotations; `SCLine | SCArc` narrowed with `isinstance`; `known()` asserts an axis value is set where the old code would have failed on `None` anyway; layers narrowed to `SCParallelLayer` / `SCMachineViseLayer` with `assert isinstance`; `grid_plates` and `read` imported from `shops`, not through `setups`; SolidCraft replies and the example JSON typed `Any`; `SCSetup([])` quieted with `type: ignore[arg-type]` (deliberately wrong).  `mypy --strict --warn-unreachable` with the rules' error codes: no issues in `scraftcnc/` and `tests/` (55 files).  No package code changed.  `mypy.ini` untouched (#14 waits for the user).

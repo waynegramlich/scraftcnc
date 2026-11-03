@@ -5,12 +5,16 @@ import dataclasses
 import json
 import shutil
 import unittest
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 from unittest import mock
 
 from scraftcnc import setups
 from scraftcnc.pybind.scraftpybind import SCHeadlessTransport, SCPyBind
+from scraftcnc.shops import grid_plates, read
 from scraftcnc.tooling import tools
+from scraftcnc.tooling.mount import SCMachineViseLayer, SCParallelLayer
 
 # An extracted `solidcraft-cli` (as the demo uses) for the live test.
 HERE: Path = Path(__file__).resolve().parent.parent
@@ -29,8 +33,8 @@ def setUpModule() -> None:
     unittest.addModuleCleanup(patcher.stop)
 
 
-def example():
-    """Return the example setup's JSON."""
+def example() -> Any:
+    """Return the example setup's JSON (edited freely by the tests)."""
     return json.loads(setups.EXAMPLE.read_text(encoding="utf-8"))
 
 
@@ -59,6 +63,8 @@ class TestExample(unittest.TestCase):
         """The JSON's heights match what the pieces stand on."""
         vise = tools.KURT_D688
         table, _, first, second = self.setup.tooling
+        parallel = first.layer
+        assert isinstance(parallel, SCParallelLayer)
         self.assertAlmostEqual(
             table.placement.z + tools.MIKINI_1610L.thickness, 0.0
         )
@@ -66,14 +72,14 @@ class TestExample(unittest.TestCase):
         self.assertAlmostEqual(second.placement.z, vise.bed_top())
         self.assertAlmostEqual(
             self.setup.materials[0].placement.z,
-            vise.bed_top() + first.layer.parallel.height,
+            vise.bed_top() + parallel.parallel.height,
         )
 
     def test_parallels_next_to_jaws(self) -> None:
         """Each parallel touches a jaw's plate, along the jaw."""
-        gap = setups._gap(
-            self.setup.tooling[1].layer, self.setup.tooling[1].placement
-        )
+        vise = self.setup.tooling[1].layer
+        assert isinstance(vise, SCMachineViseLayer)
+        gap = setups._gap(vise, self.setup.tooling[1].placement)
         self.assertAlmostEqual(gap.high[1], 3.0 * INCH)
         self.assertAlmostEqual(gap.low[1], -3.0 * INCH)
         first = self.setup.tooling[2].keep_out().prisms[0].grown(-3.175)
@@ -121,7 +127,7 @@ class TestShopGridPlates(unittest.TestCase):
 
     def test_same_as_tools(self) -> None:
         """The shop's plate is `tools.GRID_PLATE`, so it shares its cache."""
-        shop = setups.grid_plates(setups.read(setups.SHOP))
+        shop = grid_plates(read(setups.SHOP))
         self.assertEqual(
             tools.SCGridPlate.from_shop(shop["Grid plate"]), tools.GRID_PLATE
         )
@@ -149,7 +155,7 @@ class TestShopGridPlates(unittest.TestCase):
 class TestProblems(unittest.TestCase):
     """Bad JSON is reported, with its entry, all at once."""
 
-    def problems(self, change) -> str:
+    def problems(self, change: Callable[[Any], None]) -> str:
         """Return the problems after changing the example."""
         setup_json = copy.deepcopy(example())
         change(setup_json)
@@ -160,7 +166,7 @@ class TestProblems(unittest.TestCase):
     def test_no_unit(self) -> None:
         """A number with no unit is refused."""
 
-        def change(setup_json):
+        def change(setup_json: Any) -> None:
             setup_json["tooling"][1]["height"] = "3"
 
         self.assertIn("tooling[1].height", self.problems(change))
@@ -168,7 +174,7 @@ class TestProblems(unittest.TestCase):
     def test_orientation(self) -> None:
         """Only quarter turns are taken."""
 
-        def change(setup_json):
+        def change(setup_json: Any) -> None:
             setup_json["tooling"][1]["orientation"] = "45 deg"
 
         self.assertIn("tooling[1].orientation", self.problems(change))
@@ -176,7 +182,7 @@ class TestProblems(unittest.TestCase):
     def test_unknown(self) -> None:
         """Unknown names, kinds and keys are refused, all together."""
 
-        def change(setup_json):
+        def change(setup_json: Any) -> None:
             setup_json["tooling"][0]["type"] = "Bridgeport"
             setup_json["tooling"][2]["kind"] = "clamp"
             setup_json["materials"][0]["colour"] = "red"
@@ -191,7 +197,7 @@ class TestProblems(unittest.TestCase):
     def test_missing(self) -> None:
         """A missing key is refused."""
 
-        def change(setup_json):
+        def change(setup_json: Any) -> None:
             del setup_json["machine"]["y_travel"]
             del setup_json["materials"][0]["size"]
 
@@ -202,7 +208,7 @@ class TestProblems(unittest.TestCase):
     def test_too_wide(self) -> None:
         """A vise can not open past its limit."""
 
-        def change(setup_json):
+        def change(setup_json: Any) -> None:
             setup_json["tooling"][1]["opening"] = "9 in"
 
         self.assertIn("tooling[1].opening", self.problems(change))
@@ -210,7 +216,8 @@ class TestProblems(unittest.TestCase):
     def test_not_object(self) -> None:
         """A setup must be an object."""
         with self.assertRaises(ValueError):
-            setups.SCSetup([])
+            # Deliberately the wrong type: it must be refused.
+            setups.SCSetup([])  # type: ignore[arg-type]
 
 
 class TestOtherSetups(unittest.TestCase):
@@ -281,10 +288,12 @@ class TestDemoStack(unittest.TestCase):
         rails = table.placement.z + tools.MIKINI_1610L.thickness
         self.assertAlmostEqual(vise.placement.z, rails)
         rails += tools.KURT_D688.bed_top()
+        parallel = first.layer
+        assert isinstance(parallel, SCParallelLayer)
         self.assertAlmostEqual(first.placement.z, rails)
         self.assertAlmostEqual(second.placement.z, rails)
         self.assertAlmostEqual(
-            plate.placement.z, rails + first.layer.parallel.height
+            plate.placement.z, rails + parallel.parallel.height
         )
 
         # The demonstration plate is 1/2 in thick, with its top at Z 0.
@@ -303,6 +312,7 @@ class TestDemoStack(unittest.TestCase):
 
         # The vise's gap, which is as wide as the grid plate.
         layer = vise.layer
+        assert isinstance(layer, SCMachineViseLayer)
         self.assertAlmostEqual(layer.opening, tools.GRID_PLATE.length)
         self.assertAlmostEqual(
             vise.placement.y - layer.vise.gap_center(layer.opening), center[1]
@@ -310,7 +320,9 @@ class TestDemoStack(unittest.TestCase):
         self.assertAlmostEqual(vise.placement.x, center[0])
 
         # The parallels are next to the jaws, under the grid plate.
-        half = (layer.opening - first.layer.parallel.thickness) / 2.0
+        parallel = first.layer
+        assert isinstance(parallel, SCParallelLayer)
+        half = (layer.opening - parallel.parallel.thickness) / 2.0
         self.assertAlmostEqual(first.placement.y, center[1] + half)
         self.assertAlmostEqual(second.placement.y, center[1] - half)
 
@@ -329,12 +341,12 @@ class TestModel(unittest.TestCase):
 
             # The part overlaps its material on purpose.
             others = [name for name in names if name != "Grid plate"]
-            result = solidcraft.inspect.interference(bodies=others)
+            result: Any = solidcraft.inspect.interference(bodies=others)
             self.assertEqual(result["interferences"], [])
             self.assertEqual(result["unchecked"], [])
 
             # The fixed jaw is at the rear, its middle on `X = 0`.
-            fixed = solidcraft.inspect.center_of_mass(
+            fixed: Any = solidcraft.inspect.center_of_mass(
                 bodies=["Kurt D688 fixed jaw"]
             )
             x, y, z = fixed["center"]
@@ -343,7 +355,7 @@ class TestModel(unittest.TestCase):
             self.assertAlmostEqual(z, (2.64 + 1.735 / 2.0) * INCH)
 
             # A parallel lies along the jaw, next to it.
-            parallel = solidcraft.inspect.center_of_mass(
+            parallel: Any = solidcraft.inspect.center_of_mass(
                 bodies=["Parallel 1-1/2 in A"]
             )
             x, y, z = parallel["center"]
@@ -354,7 +366,7 @@ class TestModel(unittest.TestCase):
             # The part's corners and grid holes turned with it: 20 along X
             # and 10 along Y, each hole two half cylinders.  Its tooling
             # holes are other sizes.
-            faces = solidcraft.model.faces(body="Grid plate")
+            faces: Any = solidcraft.model.faces(body="Grid plate")
             arcs = [
                 face["cylinder"]
                 for face in faces["faces"]

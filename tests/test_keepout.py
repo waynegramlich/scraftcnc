@@ -4,11 +4,12 @@ import json
 import math
 import random
 import unittest
+from collections.abc import Iterator
 
 from scraftcnc import keepout, setups
 from scraftcnc.demo import MACHINE, MATERIAL, SHOP_FILE, cut_demo
 from scraftcnc.gcode import SCCNC
-from scraftcnc.geometry import SLOP, SCArc, SCLine
+from scraftcnc.geometry import SLOP, SCArc, SCLine, SCRoundedPolygon
 from scraftcnc.machine import SCMachine, SCTool
 from scraftcnc.shops import cnc_machine, read
 
@@ -26,7 +27,7 @@ TOPS = {
 }
 
 
-def setup_zones():
+def setup_zones() -> list[SCRoundedPolygon]:
     """Return the example setup's zones."""
     setup = setups.SCSetup(
         json.loads(setups.EXAMPLE.read_text(encoding="utf-8"))
@@ -34,7 +35,7 @@ def setup_zones():
     return keepout.work_zones(setup, setup.materials[0])
 
 
-def machine(tools=()):
+def machine(tools: tuple[SCTool, ...] = ()) -> SCMachine:
     """Return a small machine, whose T1 is a 1/4 in end mill."""
     return SCMachine(
         name="Test mill",
@@ -55,7 +56,7 @@ def machine(tools=()):
     )
 
 
-def program(number=1, tools=()):
+def program(number: int = 1, tools: tuple[SCTool, ...] = ()) -> SCCNC:
     """Return a program with a tool in the spindle, at `z_safe`."""
     cnc = SCCNC("Test", machine(tools))
     cnc.change_tool(number)
@@ -63,7 +64,15 @@ def program(number=1, tools=()):
     return cnc
 
 
-def rectangle_distance(point, box):
+def known(value: float | None) -> float:
+    """Return an axis value that has been set."""
+    assert value is not None
+    return value
+
+
+def rectangle_distance(
+    point: tuple[float, float], box: tuple[float, float, float, float]
+) -> float:
     """Return how far a point is from a box, with no `geometry`."""
     low_x, high_x, low_y, high_y = box
     across = max(low_x - point[0], 0.0, point[0] - high_x)
@@ -111,7 +120,7 @@ class TestZones(unittest.TestCase):
 class TestCrashes(unittest.TestCase):
     """A deliberate crash into each zone, for each kind of move."""
 
-    def hits(self, cnc, name):
+    def hits(self, cnc: SCCNC, name: str) -> bool:
         """Return whether a program's last line enters a zone."""
         last = len(cnc.commands)
         return any(
@@ -121,7 +130,9 @@ class TestCrashes(unittest.TestCase):
             for found in keepout.check_program(cnc, setup_zones())
         )
 
-    def sides(self, zone):
+    def sides(
+        self, zone: SCRoundedPolygon
+    ) -> Iterator[tuple[tuple[float, float], tuple[float, float]]]:
         """Yield the middle of each side of a zone, with its way out."""
         low_x, high_x, low_y, high_y = zone.box
         middle_x = (low_x + high_x) / 2.0
@@ -131,7 +142,13 @@ class TestCrashes(unittest.TestCase):
         yield (middle_x, high_y), (0.0, 1.0)
         yield (middle_x, low_y), (0.0, -1.0)
 
-    def line_to(self, zone, edge, out, gap):
+    def line_to(
+        self,
+        zone: SCRoundedPolygon,
+        edge: tuple[float, float],
+        out: tuple[float, float],
+        gap: float,
+    ) -> SCCNC:
         """Return a program going straight at a side, stopping `gap` off."""
         z = zone.z_end - 0.01
         cnc = program()
@@ -142,7 +159,13 @@ class TestCrashes(unittest.TestCase):
         cnc.linear(edge[0] + out[0] * reach, edge[1] + out[1] * reach)
         return cnc
 
-    def arc_past(self, zone, edge, out, gap):
+    def arc_past(
+        self,
+        zone: SCRoundedPolygon,
+        edge: tuple[float, float],
+        out: tuple[float, float],
+        gap: float,
+    ) -> SCCNC:
         """Return a program whose half circle comes `gap` off a side."""
         z = zone.z_end - 0.01
         radius = 1.0
@@ -297,6 +320,7 @@ class TestBruteForce(unittest.TestCase):
                 start[1] + generator.uniform(-6, 6),
             )
             z = generator.uniform(-6.0, 0.5)
+            move: SCLine | SCArc
             if generator.random() < 0.5:
                 move = SCLine(start, end)
                 points = [
@@ -316,17 +340,19 @@ class TestBruteForce(unittest.TestCase):
                     chord[0] / 2.0 - chord[1] / length * along,
                     chord[1] / 2.0 + chord[0] / length * along,
                 )
-                move = keepout.arc_segments(start, end, offset, code)[0]
-                center = move.center
+                arc = keepout.arc_segments(start, end, offset, code)[0]
+                assert isinstance(arc, SCArc)
+                move = arc
+                center = arc.center
                 first = math.atan2(start[1] - center[1], start[0] - center[0])
                 points = [
                     (
                         center[0]
-                        + move.radius
-                        * math.cos(first + move.sweep * index / 800),
+                        + arc.radius
+                        * math.cos(first + arc.sweep * index / 800),
                         center[1]
-                        + move.radius
-                        * math.sin(first + move.sweep * index / 800),
+                        + arc.radius
+                        * math.sin(first + arc.sweep * index / 800),
                     )
                     for index in range(801)
                 ]
@@ -353,7 +379,7 @@ class TestBruteForce(unittest.TestCase):
 class TestRapids(unittest.TestCase):
     """Rapids belong at `z_safe`."""
 
-    def kinds(self, cnc):
+    def kinds(self, cnc: SCCNC) -> list[str]:
         """Return the texts of a program's rapid violations."""
         return [
             found.text
@@ -399,7 +425,7 @@ class TestRapids(unittest.TestCase):
 class TestUnchecked(unittest.TestCase):
     """What the checker does not understand is reported, never passed."""
 
-    def text(self, cnc):
+    def text(self, cnc: SCCNC) -> list[int]:
         """Return a program's `unchecked` lines."""
         return [
             found.line
@@ -492,10 +518,10 @@ class TestPrograms(unittest.TestCase):
         self.assertTrue(all("T1 " in item.text for item in hits))
 
         # Hand figures: each line's reach, and below which zone's top.
-        bad = {item.line: [] for item in hits}
+        bad: dict[int, list[str]] = {item.line: [] for item in hits}
         for item in hits:
             bad[item.line].append(item.zone)
-        tracker = {"X": None, "Y": None, "Z": None}
+        tracker: dict[str, float | None] = {"X": None, "Y": None, "Z": None}
         for line, command in enumerate(cnc.commands, 1):
             old = dict(tracker)
             for letter in "XYZ":
@@ -503,12 +529,14 @@ class TestPrograms(unittest.TestCase):
                     tracker[letter] = float(command[letter])
             if line <= change or old["X"] is None or line not in bad:
                 continue
-            low_z = min(old["Z"], tracker["Z"])
+            low_z = min(known(old["Z"]), known(tracker["Z"]))
             for zone in bad[line]:
                 self.assertLess(low_z, TOPS[zone], (line, zone))
             # The end mill's center is on or beyond a long side's path.
             self.assertGreater(
-                max(abs(old["Y"]), abs(tracker["Y"])), 2.75, line
+                max(abs(known(old["Y"])), abs(known(tracker["Y"]))),
+                2.75,
+                line,
             )
 
         # The short ends are clear, at every depth.
@@ -523,7 +551,7 @@ class TestPrograms(unittest.TestCase):
                 command.get("G") == 1
                 and "Y" in command
                 and old["Y"] != tracker["Y"]
-                and abs(abs(tracker["X"]) - 5.375) < 0.001
+                and abs(abs(known(tracker["X"])) - 5.375) < 0.001
             ):
                 ends += 1
                 self.assertNotIn(line, bad)
