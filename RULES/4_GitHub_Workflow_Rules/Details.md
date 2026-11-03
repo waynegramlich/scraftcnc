@@ -68,8 +68,8 @@ macOS):
 * On failure, keep the evidence: `actions/upload-artifact@v4` of the
   scratch directory under `if: failure()`, with `include-hidden-files:
   true` for dot-directories.
-* Pin lint tools to the versions used locally (`ruff==X`, `mypy==Y`),
-  so a new upstream rule cannot fail a run.
+* Do not pin lint tools: the newest versions find the most bugs, and a
+  run that a new rule fails is fixed, not avoided.
 * Give the testing workflow a `source` target (the default) that
   builds a wheel from the chosen commit and tests it as a stranger
   would, and runs the linters, so the workflow is useful before

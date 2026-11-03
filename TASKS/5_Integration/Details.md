@@ -1,6 +1,7 @@
 # 5 Integration
 
 This is the task where the various disparate pieces of code get integrated:
+* File system reorganization
 * Shop
   * Machines
   * Tool Models
