@@ -31,13 +31,10 @@ from pathlib import Path
 from types import ModuleType
 from typing import TypeAlias
 
-import sctoolmodel
-import shops
-import tools
-from scgeometry import SCArc, SCRoundedPolygon, SCSegment
-from scraftcnc.pybind import scraftpybind
-from sctoolmodel import COUNTERSINK_TIP_FLAT, MM_PER_INCH, Profile, profile
-from shops import (
+from .. import shops
+from ..pybind import scraftpybind
+from ..scgeometry import SCArc, SCRoundedPolygon, SCSegment
+from ..shops import (
     ANGLE,
     KINDS,
     LENGTH,
@@ -46,7 +43,9 @@ from shops import (
     markdown_table,
     measure,
 )
-from tools import (
+from . import sctoolmodel, tools
+from .sctoolmodel import COUNTERSINK_TIP_FLAT, MM_PER_INCH, Profile, profile
+from .tools import (
     GRID_PLATE,
     KURT_D688,
     KURT_JAW_PLATE,
@@ -61,7 +60,7 @@ from tools import (
 )
 
 # Where the files go.
-HERE: Path = Path(__file__).parent
+HERE: Path = Path(__file__).resolve().parents[2]
 DOCUMENT: Path = HERE / "Tool_Models.md"
 SKETCHES: str = "docs/tool_models"
 

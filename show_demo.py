@@ -40,11 +40,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from types import FrameType
 
-from scmodelcache import SCModelCache
 from scraftcnc.lcnc.lcnc_client import PORT as LINUXCNC_PORT
 from scraftcnc.lcnc.lcnc_client import SCBridgeError, SCClient
 from scraftcnc.pybind.scraftpybind import SCPyBind, SCSolidCraftError, connect
-from scsetup import SCSetup
+from scraftcnc.scmodelcache import SCModelCache
+from scraftcnc.scsetup import SCSetup
 
 # Where everything is.
 PROJECT: Path = Path(__file__).resolve().parent
@@ -429,7 +429,7 @@ class SCShow:
             self.logs["model"].open("wb") as log,
         ):
             done = subprocess.run(
-                [sys.executable, str(PROJECT / "solidcraftcnc_demo.py"),
+                [sys.executable, "-m", "scraftcnc.solidcraftcnc_demo",
                  "--no-path", "--opaque", str(self.options.solidcraft_port)],
                 cwd=PROJECT,
                 stdin=subprocess.DEVNULL,
@@ -479,7 +479,7 @@ class SCShow:
         self.start(
             "watcher",
             ["podman", "exec", "-u", getpass.getuser(), "-w", str(PROJECT),
-             BOX, "python3", "-u", "./sim_linuxcnc.py", "--watch",
+             BOX, "python3", "-u", "-m", "scraftcnc.lcnc.sim_linuxcnc", "--watch",
              str(self.program),
              "--solidcraft", str(self.options.solidcraft_port)],
         )  # fmt: skip
@@ -504,7 +504,7 @@ class SCShow:
         say("Starting the panel.")
         self.start(
             "panel",
-            [sys.executable, str(PROJECT / "lcnc_panel.py"),
+            [sys.executable, "-m", "scraftcnc.hmi.lcnc_panel",
              "--port", str(port), str(self.program)],
         )  # fmt: skip
         self.wait_for_port("panel", port)

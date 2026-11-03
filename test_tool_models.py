@@ -7,10 +7,9 @@ import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-import sctoolmodel
-import shops
-import tool_models
+from scraftcnc import shops
 from scraftcnc.pybind.scraftpybind import SCHeadlessTransport, SCPyBind
+from scraftcnc.tooling import sctoolmodel, tool_models
 
 
 class TestFiles(unittest.TestCase):

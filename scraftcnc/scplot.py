@@ -26,11 +26,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, TypeAlias, TypedDict
 
-from scgeometry import SCRoundedPolygon, point_at
-from solidcraftcnc import RS274, SCCNC
+from .scgeometry import SCRoundedPolygon, point_at
+from .solidcraftcnc import RS274, SCCNC
 
 if TYPE_CHECKING:
-    from scraftcnc.pybind.scraftpybind import JSON, SCPyBind
+    from .pybind.scraftpybind import JSON, SCPyBind
 
 # The page the path is filled into.
 TEMPLATE: Path = Path(__file__).resolve().parent / "scplot_template.html"
@@ -575,7 +575,7 @@ def send_batch(solidcraft: "SCPyBind", steps: list[SCStep]) -> None:
     """
     # Imported here, so the viewer needs no `scraftpybind`.
     # pylint: disable-next=import-outside-toplevel
-    from scraftcnc.pybind.scraftpybind import (
+    from .pybind.scraftpybind import (
         SCHeadlessTransport,
         SCSolidCraftError,
     )

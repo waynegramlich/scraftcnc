@@ -26,7 +26,7 @@ import sys
 import time
 from pathlib import Path
 
-from scraftcnc.pybind.scraftpybind import (
+from ..pybind.scraftpybind import (
     SCHeadlessTransport,
     SCPyBind,
     SCTransport,
@@ -37,7 +37,7 @@ from scraftcnc.pybind.scraftpybind import (
 # headless sessions when none is on the `PATH` (as in
 # `solidcraftcnc_demo.py`).
 SOLIDCRAFT_CLI: Path = (
-    Path(__file__).resolve().parent
+    Path(__file__).resolve().parents[2]
     / "solidcraft/squashfs-root/usr/bin/solidcraft-cli"
 )
 

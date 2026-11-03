@@ -56,16 +56,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
 
-from scmodelcache import (
+from ..pybind.scraftpybind import JSON, SCPyBind, connect
+from ..scmodelcache import (
     SCCacheable,
     SCInserted,
     SCModelCache,
     cache_for,
     placement_matrix,
 )
-from scplot import SCStep, SpacePoint, send_batch, sketch_steps
-from scraftcnc.pybind.scraftpybind import JSON, SCPyBind, connect
-from shops import (
+from ..scplot import SCStep, SpacePoint, send_batch, sketch_steps
+from ..shops import (
     ANGLE,
     CNC_KINDS,
     LENGTH,
@@ -144,7 +144,7 @@ HELIX_POINTS_PER_TURN: int = 12
 
 # The example shop.
 EXAMPLE_SHOP: Path = (
-    Path(__file__).resolve().parent / "examples/shop/home_shop.toml"
+    Path(__file__).resolve().parents[2] / "examples/shop/home_shop.toml"
 )
 
 

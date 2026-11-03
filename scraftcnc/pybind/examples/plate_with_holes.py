@@ -6,13 +6,12 @@ The plate is drawn live in a SolidCraft GUI started with `solidcraft
 exported as a STEP file:
 
 ```
-./plate_with_holes.py 8080 plate_with_holes.step
-./plate_with_holes.py headless plate_with_holes.step
+python3 -m scraftcnc.pybind.examples.plate_with_holes 8080 plate.step
+python3 -m scraftcnc.pybind.examples.plate_with_holes headless plate.step
 ```
 
-It needs `scraftpybind` installed (`pip install scraftpybind`, or
-`pip install -e .` in this repository), or `PYTHONPATH` set to the
-directory that holds `scraftpybind.py`.
+Run it from the root of the `scraftcnc` repository (or with
+`PYTHONPATH` set to it).
 
 It is the first `scraftpybind` example; in CadQuery the same plate is
 
@@ -29,7 +28,7 @@ cq.Workplane("XY").box(100, 60, 10).faces(">Z").workplane()
 import sys
 from pathlib import Path
 
-from scraftcnc.pybind.scraftpybind import JSON, SCPyBind, connect
+from ..scraftpybind import JSON, SCPyBind, connect
 
 
 # Function `plate_with_holes()`:

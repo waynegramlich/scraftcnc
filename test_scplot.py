@@ -6,15 +6,15 @@ import re
 import unittest
 from typing import Any, cast
 
-from scgeometry import SCArc
-from scplot import (
+from scraftcnc.scgeometry import SCArc
+from scraftcnc.scplot import (
     command_moves,
     path_moves,
     plot_html,
     read_gcode,
     sketch_path,
 )
-from solidcraftcnc import SCCNC
+from scraftcnc.solidcraftcnc import SCCNC
 from test_scgeometry import square
 from test_solidcraftcnc import milling
 

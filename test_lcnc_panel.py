@@ -12,9 +12,8 @@ from pathlib import Path
 from typing import Any, cast
 from unittest import mock
 
-import lcnc_headless
-import lcnc_panel
-import shops
+from scraftcnc import shops
+from scraftcnc.hmi import lcnc_headless, lcnc_panel
 from scraftcnc.lcnc.lcnc_client import SCBridgeError
 
 # The constants that `FakeClient` answers with.

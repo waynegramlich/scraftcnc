@@ -52,8 +52,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TypeAlias
 
-import solidcraftcnc_demo
-from scplot import SCMove, SpacePoint, command_moves, read_gcode
+from scraftcnc import solidcraftcnc_demo
 from scraftcnc.pybind.scraftpybind import (
     JSON,
     SCHeadlessTransport,
@@ -62,6 +61,7 @@ from scraftcnc.pybind.scraftpybind import (
     SCTransport,
     connect,
 )
+from scraftcnc.scplot import SCMove, SpacePoint, command_moves, read_gcode
 
 # The most points `sketch.line3d` takes in one call.
 MAX_POINTS: int = 500

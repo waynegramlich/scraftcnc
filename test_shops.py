@@ -6,7 +6,7 @@ import tomllib
 import unittest
 from pathlib import Path
 
-import shops
+from scraftcnc import shops
 
 # The example shop.
 EXAMPLES: Path = Path(__file__).parent / "examples" / "shop"

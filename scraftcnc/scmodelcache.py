@@ -40,7 +40,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
 
-from scraftcnc.pybind.scraftpybind import (
+from .pybind.scraftpybind import (
     JSON,
     SCHeadlessTransport,
     SCPyBind,

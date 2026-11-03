@@ -3,8 +3,8 @@
 import unittest
 from pathlib import Path
 
-from scmachine import SCMachine, SCTool
-from shops import cnc_machine, read
+from scraftcnc.scmachine import SCMachine, SCTool
+from scraftcnc.shops import cnc_machine, read
 from test_solidcraftcnc import machine
 
 # The example shop.

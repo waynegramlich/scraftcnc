@@ -7,9 +7,9 @@ import unittest
 from pathlib import Path
 from typing import cast
 
-import sctoolmodel
-import shops
+from scraftcnc import shops
 from scraftcnc.pybind.scraftpybind import SCHeadlessTransport, SCPyBind
+from scraftcnc.tooling import sctoolmodel
 
 # The example shop, and an extracted `solidcraft-cli` (as the demo
 # uses) for the live test.

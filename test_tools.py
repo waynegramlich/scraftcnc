@@ -7,8 +7,8 @@ import shutil
 import unittest
 from pathlib import Path
 
-import tools
 from scraftcnc.pybind.scraftpybind import JSON, SCHeadlessTransport, SCPyBind
+from scraftcnc.tooling import tools
 
 # An extracted `solidcraft-cli` (as the demo uses) for the live test.
 HERE: Path = Path(__file__).resolve().parent

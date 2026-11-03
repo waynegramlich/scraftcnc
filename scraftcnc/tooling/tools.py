@@ -34,18 +34,18 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
-from scgeometry import SCCorner, SCHole, SCRoundedPolygon
-from scmodelcache import SCCacheable, source_digest
-from scplot import send_batch
-from scraftcnc.pybind.scraftpybind import JSON, SCPyBind, connect
-from sctoolmodel import (
+from ..pybind.scraftpybind import JSON, SCPyBind, connect
+from ..scgeometry import SCCorner, SCHole, SCRoundedPolygon
+from ..scmodelcache import SCCacheable, source_digest
+from ..scplot import send_batch
+from ..shops import LENGTH, measure
+from .sctoolmodel import (
     COUNTERSINK_TIP_FLAT,
     MM_PER_INCH,
     FluteRun,
     flute_runs,
     flute_steps,
 )
-from shops import LENGTH, measure
 
 # A point: `(x, y, z)`, in millimeters.
 Point = tuple[float, float, float]
@@ -141,9 +141,10 @@ ALUMINUM_COLOR: str = "#e4e7ea"
 
 # The code that builds tooling.  A change to it makes new models, as
 # nothing else would notice that a cached model is out of date.
-TOOLING_SOURCES: tuple[Path, ...] = tuple(
-    Path(__file__).resolve().parent / name
-    for name in ("mount.py", "scgeometry.py", "tools.py")
+TOOLING_SOURCES: tuple[Path, ...] = (
+    Path(__file__).resolve().parent / "mount.py",
+    Path(__file__).resolve().parents[1] / "scgeometry.py",
+    Path(__file__).resolve().parent / "tools.py",
 )
 
 

@@ -13,10 +13,10 @@ smaller than it.  With a SolidCraft GUI's control port (`solidcraft --control
 PORT`) or `headless`, it also models the plate in SolidCraft:
 
 ```
-./solidcraftcnc_demo.py > demo.ngc
-./solidcraftcnc_demo.py --plot demo.html > demo.ngc
-./solidcraftcnc_demo.py 8080 > demo.ngc
-./solidcraftcnc_demo.py headless > demo.ngc
+python3 -m scraftcnc.solidcraftcnc_demo > demo.ngc
+python3 -m scraftcnc.solidcraftcnc_demo --plot demo.html > demo.ngc
+python3 -m scraftcnc.solidcraftcnc_demo 8080 > demo.ngc
+python3 -m scraftcnc.solidcraftcnc_demo headless > demo.ngc
 ```
 """
 
@@ -27,24 +27,24 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
-from scgeometry import SCCorner, SCRoundedPolygon, point_at
-from scmachine import SCMachine, SCTool
-from scplot import sketch_path, write_plot
-from scraftcnc.pybind.scraftpybind import (
+from .pybind.scraftpybind import (
     JSON,
     SCHeadlessTransport,
     SCPyBind,
     SCTransport,
     connect,
 )
-from shops import cnc_machine, read
-from solidcraftcnc import SCCNC, Stage
+from .scgeometry import SCCorner, SCRoundedPolygon, point_at
+from .scmachine import SCMachine, SCTool
+from .scplot import sketch_path, write_plot
+from .shops import cnc_machine, read
+from .solidcraftcnc import SCCNC, Stage
 
 # A `solidcraft-cli` extracted from SolidCraft's AppImage, for
 # headless sessions when none is on the `PATH` (if it is there; it is
 # not part of this project).
 SOLIDCRAFT_CLI: Path = (
-    Path(__file__).resolve().parent
+    Path(__file__).resolve().parents[1]
     / "solidcraft/squashfs-root/usr/bin/solidcraft-cli"
 )
 
@@ -53,7 +53,7 @@ MM_PER_INCH: float = 25.4
 
 # The shop, the machine in it that cuts the plate, and the end mill.
 SHOP_FILE: Path = (
-    Path(__file__).resolve().parent / "examples/shop/home_shop.toml"
+    Path(__file__).resolve().parents[1] / "examples/shop/home_shop.toml"
 )
 MACHINE: str = "Shop mill"
 

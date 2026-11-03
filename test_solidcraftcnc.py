@@ -5,7 +5,7 @@ import re
 import unittest
 from collections.abc import Sequence
 
-from scgeometry import (
+from scraftcnc.scgeometry import (
     SCArc,
     SCCorner,
     SCLoop,
@@ -13,9 +13,15 @@ from scgeometry import (
     SCSegment,
     distance_to,
 )
-from scmachine import SCMachine, SCTool
-from solidcraftcnc import SCCNC, SCRing, _number, cut_order, plan_pocket
-from solidcraftcnc_demo import demo_islands, demo_pocket
+from scraftcnc.scmachine import SCMachine, SCTool
+from scraftcnc.solidcraftcnc import (
+    SCCNC,
+    SCRing,
+    _number,
+    cut_order,
+    plan_pocket,
+)
+from scraftcnc.solidcraftcnc_demo import demo_islands, demo_pocket
 from test_scgeometry import dumbbell, square
 
 

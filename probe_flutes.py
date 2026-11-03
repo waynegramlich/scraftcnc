@@ -19,17 +19,17 @@ import argparse
 import math
 import time
 
-from scplot import SCStep, send_batch
 from scraftcnc.pybind.scraftpybind import SCPyBind, SCSolidCraftError, connect
-from sctoolmodel import (
+from scraftcnc.scplot import SCStep, send_batch
+from scraftcnc.shops import read
+from scraftcnc.tooling.sctoolmodel import (
     EXAMPLE_SHOP,
     MM_PER_INCH,
     as_component,
     model_tool,
     shop_tools,
 )
-from shops import read
-from tools import DOUBLE_END_COUNTERSINKS, DRILL_COLOR
+from scraftcnc.tooling.tools import DOUBLE_END_COUNTERSINKS, DRILL_COLOR
 
 # One tool of each kind, by `unique_id`: a square end mill, a ball end
 # mill, a 4 flute rougher, a drill, a chamfer mill, a corner rounding

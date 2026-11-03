@@ -16,9 +16,9 @@ rest, `_SCScanner` finds the line of every key, since no TOML library
 keeps line numbers once a file is parsed.
 
 ```
-./shops.py check examples/shop/home_shop.toml
-./shops.py json examples/shop/home_shop.toml
-./shops.py markdown > Shops.md
+python3 -m scraftcnc.shops check examples/shop/home_shop.toml
+python3 -m scraftcnc.shops json examples/shop/home_shop.toml
+python3 -m scraftcnc.shops markdown > Shops.md
 ```
 """
 
@@ -40,7 +40,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, TypeAlias, cast
 
-from scmachine import DrillCycle, SCMachine, SCTool, ToolKind
+from .scmachine import DrillCycle, SCMachine, SCTool, ToolKind
 
 # The format version that this module reads and describes.
 FORMAT_VERSION: str = "0.0.1"

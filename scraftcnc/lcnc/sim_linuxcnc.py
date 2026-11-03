@@ -61,9 +61,9 @@ from typing import Protocol
 # pylint: disable-next=import-error
 import linuxcnc  # type: ignore[import-not-found]
 
-import sim_solidcraft
-from scraftcnc.pybind.scraftpybind import SCSolidCraftError
-from shops import read, tool_table_text
+from ..pybind.scraftpybind import SCSolidCraftError
+from ..shops import read, tool_table_text
+from . import sim_solidcraft
 
 # How often to poll (seconds).
 POLL: float = 0.05
@@ -79,7 +79,7 @@ MATERIAL: str = "6061 aluminum"
 
 # The shop and machine whose tools are loaded, by default.
 SHOP_FILE: Path = (
-    Path(__file__).resolve().parent / "examples/shop/home_shop.toml"
+    Path(__file__).resolve().parents[2] / "examples/shop/home_shop.toml"
 )
 MACHINE: str = "Shop mill"
 

@@ -21,9 +21,9 @@ the slider:
 
 ```
 python3 -m scraftcnc.lcnc.serve_linuxcnc &
-./lcnc_panel.py demo.ngc
-./lcnc_panel.py --dry-run demo.ngc      # The window alone.
-./lcnc_panel.py --headless --port 5007  # No window: for tests.
+python3 -m scraftcnc.hmi.lcnc_panel demo.ngc
+python3 -m scraftcnc.hmi.lcnc_panel --dry-run demo.ngc      # The window alone.
+python3 -m scraftcnc.hmi.lcnc_panel --headless --port 5007  # No window: for tests.
 ```
 
 With `--headless`, the panel is built from `lcnc_headless.py` in place
@@ -65,9 +65,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
-import lcnc_headless
-import shops
-from scraftcnc.lcnc.lcnc_client import PORT, SCBridgeError, SCClient, constant
+from .. import shops
+from ..lcnc.lcnc_client import PORT, SCBridgeError, SCClient, constant
+from . import lcnc_headless
 
 # A computer with no `tkinter` can still run `--headless`.
 try:
@@ -75,10 +75,10 @@ try:
     from tkinter import filedialog, messagebox, ttk
 except ImportError:
     # pylint: disable=reimported,ungrouped-imports
-    import lcnc_headless as filedialog  # type: ignore[no-redef]
-    import lcnc_headless as messagebox  # type: ignore[no-redef]
-    import lcnc_headless as tk  # type: ignore[no-redef]
-    import lcnc_headless as ttk  # type: ignore[no-redef]
+    from . import lcnc_headless as filedialog  # type: ignore[no-redef]
+    from . import lcnc_headless as messagebox  # type: ignore[no-redef]
+    from . import lcnc_headless as tk  # type: ignore[no-redef]
+    from . import lcnc_headless as ttk  # type: ignore[no-redef]
 
 # The protocol of `serve_linuxcnc` that this needs, at least.
 PROTOCOL: int = 2
@@ -130,7 +130,7 @@ WORDS: re.Pattern[str] = re.compile(
 # The shop and machine whose tools the Tools window lists, and the
 # material it starts with.
 SHOP_FILE: Path = (
-    Path(__file__).resolve().parent / "examples/shop/home_shop.toml"
+    Path(__file__).resolve().parents[2] / "examples/shop/home_shop.toml"
 )
 SHOP_MACHINE: str = "Shop mill"
 MATERIAL: str = "6061 aluminum"

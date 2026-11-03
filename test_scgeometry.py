@@ -9,7 +9,7 @@ import random
 import types
 import unittest
 
-from scgeometry import (
+from scraftcnc.scgeometry import (
     SLOP,
     SCArc,
     SCCorner,

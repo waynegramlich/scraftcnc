@@ -30,9 +30,9 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, ClassVar
 
-import shops
-from scplot import SCMove, command_moves, read_gcode
+from scraftcnc import shops
 from scraftcnc.lcnc import lcnc_client
+from scraftcnc.scplot import SCMove, command_moves, read_gcode
 
 HERE: Path = Path(__file__).resolve().parent
 SERVER_DIRECTORY: Path = HERE
@@ -155,7 +155,7 @@ class TestEndToEnd(unittest.TestCase):
         """Start a panel, and wait until it answers."""
         cls.port = free_port()
         cls.panel = subprocess.Popen(
-            [sys.executable, str(HERE / "lcnc_panel.py"), "--headless",
+            [sys.executable, "-m", "scraftcnc.hmi.lcnc_panel", "--headless",
              "--port", str(cls.port)],
             cwd=HERE,
         )  # fmt: skip
@@ -377,7 +377,7 @@ class TestEndToEnd(unittest.TestCase):
     def test_path_of_the_demonstration(self) -> None:
         """The whole demonstration: every sample lies on its path."""
         done = subprocess.run(
-            [sys.executable, "solidcraftcnc_demo.py"],
+            [sys.executable, "-m", "scraftcnc.solidcraftcnc_demo"],
             cwd=HERE,
             capture_output=True,
             text=True,

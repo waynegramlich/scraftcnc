@@ -19,8 +19,8 @@ It is used through `sim_linuxcnc.py`'s `--solidcraft PORT` (or
 ```
 python3 -m scraftcnc.lcnc.serve_linuxcnc &
 solidcraft --control 8080 &
-./solidcraftcnc_demo.py --no-path --opaque 8080 > demo.ngc
-distrobox enter lcnc -- ./sim_linuxcnc.py demo.ngc --solidcraft 8080
+python3 -m scraftcnc.solidcraftcnc_demo --no-path --opaque 8080 > demo.ngc
+distrobox enter lcnc -- python3 -m scraftcnc.lcnc.sim_linuxcnc demo.ngc --solidcraft 8080
 ```
 
 When SolidCraft fails or stops answering (as when its window is
@@ -36,16 +36,17 @@ from pathlib import Path
 from typing import Protocol
 
 from probe_batch import path_steps, send_batch, sketch_steps
-from scmodelcache import SCModelCache
-from scplot import SCMove, command_moves, read_gcode
-from scraftcnc.pybind.scraftpybind import (
+
+from ..pybind.scraftpybind import (
     SCHeadlessTransport,
     SCPyBind,
     SCTransport,
     connect,
 )
-from sctoolmodel import SCModeledTool, model_tool
-from shops import loaded_tools, read
+from ..scmodelcache import SCModelCache
+from ..scplot import SCMove, command_moves, read_gcode
+from ..shops import loaded_tools, read
+from ..tooling.sctoolmodel import SCModeledTool, model_tool
 
 # SolidCraft's coordinates are millimeters.
 MM_PER_INCH: float = 25.4
@@ -59,7 +60,7 @@ Position = tuple[float, float, float]
 # A `solidcraft-cli` extracted from SolidCraft's AppImage, for
 # headless sessions (see `transport()`).
 SOLIDCRAFT_CLI: Path = (
-    Path(__file__).resolve().parent
+    Path(__file__).resolve().parents[2]
     / "solidcraft/squashfs-root/usr/bin/solidcraft-cli"
 )
 

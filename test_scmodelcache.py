@@ -10,12 +10,10 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-import scmodelcache
-import scsetup
-import sctoolmodel
-import tools
+from scraftcnc import scmodelcache, scsetup
 from scraftcnc.pybind.scraftpybind import SCHeadlessTransport, SCPyBind
-from shops import read
+from scraftcnc.shops import read
+from scraftcnc.tooling import sctoolmodel, tools
 
 HERE: Path = Path(__file__).resolve().parent
 CLI: Path = HERE / "solidcraft/squashfs-root/usr/bin/solidcraft-cli"

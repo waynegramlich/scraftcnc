@@ -5,13 +5,12 @@ import math
 import random
 import unittest
 
-import sckeepout
-import scsetup
-from scgeometry import SLOP, SCArc, SCLine
-from scmachine import SCMachine, SCTool
-from shops import cnc_machine, read
-from solidcraftcnc import SCCNC
-from solidcraftcnc_demo import MACHINE, MATERIAL, SHOP_FILE, cut_demo
+from scraftcnc import sckeepout, scsetup
+from scraftcnc.scgeometry import SLOP, SCArc, SCLine
+from scraftcnc.scmachine import SCMachine, SCTool
+from scraftcnc.shops import cnc_machine, read
+from scraftcnc.solidcraftcnc import SCCNC
+from scraftcnc.solidcraftcnc_demo import MACHINE, MATERIAL, SHOP_FILE, cut_demo
 
 JAWS = ("Kurt D688 fixed jaw", "Kurt D688 movable jaw")
 PARALLELS = ("Parallel 1-1/2 in A", "Parallel 1-1/2 in B")

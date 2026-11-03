@@ -26,7 +26,20 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
-from mount import (
+from .pybind.scraftpybind import (
+    JSON,
+    DocumentUnitsUnits,
+    SCPyBind,
+    connect,
+)
+from .scmodelcache import (
+    SCInserted,
+    SCModelCache,
+    cache_for,
+    placement_matrix,
+)
+from .shops import ANGLE, LENGTH, grid_plates, measure, read
+from .tooling.mount import (
     SCLayer,
     SCMachineViseLayer,
     SCParallelLayer,
@@ -34,21 +47,8 @@ from mount import (
     SCTableLayer,
     _inches,
 )
-from scmodelcache import (
-    SCInserted,
-    SCModelCache,
-    cache_for,
-    placement_matrix,
-)
-from scraftcnc.pybind.scraftpybind import (
-    JSON,
-    DocumentUnitsUnits,
-    SCPyBind,
-    connect,
-)
-from sctoolmodel import MM_PER_INCH
-from shops import ANGLE, LENGTH, grid_plates, measure, read
-from tools import (
+from .tooling.sctoolmodel import MM_PER_INCH
+from .tooling.tools import (
     GRID_PLATE,
     KURT_D688,
     MIKINI_1610L,
@@ -67,7 +67,7 @@ from tools import (
 )
 
 # The setup shown when no file is named.
-EXAMPLE: Path = Path(__file__).resolve().parent / (
+EXAMPLE: Path = Path(__file__).resolve().parents[1] / (
     "examples/setup/grid_plate.json"
 )
 
@@ -89,7 +89,9 @@ PARALLEL_TYPES: dict[str, SCParallel] = {
 
 
 # The shop whose tooling the JSON can name, beyond what `tools.py` has.
-SHOP: Path = Path(__file__).resolve().parent / "examples/shop/home_shop.toml"
+SHOP: Path = (
+    Path(__file__).resolve().parents[1] / "examples/shop/home_shop.toml"
+)
 
 
 # The grid plates the JSON can name: `tools.GRID_PLATE` and the shop's.

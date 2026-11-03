@@ -27,20 +27,26 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Literal, TypeAlias
 
-from scgeometry import SCArc, SCCorner, SCLine, SCRoundedPolygon, SCSegment
-from scmachine import SCMachine, SCTool
-from scsetup import EXAMPLE, SCPlacedWork, SCSetup
-from sctoolmodel import MM_PER_INCH
-from shops import cnc_machine, read
-from solidcraftcnc import RS274, SCCNC
-from solidcraftcnc_demo import END_MILL, MACHINE, MATERIAL, SHOP_FILE, cut_demo
-from tools import GRID_PLATE, Point, SCCylinder, SCPrism
+from .scgeometry import SCArc, SCCorner, SCLine, SCRoundedPolygon, SCSegment
+from .scmachine import SCMachine, SCTool
+from .scsetup import EXAMPLE, SCPlacedWork, SCSetup
+from .shops import cnc_machine, read
+from .solidcraftcnc import RS274, SCCNC
+from .solidcraftcnc_demo import (
+    END_MILL,
+    MACHINE,
+    MATERIAL,
+    SHOP_FILE,
+    cut_demo,
+)
+from .tooling.sctoolmodel import MM_PER_INCH
+from .tooling.tools import GRID_PLATE, Point, SCCylinder, SCPrism
 
 # What a violation can be.
 ViolationKind: TypeAlias = Literal["keep out", "rapid", "unchecked"]
 
 # The demonstration plate's setup.
-DEMO_SETUP: Path = Path(__file__).resolve().parent / (
+DEMO_SETUP: Path = Path(__file__).resolve().parents[1] / (
     "examples/setup/demo_plate.json"
 )
 

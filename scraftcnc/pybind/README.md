@@ -28,7 +28,9 @@ with connect("8080") as transport:
 ```
 
 This is what `python3 scraftpybind.py 8080` runs;
-`examples/plate_with_holes.py` is a longer example.
+`examples/plate_with_holes.py` is a longer example
+(`python3 -m scraftcnc.pybind.examples.plate_with_holes headless
+plate.step`, from the repository root).
 
 ## Status
 

@@ -24,7 +24,7 @@ from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from typing import Literal, TypeAlias
 
-from scgeometry import (
+from .scgeometry import (
     EPSILON,
     JOIN,
     TOUCH,
@@ -45,7 +45,7 @@ from scgeometry import (
     turn_between,
     unit,
 )
-from scmachine import SCMachine, SCTool
+from .scmachine import SCMachine, SCTool
 
 # One RS-274 command: its words, in order, keyed by letter (e.g.
 # `{"G": 1, "X": 10.0}`).  The key `comment` holds a comment line's

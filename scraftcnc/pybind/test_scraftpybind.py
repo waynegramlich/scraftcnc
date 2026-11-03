@@ -54,7 +54,7 @@ HERE: Path = Path(__file__).resolve().parent
 MODULE: Path = HERE / "scraftpybind.py"
 GENERATOR: Path = HERE / "scraftpybind_generate.py"
 CACHE: Path = HERE / "scraftpybind_commands.json"
-EXAMPLE: Path = HERE / "examples" / "plate_with_holes.py"
+EXAMPLE: str = "scraftcnc.pybind.examples.plate_with_holes"
 
 # The `solidcraft-cli` version that `scraftpybind_commands.json` came
 # from; another version may well have other commands.
@@ -1027,7 +1027,7 @@ class TestHeadlessLive(unittest.TestCase):  # pragma: no cover
             folder: Path = Path(name)
             step: Path = folder / "plate.step"
             done: subprocess.CompletedProcess[str] = run_python(
-                [str(EXAMPLE), "headless", str(step)], folder
+                ["-m", EXAMPLE, "headless", str(step)], folder
             )
             self.assertEqual(done.returncode, 0, done.stderr)
             body: dict[str, Any] = measure(step)
@@ -1044,7 +1044,7 @@ class TestHeadlessLive(unittest.TestCase):  # pragma: no cover
         """The example with no arguments prints its usage."""
         with tempfile.TemporaryDirectory() as name:
             done: subprocess.CompletedProcess[str] = run_python(
-                [str(EXAMPLE)], Path(name)
+                ["-m", EXAMPLE], Path(name)
             )
         self.assertEqual(done.returncode, 2)
         self.assertIn("usage:", done.stderr)

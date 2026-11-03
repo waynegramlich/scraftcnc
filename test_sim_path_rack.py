@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-import sim_solidcraft
+from scraftcnc.lcnc import sim_solidcraft
 
 PROGRAM: str = """G20 G90
 G0 X0 Y0 Z1
