@@ -67,7 +67,7 @@ class TestChecks(unittest.TestCase):
                 mock.patch.object(
                     show_demo,
                     "SERVER_PROJECT",
-                    Path(__file__).parent.parent / "scraftlinuxcnc",
+                    Path(__file__).parent,
                 ),
                 self.assertRaisesRegex(
                     show_demo.SCShowFailed, "for SolidCraft"

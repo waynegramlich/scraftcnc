@@ -20,7 +20,7 @@ import math
 import time
 
 from scplot import SCStep, send_batch
-from scraftpybind import SCPyBind, SCSolidCraftError, connect
+from scraftcnc.pybind.scraftpybind import SCPyBind, SCSolidCraftError, connect
 from sctoolmodel import (
     EXAMPLE_SHOP,
     MM_PER_INCH,

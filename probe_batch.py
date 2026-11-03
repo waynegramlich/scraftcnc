@@ -54,7 +54,7 @@ from typing import TypeAlias
 
 import solidcraftcnc_demo
 from scplot import SCMove, SpacePoint, command_moves, read_gcode
-from scraftpybind import (
+from scraftcnc.pybind.scraftpybind import (
     JSON,
     SCHeadlessTransport,
     SCPyBind,

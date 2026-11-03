@@ -37,7 +37,7 @@ from typing import Any, cast
 from scgeometry import SCCorner, SCHole, SCRoundedPolygon
 from scmodelcache import SCCacheable, source_digest
 from scplot import send_batch
-from scraftpybind import JSON, SCPyBind, connect
+from scraftcnc.pybind.scraftpybind import JSON, SCPyBind, connect
 from sctoolmodel import (
     COUNTERSINK_TIP_FLAT,
     MM_PER_INCH,

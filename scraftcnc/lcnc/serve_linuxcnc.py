@@ -26,8 +26,8 @@ import sys
 from pathlib import Path
 from types import FrameType
 
-from scraftlinuxcnc import install_linuxcnc
-from scraftlinuxcnc.install_linuxcnc import (
+from . import install_linuxcnc
+from .install_linuxcnc import (
     INI_FILE,
     SCTarget,
     capture,
@@ -35,7 +35,7 @@ from scraftlinuxcnc.install_linuxcnc import (
     sim_directory,
     stamp,
 )
-from scraftlinuxcnc.lcnc_bridge import PORT
+from .lcnc_bridge import PORT
 
 # Where the `linuxcnc` script writes when it has no terminal.
 LOGS: tuple[str, ...] = ("linuxcnc_print.txt", "linuxcnc_debug.txt")

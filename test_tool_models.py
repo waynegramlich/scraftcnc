@@ -10,7 +10,7 @@ from pathlib import Path
 import sctoolmodel
 import shops
 import tool_models
-from scraftpybind import SCHeadlessTransport, SCPyBind
+from scraftcnc.pybind.scraftpybind import SCHeadlessTransport, SCPyBind
 
 
 class TestFiles(unittest.TestCase):

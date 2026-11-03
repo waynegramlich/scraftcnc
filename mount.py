@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from typing import Protocol
 
 from scmodelcache import SCCacheable
-from scraftpybind import SCPyBind, connect
+from scraftcnc.pybind.scraftpybind import SCPyBind, connect
 from sctoolmodel import MM_PER_INCH
 from tools import (
     ALUMINUM_COLOR,

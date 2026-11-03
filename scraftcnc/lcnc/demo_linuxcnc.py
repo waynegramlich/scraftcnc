@@ -20,10 +20,10 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from scraftlinuxcnc import install_linuxcnc
-from scraftlinuxcnc.install_linuxcnc import stamp
-from scraftlinuxcnc.lcnc_client import SCBridgeError, SCClient, constant
-from scraftlinuxcnc.serve_linuxcnc import serving
+from . import install_linuxcnc
+from .install_linuxcnc import stamp
+from .lcnc_client import SCBridgeError, SCClient, constant
+from .serve_linuxcnc import serving
 
 # How long LinuxCNC may take to start, and to shut down (seconds).
 START_TIME: float = 300.0
@@ -269,7 +269,7 @@ def demonstrate(target_arguments: list[str]) -> int:
         sys.executable,
         "-u",
         "-m",
-        "scraftlinuxcnc.serve_linuxcnc",
+        "scraftcnc.lcnc.serve_linuxcnc",
         *target_arguments,
     ]
     started: float = time.monotonic()

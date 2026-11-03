@@ -12,8 +12,8 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
-from scraftlinuxcnc import lcnc_bridge, lcnc_client, serve_linuxcnc
-from scraftlinuxcnc.install_linuxcnc import SCTarget
+from scraftcnc.lcnc import lcnc_bridge, lcnc_client, serve_linuxcnc
+from scraftcnc.lcnc.install_linuxcnc import SCTarget
 
 Tool = namedtuple("Tool", "id zoffset")
 

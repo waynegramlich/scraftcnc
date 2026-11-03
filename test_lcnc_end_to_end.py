@@ -3,7 +3,7 @@
 G-code from `solidcraftcnc_demo.py`, through a `lcnc_panel.py --headless`
 pressed through its command port, to `serve_linuxcnc` and a real LinuxCNC
 simulator.  This takes about two minutes and needs LinuxCNC installed
-(`install_linuxcnc` from `../scraftlinuxcnc`) with nothing on its port, so
+(`install_linuxcnc` from `scraftcnc/lcnc/`) with nothing on its port, so
 it runs only when asked:
 
 ```
@@ -30,12 +30,12 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, ClassVar
 
-import lcnc_client
 import shops
 from scplot import SCMove, command_moves, read_gcode
+from scraftcnc.lcnc import lcnc_client
 
 HERE: Path = Path(__file__).resolve().parent
-SERVER_DIRECTORY: Path = HERE.parent / "scraftlinuxcnc"
+SERVER_DIRECTORY: Path = HERE
 
 # How near a position must be (inches).
 NEAR: float = 0.001
@@ -134,7 +134,7 @@ class TestEndToEnd(unittest.TestCase):
         """Start LinuxCNC's server, then the panel."""
         cls.directory = tempfile.TemporaryDirectory()
         cls.server = subprocess.Popen(
-            [sys.executable, "-u", "-m", "scraftlinuxcnc.serve_linuxcnc"],
+            [sys.executable, "-u", "-m", "scraftcnc.lcnc.serve_linuxcnc"],
             cwd=SERVER_DIRECTORY,
             stdout=subprocess.DEVNULL,
         )

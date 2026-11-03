@@ -25,3 +25,9 @@ SharsMD
 aic
 
 
+# Python packaging output.
+*.egg-info/
+build/
+dist/
+# STEP files written by the pybind examples.
+scraftcnc/pybind/examples/*.step

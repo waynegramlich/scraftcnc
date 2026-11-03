@@ -40,7 +40,12 @@ from scmodelcache import (
     cache_for,
     placement_matrix,
 )
-from scraftpybind import JSON, DocumentUnitsUnits, SCPyBind, connect
+from scraftcnc.pybind.scraftpybind import (
+    JSON,
+    DocumentUnitsUnits,
+    SCPyBind,
+    connect,
+)
 from sctoolmodel import MM_PER_INCH
 from shops import ANGLE, LENGTH, grid_plates, measure, read
 from tools import (

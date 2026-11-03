@@ -29,7 +29,7 @@ cq.Workplane("XY").box(100, 60, 10).faces(">Z").workplane()
 import sys
 from pathlib import Path
 
-from scraftpybind import JSON, SCPyBind, connect
+from scraftcnc.pybind.scraftpybind import JSON, SCPyBind, connect
 
 
 # Function `plate_with_holes()`:

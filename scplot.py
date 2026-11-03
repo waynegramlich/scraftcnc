@@ -30,7 +30,7 @@ from scgeometry import SCRoundedPolygon, point_at
 from solidcraftcnc import RS274, SCCNC
 
 if TYPE_CHECKING:
-    from scraftpybind import JSON, SCPyBind
+    from scraftcnc.pybind.scraftpybind import JSON, SCPyBind
 
 # The page the path is filled into.
 TEMPLATE: Path = Path(__file__).resolve().parent / "scplot_template.html"
@@ -575,7 +575,10 @@ def send_batch(solidcraft: "SCPyBind", steps: list[SCStep]) -> None:
     """
     # Imported here, so the viewer needs no `scraftpybind`.
     # pylint: disable-next=import-outside-toplevel
-    from scraftpybind import SCHeadlessTransport, SCSolidCraftError
+    from scraftcnc.pybind.scraftpybind import (
+        SCHeadlessTransport,
+        SCSolidCraftError,
+    )
 
     # The GUI's `engine.batch`, or the headless MCP `batch` tool.
     params: dict[str, JSON] = {"commands": steps, "rollback": False}

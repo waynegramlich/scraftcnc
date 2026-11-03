@@ -10,8 +10,8 @@ line (-Tool and +Tool, which move the line Start runs from to the
 previous or next tool change; Start, Pause and Reset), a speed slider
 (the feed override) with Open, and the work
 position and tool in the spindle.  The LinuxCNC calls are kept in
-`SCPanelMachine`, a client (through `lcnc_client.py`, a link) of
-`serve_linuxcnc` from `../scraftlinuxcnc`, which runs LinuxCNC in its
+`SCPanelMachine`, a client (through `scraftcnc.lcnc.lcnc_client`) of
+`serve_linuxcnc` from `scraftcnc/lcnc/`, which runs LinuxCNC in its
 `lcnc` box, or in WSL on Windows.  So this runs outside the box, and
 needs only `tkinter`.  Closing it leaves LinuxCNC running, for another
 panel.  When it starts, the machine is taken out of E-stop, turned on
@@ -20,7 +20,7 @@ the shop's tool table, and the INI file's `MAX_FEED_OVERRIDE` limits
 the slider:
 
 ```
-(cd ../scraftlinuxcnc && python3 -m scraftlinuxcnc.serve_linuxcnc) &
+python3 -m scraftcnc.lcnc.serve_linuxcnc &
 ./lcnc_panel.py demo.ngc
 ./lcnc_panel.py --dry-run demo.ngc      # The window alone.
 ./lcnc_panel.py --headless --port 5007  # No window: for tests.
@@ -67,7 +67,7 @@ from typing import Any, cast
 
 import lcnc_headless
 import shops
-from lcnc_client import PORT, SCBridgeError, SCClient, constant
+from scraftcnc.lcnc.lcnc_client import PORT, SCBridgeError, SCClient, constant
 
 # A computer with no `tkinter` can still run `--headless`.
 try:
@@ -264,7 +264,7 @@ class SCStatus:
 class SCPanelMachine:
     """The LinuxCNC back end, as the panel sees it.
 
-    It is a client of `scraftlinuxcnc`'s `serve_linuxcnc`, which runs
+    It is a client of `scraftcnc.lcnc`'s `serve_linuxcnc`, which runs
     LinuxCNC wherever that is installed.  With `dry_run`, nothing is
     sent anywhere and every call only records what it would have done,
     so the window can be built and tested without LinuxCNC.

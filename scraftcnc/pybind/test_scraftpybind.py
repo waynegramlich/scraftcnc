@@ -38,9 +38,8 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
-import scraftpybind
-import scraftpybind_generate
-from scraftpybind import (
+from scraftcnc.pybind import scraftpybind, scraftpybind_generate
+from scraftcnc.pybind.scraftpybind import (
     JSON,
     SCControlTransport,
     SCHeadlessTransport,
@@ -334,7 +333,9 @@ def run_python(  # pragma: no cover
     Returns:
     * (`subprocess.CompletedProcess[str]`): What it did.
     """
-    environment: dict[str, str] = dict(os.environ, PYTHONPATH=str(HERE))
+    environment: dict[str, str] = dict(
+        os.environ, PYTHONPATH=str(HERE.parent.parent)
+    )
     return subprocess.run(
         [sys.executable, *arguments],
         cwd=cwd,

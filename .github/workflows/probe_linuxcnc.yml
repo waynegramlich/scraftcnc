@@ -1,5 +1,5 @@
-# Install this package as a user would, install LinuxCNC's simulator
-# with it (`--yes` runs the commands it would ask the user to run), then
+# Run the offline tests of `scraftcnc.lcnc`, install LinuxCNC's
+# simulator (`--yes` runs the commands it would ask the user to run), then
 # run a G-code program by JSON from outside the target, with no display.
 # The programs print the time on every line, so a timeout still shows
 # how far it got.  A failed offline test still fails the job, but does
@@ -45,17 +45,14 @@ jobs:
           uname -a
           python --version
 
-      - name: Install this package
-        run: python -m pip install .
-
       - name: Offline tests
-        run: python -m unittest discover tests
+        run: python -m unittest discover -s scraftcnc/lcnc/tests -t .
 
       - name: install_linuxcnc --yes
         id: install
         if: ${{ !cancelled() }}
-        run: install_linuxcnc --yes
+        run: python -m scraftcnc.lcnc.install_linuxcnc --yes
 
       - name: demo_linuxcnc
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-        run: demo_linuxcnc
+        run: python -m scraftcnc.lcnc.demo_linuxcnc

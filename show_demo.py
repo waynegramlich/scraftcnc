@@ -2,7 +2,7 @@
 """Bring up the whole chain, for showing it off, in one command.
 
 On Linux, this starts LinuxCNC's simulator (`serve_linuxcnc`, from
-`../scraftlinuxcnc`, in its `lcnc` box), a SolidCraft window with the
+`scraftcnc/lcnc/`, in its `lcnc` box), a SolidCraft window with the
 demonstration's plate in it, standing on the table, vise, parallels and
 grid plate of `examples/setup/demo_stack.json`, the watcher that
 moves the tool in SolidCraft (`sim_linuxcnc.py --watch`, in the box),
@@ -40,15 +40,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from types import FrameType
 
-from lcnc_client import PORT as LINUXCNC_PORT
-from lcnc_client import SCBridgeError, SCClient
 from scmodelcache import SCModelCache
-from scraftpybind import SCPyBind, SCSolidCraftError, connect
+from scraftcnc.lcnc.lcnc_client import PORT as LINUXCNC_PORT
+from scraftcnc.lcnc.lcnc_client import SCBridgeError, SCClient
+from scraftcnc.pybind.scraftpybind import SCPyBind, SCSolidCraftError, connect
 from scsetup import SCSetup
 
 # Where everything is.
 PROJECT: Path = Path(__file__).resolve().parent
-SERVER_PROJECT: Path = PROJECT.parent / "scraftlinuxcnc"
+SERVER_PROJECT: Path = PROJECT
 SOLIDCRAFT_BESIDE: Path = (
     PROJECT.parent / "solidcraft" / "solidcraft-linux-x86_64.AppImage"
 )
@@ -152,7 +152,7 @@ def check_ready(ports: dict[str, int]) -> None:
     """
     if not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
         raise SCShowFailed("There is no display to show this on.")
-    if not (SERVER_PROJECT / "scraftlinuxcnc").is_dir():
+    if not (SERVER_PROJECT / "scraftcnc" / "lcnc").is_dir():
         raise SCShowFailed(f"{SERVER_PROJECT} is not there.")
     if shutil.which("podman") is None:
         raise SCShowFailed("`podman` is not installed.")
@@ -369,7 +369,7 @@ class SCShow:
         self.logs["install_linuxcnc"] = WORK / "install_linuxcnc.log"
         with self.logs["install_linuxcnc"].open("wb") as log:
             done = subprocess.run(
-                [sys.executable, "-u", "-m", "scraftlinuxcnc.install_linuxcnc",
+                [sys.executable, "-u", "-m", "scraftcnc.lcnc.install_linuxcnc",
                  "--box", BOX],
                 cwd=SERVER_PROJECT,
                 stdin=subprocess.DEVNULL,
@@ -381,7 +381,7 @@ class SCShow:
         if done.returncode != 0:
             raise SCShowFailed(
                 "The LinuxCNC installation is not right; run "
-                "`python3 -m scraftlinuxcnc.install_linuxcnc` in "
+                "`python3 -m scraftcnc.lcnc.install_linuxcnc` in "
                 f"{SERVER_PROJECT}.\n{self.log_end('install_linuxcnc')}"
             )
 
@@ -536,7 +536,7 @@ class SCShow:
         say("Starting LinuxCNC.")
         self.start(
             "linuxcnc",
-            [sys.executable, "-u", "-m", "scraftlinuxcnc.serve_linuxcnc",
+            [sys.executable, "-u", "-m", "scraftcnc.lcnc.serve_linuxcnc",
              "--box", BOX],
             SERVER_PROJECT,
         )  # fmt: skip

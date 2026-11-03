@@ -64,7 +64,7 @@ from scmodelcache import (
     placement_matrix,
 )
 from scplot import SCStep, SpacePoint, send_batch, sketch_steps
-from scraftpybind import JSON, SCPyBind, connect
+from scraftcnc.pybind.scraftpybind import JSON, SCPyBind, connect
 from shops import (
     ANGLE,
     CNC_KINDS,

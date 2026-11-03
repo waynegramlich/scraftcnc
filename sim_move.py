@@ -26,7 +26,7 @@ import sys
 import time
 from pathlib import Path
 
-from scraftpybind import (
+from scraftcnc.pybind.scraftpybind import (
     SCHeadlessTransport,
     SCPyBind,
     SCTransport,

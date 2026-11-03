@@ -10,7 +10,7 @@ from unittest import mock
 
 import scsetup
 import tools
-from scraftpybind import SCHeadlessTransport, SCPyBind
+from scraftcnc.pybind.scraftpybind import SCHeadlessTransport, SCPyBind
 
 # An extracted `solidcraft-cli` (as the demo uses) for the live test.
 HERE: Path = Path(__file__).resolve().parent

@@ -49,7 +49,7 @@ import time
 from collections.abc import Callable
 from functools import partial
 
-from scraftpybind import JSON, SCPyBind, connect
+from scraftcnc.pybind.scraftpybind import JSON, SCPyBind, connect
 
 
 # Function `occurrence_of()`:

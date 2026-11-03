@@ -31,11 +31,11 @@ from pathlib import Path
 from types import ModuleType
 from typing import TypeAlias
 
-import scraftpybind
 import sctoolmodel
 import shops
 import tools
 from scgeometry import SCArc, SCRoundedPolygon, SCSegment
+from scraftcnc.pybind import scraftpybind
 from sctoolmodel import COUNTERSINK_TIP_FLAT, MM_PER_INCH, Profile, profile
 from shops import (
     ANGLE,
@@ -1037,7 +1037,7 @@ def _python(page: SCModelPage) -> str:
         for key, val in page.sample.items()
     )
     return (
-        "from scraftpybind import SCPyBind, connect\n"
+        "from scraftcnc.pybind.scraftpybind import SCPyBind, connect\n"
         "from sctoolmodel import model_description\n"
         "\n"
         'with connect("8080") as transport:\n'
@@ -2092,7 +2092,7 @@ def vise_section() -> str:
         if item["kind"] == "machine_vise"
     )
     python: str = (
-        "from scraftpybind import SCPyBind, connect\n"
+        "from scraftcnc.pybind.scraftpybind import SCPyBind, connect\n"
         f"from tools import {VISE_NAME}\n"
         "\n"
         'with connect("8080") as transport:\n'
@@ -2261,7 +2261,7 @@ def jaw_plate_section() -> str:
         if key not in numbers
     )
     python: str = (
-        "from scraftpybind import SCPyBind, connect\n"
+        "from scraftcnc.pybind.scraftpybind import SCPyBind, connect\n"
         f"from tools import {JAW_PLATE_NAME}\n"
         "\n"
         'with connect("8080") as transport:\n'
@@ -2390,7 +2390,7 @@ def parallel_section() -> str:
     # How to make one, and where a setup names one.
     p: SCParallel = PARALLEL
     python: str = (
-        "from scraftpybind import SCPyBind, connect\n"
+        "from scraftcnc.pybind.scraftpybind import SCPyBind, connect\n"
         "from tools import SCParallel\n"
         "\n"
         "# Its sizes in millimeters; the holes are optional.\n"
@@ -2619,7 +2619,7 @@ def grid_plate_section() -> str:
     )
     python: str = (
         "from scmodelcache import SCModelCache\n"
-        "from scraftpybind import SCPyBind, connect\n"
+        "from scraftcnc.pybind.scraftpybind import SCPyBind, connect\n"
         "from tools import GRID_PLATE\n"
         "\n"
         "# Through the cache: slow the first time, then about a second.\n"

@@ -14,7 +14,7 @@ import scmodelcache
 import scsetup
 import sctoolmodel
 import tools
-from scraftpybind import SCHeadlessTransport, SCPyBind
+from scraftcnc.pybind.scraftpybind import SCHeadlessTransport, SCPyBind
 from shops import read
 
 HERE: Path = Path(__file__).resolve().parent

@@ -17,7 +17,7 @@ It is used through `sim_linuxcnc.py`'s `--solidcraft PORT` (or
 `--solidcraft headless`), whose options `add_arguments()` adds:
 
 ```
-(cd ../scraftlinuxcnc && python3 -m scraftlinuxcnc.serve_linuxcnc) &
+python3 -m scraftcnc.lcnc.serve_linuxcnc &
 solidcraft --control 8080 &
 ./solidcraftcnc_demo.py --no-path --opaque 8080 > demo.ngc
 distrobox enter lcnc -- ./sim_linuxcnc.py demo.ngc --solidcraft 8080
@@ -38,7 +38,7 @@ from typing import Protocol
 from probe_batch import path_steps, send_batch, sketch_steps
 from scmodelcache import SCModelCache
 from scplot import SCMove, command_moves, read_gcode
-from scraftpybind import (
+from scraftcnc.pybind.scraftpybind import (
     SCHeadlessTransport,
     SCPyBind,
     SCTransport,

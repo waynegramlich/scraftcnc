@@ -30,7 +30,7 @@ from typing import Literal
 from scgeometry import SCCorner, SCRoundedPolygon, point_at
 from scmachine import SCMachine, SCTool
 from scplot import sketch_path, write_plot
-from scraftpybind import (
+from scraftcnc.pybind.scraftpybind import (
     JSON,
     SCHeadlessTransport,
     SCPyBind,

@@ -22,7 +22,7 @@ spindle follows the position; the whole planned path is the
 demo's own sketches:
 
 ```
-(cd ../scraftlinuxcnc && python3 -m scraftlinuxcnc.serve_linuxcnc) &
+python3 -m scraftcnc.lcnc.serve_linuxcnc &
 solidcraft --control 8080 &
 ./solidcraftcnc_demo.py --no-path --opaque 8080 > demo.ngc
 distrobox enter lcnc -- ./sim_linuxcnc.py demo.ngc --solidcraft 8080
@@ -38,7 +38,7 @@ distrobox enter lcnc -- ./sim_linuxcnc.py --watch demo.ngc \
     --solidcraft 8080
 ```
 
-`scraftlinuxcnc`'s `lcnc_sim.ini` simulates a mill with the example
+`scraftcnc/lcnc/sim/lcnc_sim.ini` simulates a mill with the example
 shop's travel.  The
 `linuxcnc` module comes with LinuxCNC, which is installed only in the
 `lcnc` Debian Trixie box (see `TASKS/3_Simulation/Context.md`), so
@@ -62,14 +62,14 @@ from typing import Protocol
 import linuxcnc  # type: ignore[import-not-found]
 
 import sim_solidcraft
-from scraftpybind import SCSolidCraftError
+from scraftcnc.pybind.scraftpybind import SCSolidCraftError
 from shops import read, tool_table_text
 
 # How often to poll (seconds).
 POLL: float = 0.05
 
 # The feed override, by default: 10 times, which is pleasant to watch
-# (`lcnc_sim.ini` in `scraftlinuxcnc` allows up to 100, its
+# (`scraftcnc/lcnc/sim/lcnc_sim.ini` allows up to 100, its
 # `MAX_FEED_OVERRIDE`).
 SPEED: float = 10.0
 

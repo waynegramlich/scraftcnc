@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, TypeAlias
 
 if TYPE_CHECKING:
-    from scraftpybind import JSON, SCPyBind
+    from scraftcnc.pybind.scraftpybind import JSON, SCPyBind
 
 # A point in the XY plane, `(x, y)`.
 Point: TypeAlias = tuple[float, float]

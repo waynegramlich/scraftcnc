@@ -15,7 +15,7 @@ from unittest import mock
 import lcnc_headless
 import lcnc_panel
 import shops
-from lcnc_client import SCBridgeError
+from scraftcnc.lcnc.lcnc_client import SCBridgeError
 
 # The constants that `FakeClient` answers with.
 IDLE = 1

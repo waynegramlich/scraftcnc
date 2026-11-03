@@ -221,7 +221,7 @@ JSON:
 Python:
 
 ```python
-from scraftpybind import SCPyBind, connect
+from scraftcnc.pybind.scraftpybind import SCPyBind, connect
 from sctoolmodel import model_description
 
 with connect("8080") as transport:
@@ -302,7 +302,7 @@ JSON:
 Python:
 
 ```python
-from scraftpybind import SCPyBind, connect
+from scraftcnc.pybind.scraftpybind import SCPyBind, connect
 from sctoolmodel import model_description
 
 with connect("8080") as transport:
@@ -377,7 +377,7 @@ JSON:
 Python:
 
 ```python
-from scraftpybind import SCPyBind, connect
+from scraftcnc.pybind.scraftpybind import SCPyBind, connect
 from sctoolmodel import model_description
 
 with connect("8080") as transport:
@@ -449,7 +449,7 @@ JSON:
 Python:
 
 ```python
-from scraftpybind import SCPyBind, connect
+from scraftcnc.pybind.scraftpybind import SCPyBind, connect
 from sctoolmodel import model_description
 
 with connect("8080") as transport:
@@ -527,7 +527,7 @@ JSON:
 Python:
 
 ```python
-from scraftpybind import SCPyBind, connect
+from scraftcnc.pybind.scraftpybind import SCPyBind, connect
 from sctoolmodel import model_description
 
 with connect("8080") as transport:
@@ -612,7 +612,7 @@ JSON:
 Python:
 
 ```python
-from scraftpybind import SCPyBind, connect
+from scraftcnc.pybind.scraftpybind import SCPyBind, connect
 from sctoolmodel import model_description
 
 with connect("8080") as transport:
@@ -696,7 +696,7 @@ JSON:
 Python:
 
 ```python
-from scraftpybind import SCPyBind, connect
+from scraftcnc.pybind.scraftpybind import SCPyBind, connect
 from sctoolmodel import model_description
 
 with connect("8080") as transport:
@@ -855,7 +855,7 @@ A machine vise has no tools file entry yet, so it is made in
 Python, in millimeters, like `tools.KURT_D688`:
 
 ```python
-from scraftpybind import SCPyBind, connect
+from scraftcnc.pybind.scraftpybind import SCPyBind, connect
 from tools import KURT_D688
 
 with connect("8080") as transport:
@@ -1187,7 +1187,7 @@ Not a size:
 Like the vise, it is made in Python, in millimeters:
 
 ```python
-from scraftpybind import SCPyBind, connect
+from scraftcnc.pybind.scraftpybind import SCPyBind, connect
 from tools import KURT_JAW_PLATE
 
 with connect("8080") as transport:
@@ -1303,7 +1303,7 @@ A or B (`Parallel 3/4 in A`).
 It is made in Python, in millimeters:
 
 ```python
-from scraftpybind import SCPyBind, connect
+from scraftcnc.pybind.scraftpybind import SCPyBind, connect
 from tools import SCParallel
 
 # Its sizes in millimeters; the holes are optional.
@@ -1494,7 +1494,7 @@ Or it is made in Python, in millimeters:
 
 ```python
 from scmodelcache import SCModelCache
-from scraftpybind import SCPyBind, connect
+from scraftcnc.pybind.scraftpybind import SCPyBind, connect
 from tools import GRID_PLATE
 
 # Through the cache: slow the first time, then about a second.
