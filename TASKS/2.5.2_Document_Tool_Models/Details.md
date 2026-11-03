@@ -1,4 +1,4 @@
-# 2.5.1 Document Tool Models
+# 2.5.2 Document Tool Models
 
 The tool models do not do much good if nobody knows they exist.  The goal of
 this task is to do the following:
