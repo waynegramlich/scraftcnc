@@ -42,6 +42,7 @@ from types import FrameType
 
 from lcnc_client import PORT as LINUXCNC_PORT
 from lcnc_client import SCBridgeError, SCClient
+from scmodelcache import SCModelCache
 from scraftpybind import SCPyBind, SCSolidCraftError, connect
 from scsetup import SCSetup
 
@@ -459,11 +460,8 @@ class SCShow:
             with connect(str(self.options.solidcraft_port)) as transport:
                 solidcraft: SCPyBind = SCPyBind(transport)
 
-                # The plate leaves the design in inches, while a setup's
-                # bare numbers are millimeters.
-                solidcraft.document.units(units="mm")
-                setup.model(solidcraft)
-                solidcraft.document.units(units="in")
+                # The plate leaves the design in inches.
+                setup.model(solidcraft, SCModelCache(), "in")
                 solidcraft.view.apply(view="iso")
         except (OSError, ValueError, SCSolidCraftError) as error:
             raise SCShowFailed(

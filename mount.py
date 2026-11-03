@@ -21,16 +21,19 @@ import sys
 from dataclasses import dataclass, field
 from typing import Protocol
 
+from scmodelcache import SCCacheable
 from scraftpybind import SCPyBind, connect
 from sctoolmodel import MM_PER_INCH
 from tools import (
     ALUMINUM_COLOR,
+    DRILL_COLOR,
     KURT_D688,
     MIKINI_1610L,
     MIKINI_Y_TRAVEL,
     MILL_TABLES,
     PARALLEL_MARGIN,
     PARALLELS,
+    TABLE_COLOR,
     TABLE_MARGIN,
     TOOLING_PLATE,
     VISE_MARGIN,
@@ -44,6 +47,7 @@ from tools import (
     SCViseBlock,
     _mm,
     box_prism,
+    tooling_shape,
 )
 
 
@@ -89,6 +93,16 @@ class SCLayer(Protocol):
 
         Returns:
         * (`list[str]`): The names of the bodies.
+        """
+
+    # Method `SCLayer.cacheable()`:
+    def cacheable(self) -> tuple[SCCacheable, ...]:
+        """Return the layer as models that can be cached.
+
+        Returns:
+        * (`tuple[SCCacheable, ...]`):
+          The models, around the center of its bottom, or none if it is
+          always to be built with `model()`.
         """
 
     # Method `SCLayer.keep_out()`:
@@ -151,6 +165,22 @@ class SCTableLayer:
         if x != 0.0 or top != 0.0:
             solidcraft.solid.move(bodies=[body], translate=(x, 0.0, top))
         return [body]
+
+    # Method `SCTableLayer.cacheable()`:
+    def cacheable(self) -> tuple[SCCacheable, ...]:
+        """Return the table as a model that can be cached.
+
+        Returns:
+        * (`tuple[SCCacheable, ...]`): The table.
+        """
+        return (
+            SCCacheable(
+                self.table.name,
+                tooling_shape(self.table),
+                lambda solidcraft: self.model(solidcraft, (0.0, 0.0, 0.0)),
+                color_of=lambda _body: TABLE_COLOR,
+            ),
+        )
 
     # Method `SCTableLayer.keep_out()`:
     def keep_out(self, center: Point) -> SCKeepOut:
@@ -239,6 +269,17 @@ class SCViseLayer:
             solidcraft.solid.move(bodies=bodies, translate=(x, y, 0.0))
         return bodies
 
+    # Method `SCViseLayer.cacheable()`:
+    def cacheable(self) -> tuple[SCCacheable, ...]:
+        """Return the vise as models that can be cached.
+
+        Returns:
+        * (`tuple[SCCacheable, ...]`):
+          The vise, then what moves; none if it is `turned`, which a
+          setup leaves to its placement.
+        """
+        return () if self.turned else self.vise.cacheable(self.opening)
+
     # Method `SCViseLayer.keep_out()`:
     def keep_out(self, center: Point) -> SCKeepOut:
         """Return the prisms around the base and each jaw.
@@ -302,6 +343,22 @@ class SCParallelLayer:
         * (`list[str]`): The name of its body.
         """
         return [self.parallel.model(solidcraft, center)]
+
+    # Method `SCParallelLayer.cacheable()`:
+    def cacheable(self) -> tuple[SCCacheable, ...]:
+        """Return the parallel as a model that can be cached.
+
+        Returns:
+        * (`tuple[SCCacheable, ...]`): The parallel.
+        """
+        return (
+            SCCacheable(
+                self.parallel.name,
+                tooling_shape(self.parallel),
+                lambda solidcraft: self.model(solidcraft, (0.0, 0.0, 0.0)),
+                color_of=lambda _body: DRILL_COLOR,
+            ),
+        )
 
     # Method `SCParallelLayer.keep_out()`:
     def keep_out(self, center: Point) -> SCKeepOut:
@@ -400,6 +457,15 @@ class SCParallelPair:
             )
         ]
 
+    # Method `SCParallelPair.cacheable()`:
+    def cacheable(self) -> tuple[SCCacheable, ...]:
+        """Return nothing, since a mount builds its pair each time.
+
+        Returns:
+        * (`tuple[SCCacheable, ...]`): No models.
+        """
+        return ()
+
     # Method `SCParallelPair.keep_out()`:
     def keep_out(self, center: Point) -> SCKeepOut:
         """Return the prism around each parallel.
@@ -484,6 +550,15 @@ class SCPlate:
             bodies=[body], color=self.color, opacity=self.opacity
         )
         return [body]
+
+    # Method `SCPlate.cacheable()`:
+    def cacheable(self) -> tuple[SCCacheable, ...]:
+        """Return nothing, since a plain box is quick to build.
+
+        Returns:
+        * (`tuple[SCCacheable, ...]`): No models.
+        """
+        return ()
 
     # Method `SCPlate.keep_out()`:
     def keep_out(self, _center: Point) -> SCKeepOut:

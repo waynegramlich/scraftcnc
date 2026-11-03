@@ -21,9 +21,10 @@ python3 scsetup.py [FILE] headless   # No window; prints the report.
 
 import json
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from mount import (
     SCLayer,
@@ -33,7 +34,13 @@ from mount import (
     SCViseLayer,
     _inches,
 )
-from scraftpybind import SCPyBind, connect
+from scmodelcache import (
+    SCInserted,
+    SCModelCache,
+    cache_for,
+    placement_matrix,
+)
+from scraftpybind import JSON, DocumentUnitsUnits, SCPyBind, connect
 from sctoolmodel import MM_PER_INCH
 from shops import ANGLE, LENGTH, measure
 from tools import (
@@ -123,17 +130,35 @@ class SCPlacement:
         return prism
 
     # Method `SCPlacement.model()`:
-    def model(self, layer: SCLayer, solidcraft: SCPyBind) -> list[str]:
+    def model(
+        self,
+        layer: SCLayer,
+        solidcraft: SCPyBind,
+        cache: SCModelCache | None = None,
+        before_building: Callable[[], None] = lambda: None,
+    ) -> list[str]:
         """Model an item here.
 
         Arguments:
         * `layer` (`SCLayer`): The item.
         * `solidcraft` (`SCPyBind`): The SolidCraft session.
+        * `cache` (`SCModelCache | None`):
+          Where to keep its models between runs, or `None` to build it.
+        * `before_building` (`Callable[[], None]`):
+          Called before anything is built, rather than inserted.
 
         Returns:
         * (`list[str]`): The names of its bodies.
         """
+        if cache is not None:
+            cached: list[str] | None = self.model_cached(
+                layer, solidcraft, cache, before_building
+            )
+            if cached is not None:
+                return cached
+
         # SolidCraft turns bodies about the origin, so build it there.
+        before_building()
         bodies: list[str] = layer.model(solidcraft, (0.0, 0.0, self.z))
         if self.turns:
             solidcraft.solid.move(
@@ -145,6 +170,47 @@ class SCPlacement:
             solidcraft.solid.move(
                 bodies=bodies, translate=(self.x, self.y, 0.0)
             )
+        return bodies
+
+    # Method `SCPlacement.model_cached()`:
+    def model_cached(
+        self,
+        layer: SCLayer,
+        solidcraft: SCPyBind,
+        cache: SCModelCache,
+        before_building: Callable[[], None],
+    ) -> list[str] | None:
+        """Model an item here from the cache.
+
+        Arguments:
+        * `layer` (`SCLayer`): The item.
+        * `solidcraft` (`SCPyBind`): The SolidCraft session.
+        * `cache` (`SCModelCache`): The cache.
+        * `before_building` (`Callable[[], None]`):
+          Called before a model that is not in the cache is built.
+
+        Returns:
+        * (`list[str] | None`):
+          The names of its bodies, or `None` if it must be built: it is
+          not to be cached, or the cache could not be used.
+        """
+        models = layer.cacheable()
+        if not models:
+            return None
+        bodies: list[str] = []
+        for model in models:
+            inserted: SCInserted | None = cache.insert(
+                solidcraft,
+                model,
+                placement_matrix(self.turns, self.center(), model.offset),
+                before_building,
+            )
+            if inserted is None:
+                # What did go in must not be there twice.
+                if bodies:
+                    solidcraft.solid.remove(bodies=cast(JSON, bodies))
+                return None
+            bodies.extend(inserted.bodies)
         return bodies
 
 
@@ -708,23 +774,60 @@ class SCSetup:
         ]
 
     # Method `SCSetup.model()`:
-    def model(self, solidcraft: SCPyBind) -> list[str]:
+    def model(
+        self,
+        solidcraft: SCPyBind,
+        cache: SCModelCache | None = None,
+        units: DocumentUnitsUnits = "mm",
+    ) -> list[str]:
         """Model the tooling, then the material, then the parts.
+
+        A setup's numbers are millimeters, so a design in other units
+        goes to millimeters while anything is built, and back.  With a
+        complex design a change takes seconds, so it is not made when
+        everything comes from the cache, whose placements are always in
+        millimeters.
 
         Arguments:
         * `solidcraft` (`SCPyBind`): The SolidCraft session.
+        * `cache` (`SCModelCache | None`):
+          Where to keep the models between runs, or `None` to build them.
+        * `units` (`DocumentUnitsUnits`): The units the design is in.
 
         Returns:
         * (`list[str]`): The names of the bodies.
         """
+        changed: list[bool] = []
+
+        # Function `to_millimeters()`:
+        def to_millimeters() -> None:
+            """Put the design in millimeters, if it needs it, once."""
+            if units != "mm" and not changed:
+                solidcraft.document.units(units="mm")
+                changed.append(True)
+
         bodies: list[str] = []
         for tool in self.tooling:
-            bodies.extend(tool.placement.model(tool.layer, solidcraft))
+            bodies.extend(
+                tool.placement.model(
+                    tool.layer, solidcraft, cache, to_millimeters
+                )
+            )
         for material in self.materials:
-            bodies.extend(material.placement.model(material.solid, solidcraft))
+            bodies.extend(
+                material.placement.model(
+                    material.solid, solidcraft, cache, to_millimeters
+                )
+            )
         for material in self.materials:
             for part in material.parts:
-                bodies.extend(part.placement.model(part.solid, solidcraft))
+                bodies.extend(
+                    part.placement.model(
+                        part.solid, solidcraft, cache, to_millimeters
+                    )
+                )
+        if changed:
+            solidcraft.document.units(units=units)
         return bodies
 
     # Method `SCSetup.keep_out()`:
@@ -861,7 +964,7 @@ def main() -> None:
     with connect(target) as transport:
         solidcraft: SCPyBind = SCPyBind(transport)
         solidcraft.file.new()
-        print(setup.model(solidcraft))
+        print(setup.model(solidcraft, cache_for(target)))
         print(setup.keep_out().model(solidcraft))
         solidcraft.view.apply(view="iso")
     print("\n".join(setup.report()))

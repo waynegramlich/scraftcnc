@@ -142,6 +142,9 @@ Each step below needs a little more than the one before it.
   them in SolidCraft.
 * `mount.py`: stacks of tooling and material that hold work on a
   machine, with their keep-out regions.  Run it to see the first one.
+* `scmodelcache.py`: keeps models of tools and tooling as STEP files in
+  `~/.scraftcnc/tool_cache/`, so the second start is much faster.  One
+  not used for a week is deleted, and deleting them all is always safe.
 * `scsetup.py` and `examples/setup/`: a whole setup, read from JSON:
   where each piece of tooling, material and finished part goes.
 * `sckeepout.py`: checks every move of a program against a setup's

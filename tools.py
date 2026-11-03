@@ -30,9 +30,12 @@ python3 tools.py 8080 421-0261       # One of them, by its order number.
 import itertools
 import math
 import sys
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
+from typing import Any, cast
 
 from scgeometry import SCCorner, SCHole, SCRoundedPolygon
+from scmodelcache import SCCacheable, source_digest
 from scplot import send_batch
 from scraftpybind import JSON, SCPyBind, connect
 from sctoolmodel import MM_PER_INCH, FluteRun, flute_runs, flute_steps
@@ -129,6 +132,32 @@ TOOLING_PLATE_MARGIN: str = "1/8 in"
 
 # A bright, unpainted aluminum.
 ALUMINUM_COLOR: str = "#e4e7ea"
+
+
+# The code that builds tooling.  A change to it makes new models, as
+# nothing else would notice that a cached model is out of date.
+TOOLING_SOURCES: tuple[Path, ...] = tuple(
+    Path(__file__).resolve().parent / name
+    for name in ("mount.py", "scgeometry.py", "tools.py")
+)
+
+
+# Function `tooling_shape()`:
+def tooling_shape(item: Any, section: str = "") -> JSON:
+    """Return what affects the shape of a piece of tooling.
+
+    Arguments:
+    * `item` (`Any`): The tooling, a dataclass with no colors.
+    * `section` (`str`): Which part of it, if it is cached in parts.
+
+    Returns:
+    * (`JSON`): The tree, for `SCCacheable`.
+    """
+    return {
+        "code": source_digest(TOOLING_SOURCES),
+        "item": cast(JSON, asdict(item)),
+        "section": section,
+    }
 
 
 # Function `_mm()`:
@@ -2054,6 +2083,24 @@ class SCVise:
         * `ValueError`: If `opening` is out of range.
         """
         # Stack the blocks, each on the one before.
+        return [
+            *self._model_base(solidcraft, center),
+            *self._model_jaws(solidcraft, center, opening, lift),
+        ]
+
+    # Method `SCVise._model_base()`:
+    def _model_base(self, solidcraft: SCPyBind, center: Point) -> list[str]:
+        """Model what never moves, but for the fixed jaw and its plate.
+
+        Arguments:
+        * `solidcraft` (`SCPyBind`): The SolidCraft session.
+        * `center` (`Point`): The center of the bottom face (mm).
+
+        Returns:
+        * (`list[str]`):
+          The names of the bodies: the bottom, the middle, the rails, the
+          end blocks and the screw.
+        """
         x, y, z = center
         bottom: str = self.bottom.model(
             solidcraft, f"{self.name} bottom", center, self.bottom_notches
@@ -2071,8 +2118,49 @@ class SCVise:
             middle,
             *self._model_rails(solidcraft, center),
             self._model_screw(solidcraft, center),
-            *self._model_jaws(solidcraft, center, opening, lift),
         ]
+
+    # Method `SCVise.cacheable()`:
+    def cacheable(self, opening: float) -> tuple[SCCacheable, ...]:
+        """Return the vise as models that can be cached.
+
+        What moves when the vise opens is one model, built closed, and
+        everything else is another, so an opening needs no new files.
+
+        Arguments:
+        * `opening` (`float`): The gap between the plates (mm).
+
+        Returns:
+        * (`tuple[SCCacheable, ...]`): The vise, then what moves.
+        """
+        origin: Point = (0.0, 0.0, 0.0)
+        return (
+            SCCacheable(
+                self.name,
+                tooling_shape(self, "fixed"),
+                lambda solidcraft: [
+                    *self._model_base(solidcraft, origin),
+                    self._model_fixed_jaw(solidcraft, origin, 0.0),
+                    self._model_fixed_plate(solidcraft, origin, 0.0),
+                ],
+                color_of=lambda body: (
+                    DRILL_COLOR if " screw" in body else VISE_COLOR
+                ),
+            ),
+            SCCacheable(
+                f"{self.name} moving",
+                tooling_shape(self, "moving"),
+                lambda solidcraft: [
+                    self._model_moving_jaw(solidcraft, origin, 0.0, 0.0),
+                    self._model_slider(
+                        solidcraft, origin, self.moving_face(0.0), 0.0
+                    ),
+                    self._model_moving_plate(solidcraft, origin, 0.0, 0.0),
+                ],
+                (self.moving_face(opening) - self.moving_face(0.0), 0.0, 0.0),
+                lambda _body: VISE_COLOR,
+            ),
+        )
 
     # Method `SCVise._end_plane()`:
     def _end_plane(self, center: Point, end_x: float) -> dict[str, JSON]:
@@ -2203,33 +2291,125 @@ class SCVise:
         * (`list[str]`):
           The names of the jaws, then of the slider, then of the plates.
         """
+        return [
+            self._model_fixed_jaw(solidcraft, center, lift),
+            self._model_moving_jaw(solidcraft, center, opening, lift),
+            self._model_slider(
+                solidcraft, center, self.moving_face(opening), lift
+            ),
+            self._model_fixed_plate(solidcraft, center, lift),
+            self._model_moving_plate(solidcraft, center, opening, lift),
+        ]
+
+    # Method `SCVise._model_fixed_jaw()`:
+    def _model_fixed_jaw(
+        self, solidcraft: SCPyBind, center: Point, lift: float
+    ) -> str:
+        """Model the fixed jaw.
+
+        Arguments:
+        * `solidcraft` (`SCPyBind`): The SolidCraft session.
+        * `center` (`Point`): The center of the base's bottom face (mm).
+        * `lift` (`float`): How far to raise it (mm).
+
+        Returns:
+        * (`str`): The body's name.
+        """
+        x, y, z = center
+        fixed_x: float = -(self.middle.length - self.fixed_jaw.length) / 2.0
+        return self.fixed_jaw.model(
+            solidcraft,
+            f"{self.name} fixed jaw",
+            (x + fixed_x, y, z + self.base_height() + lift),
+        )
+
+    # Method `SCVise._model_fixed_plate()`:
+    def _model_fixed_plate(
+        self, solidcraft: SCPyBind, center: Point, lift: float
+    ) -> str:
+        """Model the plate on the fixed jaw.
+
+        Arguments:
+        * `solidcraft` (`SCPyBind`): The SolidCraft session.
+        * `center` (`Point`): The center of the base's bottom face (mm).
+        * `lift` (`float`): How far to raise it (mm).
+
+        Returns:
+        * (`str`): The body's name.
+        """
+        x, y, z = center
+        fixed_face: float = -self.middle.length / 2.0 + self.fixed_jaw.length
+        return self._model_plate(
+            solidcraft,
+            f"{self.name} fixed plate",
+            (
+                x + fixed_face + self.plate.length / 2.0,
+                y,
+                z + self.base_height() + lift,
+            ),
+        )
+
+    # Method `SCVise._model_moving_jaw()`:
+    def _model_moving_jaw(
+        self,
+        solidcraft: SCPyBind,
+        center: Point,
+        opening: float,
+        lift: float,
+    ) -> str:
+        """Model the moving jaw.
+
+        Arguments:
+        * `solidcraft` (`SCPyBind`): The SolidCraft session.
+        * `center` (`Point`): The center of the base's bottom face (mm).
+        * `opening` (`float`): The gap between the plates (mm).
+        * `lift` (`float`): How far to raise it (mm).
+
+        Returns:
+        * (`str`): The body's name.
+        """
         x, y, z = center
         face: float = self.moving_face(opening)
-        top: float = z + self.base_height() + lift
-        fixed_x: float = -(self.middle.length - self.fixed_jaw.length) / 2.0
-        half_plate: float = self.plate.length / 2.0
-        fixed_face: float = -self.middle.length / 2.0 + self.fixed_jaw.length
-        return [
-            self.fixed_jaw.model(
-                solidcraft, f"{self.name} fixed jaw", (x + fixed_x, y, top)
+        return self.moving_jaw.model(
+            solidcraft,
+            f"{self.name} moving jaw",
+            (
+                x + face + self.moving_jaw.length / 2.0,
+                y,
+                z + self.base_height() + lift,
             ),
-            self.moving_jaw.model(
-                solidcraft,
-                f"{self.name} moving jaw",
-                (x + face + self.moving_jaw.length / 2.0, y, top),
+        )
+
+    # Method `SCVise._model_moving_plate()`:
+    def _model_moving_plate(
+        self,
+        solidcraft: SCPyBind,
+        center: Point,
+        opening: float,
+        lift: float,
+    ) -> str:
+        """Model the plate on the moving jaw.
+
+        Arguments:
+        * `solidcraft` (`SCPyBind`): The SolidCraft session.
+        * `center` (`Point`): The center of the base's bottom face (mm).
+        * `opening` (`float`): The gap between the plates (mm).
+        * `lift` (`float`): How far to raise it (mm).
+
+        Returns:
+        * (`str`): The body's name.
+        """
+        x, y, z = center
+        face: float = self.moving_face(opening)
+        return self._model_plate(
+            solidcraft,
+            f"{self.name} moving plate",
+            (
+                x + face - self.plate.length / 2.0,
+                y,
+                z + self.base_height() + lift,
             ),
-            self._model_slider(solidcraft, center, face, lift),
-            self._model_plate(
-                solidcraft,
-                f"{self.name} fixed plate",
-                (x + fixed_face + half_plate, y, top),
-            ),
-            self._model_plate(
-                solidcraft,
-                f"{self.name} moving plate",
-                (x + face - half_plate, y, top),
-            ),
-        ]
+        )
 
     # Method `SCVise._model_plate()`:
     def _model_plate(
@@ -2811,6 +2991,22 @@ class SCToolingPlate:
         assert isinstance(bodies, list) and isinstance(bodies[0], str)
         solidcraft.appearance.assign(bodies=[bodies[0]], color=ALUMINUM_COLOR)
         return [bodies[0]]
+
+    # Method `SCToolingPlate.cacheable()`:
+    def cacheable(self) -> tuple[SCCacheable, ...]:
+        """Return the plate as a model that can be cached.
+
+        Returns:
+        * (`tuple[SCCacheable, ...]`): The plate.
+        """
+        return (
+            SCCacheable(
+                self.name,
+                tooling_shape(self),
+                lambda solidcraft: self.model(solidcraft, (0.0, 0.0, 0.0)),
+                color_of=lambda _body: ALUMINUM_COLOR,
+            ),
+        )
 
     # Method `SCToolingPlate.prism()`:
     def prism(self, center: Point) -> SCPrism:

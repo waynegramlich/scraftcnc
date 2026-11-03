@@ -36,6 +36,7 @@ from pathlib import Path
 from typing import Protocol
 
 from probe_batch import path_steps, send_batch, sketch_steps
+from scmodelcache import SCModelCache
 from scplot import SCMove, command_moves, read_gcode
 from scraftpybind import (
     SCHeadlessTransport,
@@ -114,6 +115,7 @@ class SCToolModel:  # pylint: disable=too-few-public-methods
         solidcraft: SCPyBind,
         number: int,
         tool: tuple[str, dict[str, object]],
+        cache: SCModelCache | None = None,
     ) -> None:
         """Model the tool, as a component of its own, hidden.
 
@@ -125,12 +127,14 @@ class SCToolModel:  # pylint: disable=too-few-public-methods
         * `tool` (`tuple[str, dict[str, object]]`):
           Its list in the tools file, and its description (from
           `shops.loaded_tools()`).
+        * `cache` (`SCModelCache | None`):
+          Where to keep its model between runs, or `None` to build it.
         """
         # The tool, standing on its tip at the program's zero.
         self.solidcraft: SCPyBind = solidcraft
         self.position: Position = (0.0, 0.0, 0.0)
         self.modeled: SCModeledTool = model_tool(
-            solidcraft, f"T{number}", tool, color=TOOL_COLOR
+            solidcraft, f"T{number}", tool, color=TOOL_COLOR, cache=cache
         )
         solidcraft.browser.visibility(
             visible=False, items=self.modeled.items()
@@ -175,6 +179,7 @@ class SCToolRack:  # pylint: disable=too-few-public-methods
         self,
         solidcraft: SCPyBind,
         tools: dict[int, tuple[str, dict[str, object]]],
+        cache: SCModelCache | None = None,
     ) -> None:
         """Model every tool, hidden.
 
@@ -183,11 +188,14 @@ class SCToolRack:  # pylint: disable=too-few-public-methods
           The SolidCraft session.
         * `tools` (`dict[int, tuple[str, dict[str, object]]]`):
           The tools, by T number (from `shops.loaded_tools()`).
+        * `cache` (`SCModelCache | None`):
+          Where to keep their models between runs, or `None` to build
+          them.
         """
         self.solidcraft: SCPyBind = solidcraft
         self.current: int = 0
         self.tools: dict[int, SCToolModel] = {
-            number: SCToolModel(solidcraft, number, tool)
+            number: SCToolModel(solidcraft, number, tool, cache)
             for number, tool in sorted(tools.items())
         }
 
@@ -343,7 +351,7 @@ class SCSolidCraftDisplay:
           The tools, by T number (from `shops.loaded_tools()`).
         * `paths` (`SCPathRack`): Each tool's path, drawn.
         """
-        self.rack: SCToolRack = SCToolRack(solidcraft, tools)
+        self.rack: SCToolRack = SCToolRack(solidcraft, tools, SCModelCache())
         self.paths: SCPathRack = paths
 
     # Method `SCSolidCraftDisplay.sample()`:
