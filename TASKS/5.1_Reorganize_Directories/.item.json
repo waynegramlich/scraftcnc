@@ -1,11 +1,15 @@
 {
-  "state": "Pending",
+  "state": "Open",
   "created": "2026-11-03T21:05:12Z",
-  "updated": "2026-11-03T21:05:12Z",
+  "updated": "2026-11-03T22:46:07Z",
   "history": [
     {
       "state": "Pending",
       "time": "2026-11-03T21:05:12Z"
+    },
+    {
+      "state": "Open",
+      "time": "2026-11-03T22:46:07Z"
     }
   ],
   "tag": "rd"

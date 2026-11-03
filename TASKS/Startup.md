@@ -1,4 +1,3 @@
-<!-- Written by ai_contexts; do not edit. -->
 @2_Document_a_Shop/Details.md
 @2.4_Stock_Models/Details.md
 @2.5_Tool_Models/Details.md
@@ -10,7 +9,25 @@
 @5_Integration/Details.md
 @5_Integration/Context.md
 @5.1_Reorganize_Directories/Details.md
+@5.1_Reorganize_Directories/Context.md
+@5.1.1_Merge_pybind/Details.md
+@5.1.1_Merge_pybind/Context.md
+@5.1.2_Merge_lcnc/Details.md
+@5.1.3_Package_Skeleton/Details.md
+@5.1.4_Tooling_Subpackage/Details.md
+@5.1.5_HMI_Subpackage/Details.md
+@5.1.6_Consolidate_Tests/Details.md
+@5.1.7_Drop_sc_Prefixes/Details.md
+@5.1.8_Scripts_and_Link_Cleanup/Details.md
 @5.2_Create_More_Tools/Details.md
+@../ISSUES/2_Archive_Merged_GitHub_Repositories/Details.md
 @../ISSUES/1_PathRack_Hidden_Path_Shows_Again/Summary.md
+@2.3_Mounting/Summary.md
+@3.1_Installing_LinuxCNC/Summary.md
 @3_Simulation/Summary.md
+@2.1_Materials_Speeds_and_Feeds/Summary.md
+@3.3_Replace_LinuxCNC_GUI/Summary.md
+@3.2_Tracking_LinuxCNC/Summary.md
 @1_Original_Roadmap/Summary.md
+@1.1_Come_up_with_a_plan/Summary.md
+@2.2_Shop_Information/Summary.md
