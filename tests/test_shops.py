@@ -5,6 +5,7 @@ import tempfile
 import tomllib
 import unittest
 from pathlib import Path
+from typing import Any, cast
 
 from scraftcnc import shops
 
@@ -311,7 +312,8 @@ class TestReader(SCCopiedShop):
 
     def test_example_unique_ids(self) -> None:
         """The example's unique ids run from 1, with no gaps."""
-        tools = shops.read(EXAMPLES / "home_shop.toml")["tools"][0]
+        shop: dict[str, Any] = shops.read(EXAMPLES / "home_shop.toml")
+        tools = shop["tools"][0]
         numbers = [
             tool["unique_id"] for key in shops.CNC_KINDS for tool in tools[key]
         ]
@@ -334,7 +336,8 @@ class TestReader(SCCopiedShop):
             'holder = ["r8", "3/8 in"]',
             'holder = ["capto-c6!", "hsk-a100", "drill-chuck", "3/8 in"]',
         )
-        tools = shops.read(self.directory / "home_shop.toml")["tools"][0]
+        shop: dict[str, Any] = shops.read(self.directory / "home_shop.toml")
+        tools = shop["tools"][0]
         self.assertEqual(
             [tool["holder"] for tool in tools["end_mills"][:3]],
             [
@@ -599,7 +602,10 @@ class TestToolCutting(unittest.TestCase):
     """Speeds and feeds worked out from the shop's `materials`."""
 
     def setUp(self) -> None:
-        self.shop = shops.read(EXAMPLES / "home_shop.toml")
+        # The shop is TOML data, so `Any` lets the tests index into it.
+        self.shop = cast(
+            dict[str, Any], shops.read(EXAMPLES / "home_shop.toml")
+        )
         self.mill = next(
             machine
             for machine in self.shop["machines"]

@@ -4,6 +4,7 @@ import dataclasses
 import math
 import shutil
 import unittest
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from unittest import mock
 
@@ -41,7 +42,9 @@ SMALL_PLATE = tools.SCGridPlate(
 )
 
 
-def work(length: float = 5.5, width: float = 12.0, thick: float = 0.5):
+def work(
+    length: float = 5.5, width: float = 12.0, thick: float = 0.5
+) -> mount.SCPlate:
     """Return a plate, from its size in inches."""
     return mount.SCPlate("Work", length * INCH, width * INCH, thick * INCH)
 
@@ -106,7 +109,9 @@ class TestFirstMount(unittest.TestCase):
 class TestViseMount(unittest.TestCase):
     """Other stacks in a vise."""
 
-    def build(self, opening: float, height: str, plate: mount.SCPlate):
+    def build(
+        self, opening: float, height: str, plate: mount.SCPlate
+    ) -> mount.SCMount:
         """Return a stack, with the opening in inches."""
         return mount.vise_mount(TABLE, VISE, opening * INCH, height, plate)
 
@@ -223,6 +228,7 @@ class TestGridPlate(unittest.TestCase):
         """The outline holds all of the grid, moved with its center."""
         holes = tools.GRID_PLATE.outline((1.0, 2.0)).children
         self.assertEqual(len(holes), 200 + 8)
+        assert isinstance(holes[0], SCHole)
         self.assertAlmostEqual(holes[0].x, 1.0 - 2.25 * INCH)
         self.assertAlmostEqual(holes[0].y, 2.0 - 4.75 * INCH)
         self.assertAlmostEqual(holes[0].diameter, 0.144 * INCH)
@@ -419,7 +425,14 @@ class TestModel(unittest.TestCase):
     def test_model(self) -> None:
         """A plate with a pocket, an island, holes and a boss."""
 
-        def square(name, half, z_start, z_end, children=(), x=0.0):
+        def square(
+            name: str,
+            half: float,
+            z_start: float,
+            z_end: float,
+            children: Sequence[SCRoundedPolygon] = (),
+            x: float = 0.0,
+        ) -> SCRoundedPolygon:
             corners = [
                 SCCorner(x - half, -half),
                 SCCorner(x + half, -half),
@@ -439,9 +452,10 @@ class TestModel(unittest.TestCase):
         with SCHeadlessTransport(program) as transport:
             solidcraft = SCPyBind(transport)
             self.assertEqual(plate.model(solidcraft), "Plate")
-            volume = solidcraft.inspect.center_of_mass(bodies=["Plate"])[
-                "volume"
-            ]
+            mass = solidcraft.inspect.center_of_mass(bodies=["Plate"])
+        assert isinstance(mass, Mapping)
+        volume = mass["volume"]
+        assert isinstance(volume, (int, float))
         hole = math.pi * 25.0
         expected = (
             100.0**2 * 10.0

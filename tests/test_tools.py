@@ -6,6 +6,7 @@ import math
 import shutil
 import unittest
 from pathlib import Path
+from typing import Any
 
 from scraftcnc.pybind.scraftpybind import JSON, SCHeadlessTransport, SCPyBind
 from scraftcnc.tooling import tools
@@ -389,7 +390,8 @@ class TestVise(unittest.TestCase):
             {"hole_height": 40.0},
         ):
             with self.subTest(sizes=sizes), self.assertRaises(ValueError):
-                dataclasses.replace(tools.KURT_JAW_PLATE, **sizes)
+                changes: dict[str, Any] = sizes
+                dataclasses.replace(tools.KURT_JAW_PLATE, **changes)
 
     def test_jaw_plate_volume(self) -> None:
         """A jaw plate's volume takes out its holes and counterbores."""
@@ -417,7 +419,8 @@ class TestVise(unittest.TestCase):
 
         def plate(**sizes: float) -> tools.SCJawPlate:
             """Return the D688's jaw plate with some sizes changed."""
-            return dataclasses.replace(tools.KURT_JAW_PLATE, **sizes)
+            changes: dict[str, Any] = sizes
+            return dataclasses.replace(tools.KURT_JAW_PLATE, **changes)
 
         jaw = tools.KURT_D688.fixed_jaw
         for change in (
@@ -625,11 +628,12 @@ class TestCountersinks(unittest.TestCase):
     def test_refused(self) -> None:
         """Sizes that do not make a countersink are refused."""
         sink = tools.DOUBLE_END_COUNTERSINKS["421-0130"]
-        for changes in (
+        for sizes in (
             {"drill_diameter": sink.body_diameter},
             {"angle": 180.0},
             {"overall_length": 2.0},
         ):
+            changes: dict[str, Any] = sizes
             with self.subTest(changes=changes), self.assertRaises(ValueError):
                 dataclasses.replace(sink, **changes)
 

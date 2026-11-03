@@ -8,9 +8,12 @@ import math
 import random
 import types
 import unittest
+from collections.abc import Sequence
+from typing import cast
 
 from scraftcnc.geometry import (
     SLOP,
+    Point,
     SCArc,
     SCCorner,
     SCHole,
@@ -26,6 +29,7 @@ from scraftcnc.geometry import (
     reverse_segment,
     split_at,
 )
+from scraftcnc.pybind.scraftpybind import SCPyBind
 
 
 # Function `notched()`:
@@ -118,7 +122,7 @@ def box(
     high: float,
     z_start: float,
     z_end: float,
-    children: tuple[SCRoundedPolygon, ...] = (),
+    children: Sequence[SCRoundedPolygon] = (),
 ) -> SCRoundedPolygon:
     """Return a square with sharp corners.
 
@@ -2039,23 +2043,23 @@ class TestSCLoop(unittest.TestCase):
 class _SCSketch:
     """Stands in for SolidCraft's `sketch` commands, counting curves."""
 
-    def __init__(self):
-        self.circles = []
-        self.count = 0
+    def __init__(self) -> None:
+        self.circles: list[dict[str, object]] = []
+        self.count: int = 0
 
-    def _curve(self):
+    def _curve(self) -> dict[str, list[str]]:
         self.count += 1
         return {"curves": [f"c{self.count}"]}
 
-    def line(self, **_arguments):
+    def line(self, **_arguments: object) -> dict[str, list[str]]:
         """Draw a line."""
         return self._curve()
 
-    def arc_center_point(self, **_arguments):
+    def arc_center_point(self, **_arguments: object) -> dict[str, list[str]]:
         """Draw an arc."""
         return self._curve()
 
-    def circle_center(self, **arguments):
+    def circle_center(self, **arguments: object) -> dict[str, list[str]]:
         """Draw a circle."""
         self.circles.append(arguments)
         return self._curve()
@@ -2190,7 +2194,8 @@ class TestChildren(unittest.TestCase):
         )
         plate = box("P", 0.0, 10.0, 0.0, 1.0, [through, blind, counterbore])
         sketch = _SCSketch()
-        solidcraft = types.SimpleNamespace(sketch=sketch)
+        # A stand-in with only the `sketch` commands that are used.
+        solidcraft = cast(SCPyBind, types.SimpleNamespace(sketch=sketch))
         curves = plate.sketch(solidcraft, 25.4)
         self.assertEqual(len(curves), 4 + 1 + 4)
         self.assertEqual(len(sketch.circles), 1)
@@ -2206,7 +2211,14 @@ class TestHits(unittest.TestCase):
         """Make the plate, with its pocket, island and holes."""
         self.plate: SCRoundedPolygon = plate_with_island()
 
-    def hit(self, start, end, z, radius=1.0, poly=None) -> bool:
+    def hit(
+        self,
+        start: Point,
+        end: Point,
+        z: float,
+        radius: float = 1.0,
+        poly: SCRoundedPolygon | None = None,
+    ) -> bool:
         """Return whether a line move at a height hits."""
         return (poly or self.plate).hits(SCLine(start, end), z, radius)
 
@@ -2306,7 +2318,8 @@ class TestHits(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "must go up"):
             hole.hits(SCLine((0.0, 0.0), (1.0, 0.0)), 0.5, 0.1)
         with self.assertRaisesRegex(ValueError, "must go up"):
-            hole.model(None)
+            # Refused before SolidCraft is used, so none is given.
+            hole.model(None)  # type: ignore[arg-type]
 
     def test_against_height_field(self) -> None:
         """Random moves agree with walking a tool over the surface."""

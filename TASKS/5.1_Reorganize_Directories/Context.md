@@ -73,3 +73,28 @@
 ## 2026-11-03: git commits
 
 The user: "During this reorg, I give you permission to do git commits."  Only for `T.rd~5.1` and its subtasks.
+
+## 2026-11-03: mypy (chunk 8)
+
+`mypy.ini` has only `python_version` and the `follow_imports = silent`
+override for the generated `scraftcnc.pybind.scraftpybind`; the strict
+options of the Python Coding Rules are given on the command line:
+`mypy --strict --warn-unreachable --enable-error-code
+ignore-without-code --enable-error-code redundant-expr
+--enable-error-code truthy-bool scraftcnc tests` (about 4 s).  The
+package itself is clean; every error is in a test.
+
+* Before: 255 errors in 8 test files.
+* Fixed (test side only): `test_shops`, `test_tools`,
+  `test_cutter_models`, `test_mount`, `test_geometry`,
+  `test_model_cache`.  Kinds: missing annotations, `shops.read()` and
+  SolidCraft replies indexed as JSON (now `Any`, by a `cast` or a
+  `reply()` helper), `dataclasses.replace(**dict[str, float])`,
+  `SCInserted | None` narrowed with `assert`, `SCHole` narrowed with
+  `isinstance`, `setups.KURT_D688` -> `tools.KURT_D688` and
+  `setups.SCMachineViseLayer` -> `mount.SCMachineViseLayer` (the same
+  objects, re-exported only implicitly), a `SimpleNamespace` stand-in
+  cast to `SCPyBind`, one deliberate `# type: ignore[arg-type]`
+  (`hole.model(None)`, refused before SolidCraft is used).
+* After: 174 errors, in `tests/test_keepout.py` and
+  `tests/test_setups.py` only.  Next chunk: those two.

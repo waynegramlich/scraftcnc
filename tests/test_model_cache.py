@@ -8,12 +8,13 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from typing import Any
 from unittest import mock
 
 from scraftcnc import model_cache, setups
-from scraftcnc.pybind.scraftpybind import SCHeadlessTransport, SCPyBind
+from scraftcnc.pybind.scraftpybind import JSON, SCHeadlessTransport, SCPyBind
 from scraftcnc.shops import read
-from scraftcnc.tooling import cutter_models, tools
+from scraftcnc.tooling import cutter_models, mount, tools
 
 HERE: Path = Path(__file__).resolve().parent.parent
 CLI: Path = HERE / "solidcraft/squashfs-root/usr/bin/solidcraft-cli"
@@ -40,9 +41,14 @@ def setUpModule() -> None:
     unittest.addModuleCleanup(patcher.stop)
 
 
+def reply(value: JSON) -> Any:
+    """Return a reply from SolidCraft untyped, for indexing in tests."""
+    return value
+
+
 def centers(solidcraft: SCPyBind, bodies: list[str]) -> dict[str, list[float]]:
     """Return where each body's center of mass is, by name."""
-    found = solidcraft.inspect.center_of_mass(bodies=bodies)
+    found = reply(solidcraft.inspect.center_of_mass(bodies=bodies))
     return {entry["body"]: entry["center"] for entry in found["bodies"]}
 
 
@@ -161,6 +167,7 @@ class TestLive(unittest.TestCase):
         with session(self.directory) as transport:
             solidcraft = SCPyBind(transport)
             first = self.cache.insert(solidcraft, model)
+            assert first is not None
             self.assertEqual(first.bodies, ["Pin"])
             self.assertEqual(
                 [item.name for item in self.directory.iterdir()], [path.name]
@@ -168,6 +175,7 @@ class TestLive(unittest.TestCase):
             when = time.time() - 3600.0
             os.utime(path, (when, when))
             second = self.cache.insert(solidcraft, model)
+            assert second is not None
             self.assertEqual(second.bodies, ["Pin (2)"])
         self.assertEqual(len(builds), 1)
         self.assertGreater(path.stat().st_mtime, when + 3000.0)
@@ -194,7 +202,7 @@ class TestLive(unittest.TestCase):
                 solidcraft = SCPyBind(transport)
                 names = self.setup.model(solidcraft, self.cache)
                 got = centers(solidcraft, names)
-                appearance = solidcraft.appearance.list()["bodies"]
+                appearance = reply(solidcraft.appearance.list())["bodies"]
             self.assertEqual(sorted(got), sorted(want))
             for name, place in want.items():
                 for got_axis, want_axis in zip(got[name], place, strict=True):
@@ -267,17 +275,17 @@ class TestLive(unittest.TestCase):
             mock.patch.object(model_cache, "HEADLESS_CLI", cli),
         ):
             solidcraft = SCPyBind(transport)
-            self.assertEqual(
-                self.cache.insert(solidcraft, model).bodies, ["Pin"]
-            )
+            inserted = self.cache.insert(solidcraft, model)
+            assert inserted is not None
+            self.assertEqual(inserted.bodies, ["Pin"])
         self.assertEqual(len(sessions), 1)
         self.assertIsNot(sessions[0], solidcraft)
 
     def test_vise_two_files(self) -> None:
         """The vise is two files, which any opening shares."""
-        vise = setups.KURT_D688
+        vise = tools.KURT_D688
         for opening in (10.0, 100.0):
-            layer = setups.SCMachineViseLayer(vise, opening)
+            layer = mount.SCMachineViseLayer(vise, opening)
             with session(self.directory) as transport:
                 setups.SCPlacement(0.0, 0.0, 0.0, 0).model(
                     layer, SCPyBind(transport), self.cache
@@ -313,7 +321,9 @@ class TestLive(unittest.TestCase):
                     visible=False, items=made.items()
                 )
                 got = centers(solidcraft, ["T5"])["T5"]
-                color = solidcraft.appearance.list()["bodies"]["T5"]["color"]
+                color = reply(solidcraft.appearance.list())["bodies"]["T5"][
+                    "color"
+                ]
             self.assertEqual(color, "#123456")
             for got_axis, want_axis in zip(got, want, strict=True):
                 self.assertAlmostEqual(got_axis, want_axis, places=2)

@@ -94,7 +94,7 @@ class TestProfiles(unittest.TestCase):
 
     def test_countersinks(self) -> None:
         """One end has a shank; two ends mirror each other."""
-        sink = {
+        sink: dict[str, object] = {
             "diameter": "1/2 in",
             "drill_diameter": "1/4 in",
             "drill_length": "1/4 in",
@@ -118,7 +118,7 @@ class TestProfiles(unittest.TestCase):
 
     def test_drill_shank(self) -> None:
         """A drill steps to its shank, where `shank_length` says."""
-        drill = {
+        drill: dict[str, object] = {
             "diameter": "1/2 in",
             "length_of_cut": "2 in",
             "overall_length": "4 in",
