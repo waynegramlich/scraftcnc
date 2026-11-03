@@ -3,9 +3,8 @@
 `scraftcnc` writes RS-274 G-code for a 3-axis CNC mill from shapes
 described in Python, and can show the part and its tool path in
 [SolidCraft](https://github.com/tangency-labs/solidcraft), an open
-source CAD program.  It drives SolidCraft through
-[`scraftpybind`](https://github.com/waynegramlich/scraftpybind), its
-Python bindings.
+source CAD program.  It drives SolidCraft through its
+Python bindings, `scraftcnc/pybind/`.
 
 What it does today:
 
@@ -50,45 +49,34 @@ screen.
 
 ## Getting It
 
-`scraftcnc` and `scraftpybind` are cloned side by side, into the same
-directory, since `scraftcnc/scraftpybind.py` is a symbolic link to
-`../scraftpybind/scraftpybind.py`.  `lcnc_panel.py` and its tests also
-need `scraftlinuxcnc` beside them (`lcnc_client.py` is a link into it),
-a repository that is still private:
+One repository holds everything: the Python bindings for SolidCraft
+(`scraftcnc/pybind/`) and the LinuxCNC side (`scraftcnc/lcnc/`)
+included.  Everything is run from its top directory, with `python3 -m`;
+nothing is installed:
 
 ```
-git clone https://github.com/waynegramlich/scraftpybind.git
 git clone https://github.com/waynegramlich/scraftcnc.git
 cd scraftcnc
 ```
 
-On Windows, `git` checks a symbolic link out as a small text file
-unless symbolic links are turned on, so install `scraftpybind`
-instead (after deleting that text file):
-
-```
-del scraftpybind.py
-pip install git+https://github.com/waynegramlich/scraftpybind.git
-```
-
 ## Trying It
 
-`solidcraftcnc_demo.py` makes a notched 4 x 3 inch plate, 1/2 inch
+`scraftcnc/demo.py` makes a notched 4 x 3 inch plate, 1/2 inch
 thick, with a hole through it and a pocket around three islands.
 Each step below needs a little more than the one before it.
 
 1. The G-code alone (no SolidCraft needed):
 
    ```
-   python3 solidcraftcnc_demo.py > demo.ngc
+   python3 -m scraftcnc.demo > demo.ngc
    ```
 
-   It prints an estimate of the run time (about 19 minutes).
+   It prints an estimate of the run time (about 12 minutes).
 
 2. The tool path viewer (no SolidCraft needed):
 
    ```
-   python3 solidcraftcnc_demo.py --plot demo.html > demo.ngc
+   python3 -m scraftcnc.demo --plot demo.html > demo.ngc
    ```
 
    Open `demo.html` in a web browser.  Drag to turn the view, play
@@ -98,7 +86,7 @@ Each step below needs a little more than the one before it.
    `solidcraft-cli` on the `PATH`):
 
    ```
-   python3 solidcraftcnc_demo.py headless > demo.ngc
+   python3 -m scraftcnc.demo headless > demo.ngc
    ```
 
    It prints the number of closed profiles it sketched (6).
@@ -109,7 +97,7 @@ Each step below needs a little more than the one before it.
 
    ```
    solidcraft --control 8080 &
-   python3 solidcraftcnc_demo.py 8080 > demo.ngc
+   python3 -m scraftcnc.demo 8080 > demo.ngc
    ```
 
    The plate is see-through, so the tool path shows inside it (it
@@ -117,7 +105,9 @@ Each step below needs a little more than the one before it.
    separate sketches, which can be hidden one at a time.
 
 5. All of it connected, in one command, on Linux, with LinuxCNC's
-   simulator (`../scraftlinuxcnc`) and no other SolidCraft on its port:
+   simulator (installed by `python3 -m
+   scraftcnc.lcnc.install_linuxcnc`) and no other SolidCraft on its
+   port:
 
    ```
    ./show_demo.py
@@ -130,34 +120,52 @@ Each step below needs a little more than the one before it.
 
 ## The Files
 
-* `solidcraftcnc.py`: `SCCNC`, which writes the G-code (profiles,
-  pockets, drilling, edge finishing).
-* `scgeometry.py`: outlines (`SCRoundedPolygon`, `SCLoop`) and the offsets
-  that tool paths are made from.
-* `shops.py`, `Shops.md` and `examples/shop/`: the shop description
-  files, their reader (every problem reported at its file and line),
-  and the example shop that the demonstration uses.
-* `tools.py`: 3D models of tooling (mill tables, drills, a vise, a
-  grid plate) and the keep-out regions around them.  Run it to see
-  them in SolidCraft.
-* `Tool_Models.md`, `tool_models.py` and `docs/tool_models/`: how to
-  make each model, with its sketch, all written from the code.
-* `mount.py`: stacks of tooling and material that hold work on a
-  machine, with their keep-out regions.  Run it to see the first one.
-* `scmodelcache.py`: keeps models of tools and tooling as STEP files in
+The code is the package `scraftcnc/`:
+
+* `gcode.py`: `SCCNC`, which writes the G-code (profiles, pockets,
+  drilling, edge finishing).
+* `geometry.py`: outlines (`SCRoundedPolygon`, `SCLoop`) and the
+  offsets that tool paths are made from.
+* `shops.py` (with `Shops.md` and `examples/shop/`): the shop
+  description files, their reader (every problem reported at its file
+  and line), and the example shop that the demonstration uses.
+* `model_cache.py`: keeps models of tools and tooling as STEP files in
   `~/.scraftcnc/tool_cache/`, so the second start is much faster.  One
   not used for a week is deleted, and deleting them all is always safe.
-* `scsetup.py` and `examples/setup/`: a whole setup, read from JSON:
+* `setups.py` (with `examples/setup/`): a whole setup, read from JSON:
   where each piece of tooling, material and finished part goes.
-* `sckeepout.py`: checks every move of a program against a setup's
+* `keepout.py`: checks every move of a program against a setup's
   keep-outs, and that rapids stay at `z_safe`.  Run it to check two
   programs in `examples/setup/`: the demonstration plate is clear of
   everything, and the grid plate's long edges deliberately are not.
-* `scmachine.py`: the machine and its tools as the G-code side sees
+* `machine.py`: the machine and its tools as the G-code side sees
   them.
-* `scplot.py` and `scplot_template.html`: the tool path viewer, and the
+* `plot.py` and `plot_template.html`: the tool path viewer, and the
   tool path drawn as SolidCraft sketches.
-* `solidcraftcnc_demo.py`: the demonstration above.
+* `demo.py`: the demonstration above.
+* `tooling/`: 3D models of tools and tooling.
+  * `tools.py`: tooling (mill tables, drills, a vise, a grid plate)
+    and the keep-out regions around them.  Run it to see them in
+    SolidCraft.
+  * `cutter_models.py`: each cutter in the shop's tools files, with
+    its holder.
+  * `mount.py`: stacks of tooling and material that hold work on a
+    machine, with their keep-out regions.  Run it to see the first
+    one.
+  * `tool_models.py` (with `Tool_Models.md` and `docs/tool_models/`):
+    how to make each model, with its sketch, all written from the
+    code.
+* `pybind/`: `scraftpybind.py`, the Python bindings for SolidCraft,
+  written by `scraftpybind_generate.py`.
+* `lcnc/`: LinuxCNC's simulator (`install_linuxcnc.py`), the bridge
+  and server that drive it, and the simulations that show it in
+  SolidCraft.
+* `hmi/`: the operator's panel (`lcnc_panel.py`) and its headless
+  version.
+
+Beside it, `tests/` holds the tests and `show_demo.py` the
+demonstration that connects everything.
+
 * `TASKS/` and `RULES/`: the plans and work log kept with
   [`ai_contexts`](https://github.com/waynegramlich/aicontexts) while
   the code was written with Claude Code.
@@ -165,17 +173,17 @@ Each step below needs a little more than the one before it.
 ## Testing
 
 ```
-python3 -m unittest -v
+python3 -m unittest discover -s tests -t .
 ```
 
 The tests need no SolidCraft, and no display.  One more suite follows
-the whole path, from the demonstration's G-code, through
-`lcnc_panel.py --headless` and `serve_linuxcnc`, to a real LinuxCNC
-simulator, in about two minutes, when asked (it needs LinuxCNC, from
-`install_linuxcnc` in `scraftlinuxcnc`):
+the whole path, from the demonstration's G-code, through the
+headless panel (`scraftcnc/hmi/`) and `serve_linuxcnc`, to a real
+LinuxCNC simulator, in about two minutes, when asked (it needs LinuxCNC, from
+`python3 -m scraftcnc.lcnc.install_linuxcnc`):
 
 ```
-SCRAFTCNC_LINUXCNC=1 python3 -m unittest -v test_lcnc_end_to_end
+SCRAFTCNC_LINUXCNC=1 python3 -m unittest -v tests.test_lcnc_end_to_end
 ```
 
 ## License

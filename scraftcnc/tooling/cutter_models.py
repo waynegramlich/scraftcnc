@@ -29,14 +29,14 @@ Arcs are drawn as short straight lines, which is plenty for a picture.
 Run this to see every tool of the example shop in SolidCraft:
 
 ```
-./cutter_models.py 8080
+python3 -m scraftcnc.tooling.cutter_models 8080
 ```
 
 Or give one tool, as JSON (`Tool_Models.md` describes them), to add it
 to the design at the origin:
 
 ```
-./cutter_models.py 8080 '{"kind": "end_mill", "diameter": "1/4 in", ...}'
+python3 -m scraftcnc.tooling.cutter_models 8080 '{"kind": "end_mill", "diameter": "1/4 in", ...}'
 ```
 """
 

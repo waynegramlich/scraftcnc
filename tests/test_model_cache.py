@@ -15,7 +15,7 @@ from scraftcnc.pybind.scraftpybind import SCHeadlessTransport, SCPyBind
 from scraftcnc.shops import read
 from scraftcnc.tooling import cutter_models, tools
 
-HERE: Path = Path(__file__).resolve().parent
+HERE: Path = Path(__file__).resolve().parent.parent
 CLI: Path = HERE / "solidcraft/squashfs-root/usr/bin/solidcraft-cli"
 STACK: Path = HERE / "examples/setup/demo_stack.json"
 INCH = 25.4

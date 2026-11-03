@@ -12,8 +12,8 @@ a grid plate; or `first`, a Tormach 770 table with a Kurt vise, a
 pair of parallels and an aluminum plate.
 
 ```
-python3 mount.py 8080 [garage|plate|first]     # A GUI on that port.
-python3 mount.py headless [garage|plate|first] # No window; a report.
+python3 -m scraftcnc.tooling.mount 8080 [garage|plate|first]     # A GUI on that port.
+python3 -m scraftcnc.tooling.mount headless [garage|plate|first] # No window; a report.
 ```
 """
 

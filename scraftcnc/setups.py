@@ -14,8 +14,8 @@ center, seen from above: counterclockwise is positive, in quarter turns.
 `examples/setup/grid_plate.json` is an example.
 
 ```
-python3 setups.py [FILE] 8080       # A GUI with `--control 8080`.
-python3 setups.py [FILE] headless   # No window; prints the report.
+python3 -m scraftcnc.setups [FILE] 8080       # A GUI with `--control 8080`.
+python3 -m scraftcnc.setups [FILE] headless   # No window; prints the report.
 ```
 """
 

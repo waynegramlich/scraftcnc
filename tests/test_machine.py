@@ -5,11 +5,11 @@ from pathlib import Path
 
 from scraftcnc.machine import SCMachine, SCTool
 from scraftcnc.shops import cnc_machine, read
-from test_gcode import machine
+from tests.test_gcode import machine
 
 # The example shop.
 SHOP_FILE: Path = (
-    Path(__file__).resolve().parent / "examples/shop/home_shop.toml"
+    Path(__file__).resolve().parent.parent / "examples/shop/home_shop.toml"
 )
 
 

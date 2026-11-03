@@ -11,11 +11,11 @@ Every table has its top at `Z = 0`, its length along X and its center
 on `X = 0`.  Run as a program, it shows them all in SolidCraft:
 
 ```
-python3 tools.py 8080       # A GUI started with `--control 8080`.
-python3 tools.py headless   # No window; prints the bodies it made.
-python3 tools.py 8080 countersinks   # Only the double end countersinks.
-python3 tools.py 8080 largest        # The largest of each kind of them.
-python3 tools.py 8080 421-0261       # One of them, by its order number.
+python3 -m scraftcnc.tooling.tools 8080       # A GUI started with `--control 8080`.
+python3 -m scraftcnc.tooling.tools headless   # No window; prints the bodies it made.
+python3 -m scraftcnc.tooling.tools 8080 countersinks   # Only the double end countersinks.
+python3 -m scraftcnc.tooling.tools 8080 largest        # The largest of each kind of them.
+python3 -m scraftcnc.tooling.tools 8080 421-0261       # One of them, by its order number.
 ```
 """
 

@@ -22,7 +22,7 @@ from scraftcnc.geometry import (
     distance_to,
 )
 from scraftcnc.machine import SCMachine, SCTool
-from test_geometry import dumbbell, square
+from tests.test_geometry import dumbbell, square
 
 
 # Function `machine()`:

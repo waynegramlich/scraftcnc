@@ -6,7 +6,7 @@ quit (`lcnc_bridge.py`, or another with the same habits, by `SIGTERM`),
 after which the `linuxcnc` script shuts the rest down in order:
 
 ```
-python3 stop_linuxcnc.py
+python3 -m scraftcnc.lcnc.stop_linuxcnc
 ```
 
 When that does not work in time (or with `--kill`), every LinuxCNC

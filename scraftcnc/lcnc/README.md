@@ -1,4 +1,4 @@
-# `scraftlinuxcnc`: SolidCraft LinuxCNC Simulator Access
+# `scraftcnc.lcnc`: SolidCraft LinuxCNC Simulator Access
 
 When working on a system that generates G code for a CNC machine, it is
 extremely desirable to be able to simulate what the G code actually does.
@@ -20,15 +20,16 @@ does any of this software need access to a display screen, mouse or keyboard.
 
 ## Status
 
-The repository is private until it works everywhere.  See `Probe runs`
-below for what has been shown.
+Part of `scraftcnc` (it was the `scraftlinuxcnc` repository).  See
+`Probe runs` below for what has been shown.
 
 ## Use
 
+From the top of `scraftcnc`:
+
 ```
-pip install .
-install_linuxcnc     # Once.  It tells you of anything you must run.
-serve_linuxcnc       # Runs LinuxCNC until it is stopped.
+python3 -m scraftcnc.lcnc.install_linuxcnc  # Once; lists what you run.
+python3 -m scraftcnc.lcnc.serve_linuxcnc    # Runs LinuxCNC until stopped.
 ```
 
 LinuxCNC goes in a `distrobox` box named `lcnc` on Linux, and in WSL 2's
@@ -79,8 +80,8 @@ inches of travel).  The meanings of the
 `stat` attributes and `command` methods are LinuxCNC's, in its [Python
 interface](https://linuxcnc.org/docs/2.9/html/config/python-interface.html).
 
-`scraftlinuxcnc/lcnc_client.py` is a small Python client, and
-`scraftlinuxcnc/demo_linuxcnc.py` shows a whole session: machine on,
+`lcnc_client.py` is a small Python client, and
+`demo_linuxcnc.py` shows a whole session: machine on,
 homing, MDI, and running a program.
 
 ## Why the Installation Is Small

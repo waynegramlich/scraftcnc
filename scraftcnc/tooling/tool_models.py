@@ -8,7 +8,7 @@ and meaning from the schema in `shops.py`, and the sketch's outline
 from `cutter_models.profile()`.  A test keeps the files in step:
 
 ```
-./tool_models.py
+python3 -m scraftcnc.tooling.tool_models
 ```
 """
 
@@ -615,8 +615,9 @@ INTERFACE: tuple[tuple[ModuleType, str, bool], ...] = (
 INTRODUCTION: str = """\
 # Tool Models
 
-This document is written by `tool_models.py` (`./tool_models.py`), from
-the code; do not edit it.
+This document is written by `scraftcnc/tooling/tool_models.py`
+(`python3 -m scraftcnc.tooling.tool_models`), from the code; do not
+edit it.
 
 Each model below can be made from a description of it, in any of three
 forms, which all have the same keys: JSON on a command line, a Python
@@ -1037,7 +1038,7 @@ def _python(page: SCModelPage) -> str:
     )
     return (
         "from scraftcnc.pybind.scraftpybind import SCPyBind, connect\n"
-        "from cutter_models import model_description\n"
+        "from scraftcnc.tooling.cutter_models import model_description\n"
         "\n"
         'with connect("8080") as transport:\n'
         "    model_description(\n"
@@ -1209,7 +1210,8 @@ def section(page: SCModelPage) -> str:
         f"![{page.title} sketch]({SKETCHES}/{page.kind}.svg)\n\n"
         f"{markdown_table(rows)}\n\n"
         f"Other keys:\n\n{others}\n\n"
-        f"JSON:\n\n```\n./cutter_models.py 8080 '{described}'\n```\n\n"
+        "JSON:\n\n```\npython3 -m scraftcnc.tooling.cutter_models 8080 "
+        f"'{described}'\n```\n\n"
         f"Python:\n\n```python\n{_python(page)}```\n\n"
         f"A tools file:\n\n```toml\n{_toml(page)}```\n"
     )
@@ -2092,7 +2094,7 @@ def vise_section() -> str:
     )
     python: str = (
         "from scraftcnc.pybind.scraftpybind import SCPyBind, connect\n"
-        f"from tools import {VISE_NAME}\n"
+        f"from scraftcnc.tooling.tools import {VISE_NAME}\n"
         "\n"
         'with connect("8080") as transport:\n'
         f"    {VISE_NAME}.model(SCPyBind(transport), opening=76.2)\n"
@@ -2261,7 +2263,7 @@ def jaw_plate_section() -> str:
     )
     python: str = (
         "from scraftcnc.pybind.scraftpybind import SCPyBind, connect\n"
-        f"from tools import {JAW_PLATE_NAME}\n"
+        f"from scraftcnc.tooling.tools import {JAW_PLATE_NAME}\n"
         "\n"
         'with connect("8080") as transport:\n'
         f'    {JAW_PLATE_NAME}.model(SCPyBind(transport), "Jaw plate")\n'
@@ -2390,7 +2392,7 @@ def parallel_section() -> str:
     p: SCParallel = PARALLEL
     python: str = (
         "from scraftcnc.pybind.scraftpybind import SCPyBind, connect\n"
-        "from tools import SCParallel\n"
+        "from scraftcnc.tooling.tools import SCParallel\n"
         "\n"
         "# Its sizes in millimeters; the holes are optional.\n"
         "parallel = SCParallel(\n"
@@ -2617,9 +2619,9 @@ def grid_plate_section() -> str:
         if key not in numbers
     )
     python: str = (
-        "from model_cache import SCModelCache\n"
+        "from scraftcnc.model_cache import SCModelCache\n"
         "from scraftcnc.pybind.scraftpybind import SCPyBind, connect\n"
-        "from tools import GRID_PLATE\n"
+        "from scraftcnc.tooling.tools import GRID_PLATE\n"
         "\n"
         "# Through the cache: slow the first time, then about a second.\n"
         'with connect("8080") as transport:\n'

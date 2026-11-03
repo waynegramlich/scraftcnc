@@ -24,8 +24,8 @@ demo's own sketches:
 ```
 python3 -m scraftcnc.lcnc.serve_linuxcnc &
 solidcraft --control 8080 &
-./demo.py --no-path --opaque 8080 > demo.ngc
-distrobox enter lcnc -- ./sim_linuxcnc.py demo.ngc --solidcraft 8080
+python3 -m scraftcnc.demo --no-path --opaque 8080 > demo.ngc
+distrobox enter lcnc -- python3 -m scraftcnc.lcnc.sim_linuxcnc demo.ngc --solidcraft 8080
 ```
 
 With `--watch`, it sends LinuxCNC nothing and only follows what
@@ -34,7 +34,7 @@ whose paths are drawn is the one named, or else the one the panel has
 open:
 
 ```
-distrobox enter lcnc -- ./sim_linuxcnc.py --watch demo.ngc \
+distrobox enter lcnc -- python3 -m scraftcnc.lcnc.sim_linuxcnc --watch demo.ngc \
     --solidcraft 8080
 ```
 

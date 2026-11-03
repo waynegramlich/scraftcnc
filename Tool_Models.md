@@ -1,7 +1,8 @@
 # Tool Models
 
-This document is written by `tool_models.py` (`./tool_models.py`), from
-the code; do not edit it.
+This document is written by `scraftcnc/tooling/tool_models.py`
+(`python3 -m scraftcnc.tooling.tool_models`), from the code; do not
+edit it.
 
 Each model below can be made from a description of it, in any of three
 forms, which all have the same keys: JSON on a command line, a Python
@@ -37,10 +38,10 @@ form raises `SCShopError`.
 
 ## Python Interface
 
-### `sctoolmodel.model_description`
+### `scraftcnc.tooling.cutter_models.model_description`
 
 ```python
-sctoolmodel.model_description(
+scraftcnc.tooling.cutter_models.model_description(
     solidcraft: SCPyBind,
     description: dict[str, object],
     at: tuple[float, float, float] = (0.0, 0.0, 0.0),
@@ -71,10 +72,14 @@ Raises:
 * `ConnectionError`:
   If nothing listens on the port, or SolidCraft goes away.
 
-### `sctoolmodel.SCModeledTool`
+### `scraftcnc.tooling.cutter_models.SCModeledTool`
 
 ```python
-sctoolmodel.SCModeledTool(body: str, sketch: str, occurrence: str)
+scraftcnc.tooling.cutter_models.SCModeledTool(
+    body: str,
+    sketch: str,
+    occurrence: str,
+)
 ```
 
 A tool in SolidCraft: a component with its body and flute lines.
@@ -90,10 +95,10 @@ SCModeledTool.items() -> list[str]
 
 Return what `browser.visibility` shows or hides for the tool.
 
-### `shops.check_tool`
+### `scraftcnc.shops.check_tool`
 
 ```python
-shops.check_tool(
+scraftcnc.shops.check_tool(
     description: dict[str, object],
 ) -> tuple[str, dict[str, object]]
 ```
@@ -116,10 +121,10 @@ Returns:
 Raises:
 * `SCShopError`: With every problem found.
 
-### `shops.SCShopError`
+### `scraftcnc.shops.SCShopError`
 
 ```python
-shops.SCShopError(problems: list[str])
+scraftcnc.shops.SCShopError(problems: list[str])
 ```
 
 The problems found in a shop description.
@@ -128,10 +133,10 @@ Attributes:
 * `problems` (`list[str]`):
   Each problem, as `FILE:LINE: KEY: message`.
 
-### `scraftpybind.connect`
+### `scraftcnc.pybind.scraftpybind.connect`
 
 ```python
-scraftpybind.connect(where: str) -> SCTransport
+scraftcnc.pybind.scraftpybind.connect(where: str) -> SCTransport
 ```
 
 Return a transport for a port number, or for `headless`.
@@ -147,18 +152,18 @@ Returns:
 Raises:
 * `ValueError`: If `where` is neither.
 
-### `scraftpybind.SCPyBind`
+### `scraftcnc.pybind.scraftpybind.SCPyBind`
 
 ```python
-scraftpybind.SCPyBind(transport: SCTransport)
+scraftcnc.pybind.scraftpybind.SCPyBind(transport: SCTransport)
 ```
 
 The top level of `scraftpybind`: SolidCraft's commands.
 
-### `scraftpybind.SCSolidCraftError`
+### `scraftcnc.pybind.scraftpybind.SCSolidCraftError`
 
 ```python
-scraftpybind.SCSolidCraftError(
+scraftcnc.pybind.scraftpybind.SCSolidCraftError(
     method: str,
     error: str,
     running: bool,
@@ -204,7 +209,7 @@ Other keys:
 JSON:
 
 ```
-./sctoolmodel.py 8080 '{
+python3 -m scraftcnc.tooling.cutter_models 8080 '{
   "kind": "end_mill",
   "material": "carbide",
   "finish": "uncoated",
@@ -222,7 +227,7 @@ Python:
 
 ```python
 from scraftcnc.pybind.scraftpybind import SCPyBind, connect
-from sctoolmodel import model_description
+from scraftcnc.tooling.cutter_models import model_description
 
 with connect("8080") as transport:
     model_description(
@@ -286,7 +291,7 @@ Other keys:
 JSON:
 
 ```
-./sctoolmodel.py 8080 '{
+python3 -m scraftcnc.tooling.cutter_models 8080 '{
   "kind": "drill",
   "material": "HSS",
   "finish": "black oxide",
@@ -303,7 +308,7 @@ Python:
 
 ```python
 from scraftcnc.pybind.scraftpybind import SCPyBind, connect
-from sctoolmodel import model_description
+from scraftcnc.tooling.cutter_models import model_description
 
 with connect("8080") as transport:
     model_description(
@@ -362,7 +367,7 @@ Other keys:
 JSON:
 
 ```
-./sctoolmodel.py 8080 '{
+python3 -m scraftcnc.tooling.cutter_models 8080 '{
   "kind": "chamfer_mill",
   "material": "carbide",
   "finish": "uncoated",
@@ -378,7 +383,7 @@ Python:
 
 ```python
 from scraftcnc.pybind.scraftpybind import SCPyBind, connect
-from sctoolmodel import model_description
+from scraftcnc.tooling.cutter_models import model_description
 
 with connect("8080") as transport:
     model_description(
@@ -435,7 +440,7 @@ Other keys:
 JSON:
 
 ```
-./sctoolmodel.py 8080 '{
+python3 -m scraftcnc.tooling.cutter_models 8080 '{
   "kind": "corner_rounding_mill",
   "material": "carbide",
   "finish": "uncoated",
@@ -450,7 +455,7 @@ Python:
 
 ```python
 from scraftcnc.pybind.scraftpybind import SCPyBind, connect
-from sctoolmodel import model_description
+from scraftcnc.tooling.cutter_models import model_description
 
 with connect("8080") as transport:
     model_description(
@@ -510,7 +515,7 @@ Other keys:
 JSON:
 
 ```
-./sctoolmodel.py 8080 '{
+python3 -m scraftcnc.tooling.cutter_models 8080 '{
   "kind": "double_angle_cutter",
   "material": "carbide",
   "finish": "uncoated",
@@ -528,7 +533,7 @@ Python:
 
 ```python
 from scraftcnc.pybind.scraftpybind import SCPyBind, connect
-from sctoolmodel import model_description
+from scraftcnc.tooling.cutter_models import model_description
 
 with connect("8080") as transport:
     model_description(
@@ -595,7 +600,7 @@ Other keys:
 JSON:
 
 ```
-./sctoolmodel.py 8080 '{
+python3 -m scraftcnc.tooling.cutter_models 8080 '{
   "kind": "single_countersink",
   "material": "HSS",
   "finish": "uncoated",
@@ -613,7 +618,7 @@ Python:
 
 ```python
 from scraftcnc.pybind.scraftpybind import SCPyBind, connect
-from sctoolmodel import model_description
+from scraftcnc.tooling.cutter_models import model_description
 
 with connect("8080") as transport:
     model_description(
@@ -680,7 +685,7 @@ Other keys:
 JSON:
 
 ```
-./sctoolmodel.py 8080 '{
+python3 -m scraftcnc.tooling.cutter_models 8080 '{
   "kind": "double_countersink",
   "material": "HSS",
   "finish": "uncoated",
@@ -697,7 +702,7 @@ Python:
 
 ```python
 from scraftcnc.pybind.scraftpybind import SCPyBind, connect
-from sctoolmodel import model_description
+from scraftcnc.tooling.cutter_models import model_description
 
 with connect("8080") as transport:
     model_description(
@@ -856,7 +861,7 @@ Python, in millimeters, like `tools.KURT_D688`:
 
 ```python
 from scraftcnc.pybind.scraftpybind import SCPyBind, connect
-from tools import KURT_D688
+from scraftcnc.tooling.tools import KURT_D688
 
 with connect("8080") as transport:
     KURT_D688.model(SCPyBind(transport), opening=76.2)
@@ -878,10 +883,10 @@ A setup file (`examples/setup/`) names one by its `type`:
 }
 ```
 
-### `tools.SCMachineVise`
+### `scraftcnc.tooling.tools.SCMachineVise`
 
 ```python
-tools.SCMachineVise(
+scraftcnc.tooling.tools.SCMachineVise(
     name: str,
     base: SCViseBlock,
     body: SCViseBlock,
@@ -1052,10 +1057,10 @@ SCMachineVise.cacheable(opening: float) -> tuple[SCCacheable, ...]
 
 Return the vise as models that can be cached.
 
-### `tools.SCViseBlock`
+### `scraftcnc.tooling.tools.SCViseBlock`
 
 ```python
-tools.SCViseBlock(
+scraftcnc.tooling.tools.SCViseBlock(
     length: float,
     width: float,
     height: float,
@@ -1101,10 +1106,10 @@ SCViseBlock.model(
 
 Model the block, up from the center of its bottom face.
 
-### `tools.SCViseNotches`
+### `scraftcnc.tooling.tools.SCViseNotches`
 
 ```python
-tools.SCViseNotches(
+scraftcnc.tooling.tools.SCViseNotches(
     centers: tuple[float, ...],
     width: float,
     depth: float,
@@ -1188,16 +1193,16 @@ Like the vise, it is made in Python, in millimeters:
 
 ```python
 from scraftcnc.pybind.scraftpybind import SCPyBind, connect
-from tools import KURT_JAW_PLATE
+from scraftcnc.tooling.tools import KURT_JAW_PLATE
 
 with connect("8080") as transport:
     KURT_JAW_PLATE.model(SCPyBind(transport), "Jaw plate")
 ```
 
-### `tools.SCJawPlate`
+### `scraftcnc.tooling.tools.SCJawPlate`
 
 ```python
-tools.SCJawPlate(
+scraftcnc.tooling.tools.SCJawPlate(
     screw: str,
     length: float,
     width: float,
@@ -1304,7 +1309,7 @@ It is made in Python, in millimeters:
 
 ```python
 from scraftcnc.pybind.scraftpybind import SCPyBind, connect
-from tools import SCParallel
+from scraftcnc.tooling.tools import SCParallel
 
 # Its sizes in millimeters; the holes are optional.
 parallel = SCParallel(
@@ -1335,10 +1340,10 @@ A setup file (`examples/setup/`) names one of the set by its
 }
 ```
 
-### `tools.SCParallel`
+### `scraftcnc.tooling.tools.SCParallel`
 
 ```python
-tools.SCParallel(
+scraftcnc.tooling.tools.SCParallel(
     name: str,
     height: float,
     thickness: float,
@@ -1423,11 +1428,11 @@ millimeters.
 
 Chamfers take a lot of computing, once.  `GRID_PLATE`'s 200 took
 SolidCraft about 4-1/2 minutes, keeping four processors busy, against 2
-seconds without them.  The model cache (`scmodelcache.py`, which
-`scsetup.py` and `show_demo.py` use) keeps the plate as a STEP file in
+seconds without them.  The model cache (`model_cache.py`, which
+`setups.py` and `show_demo.py` use) keeps the plate as a STEP file in
 `~/.scraftcnc/tool_cache/`, which loads in about a second, so the cost
 comes again only when the plate's numbers change, or `tools.py`,
-`mount.py` or `scgeometry.py` does.  `model()` called directly does not
+`mount.py` or `geometry.py` does.  `model()` called directly does not
 use the cache.
 
 The sketches are of `tools.GRID_PLATE`.  Its tap drill tooling
@@ -1493,9 +1498,9 @@ close_diameter = "0.196 in"
 Or it is made in Python, in millimeters:
 
 ```python
-from scmodelcache import SCModelCache
+from scraftcnc.model_cache import SCModelCache
 from scraftcnc.pybind.scraftpybind import SCPyBind, connect
-from tools import GRID_PLATE
+from scraftcnc.tooling.tools import GRID_PLATE
 
 # Through the cache: slow the first time, then about a second.
 with connect("8080") as transport:
@@ -1519,10 +1524,10 @@ the shop's tooling files or `tools.py`:
 }
 ```
 
-### `tools.SCGridPlate`
+### `scraftcnc.tooling.tools.SCGridPlate`
 
 ```python
-tools.SCGridPlate(
+scraftcnc.tooling.tools.SCGridPlate(
     name: str,
     length: float,
     width: float,
@@ -1561,11 +1566,11 @@ millimeters.
 
 Chamfers take a lot of computing, once.  `GRID_PLATE`'s 200 took
 SolidCraft about 4-1/2 minutes, keeping four processors busy,
-against 2 seconds without them.  The model cache (`scmodelcache.py`,
-which `scsetup.py` and `show_demo.py` use) keeps the plate as a STEP
+against 2 seconds without them.  The model cache (`model_cache.py`,
+which `setups.py` and `show_demo.py` use) keeps the plate as a STEP
 file in `~/.scraftcnc/tool_cache/`, which loads in about a second,
 so the cost comes again only when the plate's numbers change, or
-`tools.py`, `mount.py` or `scgeometry.py` does.  `model()` called
+`tools.py`, `mount.py` or `geometry.py` does.  `model()` called
 directly does not use the cache.
 
 Attributes:

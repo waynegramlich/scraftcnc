@@ -7,7 +7,7 @@ turns each of those commands into a typed Python method, so a design
 can be written as an ordinary Python program:
 
 ```python
-from scraftpybind import SCPyBind, connect
+from scraftcnc.pybind.scraftpybind import SCPyBind, connect
 
 # A GUI started with `solidcraft --control 8080`; or "headless".
 with connect("8080") as transport:
@@ -27,7 +27,7 @@ with connect("8080") as transport:
     )
 ```
 
-This is what `python3 scraftpybind.py 8080` runs;
+This is what `python3 -m scraftcnc.pybind.scraftpybind 8080` runs;
 `examples/plate_with_holes.py` is a longer example
 (`python3 -m scraftcnc.pybind.examples.plate_with_holes headless
 plate.step`, from the repository root).
@@ -70,20 +70,20 @@ watched as it is built:
 
 ```
 solidcraft --control 8080 &         # Start a GUI with control port 8080.
-python3 scraftpybind.py 8080        # Build the plate in it.
+python3 -m scraftcnc.pybind.scraftpybind 8080      # Build the plate.
 kill %1                             # Close the GUI when done.
 ```
 
 Or headless, with no GUI at all:
 
 ```
-python3 scraftpybind.py headless    # Writes scraftpybind_plate.step.
+python3 -m scraftcnc.pybind.scraftpybind headless  # Writes a STEP file.
 ```
 
 ## Testing
 
 ```
-python3 -m unittest -v
+python3 -m unittest -v tests.test_scraftpybind
 ```
 
 The offline tests use a fake control port and a fake `solidcraft-cli`.

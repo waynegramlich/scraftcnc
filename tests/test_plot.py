@@ -15,8 +15,8 @@ from scraftcnc.plot import (
     read_gcode,
     sketch_path,
 )
-from test_gcode import milling
-from test_geometry import square
+from tests.test_gcode import milling
+from tests.test_geometry import square
 
 
 # Class `TestPlot`:

@@ -34,7 +34,7 @@ from scraftcnc import shops
 from scraftcnc.lcnc import lcnc_client
 from scraftcnc.plot import SCMove, command_moves, read_gcode
 
-HERE: Path = Path(__file__).resolve().parent
+HERE: Path = Path(__file__).resolve().parent.parent
 SERVER_DIRECTORY: Path = HERE
 
 # How near a position must be (inches).

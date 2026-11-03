@@ -12,7 +12,7 @@ from scraftcnc.pybind.scraftpybind import SCHeadlessTransport, SCPyBind
 from scraftcnc.tooling import mount, tools
 
 # An extracted `solidcraft-cli` (as the demo uses) for the live test.
-HERE: Path = Path(__file__).resolve().parent
+HERE: Path = Path(__file__).resolve().parent.parent
 CLI: Path = HERE / "solidcraft/squashfs-root/usr/bin/solidcraft-cli"
 
 TABLE = tools.MILL_TABLES[1]

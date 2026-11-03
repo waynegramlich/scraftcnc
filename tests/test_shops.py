@@ -9,7 +9,7 @@ from pathlib import Path
 from scraftcnc import shops
 
 # The example shop.
-EXAMPLES: Path = Path(__file__).parent / "examples" / "shop"
+EXAMPLES: Path = Path(__file__).parent.parent / "examples" / "shop"
 
 
 def lines_of(text: str) -> dict[shops.KeyPath, int]:
@@ -710,7 +710,7 @@ class TestMarkdown(unittest.TestCase):
 
     def test_shops_md_is_current(self) -> None:
         """`Shops.md` is what `shops.py markdown` writes now."""
-        written = (Path(__file__).parent / "Shops.md").read_text(
+        written = (Path(__file__).parent.parent / "Shops.md").read_text(
             encoding="utf-8"
         )
         self.assertEqual(

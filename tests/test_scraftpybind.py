@@ -50,7 +50,8 @@ from scraftcnc.pybind.scraftpybind import (
 )
 
 # Where things are.
-HERE: Path = Path(__file__).resolve().parent
+ROOT: Path = Path(__file__).resolve().parent.parent
+HERE: Path = ROOT / "scraftcnc" / "pybind"
 MODULE: Path = HERE / "scraftpybind.py"
 GENERATOR: Path = HERE / "scraftpybind_generate.py"
 CACHE: Path = HERE / "scraftpybind_commands.json"
@@ -333,9 +334,7 @@ def run_python(  # pragma: no cover
     Returns:
     * (`subprocess.CompletedProcess[str]`): What it did.
     """
-    environment: dict[str, str] = dict(
-        os.environ, PYTHONPATH=str(HERE.parent.parent)
-    )
+    environment: dict[str, str] = dict(os.environ, PYTHONPATH=str(ROOT))
     return subprocess.run(
         [sys.executable, *arguments],
         cwd=cwd,
