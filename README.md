@@ -110,7 +110,7 @@ Each step below needs a little more than the one before it.
    port:
 
    ```
-   ./show_demo.py
+   ./scripts/show_demo.py
    ```
 
    It starts LinuxCNC, SolidCraft with the plate in it (on the table,
@@ -163,7 +163,7 @@ The code is the package `scraftcnc/`:
 * `hmi/`: the operator's panel (`lcnc_panel.py`) and its headless
   version.
 
-Beside it, `tests/` holds the tests and `show_demo.py` the
+Beside it, `tests/` holds the tests and `scripts/show_demo.py` the
 demonstration that connects everything.
 
 * `TASKS/` and `RULES/`: the plans and work log kept with

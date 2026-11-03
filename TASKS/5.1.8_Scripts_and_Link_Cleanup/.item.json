@@ -1,11 +1,15 @@
 {
-  "state": "Pending",
+  "state": "Open",
   "created": "2026-11-03T22:46:08Z",
-  "updated": "2026-11-03T22:46:08Z",
+  "updated": "2026-11-03T23:27:09Z",
   "history": [
     {
       "state": "Pending",
       "time": "2026-11-03T22:46:08Z"
+    },
+    {
+      "state": "Open",
+      "time": "2026-11-03T23:27:09Z"
     }
   ],
   "tag": "salc"

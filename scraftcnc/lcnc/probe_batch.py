@@ -13,9 +13,9 @@ prints each request's time, as measured here and as SolidCraft
 measured it, and the wires made:
 
 ```
-./probe_batch.py headless --plate
-./probe_batch.py 8080 --plate --toggle
-./probe_batch.py 8080 --keep --ngc demo.ngc --arcs
+python3 -m scraftcnc.lcnc.probe_batch headless --plate
+python3 -m scraftcnc.lcnc.probe_batch 8080 --plate --toggle
+python3 -m scraftcnc.lcnc.probe_batch 8080 --keep --ngc demo.ngc --arcs
 ```
 
 With `--arcs`, an arc in one plane is an exact `sketch.arc3d` (a whole
@@ -52,9 +52,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TypeAlias
 
-from scraftcnc import demo
-from scraftcnc.plot import SCMove, SpacePoint, command_moves, read_gcode
-from scraftcnc.pybind.scraftpybind import (
+from .. import demo
+from ..plot import SCMove, SpacePoint, command_moves, read_gcode
+from ..pybind.scraftpybind import (
     JSON,
     SCHeadlessTransport,
     SCPyBind,

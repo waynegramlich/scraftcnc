@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-import show_demo
+from scripts import show_demo
 
 
 class TestLeftovers(unittest.TestCase):

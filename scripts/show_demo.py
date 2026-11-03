@@ -10,7 +10,7 @@ and last the panel (`lcnc_panel.py`), stopped, with the demonstration's
 program open:
 
 ```
-./show_demo.py
+./scripts/show_demo.py
 ```
 
 Press Start in the panel; the tool cuts the plate in SolidCraft.  The
@@ -40,6 +40,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from types import FrameType
 
+# Run as `./scripts/show_demo.py`: the repository root goes on the
+# path, so that the `scraftcnc` package can be imported.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from scraftcnc.lcnc.lcnc_client import PORT as LINUXCNC_PORT
 from scraftcnc.lcnc.lcnc_client import SCBridgeError, SCClient
 from scraftcnc.model_cache import SCModelCache
@@ -47,7 +51,7 @@ from scraftcnc.pybind.scraftpybind import SCPyBind, SCSolidCraftError, connect
 from scraftcnc.setups import SCSetup
 
 # Where everything is.
-PROJECT: Path = Path(__file__).resolve().parent
+PROJECT: Path = Path(__file__).resolve().parent.parent
 SERVER_PROJECT: Path = PROJECT
 SOLIDCRAFT_BESIDE: Path = (
     PROJECT.parent / "solidcraft" / "solidcraft-linux-x86_64.AppImage"

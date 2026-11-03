@@ -35,8 +35,6 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Protocol
 
-from probe_batch import path_steps, send_batch, sketch_steps
-
 from ..model_cache import SCModelCache
 from ..plot import SCMove, command_moves, read_gcode
 from ..pybind.scraftpybind import (
@@ -47,6 +45,7 @@ from ..pybind.scraftpybind import (
 )
 from ..shops import loaded_tools, read
 from ..tooling.cutter_models import SCModeledTool, model_tool
+from .probe_batch import path_steps, send_batch, sketch_steps
 
 # SolidCraft's coordinates are millimeters.
 MM_PER_INCH: float = 25.4

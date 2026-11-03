@@ -4,7 +4,7 @@ import itertools
 import math
 import unittest
 
-from probe_batch import (
+from scraftcnc.lcnc.probe_batch import (
     MAX_POINTS,
     arc_steps,
     group_moves,

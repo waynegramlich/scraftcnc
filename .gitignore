@@ -11,7 +11,6 @@ __pycache__/
 .ruff_cache/
 # Links to neighboring projects on the author's machine.
 solidcraft
-rs274
 # Notes on the catalog, kept out of version control.
 shars_catalog.md
 # What the LinuxCNC simulator writes as it runs.
@@ -22,7 +21,6 @@ sim_positions.txt
 demo.ngc
 demo.html
 SharsMD
-aic
 
 
 # Python packaging output.

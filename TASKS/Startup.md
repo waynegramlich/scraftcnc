@@ -25,6 +25,7 @@
 @5.1.7_Drop_sc_Prefixes/Details.md
 @5.1.7_Drop_sc_Prefixes/Context.md
 @5.1.8_Scripts_and_Link_Cleanup/Details.md
+@5.1.8_Scripts_and_Link_Cleanup/Context.md
 @5.2_Create_More_Tools/Details.md
 @../ISSUES/2_Archive_Merged_GitHub_Repositories/Details.md
 @../ISSUES/1_PathRack_Hidden_Path_Shows_Again/Summary.md
