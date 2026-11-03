@@ -726,7 +726,7 @@ class TestMarkdown(unittest.TestCase):
 
     def test_wrap(self) -> None:
         """Wide cells wrap, keeping code spans whole."""
-        table = shops._markdown_table(  # pylint: disable=protected-access
+        table = shops.markdown_table(
             [
                 ["Key", "Meaning"],
                 ["`a`", "one two `three four`, five six"],

@@ -140,6 +140,8 @@ Each step below needs a little more than the one before it.
 * `tools.py`: 3D models of tooling (mill tables, drills, a vise, a
   tooling plate) and the keep-out regions around them.  Run it to see
   them in SolidCraft.
+* `Tool_Models.md`, `tool_models.py` and `docs/tool_models/`: how to
+  make each model, with its sketch, all written from the code.
 * `mount.py`: stacks of tooling and material that hold work on a
   machine, with their keep-out regions.  Run it to see the first one.
 * `scmodelcache.py`: keeps models of tools and tooling as STEP files in

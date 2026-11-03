@@ -61,6 +61,83 @@ class TestProfiles(unittest.TestCase):
         for r, z in ball:
             self.assertAlmostEqual(math.hypot(r, z - radius), radius)
 
+    def test_bull_nose(self) -> None:
+        """A bull nose's end rounds up to its side."""
+        outline = sctoolmodel.profile(
+            "end_mills",
+            {
+                "diameter": "1/2 in",
+                "length_of_cut": "1 in",
+                "overall_length": "3 in",
+                "end": "bull_nose",
+                "corner_radius": "1/8 in",
+            },
+        )
+        self.assertEqual(outline[:2], [(0.0, 0.0), (0.125, 0.0)])
+        self.assertIn((0.25, 0.125), outline)
+        self.assertIn((0.25, 1.0), outline)
+
+    def test_double_angle_at_its_rim(self) -> None:
+        """A double angle cutter's included angle is at its rim."""
+        outline = sctoolmodel.profile(
+            "double_angle_cutters",
+            {
+                "diameter": "3/4 in",
+                "width": "3/8 in",
+                "overall_length": "2 in",
+                "angle": "60 deg",
+            },
+        )
+        (edge, _), (rim, height) = outline[1], outline[2]
+        rim_angle = 2 * math.degrees(math.atan2(height, rim - edge))
+        self.assertAlmostEqual(rim_angle, 60.0, places=5)
+
+    def test_countersinks(self) -> None:
+        """One end has a shank; two ends mirror each other."""
+        sink = {
+            "diameter": "1/2 in",
+            "drill_diameter": "1/4 in",
+            "drill_length": "1/4 in",
+            "overall_length": "2 in",
+            "angle": "90 deg",
+        }
+        single = sctoolmodel.profile("single_countersinks", sink)
+        self.assertEqual(single[-2:], [(0.25, 2.0), (0.0, 2.0)])
+        self.assertAlmostEqual(single[4][1], 0.375)
+        double = sctoolmodel.profile("double_countersinks", sink)
+        for (r1, z1), (r2, z2) in zip(double, reversed(double)):
+            self.assertAlmostEqual(r1, r2)
+            self.assertAlmostEqual(z1 + z2, 2.0)
+        single_runs = sctoolmodel.tool_flute_runs("single_countersinks", sink)
+        double_runs = sctoolmodel.tool_flute_runs("double_countersinks", sink)
+        self.assertEqual(len(double_runs), 2 * len(single_runs))
+
+    def test_drill_shank(self) -> None:
+        """A drill steps to its shank, where `shank_length` says."""
+        drill = {
+            "diameter": "1/2 in",
+            "length_of_cut": "2 in",
+            "overall_length": "4 in",
+            "point_angle": "90 deg",
+        }
+        plain = [(0.0, 0.0), (0.25, 0.25), (0.25, 4.0), (0.0, 4.0)]
+        outline = sctoolmodel.profile
+        self.assertEqual(outline("drills", drill), plain)
+        self.assertEqual(
+            outline("drills", {**drill, "shank_length": "1 in"}), plain
+        )
+        self.assertEqual(
+            outline("drills", {**drill, "shank": "1/4 in"})[2:4],
+            [(0.25, 2.0), (0.125, 2.0)],
+        )
+        self.assertEqual(
+            outline(
+                "drills",
+                {**drill, "shank": "3/4 in", "shank_length": "1 in"},
+            )[2:5],
+            [(0.25, 3.0), (0.375, 3.0), (0.375, 4.0)],
+        )
+
     def test_square_end_and_shank(self) -> None:
         """A rougher's 1/4 in flutes step out to its 3/8 in shank."""
         key, tool = example_tools()[8]

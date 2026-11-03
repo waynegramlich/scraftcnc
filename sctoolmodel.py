@@ -6,10 +6,12 @@ tip (at 0) up its shank, as a closed outline of `(r, z)` points
 (inches) that starts at the tip on the axis, goes out and up the
 tool's side, and comes back down the axis.  Revolving it about the
 axis gives the tool.  The sizes come from the tools files (`Shops.md`):
-a drill gets a cone at its tip from its `point_angle`, a ball end mill
+a drill gets a cone at its tip from its `point_angle` and may step to
+its `shank` (`shank_length` from its top), a ball end mill
 a rounded end, a chamfer mill a cone down to its `tip_diameter`, a
-corner rounding mill its hollow quarter circle, and a double angle
-cutter its head on a neck.
+corner rounding mill its hollow quarter circle, a double angle cutter
+its head on a neck, and a countersink a small drill and a cone at one
+end or both.
 
 A tool's holder is not a picture of a holder.  It is a truncated cone,
 sliced into one band per digit of the tool's `unique_id`, colored by
@@ -29,13 +31,24 @@ Run this to see every tool of the example shop in SolidCraft:
 ```
 ./sctoolmodel.py 8080
 ```
+
+Or give one tool, as JSON (`Tool_Models.md` describes them), to add it
+to the design at the origin:
+
+```
+./sctoolmodel.py 8080 '{"kind": "end_mill", "diameter": "1/4 in", ...}'
+```
 """
 
 # `profile()` names each size it reads, with a type hint, which runs
 # past `pylint`'s limit on local variables.
 # pylint: disable=too-many-locals
 
+# It is one job, modeling a tool, so its length is fine.
+# pylint: disable=too-many-lines
+
 import itertools
+import json
 import math
 import sys
 from collections.abc import Sequence
@@ -52,7 +65,15 @@ from scmodelcache import (
 )
 from scplot import SCStep, SpacePoint, send_batch, sketch_steps
 from scraftpybind import JSON, SCPyBind, connect
-from shops import ANGLE, CNC_KINDS, LENGTH, measure, read
+from shops import (
+    ANGLE,
+    CNC_KINDS,
+    LENGTH,
+    SCShopError,
+    check_tool,
+    measure,
+    read,
+)
 
 # A profile: `(r, z)` points, in inches.
 Profile = list[tuple[float, float]]
@@ -101,6 +122,12 @@ TOOL_SPACING: float = 2.5
 # catalog gives none for drills, and the tools files have no key for
 # it, so 30 degrees is a typical value, from memory.
 HELIX_ANGLES: dict[str, float] = {"end_mills": 30.0, "drills": 30.0}
+
+# The lists of a tools file that hold countersinks, and the share of
+# the small drill's diameter that the flat on each tip takes.
+SINGLE_END_COUNTERSINKS: str = "single_countersinks"
+DOUBLE_END_COUNTERSINKS: str = "double_countersinks"
+COUNTERSINK_TIP_FLAT: float = 0.05
 
 # How many flutes a tool has when its tools file does not say.
 DEFAULT_FLUTES: int = 2
@@ -181,6 +208,37 @@ def _tidy(points: Profile) -> Profile:
     return tidy
 
 
+# Function `_countersink_side()`:
+def _countersink_side(
+    tool: dict[str, object], radius: float, angle: float
+) -> Profile:
+    """Return a countersink's outline, from its tip up to its body.
+
+    Arguments:
+    * `tool` (`dict[str, object]`): The tool, from `shops.read()`.
+    * `radius` (`float`): The body's radius.
+    * `angle` (`float`): The cone's included angle (degrees).
+
+    Returns:
+    * (`Profile`): The axis, the flat, the small drill's point and side,
+      and the cone.
+    """
+    drill: float = _size(tool, "drill_diameter", 0.125) / 2
+    flat: float = COUNTERSINK_TIP_FLAT * drill
+    point: float = (
+        measure(tool["point_angle"], ANGLE) if "point_angle" in tool else 90.0
+    )
+    reach: float = _size(tool, "drill_length", 2 * drill)
+    cone: float = (radius - drill) / math.tan(math.radians(angle / 2))
+    return [
+        (0.0, 0.0),
+        (flat, 0.0),
+        (drill, (drill - flat) / math.tan(math.radians(point / 2))),
+        (drill, reach),
+        (radius, reach + cone),
+    ]
+
+
 # Function `profile()`:
 def profile(key: str, tool: dict[str, object]) -> Profile:
     """Return a tool's profile.
@@ -214,6 +272,14 @@ def profile(key: str, tool: dict[str, object]) -> Profile:
         cut: float = _size(tool, "length_of_cut", length / 2)
         if tool.get("end") == "ball":
             side = [(0.0, 0.0), *_quarter((0.0, radius), radius, -90, 0)]
+        elif tool.get("end") == "bull_nose":
+            corner: float = _size(tool, "corner_radius", 0.0)
+            inner: float = radius - corner
+            side = [
+                (0.0, 0.0),
+                (inner, 0.0),
+                *_quarter((inner, corner), corner, -90, 0),
+            ]
         else:
             side = [(0.0, 0.0), (radius, 0.0)]
         side += [(radius, cut), (shank, cut)]
@@ -227,6 +293,13 @@ def profile(key: str, tool: dict[str, object]) -> Profile:
             (0.0, 0.0),
             (radius, radius / math.tan(math.radians(point / 2))),
         ]
+        if shank != radius:
+            start: float = (
+                length - _size(tool, "shank_length", 0.0)
+                if "shank_length" in tool
+                else _size(tool, "length_of_cut", length / 2)
+            )
+            side += [(radius, start), (shank, start)]
     elif key == "chamfer_mills":
         rise: float = (radius - tip) / math.tan(math.radians(angle / 2))
         side = [(0.0, 0.0), (tip, 0.0), (radius, rise), (shank, rise)]
@@ -240,7 +313,9 @@ def profile(key: str, tool: dict[str, object]) -> Profile:
         ]
     elif key == "double_angle_cutters":
         half: float = _size(tool, "width", radius) / 2
-        edge: float = radius - half * math.tan(math.radians(angle / 2))
+        edge: float = max(
+            radius - half / math.tan(math.radians(angle / 2)), 0.0
+        )
         neck: float = _size(tool, "neck_diameter", 2 * edge) / 2
         top: float = 2 * half + _size(tool, "neck_length", 0.0)
         side = [
@@ -252,6 +327,11 @@ def profile(key: str, tool: dict[str, object]) -> Profile:
             (neck, top),
             (shank, top),
         ]
+    elif key in (SINGLE_END_COUNTERSINKS, DOUBLE_END_COUNTERSINKS):
+        side = _countersink_side(tool, radius, angle)
+        if key == DOUBLE_END_COUNTERSINKS:
+            return _tidy(side + [(r, length - z) for r, z in reversed(side)])
+        side.append((shank, side[-1][1]))
     else:
         side = [(0.0, 0.0), (radius, 0.0)]
     end: tuple[float, float] = side[-1]
@@ -468,10 +548,22 @@ def tool_flute_runs(key: str, tool: dict[str, object]) -> list[FluteRun]:
     * (`list[FluteRun]`): The lines (inches); none for a kind of tool
       with no known flutes.
     """
+    flutes: int = cast(int, tool.get("flutes", DEFAULT_FLUTES))
+
+    # A countersink's flutes run from its small drill's point to its
+    # body, at each cut end.
+    if key in (SINGLE_END_COUNTERSINKS, DOUBLE_END_COUNTERSINKS):
+        lower: list[FluteRun] = flute_runs(profile(key, tool)[2:5], flutes)
+        if key == SINGLE_END_COUNTERSINKS:
+            return lower
+        length: float = _size(tool, "overall_length", 2.0)
+        return lower + [
+            (command, [[x, y, length - z] for x, y, z in points])
+            for command, points in lower
+        ]
     path: Profile = flute_path(key, tool)
     if not path:
         return []
-    flutes: int = cast(int, tool.get("flutes", DEFAULT_FLUTES))
     return flute_runs(path, flutes, HELIX_ANGLES.get(key, 0.0))
 
 
@@ -576,12 +668,15 @@ def shop_tools(
 
     Returns:
     * (`list[tuple[str, dict[str, object]]]`):
-      Each tool's list in the tools files (a key of `CNC_KINDS`), and
-      its description.
+      Each tool's list in the tools files, and its description.
     """
     found: list[tuple[str, dict[str, object]]] = []
     for tools_file in cast(list[dict[str, object]], shop.get("tools", [])):
-        for key in CNC_KINDS:
+        for key in (
+            *CNC_KINDS,
+            SINGLE_END_COUNTERSINKS,
+            DOUBLE_END_COUNTERSINKS,
+        ):
             for tool in cast(list[dict[str, object]], tools_file.get(key, [])):
                 found.append((key, tool))
     return sorted(found, key=lambda item: cast(int, item[1]["unique_id"]))
@@ -766,6 +861,44 @@ def model_tool(
     sketch: str = f"{name} flutes"
     send_batch(solidcraft, flute_steps(sketch, tool_flute_runs(*tool), at))
     return SCModeledTool(body, sketch, as_component(solidcraft, body, sketch))
+
+
+# Function `model_description()`:
+def model_description(
+    solidcraft: SCPyBind,
+    description: dict[str, object],
+    at: tuple[float, float, float] = (0.0, 0.0, 0.0),
+    cache: SCModelCache | None = None,
+) -> SCModeledTool:
+    """Model one tool from its description.
+
+    Arguments:
+    * `solidcraft` (`SCPyBind`): The SolidCraft session.
+    * `description` (`dict[str, object]`):
+      The tool, with its `kind`, as `shops.check_tool()` takes it.  Its
+      `name`, if any, names the body.
+    * `at` (`tuple[float, float, float]`):
+      Where its tip goes (inches).
+    * `cache` (`SCModelCache | None`):
+      Where to keep its body between runs, or `None` to build it.
+
+    Returns:
+    * (`SCModeledTool`): What was made, free to move.
+
+    Raises:
+    * `SCShopError`:
+      If the description has any problem, before SolidCraft is touched.
+    * `SCSolidCraftError`: If SolidCraft refuses a command.
+    * `FileNotFoundError`: If no SolidCraft has the port.
+    * `ConnectionError`:
+      If nothing listens on the port, or SolidCraft goes away.
+    """
+    key: str
+    tool: dict[str, object]
+    key, tool = check_tool(description)
+    return model_tool(
+        solidcraft, str(tool["name"]), (key, tool), at, cache=cache
+    )
 
 
 # Function `_cacheable_outline()`:
@@ -980,8 +1113,24 @@ def model_shop_tools(
 
 # Function `main()`:
 def main() -> None:
-    """Show the example shop's tools in the SolidCraft at a port."""
+    """Show one tool, or the example shop's, in a SolidCraft."""
     target: str = sys.argv[1] if len(sys.argv) > 1 else "8080"
+
+    # One tool, checked before SolidCraft is touched.
+    if len(sys.argv) > 2:
+        try:
+            description: dict[str, object] = json.loads(sys.argv[2])
+            check_tool(description)
+        except (json.JSONDecodeError, SCShopError) as error:
+            sys.exit(str(error))
+        with connect(target) as transport:
+            modeled: SCModeledTool = model_description(
+                SCPyBind(transport), description, cache=cache_for(target)
+            )
+        print(f"Modeled {modeled.body}.")
+        return
+
+    # Every tool of the example shop, in a new design.
     with connect(target) as transport:
         solidcraft: SCPyBind = SCPyBind(transport)
         solidcraft.file.new()

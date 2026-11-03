@@ -38,7 +38,13 @@ from scgeometry import SCCorner, SCHole, SCRoundedPolygon
 from scmodelcache import SCCacheable, source_digest
 from scplot import send_batch
 from scraftpybind import JSON, SCPyBind, connect
-from sctoolmodel import MM_PER_INCH, FluteRun, flute_runs, flute_steps
+from sctoolmodel import (
+    COUNTERSINK_TIP_FLAT,
+    MM_PER_INCH,
+    FluteRun,
+    flute_runs,
+    flute_steps,
+)
 from shops import LENGTH, measure
 
 # A point: `(x, y, z)`, in millimeters.
@@ -102,7 +108,6 @@ COUNTERSINK_POINT_ANGLE: float = 90.0
 # How many flutes each end of a countersink has.  The catalog does not
 # say, so this is the common number, from memory.
 COUNTERSINK_FLUTES: int = 2
-COUNTERSINK_TIP_FLAT: float = 0.05
 
 # Where the vise stands, clear of the drills (millimeters).
 VISE_ROW_Y: float = -250.0

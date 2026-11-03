@@ -3,6 +3,8 @@
 @2.4_Stock_Models/Details.md
 @2.5_Tool_Models/Details.md
 @2.5_Tool_Models/Context.md
+@2.5.1_Document_Tool_Models/Details.md
+@2.5.1_Document_Tool_Models/Context.md
 @3.3.1_Headless_LinuxCNC_Panel/Details.md
 @3.3.1_Headless_LinuxCNC_Panel/Context.md
 @4_Implementing_Keepout_Zones/Details.md

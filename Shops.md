@@ -436,6 +436,12 @@ machine).  It has a `name` even when it is not a file of its own.
 | `double_angle_cutters`  | list of                | no       | The double    |
 |                         | `double_angle_cutter`  |          | angle shank   |
 |                         |                        |          | cutters.      |
+| `single_countersinks`   | list of                | no       | The single    |
+|                         | `single_countersink`   |          | end           |
+|                         |                        |          | countersinks. |
+| `double_countersinks`   | list of                | no       | The double    |
+|                         | `double_countersink`   |          | end           |
+|                         |                        |          | countersinks. |
 
 ```toml
 name = "Tools"
@@ -515,8 +521,9 @@ file of its own.
 |                   | `!`                  |          |                       |
 | `grade`           | string               | no       | The grade (`M2`,      |
 |                   |                      |          | `M42`, ...).          |
-| `coating`         | string               | no       | Its coating or finish |
-|                   |                      |          | (`AlTiN`, ...).       |
+| `finish`          | string               | no       | Its finish or coating |
+|                   |                      |          | (`uncoated`, `AlTiN`, |
+|                   |                      |          | ...).                 |
 | `manufacturer`    | string               | no       | Who made it.          |
 | `manufacturer_pn` | string               | no       | The maker's part      |
 |                   |                      |          | number.               |
@@ -542,7 +549,7 @@ flutes = 2
 end = "square"
 center_cutting = true
 material = "carbide"
-coating = "uncoated"
+finish = "uncoated"
 vendor = "Shars Tool"
 vendor_pn = "415-0998"
 cost = "47.02 USD"
@@ -568,6 +575,11 @@ A twist drill.  It has a `name` even when it is not a file of its own.
 | `flutes`          | integer              | no       | How many flutes (2 if |
 |                   |                      |          | not given).           |
 | `point_angle`     | angle                | yes      | The included angle.   |
+| `shank_length`    | length               | no       | How far its shank     |
+|                   |                      |          | comes down from its   |
+|                   |                      |          | top; if not given, a  |
+|                   |                      |          | `shank` starts where  |
+|                   |                      |          | its flutes stop.      |
 | `split_point`     | boolean              | no       | True if it has a      |
 |                   |                      |          | split point.          |
 | `peck_depth`      | length               | no       | How deep each peck    |
@@ -596,8 +608,9 @@ A twist drill.  It has a `name` even when it is not a file of its own.
 |                   | `!`                  |          |                       |
 | `grade`           | string               | no       | The grade (`M2`,      |
 |                   |                      |          | `M42`, ...).          |
-| `coating`         | string               | no       | Its coating or finish |
-|                   |                      |          | (`AlTiN`, ...).       |
+| `finish`          | string               | no       | Its finish or coating |
+|                   |                      |          | (`uncoated`, `AlTiN`, |
+|                   |                      |          | ...).                 |
 | `manufacturer`    | string               | no       | Who made it.          |
 | `manufacturer_pn` | string               | no       | The maker's part      |
 |                   |                      |          | number.               |
@@ -624,7 +637,7 @@ split_point = true
 holder = ["r8", "er32", "1/8 in"]
 material = "cobalt"
 grade = "M42"
-coating = "straw"
+finish = "straw"
 vendor = "Shars Tool"
 vendor_pn = "415-8998"
 cost = "2.67 USD"
@@ -688,8 +701,9 @@ when it is not a file of its own.
 |                   | `!`                  |          |                       |
 | `grade`           | string               | no       | The grade (`M2`,      |
 |                   |                      |          | `M42`, ...).          |
-| `coating`         | string               | no       | Its coating or finish |
-|                   |                      |          | (`AlTiN`, ...).       |
+| `finish`          | string               | no       | Its finish or coating |
+|                   |                      |          | (`uncoated`, `AlTiN`, |
+|                   |                      |          | ...).                 |
 | `manufacturer`    | string               | no       | Who made it.          |
 | `manufacturer_pn` | string               | no       | The maker's part      |
 |                   |                      |          | number.               |
@@ -754,8 +768,9 @@ is not a file of its own.
 |                   | `!`                  |          |                       |
 | `grade`           | string               | no       | The grade (`M2`,      |
 |                   |                      |          | `M42`, ...).          |
-| `coating`         | string               | no       | Its coating or finish |
-|                   |                      |          | (`AlTiN`, ...).       |
+| `finish`          | string               | no       | Its finish or coating |
+|                   |                      |          | (`uncoated`, `AlTiN`, |
+|                   |                      |          | ...).                 |
 | `manufacturer`    | string               | no       | Who made it.          |
 | `manufacturer_pn` | string               | no       | The maker's part      |
 |                   |                      |          | number.               |
@@ -808,9 +823,9 @@ file of its own.
 |                   |                      |          | cutter (L2), point to |
 |                   |                      |          | point.                |
 | `neck_diameter`   | length               | no       | The neck's diameter.  |
-| `neck_length`     | length               | no       | How far below the     |
-|                   |                      |          | shank the cutter      |
-|                   |                      |          | reaches (L3).         |
+| `neck_length`     | length               | no       | The neck's length     |
+|                   |                      |          | (L3), from the shank  |
+|                   |                      |          | to the cutter.        |
 | `flutes`          | integer              | no       | How many flutes.      |
 | `shank`           | length               | no       | The shank diameter,   |
 |                   |                      |          | if not `diameter`.    |
@@ -828,8 +843,9 @@ file of its own.
 |                   | `!`                  |          |                       |
 | `grade`           | string               | no       | The grade (`M2`,      |
 |                   |                      |          | `M42`, ...).          |
-| `coating`         | string               | no       | Its coating or finish |
-|                   |                      |          | (`AlTiN`, ...).       |
+| `finish`          | string               | no       | Its finish or coating |
+|                   |                      |          | (`uncoated`, `AlTiN`, |
+|                   |                      |          | ...).                 |
 | `manufacturer`    | string               | no       | Who made it.          |
 | `manufacturer_pn` | string               | no       | The maker's part      |
 |                   |                      |          | number.               |
@@ -859,6 +875,157 @@ overall_length = "2-1/2 in"
 material = "carbide"
 vendor = "Shars Tool"
 vendor_pn = "436-4296"
+```
+
+## `single_countersink`
+
+A combined drill and countersink on a shank: a small drill at its tip,
+joined to its body by a cone.  It can not go in a `tool_table` yet.  It
+has a `name` even when it is not a file of its own.
+
+| Key               | Value                | Required | Meaning               |
+| ----------------- | -------------------- | -------- | --------------------- |
+| `unique_id`       | positive integer     | yes      | Its unique id, a      |
+|                   |                      |          | number from 1, unique |
+|                   |                      |          | among all the tools   |
+|                   |                      |          | of the shop (this is  |
+|                   |                      |          | not a T number).      |
+| `description`     | string               | no       | What it is, in a few  |
+|                   |                      |          | words.                |
+| `diameter`        | length               | yes      | The cutting diameter. |
+| `drill_diameter`  | length               | yes      | The diameter of the   |
+|                   |                      |          | small drill at its    |
+|                   |                      |          | tip.                  |
+| `drill_length`    | length               | no       | How far the small     |
+|                   |                      |          | drill reaches from    |
+|                   |                      |          | its tip (its diameter |
+|                   |                      |          | if not given).        |
+| `angle`           | angle                | yes      | The countersink's     |
+|                   |                      |          | included angle.       |
+| `point_angle`     | angle                | no       | The included angle of |
+|                   |                      |          | the small drill's     |
+|                   |                      |          | point (90 deg if not  |
+|                   |                      |          | given).               |
+| `flutes`          | integer              | no       | How many flutes (2 if |
+|                   |                      |          | not given).           |
+| `shank`           | length               | no       | The shank diameter,   |
+|                   |                      |          | if not `diameter`.    |
+| `overall_length`  | length               | yes      | Its whole length      |
+|                   |                      |          | (OAL).                |
+| `holder`          | holder list          | no       | What holds it, from   |
+|                   |                      |          | the spindle to its    |
+|                   |                      |          | bore (see Tool        |
+|                   |                      |          | Holders).             |
+| `material`        | one of `HSS`,        | yes      | What it is made of.   |
+|                   | `cobalt`, `carbide`, |          |                       |
+|                   | `cermet`, `ceramic`, |          |                       |
+|                   | `CBN`, `PCD`, or     |          |                       |
+|                   | another ending in    |          |                       |
+|                   | `!`                  |          |                       |
+| `grade`           | string               | no       | The grade (`M2`,      |
+|                   |                      |          | `M42`, ...).          |
+| `finish`          | string               | no       | Its finish or coating |
+|                   |                      |          | (`uncoated`, `AlTiN`, |
+|                   |                      |          | ...).                 |
+| `manufacturer`    | string               | no       | Who made it.          |
+| `manufacturer_pn` | string               | no       | The maker's part      |
+|                   |                      |          | number.               |
+| `vendor`          | string               | no       | Who sold it.          |
+| `vendor_pn`       | string               | no       | The vendor's part     |
+|                   |                      |          | number.               |
+| `cost`            | money                | no       | What it cost.         |
+| `acquired`        | date                 | no       | When it was bought    |
+|                   |                      |          | (`2026-10-27`).       |
+| `rpm`             | speed                | no       | The spindle speed to  |
+|                   |                      |          | cut at.               |
+| `feed`            | feed                 | no       | The feed to cut at.   |
+| `plunge`          | feed                 | no       | The feed going        |
+|                   |                      |          | straight down.        |
+
+```toml
+name = "1/4 in 60 deg single end countersink"
+unique_id = 10
+diameter = "1/4 in"
+drill_diameter = "3/32 in"
+angle = "60 deg"
+overall_length = "2 in"
+material = "HSS"
+```
+
+## `double_countersink`
+
+A combined drill and countersink, cut at both ends (a center drill).
+Its `shank` means nothing, since it is cut at both ends.  It can not go
+in a `tool_table` yet.  It has a `name` even when it is not a file of
+its own.
+
+| Key               | Value                | Required | Meaning               |
+| ----------------- | -------------------- | -------- | --------------------- |
+| `unique_id`       | positive integer     | yes      | Its unique id, a      |
+|                   |                      |          | number from 1, unique |
+|                   |                      |          | among all the tools   |
+|                   |                      |          | of the shop (this is  |
+|                   |                      |          | not a T number).      |
+| `description`     | string               | no       | What it is, in a few  |
+|                   |                      |          | words.                |
+| `diameter`        | length               | yes      | The cutting diameter. |
+| `drill_diameter`  | length               | yes      | The diameter of the   |
+|                   |                      |          | small drill at its    |
+|                   |                      |          | tip.                  |
+| `drill_length`    | length               | no       | How far the small     |
+|                   |                      |          | drill reaches from    |
+|                   |                      |          | its tip (its diameter |
+|                   |                      |          | if not given).        |
+| `angle`           | angle                | yes      | The countersink's     |
+|                   |                      |          | included angle.       |
+| `point_angle`     | angle                | no       | The included angle of |
+|                   |                      |          | the small drill's     |
+|                   |                      |          | point (90 deg if not  |
+|                   |                      |          | given).               |
+| `flutes`          | integer              | no       | How many flutes (2 if |
+|                   |                      |          | not given).           |
+| `shank`           | length               | no       | The shank diameter,   |
+|                   |                      |          | if not `diameter`.    |
+| `overall_length`  | length               | yes      | Its whole length      |
+|                   |                      |          | (OAL).                |
+| `holder`          | holder list          | no       | What holds it, from   |
+|                   |                      |          | the spindle to its    |
+|                   |                      |          | bore (see Tool        |
+|                   |                      |          | Holders).             |
+| `material`        | one of `HSS`,        | yes      | What it is made of.   |
+|                   | `cobalt`, `carbide`, |          |                       |
+|                   | `cermet`, `ceramic`, |          |                       |
+|                   | `CBN`, `PCD`, or     |          |                       |
+|                   | another ending in    |          |                       |
+|                   | `!`                  |          |                       |
+| `grade`           | string               | no       | The grade (`M2`,      |
+|                   |                      |          | `M42`, ...).          |
+| `finish`          | string               | no       | Its finish or coating |
+|                   |                      |          | (`uncoated`, `AlTiN`, |
+|                   |                      |          | ...).                 |
+| `manufacturer`    | string               | no       | Who made it.          |
+| `manufacturer_pn` | string               | no       | The maker's part      |
+|                   |                      |          | number.               |
+| `vendor`          | string               | no       | Who sold it.          |
+| `vendor_pn`       | string               | no       | The vendor's part     |
+|                   |                      |          | number.               |
+| `cost`            | money                | no       | What it cost.         |
+| `acquired`        | date                 | no       | When it was bought    |
+|                   |                      |          | (`2026-10-27`).       |
+| `rpm`             | speed                | no       | The spindle speed to  |
+|                   |                      |          | cut at.               |
+| `feed`            | feed                 | no       | The feed to cut at.   |
+| `plunge`          | feed                 | no       | The feed going        |
+|                   |                      |          | straight down.        |
+
+```toml
+name = "#3 60 deg double end countersink"
+unique_id = 11
+diameter = "1/4 in"
+drill_diameter = "7/64 in"
+angle = "60 deg"
+overall_length = "2 in"
+material = "HSS"
 ```
 
 ## `materials`

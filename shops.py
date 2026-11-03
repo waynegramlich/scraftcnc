@@ -151,8 +151,9 @@ VERSION: re.Pattern[str] = re.compile(r"(\d+)\.(\d+)\.(\d+)")
 
 
 # Class `SCField`:
+# It only holds what the schema says of a key, so the count is fine.
 @dataclass(frozen=True, slots=True)
-class SCField:
+class SCField:  # pylint: disable=too-many-instance-attributes
     """One key of a table, and what its value must be.
 
     Attributes:
@@ -171,9 +172,13 @@ class SCField:
     * `open` (`bool`):
       True if `choices` are only the common ones, so that a string
       ending in `!` is taken without a check (`"HSK63!"`).
+    * `letter` (`str`):
+      The letter (`A` to `Z`) of a size on the sketches in
+      `Tool_Models.md`, or `""`; a letter means the same size on every
+      sketch.
 
     Constructor:
-    * `SCField(key, form, meaning, required, of, choices, open)`
+    * `SCField(key, form, meaning, required, of, choices, open, letter)`
     """
 
     # Constructor arguments:
@@ -184,13 +189,15 @@ class SCField:
     of: str = field(init=True, default="")
     choices: tuple[str, ...] = field(init=True, default=())
     open: bool = field(init=True, default=False)
+    letter: str = field(init=True, default="")
 
     # Method `SCField.__post_init__()`:
     def __post_init__(self) -> None:
         """Check that the form is known.
 
         Raises:
-        * `ValueError`: If `form`, `of` or `choices` do not fit.
+        * `ValueError`:
+          If `form`, `of`, `choices` or `letter` do not fit.
         """
         if self.form not in UNITS and self.form not in FORMS:
             raise ValueError(f"{self.key}: unknown form {self.form!r}")
@@ -198,6 +205,8 @@ class SCField:
             raise ValueError(f"{self.key}: `of` is only for tables")
         if (self.form == "choice") != bool(self.choices):
             raise ValueError(f"{self.key}: `choices` is only for choices")
+        if self.letter and not re.fullmatch("[A-Z]", self.letter):
+            raise ValueError(f"{self.key}: `letter` is one of `A` to `Z`")
 
     # Method `SCField.shown()`:
     def shown(self) -> str:
@@ -338,6 +347,8 @@ TOOL_KINDS: tuple[str, ...] = (
     "chamfer_mill",
     "corner_rounding_mill",
     "double_angle_cutter",
+    "single_countersink",
+    "double_countersink",
 )
 
 
@@ -364,8 +375,19 @@ def _tool_fields(*special: SCField) -> tuple[SCField, ...]:
         ),
         SCField("description", "string", "What it is, in a few words."),
         *special,
-        SCField("shank", "length", "The shank diameter, if not `diameter`."),
-        SCField("overall_length", "length", "Its whole length (OAL).", True),
+        SCField(
+            "shank",
+            "length",
+            "The shank diameter, if not `diameter`.",
+            letter="S",
+        ),
+        SCField(
+            "overall_length",
+            "length",
+            "Its whole length (OAL).",
+            True,
+            letter="L",
+        ),
         SCField(
             "holder",
             "holder_list",
@@ -380,7 +402,11 @@ def _tool_fields(*special: SCField) -> tuple[SCField, ...]:
             open=True,
         ),
         SCField("grade", "string", "The grade (`M2`, `M42`, ...)."),
-        SCField("coating", "string", "Its coating or finish (`AlTiN`, ...)."),
+        SCField(
+            "finish",
+            "string",
+            "Its finish or coating (`uncoated`, `AlTiN`, ...).",
+        ),
         SCField("manufacturer", "string", "Who made it."),
         SCField("manufacturer_pn", "string", "The maker's part number."),
         SCField("vendor", "string", "Who sold it."),
@@ -404,13 +430,60 @@ def _size_fields(*, length_of_cut: bool = True) -> tuple[SCField, ...]:
     * (`tuple[SCField, ...]`): The keys.
     """
     diameter: SCField = SCField(
-        "diameter", "length", "The cutting diameter.", True
+        "diameter", "length", "The cutting diameter.", True, letter="D"
     )
     if not length_of_cut:
         return (diameter,)
     return (
         diameter,
-        SCField("length_of_cut", "length", "How deep it can cut (LOC).", True),
+        SCField(
+            "length_of_cut",
+            "length",
+            "How deep it can cut (LOC).",
+            True,
+            letter="C",
+        ),
+    )
+
+
+# Function `_countersink_fields()`:
+def _countersink_fields() -> tuple[SCField, ...]:
+    """Return the keys of a combined drill and countersink.
+
+    Returns:
+    * (`tuple[SCField, ...]`): The keys.
+    """
+    return _tool_fields(
+        *_size_fields(length_of_cut=False),
+        SCField(
+            "drill_diameter",
+            "length",
+            "The diameter of the small drill at its tip.",
+            True,
+            letter="E",
+        ),
+        SCField(
+            "drill_length",
+            "length",
+            "How far the small drill reaches from its tip (its diameter "
+            "if not given).",
+            letter="G",
+        ),
+        SCField(
+            "angle",
+            "angle",
+            "The countersink's included angle.",
+            True,
+            letter="A",
+        ),
+        SCField(
+            "point_angle",
+            "angle",
+            "The included angle of the small drill's point (90 deg if "
+            "not given).",
+            letter="P",
+        ),
+        SCField("flutes", "integer", "How many flutes (2 if not given)."),
     )
 
 
@@ -844,6 +917,18 @@ version = "0.0.1"
                     "The double angle shank cutters.",
                     of="double_angle_cutter",
                 ),
+                SCField(
+                    "single_countersinks",
+                    "list",
+                    "The single end countersinks.",
+                    of="single_countersink",
+                ),
+                SCField(
+                    "double_countersinks",
+                    "list",
+                    "The double end countersinks.",
+                    of="double_countersink",
+                ),
             ),
             True,
             """\
@@ -887,7 +972,12 @@ material = "HSS"
                     required=True,
                     choices=("square", "ball", "bull_nose"),
                 ),
-                SCField("corner_radius", "length", "A bull nose's corners."),
+                SCField(
+                    "corner_radius",
+                    "length",
+                    "A bull nose's corners.",
+                    letter="B",
+                ),
                 SCField(
                     "center_cutting",
                     "boolean",
@@ -911,7 +1001,7 @@ flutes = 2
 end = "square"
 center_cutting = true
 material = "carbide"
-coating = "uncoated"
+finish = "uncoated"
 vendor = "Shars Tool"
 vendor_pn = "415-0998"
 cost = "47.02 USD"
@@ -926,7 +1016,20 @@ acquired = 2026-10-27
                 SCField(
                     "flutes", "integer", "How many flutes (2 if not given)."
                 ),
-                SCField("point_angle", "angle", "The included angle.", True),
+                SCField(
+                    "point_angle",
+                    "angle",
+                    "The included angle.",
+                    True,
+                    letter="P",
+                ),
+                SCField(
+                    "shank_length",
+                    "length",
+                    "How far its shank comes down from its top; if not "
+                    "given, a `shank` starts where its flutes stop.",
+                    letter="K",
+                ),
                 SCField(
                     "split_point", "boolean", "True if it has a split point."
                 ),
@@ -949,7 +1052,7 @@ split_point = true
 holder = ["r8", "er32", "1/8 in"]
 material = "cobalt"
 grade = "M42"
-coating = "straw"
+finish = "straw"
 vendor = "Shars Tool"
 vendor_pn = "415-8998"
 cost = "2.67 USD"
@@ -985,13 +1088,18 @@ feed = "4 in/min"
             _tool_fields(
                 *_size_fields(length_of_cut=False),
                 SCField(
-                    "tip_diameter", "length", "The diameter at its tip.", True
+                    "tip_diameter",
+                    "length",
+                    "The diameter at its tip.",
+                    True,
+                    letter="T",
                 ),
                 SCField(
                     "angle",
                     "angle",
                     "The included angle (90 deg makes 45 deg bevels).",
                     True,
+                    letter="A",
                 ),
                 SCField("flutes", "integer", "How many flutes."),
             ),
@@ -1015,10 +1123,18 @@ vendor_pn = "416-3509"
             "radius.  Its tip (a pilot) rides along the wall below.",
             _tool_fields(
                 SCField(
-                    "radius", "length", "The radius it rounds edges to.", True
+                    "radius",
+                    "length",
+                    "The radius it rounds edges to.",
+                    True,
+                    letter="R",
                 ),
                 SCField(
-                    "tip_diameter", "length", "The diameter at its tip.", True
+                    "tip_diameter",
+                    "length",
+                    "The diameter at its tip.",
+                    True,
+                    letter="T",
                 ),
                 SCField("flutes", "integer", "How many flutes."),
             ),
@@ -1048,18 +1164,26 @@ vendor_pn = "417-1112"
                     "angle",
                     "The included angle of the two cones together.",
                     True,
+                    letter="A",
                 ),
                 SCField(
                     "width",
                     "length",
                     "The height of the cutter (L2), point to point.",
                     True,
+                    letter="W",
                 ),
-                SCField("neck_diameter", "length", "The neck's diameter."),
+                SCField(
+                    "neck_diameter",
+                    "length",
+                    "The neck's diameter.",
+                    letter="N",
+                ),
                 SCField(
                     "neck_length",
                     "length",
-                    "How far below the shank the cutter reaches (L3).",
+                    "The neck's length (L3), from the shank to the cutter.",
+                    letter="M",
                 ),
                 SCField("flutes", "integer", "How many flutes."),
             ),
@@ -1078,6 +1202,40 @@ overall_length = "2-1/2 in"
 material = "carbide"
 vendor = "Shars Tool"
 vendor_pn = "436-4296"
+""",
+        ),
+        SCKind(
+            "single_countersink",
+            "A combined drill and countersink on a shank: a small drill "
+            "at its tip, joined to its body by a cone.  It can not go in "
+            "a `tool_table` yet.",
+            _countersink_fields(),
+            True,
+            """\
+name = "1/4 in 60 deg single end countersink"
+unique_id = 10
+diameter = "1/4 in"
+drill_diameter = "3/32 in"
+angle = "60 deg"
+overall_length = "2 in"
+material = "HSS"
+""",
+        ),
+        SCKind(
+            "double_countersink",
+            "A combined drill and countersink, cut at both ends (a center "
+            "drill).  Its `shank` means nothing, since it is cut at both "
+            "ends.  It can not go in a `tool_table` yet.",
+            _countersink_fields(),
+            True,
+            """\
+name = "#3 60 deg double end countersink"
+unique_id = 11
+diameter = "1/4 in"
+drill_diameter = "7/64 in"
+angle = "60 deg"
+overall_length = "2 in"
+material = "HSS"
 """,
         ),
         SCKind(
@@ -2389,6 +2547,52 @@ def read(file: Path) -> dict[str, object]:
     return contents
 
 
+# Function `check_tool()`:
+def check_tool(
+    description: dict[str, object],
+) -> tuple[str, dict[str, object]]:
+    """Check one tool's description, as for a model of it.
+
+    It takes the keys of its `kind` of tool (`Shops.md`), except that
+    `name` and `unique_id` get stand-ins, since a model does not need
+    them.
+
+    Arguments:
+    * `description` (`dict[str, object]`):
+      The tool, with its `kind` (such as `"end_mill"`).
+
+    Returns:
+    * (`tuple[str, dict[str, object]]`):
+      The list it goes in, in a tools file (a key of `CNC_KINDS`), and
+      the tool, as `read()` gives it.
+
+    Raises:
+    * `SCShopError`: With every problem found.
+    """
+    # Find the kind of tool.
+    kind: object = description.get("kind")
+    if kind not in TOOL_KINDS:
+        known: str = ", ".join(TOOL_KINDS)
+        raise SCShopError([f"kind: {kind!r} is not one of {known}"])
+    assert isinstance(kind, str)
+
+    # Check it as a tools file would.
+    reader: _SCReader = _SCReader(Path("."))
+    tool: dict[str, object] = reader.table(
+        {
+            "name": kind.replace("_", " "),
+            "unique_id": 1,
+            **description,
+        },
+        KINDS[kind],
+        (),
+        _SCSource("description", {}),
+    )
+    if reader.problems:
+        raise SCShopError(reader.problems)
+    return f"{kind}s", tool
+
+
 # Function `tool_number()`:
 def tool_number(machine: dict[str, object], tool: str) -> int:
     """Return the T number of a tool loaded in a machine.
@@ -2500,6 +2704,12 @@ def loaded_tools(
         _machine(shop, name).get("tool_table", {"tools": {}}),
     )
     loaded: dict[str, str] = cast(dict[str, str], table["tools"])
+    for tool_name in loaded.values():
+        if tool_name not in tools:
+            raise ValueError(
+                f"{tool_name}: this kind of tool can not be in a "
+                "`tool_table` yet"
+            )
     return {
         int(number): tools[tool_name] for number, tool_name in loaded.items()
     }
@@ -2961,8 +3171,8 @@ def _wrap(cell: str, width: int) -> list[str]:
     return lines
 
 
-# Function `_markdown_table()`:
-def _markdown_table(rows: list[list[str]], width: int = MARKDOWN_WIDTH) -> str:
+# Function `markdown_table()`:
+def markdown_table(rows: list[list[str]], width: int = MARKDOWN_WIDTH) -> str:
     """Return a Markdown table whose `|`s line up in a text editor.
 
     A table wider than `width` has its wide cells wrapped; a row whose
@@ -3046,7 +3256,7 @@ def _fields_table(
         rows.append(
             [f"`{schema.key}`", schema.shown(), required, schema.meaning]
         )
-    return _markdown_table(rows)
+    return markdown_table(rows)
 
 
 # Function `markdown()`:
@@ -3067,7 +3277,7 @@ def markdown() -> str:
         INTRODUCTION.format(
             version=FORMAT_VERSION,
             header=_fields_table(HEADER, all_required=True),
-            units=_markdown_table(units),
+            units=markdown_table(units),
         )
     ]
 

@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-62.5 -326.0 206.0 402.0" width="103" height="201">
+  <rect x="-62.5" y="-326.0" width="206.0" height="402.0" fill="white" />
+  <polygon points="0.0,-0.0 12.5,-0.0 13.0,-4.9 14.4,-9.6 16.7,-13.9 19.8,-17.7 23.6,-20.8 27.9,-23.1 32.6,-24.5 37.5,-25.0 37.5,-250.0 0.0,-250.0 -0.0,-250.0 -37.5,-250.0 -37.5,-25.0 -32.6,-24.5 -27.9,-23.1 -23.6,-20.8 -19.8,-17.7 -16.7,-13.9 -14.4,-9.6 -13.0,-4.9 -12.5,-0.0 -0.0,-0.0" fill="#dfe4e8" stroke="#222222" stroke-width="2" stroke-linejoin="round" />
+  <line x1="0.0" y1="12.0" x2="0.0" y2="-262.0" stroke="#222222" stroke-width="1" stroke-dasharray="12 4 3 4" />
+  <line x1="-12.5" y1="-0.0" x2="-12.5" y2="34.5" stroke="#222222" stroke-width="1" />
+  <line x1="12.5" y1="-0.0" x2="12.5" y2="34.5" stroke="#222222" stroke-width="1" />
+  <line x1="-12.5" y1="30.0" x2="12.5" y2="30.0" stroke="#222222" stroke-width="1" />
+  <polygon points="-12.5,30.0 -3.5,27.0 -3.5,33.0" fill="#222222" />
+  <polygon points="12.5,30.0 3.5,27.0 3.5,33.0" fill="#222222" />
+  <text x="0.0" y="50.3" font-family="sans-serif" font-size="18" font-weight="bold" text-anchor="middle" fill="#222222">T</text>
+  <line x1="-37.5" y1="-250.0" x2="-37.5" y2="-284.5" stroke="#222222" stroke-width="1" />
+  <line x1="37.5" y1="-250.0" x2="37.5" y2="-284.5" stroke="#222222" stroke-width="1" />
+  <line x1="-37.5" y1="-280.0" x2="37.5" y2="-280.0" stroke="#222222" stroke-width="1" />
+  <polygon points="-37.5,-280.0 -28.5,-283.0 -28.5,-277.0" fill="#222222" />
+  <polygon points="37.5,-280.0 28.5,-283.0 28.5,-277.0" fill="#222222" />
+  <text x="0.0" y="-287.7" font-family="sans-serif" font-size="18" font-weight="bold" text-anchor="middle" fill="#222222">S</text>
+  <line x1="12.5" y1="-0.0" x2="102.0" y2="-0.0" stroke="#222222" stroke-width="1" />
+  <line x1="37.5" y1="-250.0" x2="102.0" y2="-250.0" stroke="#222222" stroke-width="1" />
+  <line x1="97.5" y1="-0.0" x2="97.5" y2="-250.0" stroke="#222222" stroke-width="1" />
+  <polygon points="97.5,-0.0 100.5,-9.0 94.5,-9.0" fill="#222222" />
+  <polygon points="97.5,-250.0 100.5,-241.0 94.5,-241.0" fill="#222222" />
+  <text x="111.5" y="-118.7" font-family="sans-serif" font-size="18" font-weight="bold" text-anchor="middle" fill="#222222">L</text>
+  <line x1="37.5" y1="-0.0" x2="19.8" y2="-17.7" stroke="#222222" stroke-width="1" />
+  <polygon points="19.8,-17.7 24.1,-9.2 28.3,-13.4" fill="#222222" />
+  <text x="47.5" y="-4.7" font-family="sans-serif" font-size="18" font-weight="bold" text-anchor="middle" fill="#222222">R</text>
+</svg>
