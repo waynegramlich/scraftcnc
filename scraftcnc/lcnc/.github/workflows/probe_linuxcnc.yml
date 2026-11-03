@@ -1,0 +1,61 @@
+# Install this package as a user would, install LinuxCNC's simulator
+# with it (`--yes` runs the commands it would ask the user to run), then
+# run a G-code program by JSON from outside the target, with no display.
+# The programs print the time on every line, so a timeout still shows
+# how far it got.  A failed offline test still fails the job, but does
+# not hide what the install and the demo would have shown.
+name: probe linuxcnc
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    name: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    env:
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      # A user's package lists are recent; a runner's may not be.
+      - name: Refresh apt's package lists
+        if: runner.os == 'Linux'
+        run: sudo apt-get update
+
+      - name: Facts
+        run: |
+          uname -a
+          python --version
+
+      - name: Install this package
+        run: python -m pip install .
+
+      - name: Offline tests
+        run: python -m unittest discover tests
+
+      - name: install_linuxcnc --yes
+        id: install
+        if: ${{ !cancelled() }}
+        run: install_linuxcnc --yes
+
+      - name: demo_linuxcnc
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: demo_linuxcnc

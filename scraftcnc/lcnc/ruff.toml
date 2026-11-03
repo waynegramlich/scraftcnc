@@ -1,0 +1,4 @@
+# Configuration for `ruff`.  Python 3.11 is the floor, for
+# `hashlib.file_digest()`.
+target-version = "py311"
+line-length = 79
