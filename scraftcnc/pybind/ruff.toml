@@ -1,0 +1,9 @@
+# Configuration for `ruff`.  Python 3.11 is the floor that
+# `pyproject.toml` names.
+target-version = "py311"
+line-length = 79
+
+[lint]
+# Line lengths are checked by `ruff` as well as `flake8`, so that the
+# `# noqa: E501` comments that `flake8` needs are not unused for `ruff`.
+extend-select = ["E501"]

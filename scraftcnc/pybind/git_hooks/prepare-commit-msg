@@ -1,0 +1,17 @@
+#!/bin/sh
+# Add an `Assisted-by:` trailer to every commit message, for the AI
+# disclosure that the Linux kernel, Fedora and LLVM now ask for.  It is
+# put in before the editor opens, so it can be deleted from a commit the
+# AI had no part in; with `-m` it is simply added.  A message that
+# already has an `Assisted-by:` (an amend, say) is left alone.
+#
+# Turned on per clone with `git config core.hooksPath git_hooks`.
+# Update the trailer when the agent or the model changes.
+TRAILER="Assisted-by: Claude Code:claude-opus-5-5"
+
+# Arguments: the message file, then where the message came from.
+case "$2" in
+    merge|squash) exit 0 ;;  # Git wrote these; leave them alone.
+esac
+exec git interpret-trailers --in-place --if-exists doNothing \
+    --trailer "$TRAILER" "$1"

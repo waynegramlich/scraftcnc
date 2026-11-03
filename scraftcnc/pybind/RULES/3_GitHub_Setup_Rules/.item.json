@@ -1,0 +1,20 @@
+{
+  "state": "Active",
+  "created": "2026-10-27T01:49:27Z",
+  "updated": "2026-10-27T01:53:31Z",
+  "history": [
+    {
+      "state": "InActive",
+      "time": "2026-10-27T01:49:27Z"
+    },
+    {
+      "state": "Active",
+      "time": "2026-10-27T01:49:30Z"
+    }
+  ],
+  "tag": "gsr",
+  "title": "GitHub Setup Rules",
+  "source": "../aicontexts/RULES/4_GitHub_Setup_Rules/Details.md",
+  "sha256": "bbf900de9feb79bc8a6998b262d8d389e184cd251ba35fd158cd3a08d1ed78b7",
+  "refreshed": "2026-10-27T01:53:31Z"
+}

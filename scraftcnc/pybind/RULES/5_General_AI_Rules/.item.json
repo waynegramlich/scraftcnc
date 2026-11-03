@@ -1,0 +1,20 @@
+{
+  "state": "Active",
+  "created": "2026-10-27T01:49:27Z",
+  "updated": "2026-10-27T01:53:31Z",
+  "history": [
+    {
+      "state": "InActive",
+      "time": "2026-10-27T01:49:27Z"
+    },
+    {
+      "state": "Active",
+      "time": "2026-10-27T01:49:30Z"
+    }
+  ],
+  "tag": "gar",
+  "title": "General AI Rules",
+  "source": "../aicontexts/RULES/6_General_AI_Rules/Details.md",
+  "sha256": "75b29dd0629395ab37b6603cde8588dedd0def53b7c10557ed00369293d3f980",
+  "refreshed": "2026-10-27T01:53:31Z"
+}

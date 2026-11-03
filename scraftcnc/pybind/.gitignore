@@ -1,0 +1,19 @@
+# Emacs back up files.
+*~
+
+# Claude's Mercurial checkpoints.
+.hg/
+.hgignore
+
+# Python byte code and linter caches.
+__pycache__/
+.mypy_cache/
+.ruff_cache/
+
+# Python packaging output.
+*.egg-info/
+build/
+dist/
+
+# STEP files written by the examples.
+*.step

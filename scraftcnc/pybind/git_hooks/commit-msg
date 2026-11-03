@@ -1,0 +1,9 @@
+#!/bin/sh
+# Refuse a message that holds nothing but the `Assisted-by:` trailer
+# `prepare-commit-msg` put in.  Quitting the editor without writing
+# anything would otherwise make a commit instead of aborting one.
+if [ -z "$(grep -v -e '^#' -e '^Assisted-by:' "$1" | tr -d '[:space:]')" ]
+then
+    echo "Aborting commit due to empty commit message." >&2
+    exit 1
+fi

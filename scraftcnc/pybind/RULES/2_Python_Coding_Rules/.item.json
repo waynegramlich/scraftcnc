@@ -1,0 +1,20 @@
+{
+  "state": "Active",
+  "created": "2026-10-27T01:49:27Z",
+  "updated": "2026-10-27T01:53:31Z",
+  "history": [
+    {
+      "state": "InActive",
+      "time": "2026-10-27T01:49:27Z"
+    },
+    {
+      "state": "Active",
+      "time": "2026-10-27T01:49:30Z"
+    }
+  ],
+  "tag": "pcr",
+  "title": "Python Coding Rules",
+  "source": "../aicontexts/RULES/2_Python_Coding_Rules/Details.md",
+  "sha256": "aa67e8807d27e53e253ad85415b78ae7c18549901e34003dc4872e3e9c284d80",
+  "refreshed": "2026-10-27T01:53:31Z"
+}

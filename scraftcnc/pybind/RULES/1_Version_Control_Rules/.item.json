@@ -1,0 +1,20 @@
+{
+  "state": "Active",
+  "created": "2026-10-27T01:49:27Z",
+  "updated": "2026-10-27T01:53:31Z",
+  "history": [
+    {
+      "state": "InActive",
+      "time": "2026-10-27T01:49:27Z"
+    },
+    {
+      "state": "Active",
+      "time": "2026-10-27T01:49:30Z"
+    }
+  ],
+  "tag": "vcr",
+  "title": "Version Control Rules",
+  "source": "../aicontexts/RULES/1_Version_Control_Rules/Details.md",
+  "sha256": "027d39f706f77b396ba0309b53005d44a4958e1bcf38633575996a4dc023f26b",
+  "refreshed": "2026-10-30T17:30:37Z"
+}
