@@ -551,6 +551,13 @@ shops = ["@home_shop.toml"]
                     of="tools",
                 ),
                 SCField(
+                    "tooling",
+                    "list",
+                    "The work holding on hand (grid plates for now), "
+                    "shared by the machines.",
+                    of="tooling",
+                ),
+                SCField(
                     "materials",
                     "table",
                     "The materials it cuts, and how to drill them.",
@@ -1236,6 +1243,138 @@ drill_diameter = "7/64 in"
 angle = "60 deg"
 overall_length = "2 in"
 material = "HSS"
+""",
+        ),
+        SCKind(
+            "tooling",
+            "Tooling: what holds work on a machine, rather than cutting "
+            "it.  Only grid plates are described so far; vises, "
+            "parallels and mill tables are still in `tools.py`.  Every "
+            "piece's `name` is unique among the shop's tooling, so that "
+            "a setup can name it.",
+            (
+                SCField(
+                    "grid_plates",
+                    "list",
+                    "The grid plates.",
+                    of="grid_plate",
+                ),
+            ),
+            True,
+            """\
+name = "Tooling"
+kind = "tooling"
+language = "English"
+version = "0.0.1"
+
+[[grid_plates]]
+name = "Small grid plate"
+length = "4 in"
+width = "4 in"
+height = "1/2 in"
+pitch = "1/2 in"
+edge = "1/4 in"
+hole_diameter = "0.144 in"
+""",
+        ),
+        SCKind(
+            "grid_plate",
+            "A grid plate: a plate with a grid of holes, for holding work "
+            "down, perhaps with chamfered holes and tooling holes.  "
+            "`Tool_Models.md` draws one, with each size.  Chamfers take "
+            "SolidCraft minutes to model, once; the model cache keeps "
+            "the result.",
+            (
+                SCField(
+                    "description", "string", "What it is, in a few words."
+                ),
+                SCField("length", "length", "Its size along X.", True),
+                SCField("width", "length", "Its size along Y.", True),
+                SCField(
+                    "height",
+                    "length",
+                    "Its size along Z, its thickness.",
+                    True,
+                ),
+                SCField(
+                    "pitch",
+                    "length",
+                    "The distance between grid holes, along X and Y.",
+                    True,
+                ),
+                SCField(
+                    "edge",
+                    "length",
+                    "The distance from a side to the nearest holes.",
+                    True,
+                ),
+                SCField(
+                    "hole_diameter",
+                    "length",
+                    "The diameter of the grid's holes.",
+                    True,
+                ),
+                SCField(
+                    "corner_radius",
+                    "length",
+                    "The radius of its four corners (square if not given).",
+                ),
+                SCField(
+                    "chamfer_depth",
+                    "length",
+                    "How deep the 45 degree chamfer on each grid hole's top "
+                    "edge is (none if not given).",
+                ),
+                SCField(
+                    "tooling_columns",
+                    "integer",
+                    "The number of columns of tooling holes, an even "
+                    "number (none if not given).",
+                ),
+                SCField(
+                    "tooling_rows",
+                    "integer",
+                    "The number of rows of tooling holes, an even number "
+                    "(none if not given).",
+                ),
+                SCField(
+                    "tooling_pitch",
+                    "length",
+                    "The distance between tooling holes, along X and Y.",
+                ),
+                SCField(
+                    "tap_diameter",
+                    "length",
+                    "The diameter of the tooling holes to be threaded (the "
+                    "tap drill).",
+                ),
+                SCField(
+                    "close_diameter",
+                    "length",
+                    "The diameter of the close fit tooling holes.",
+                ),
+                SCField("manufacturer", "string", "Who made it."),
+                SCField("vendor", "string", "Who sold it."),
+                SCField("cost", "money", "What it cost."),
+                SCField("acquired", "date", "When it was bought or made."),
+            ),
+            True,
+            """\
+name = "Grid plate"
+description = "Aluminum, made in the shop"
+length = "5-1/2 in"
+width = "10-1/2 in"
+height = "1/2 in"
+pitch = "1/2 in"
+edge = "1/2 in"
+hole_diameter = "0.144 in"
+corner_radius = "1/4 in"
+chamfer_depth = "1/32 in"
+tooling_columns = 2
+tooling_rows = 4
+tooling_pitch = "3 in"
+tap_diameter = "0.159 in"
+close_diameter = "0.196 in"
 """,
         ),
         SCKind(
@@ -2713,6 +2852,25 @@ def loaded_tools(
     return {
         int(number): tools[tool_name] for number, tool_name in loaded.items()
     }
+
+
+# Function `grid_plates()`:
+def grid_plates(shop: dict[str, object]) -> dict[str, dict[str, object]]:
+    """Return the grid plates of a shop, by name.
+
+    Arguments:
+    * `shop` (`dict[str, object]`): The shop, from `read()`.
+
+    Returns:
+    * (`dict[str, dict[str, object]]`): Each grid plate, from `read()`.
+    """
+    plates: dict[str, dict[str, object]] = {}
+    for tooling in cast(list[dict[str, object]], shop.get("tooling", [])):
+        for plate in cast(
+            list[dict[str, object]], tooling.get("grid_plates", [])
+        ):
+            plates[str(plate["name"])] = plate
+    return plates
 
 
 # Function `cnc_machine()`:

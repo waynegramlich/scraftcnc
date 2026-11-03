@@ -1,10 +1,12 @@
 """Tests for `scsetup`: setups read from JSON."""
 
 import copy
+import dataclasses
 import json
 import shutil
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import scsetup
 import tools
@@ -15,6 +17,17 @@ HERE: Path = Path(__file__).resolve().parent
 CLI: Path = HERE / "solidcraft/squashfs-root/usr/bin/solidcraft-cli"
 INCH = 25.4
 
+# `GRID_PLATE` without its chamfers, which take minutes to model: the
+# same shape for every check here.
+FLAT_PLATE = dataclasses.replace(tools.GRID_PLATE, chamfer_depth=0.0)
+
+
+def setUpModule() -> None:
+    """Have setups name the unchamfered plate."""
+    patcher = mock.patch.dict(scsetup.PARTS, {"Grid plate": FLAT_PLATE})
+    patcher.start()
+    unittest.addModuleCleanup(patcher.stop)
+
 
 def example():
     """Return the example setup's JSON."""
@@ -22,7 +35,7 @@ def example():
 
 
 class TestExample(unittest.TestCase):
-    """The example: a tooling plate from a chunk, in a vise."""
+    """The example: a grid plate from a chunk, in a vise."""
 
     def setUp(self) -> None:
         self.setup = scsetup.SCSetup(example())
@@ -99,8 +112,38 @@ class TestExample(unittest.TestCase):
     def test_report(self) -> None:
         """The report lists every item."""
         text = "\n".join(self.setup.report())
-        for name in ("Mikini", "Kurt", "Raw aluminum", "Tooling plate"):
+        for name in ("Mikini", "Kurt", "Raw aluminum", "Grid plate"):
             self.assertIn(name, text)
+
+
+class TestShopGridPlates(unittest.TestCase):
+    """Grid plates described in the example shop's tooling file."""
+
+    def test_same_as_tools(self) -> None:
+        """The shop's plate is `tools.GRID_PLATE`, so it shares its cache."""
+        shop = scsetup.grid_plates(scsetup.read(scsetup.SHOP))
+        self.assertEqual(
+            tools.SCGridPlate.from_shop(shop["Grid plate"]), tools.GRID_PLATE
+        )
+
+    def test_defaults(self) -> None:
+        """Keys not given are 0: square corners, no chamfers, no tooling."""
+        plate = tools.SCGridPlate.from_shop(
+            {
+                "name": "Small",
+                "length": "4 in",
+                "width": "4 in",
+                "height": "1/2 in",
+                "pitch": "1/2 in",
+                "edge": "1/4 in",
+                "hole_diameter": "0.144 in",
+            }
+        )
+        self.assertEqual(len(plate.hole_centers()), 8 * 8)
+        self.assertEqual(plate.tooling_holes(), [])
+        self.assertEqual(
+            (plate.corner_radius, plate.chamfer_depth), (0.0, 0.0)
+        )
 
 
 class TestProblems(unittest.TestCase):
@@ -192,7 +235,7 @@ class TestOtherSetups(unittest.TestCase):
         setup_json = example()
         setup_json["machine"]["y_travel"] = "4 in"
         text = "\n".join(scsetup.SCSetup(setup_json).notes())
-        self.assertIn("OUT OF REACH: Tooling plate reaches 0.750 in", text)
+        self.assertIn("OUT OF REACH: Grid plate reaches 0.750 in", text)
 
     def test_part_does_not_fit(self) -> None:
         """Material too small for the part is reported."""
@@ -200,7 +243,7 @@ class TestOtherSetups(unittest.TestCase):
         setup_json["materials"][0]["size"][1] = "10 in"
         text = "\n".join(scsetup.SCSetup(setup_json).notes())
         self.assertIn(
-            "Tooling plate reaches past Raw aluminum along X, by 0.250 in "
+            "Grid plate reaches past Raw aluminum along X, by 0.250 in "
             "on the low side and 0.250 in on the high side",
             text,
         )
@@ -246,7 +289,7 @@ class TestDemoStack(unittest.TestCase):
 
         # The demonstration plate is 1/2 in thick, with its top at Z 0.
         self.assertAlmostEqual(
-            plate.placement.z + tools.TOOLING_PLATE.thickness, -0.5 * INCH
+            plate.placement.z + tools.GRID_PLATE.height, -0.5 * INCH
         )
 
     def test_centered_under_the_demonstration_plate(self) -> None:
@@ -258,15 +301,15 @@ class TestDemoStack(unittest.TestCase):
         self.assertAlmostEqual(plate.placement.x, center[0])
         self.assertAlmostEqual(plate.placement.y, center[1])
 
-        # The vise's gap, which is as wide as the tooling plate.
+        # The vise's gap, which is as wide as the grid plate.
         layer = vise.layer
-        self.assertAlmostEqual(layer.opening, tools.TOOLING_PLATE.length)
+        self.assertAlmostEqual(layer.opening, tools.GRID_PLATE.length)
         self.assertAlmostEqual(
             vise.placement.y - layer.vise.gap_center(layer.opening), center[1]
         )
         self.assertAlmostEqual(vise.placement.x, center[0])
 
-        # The parallels are next to the jaws, under the tooling plate.
+        # The parallels are next to the jaws, under the grid plate.
         half = (layer.opening - first.layer.parallel.thickness) / 2.0
         self.assertAlmostEqual(first.placement.y, center[1] + half)
         self.assertAlmostEqual(second.placement.y, center[1] - half)
@@ -285,7 +328,7 @@ class TestModel(unittest.TestCase):
             self.assertEqual(len(names), 1 + 12 + 2 + 1 + 1)
 
             # The part overlaps its material on purpose.
-            others = [name for name in names if name != "Tooling plate"]
+            others = [name for name in names if name != "Grid plate"]
             result = solidcraft.inspect.interference(bodies=others)
             self.assertEqual(result["interferences"], [])
             self.assertEqual(result["unchecked"], [])
@@ -308,17 +351,21 @@ class TestModel(unittest.TestCase):
             self.assertAlmostEqual(y, 2.9375 * INCH)
             self.assertAlmostEqual(z, (2.64 + 0.75) * INCH)
 
-            # The part's corners and holes turned with it: 20 along X and
-            # 10 along Y, each hole two half cylinders.
-            faces = solidcraft.model.faces(body="Tooling plate")
+            # The part's corners and grid holes turned with it: 20 along X
+            # and 10 along Y, each hole two half cylinders.  Its tooling
+            # holes are other sizes.
+            faces = solidcraft.model.faces(body="Grid plate")
             arcs = [
                 face["cylinder"]
                 for face in faces["faces"]
                 if face.get("cylinder")
             ]
+            hole = FLAT_PLATE.hole_diameter / 2.0
             corners = [arc for arc in arcs if arc["radius"] > 0.2 * INCH]
             origins = [
-                arc["origin"] for arc in arcs if arc["radius"] < 0.2 * INCH
+                arc["origin"]
+                for arc in arcs
+                if abs(arc["radius"] - hole) < 0.001
             ]
             self.assertEqual(len(corners), 4)
             for corner in corners:

@@ -1,0 +1,23 @@
+# The example shop's work holding.  The grid plate is `tools.GRID_PLATE`,
+# so that a setup naming it uses the same cached model.
+name = "Shop tooling"
+kind = "tooling"
+language = "English"
+version = "0.0.1"
+
+[[grid_plates]]
+name = "Grid plate"
+description = "Aluminum, made in the shop, with tooling holes for #10-32"
+length = "5-1/2 in"
+width = "10-1/2 in"
+height = "1/2 in"
+pitch = "1/2 in"
+edge = "1/2 in"
+hole_diameter = "0.144 in"
+corner_radius = "1/4 in"
+chamfer_depth = "1/32 in"
+tooling_columns = 2
+tooling_rows = 4
+tooling_pitch = "3 in"
+tap_diameter = "0.159 in"
+close_diameter = "0.196 in"

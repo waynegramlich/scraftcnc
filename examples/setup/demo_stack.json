@@ -1,5 +1,5 @@
 {
-  "name": "The demonstration plate on a tooling plate, in a Kurt vise",
+  "name": "The demonstration plate on a grid plate, in a Kurt vise",
   "machine": {
     "name": "Mikini 1610L",
     "x_travel": "16.75 in",
@@ -36,8 +36,8 @@
       "orientation": "-90 deg"
     },
     {
-      "kind": "tooling_plate",
-      "type": "Tooling plate",
+      "kind": "grid_plate",
+      "type": "Grid plate",
       "location": ["2 in", "1-1/2 in"],
       "height": "-1 in",
       "orientation": "90 deg"

@@ -8,7 +8,7 @@ material does not, since it is what gets cut.
 
 Run as a program, it shows a stack in SolidCraft: `garage`, the Mikini
 1610L's table with a Kurt vise turned along Y; `plate`, that table with
-a tooling plate; or `first`, a Tormach 770 table with a Kurt vise, a
+a grid plate; or `first`, a Tormach 770 table with a Kurt vise, a
 pair of parallels and an aluminum plate.
 
 ```
@@ -27,6 +27,7 @@ from sctoolmodel import MM_PER_INCH
 from tools import (
     ALUMINUM_COLOR,
     DRILL_COLOR,
+    GRID_PLATE,
     KURT_D688,
     MIKINI_1610L,
     MIKINI_Y_TRAVEL,
@@ -35,7 +36,6 @@ from tools import (
     PARALLELS,
     TABLE_COLOR,
     TABLE_MARGIN,
-    TOOLING_PLATE,
     VISE_MARGIN,
     Point,
     SCKeepOut,
@@ -858,10 +858,10 @@ GARAGE_MOUNT: SCMount = SCMount(
     ),
 )
 
-# The tooling plate directly on that table, whose width it matches.
+# The grid plate directly on that table, whose width it matches.
 PLATE_MOUNT: SCMount = SCMount(
-    f"{TOOLING_PLATE.name} on a {MIKINI_1610L.name}",
-    (SCTableLayer(MIKINI_1610L), TOOLING_PLATE),
+    f"{GRID_PLATE.name} on a {MIKINI_1610L.name}",
+    (SCTableLayer(MIKINI_1610L), GRID_PLATE),
 )
 
 # The stacks that can be shown.

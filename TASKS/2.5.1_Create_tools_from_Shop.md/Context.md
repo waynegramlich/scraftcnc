@@ -53,3 +53,12 @@ given a unique JSON tree of their arguments, which `SCCacheable.shape` already t
 ## 2026-11-02
 
 The vise is now `SCMachineVise` with an `SCJawPlate`; setup files name it with kind `machine_vise`.  Neither has a kind in the shop files yet.
+
+## 2026-11-02: Grid plates in the shop files
+
+A shop's `tooling` key lists tooling files (kind `tooling`), each with `[[grid_plates]]` (kind `grid_plate`, every `SCGridPlate` field with a unit; counts plain integers).  `examples/shop/tooling.toml` describes `tools.GRID_PLATE` exactly, so both share one cache file.  `shops.grid_plates(shop)` finds them by name; `SCGridPlate.from_shop()` converts one; `scsetup.PARTS` is `tools.GRID_PLATE` plus the plates of `scsetup.SHOP` (`examples/shop/home_shop.toml`).  The cache key holds a digest of `tools.py`, `mount.py` and `scgeometry.py`, so editing them rebuilds the chamfered plate (296 s, then 1.1 s from the cache).  Vises, parallels and mill tables have no kinds yet.
+
+## 2026-11-02: Every kind of tool from the TOML
+
+`examples/shop/tools.toml` now has one of every `TOOL_KINDS` kind: a single and a double end countersink were added (`unique_id` 13 and 14, sizes from `Tool_Models.md`'s samples, no holder).  `test_sctoolmodel.TestEveryShopTool` checks every kind is in the shop and builds each headless as one body, within 2 % of its revolved profile's volume (all 14 measure 0.989 to 0.997; 0.7 s).  `./sctoolmodel.py 8080` shows all 14 in 7 s.
+* The user: the countersinks need holders.  Both now have `holder = ["r8", "3/4 in"]` (the single end by its shank, the double end by its body); shown with all 14 in 4 s.

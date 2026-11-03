@@ -124,9 +124,9 @@ Each step below needs a little more than the one before it.
    ```
 
    It starts LinuxCNC, SolidCraft with the plate in it (on the table,
-   vise, parallels and tooling plate of
-   `examples/setup/demo_stack.json`), and the panel, stopped.  Press Start in the panel, and the tool cuts the plate in
-   SolidCraft.  The panel's Quit button closes everything.
+   vise, parallels and grid plate of `examples/setup/demo_stack.json`),
+   and the panel, stopped.  Press Start in the panel, and the tool cuts
+   the plate in SolidCraft.  The panel's Quit button closes everything.
 
 ## The Files
 
@@ -138,7 +138,7 @@ Each step below needs a little more than the one before it.
   files, their reader (every problem reported at its file and line),
   and the example shop that the demonstration uses.
 * `tools.py`: 3D models of tooling (mill tables, drills, a vise, a
-  tooling plate) and the keep-out regions around them.  Run it to see
+  grid plate) and the keep-out regions around them.  Run it to see
   them in SolidCraft.
 * `Tool_Models.md`, `tool_models.py` and `docs/tool_models/`: how to
   make each model, with its sketch, all written from the code.
@@ -152,7 +152,7 @@ Each step below needs a little more than the one before it.
 * `sckeepout.py`: checks every move of a program against a setup's
   keep-outs, and that rapids stay at `z_safe`.  Run it to check two
   programs in `examples/setup/`: the demonstration plate is clear of
-  everything, and the tooling plate's long edges deliberately are not.
+  everything, and the grid plate's long edges deliberately are not.
 * `scmachine.py`: the machine and its tools as the G-code side sees
   them.
 * `scplot.py` and `scplot_template.html`: the tool path viewer, and the

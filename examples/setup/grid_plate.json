@@ -1,5 +1,5 @@
 {
-  "name": "Tooling plate from a chunk of aluminum, in a Kurt vise",
+  "name": "Grid plate from a chunk of aluminum, in a Kurt vise",
   "machine": {
     "name": "Mikini 1610L",
     "x_travel": "16.75 in",
@@ -46,7 +46,7 @@
       "orientation": "90 deg",
       "parts": [
         {
-          "type": "Tooling plate",
+          "type": "Grid plate",
           "location": ["0 in", "0 in"],
           "height": "4.14 in",
           "orientation": "90 deg"

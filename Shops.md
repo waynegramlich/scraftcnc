@@ -160,6 +160,9 @@ A shop: its name, where it is, its machines and its tools.  It has a
 | `machines`  | list of `machine` | yes      | The machines in the shop.      |
 | `tools`     | list of `tools`   | no       | The tools on hand, shared by   |
 |             |                   |          | the machines.                  |
+| `tooling`   | list of `tooling` | no       | The work holding on hand (grid |
+|             |                   |          | plates for now), shared by the |
+|             |                   |          | machines.                      |
 | `materials` | `materials`       | no       | The materials it cuts, and how |
 |             |                   |          | to drill them.                 |
 
@@ -1026,6 +1029,93 @@ drill_diameter = "7/64 in"
 angle = "60 deg"
 overall_length = "2 in"
 material = "HSS"
+```
+
+## `tooling`
+
+Tooling: what holds work on a machine, rather than cutting it.  Only
+grid plates are described so far; vises, parallels and mill tables are
+still in `tools.py`.  Every piece's `name` is unique among the shop's
+tooling, so that a setup can name it.  It has a `name` even when it is
+not a file of its own.
+
+| Key           | Value                | Required | Meaning          |
+| ------------- | -------------------- | -------- | ---------------- |
+| `grid_plates` | list of `grid_plate` | no       | The grid plates. |
+
+```toml
+name = "Tooling"
+kind = "tooling"
+language = "English"
+version = "0.0.1"
+
+[[grid_plates]]
+name = "Small grid plate"
+length = "4 in"
+width = "4 in"
+height = "1/2 in"
+pitch = "1/2 in"
+edge = "1/4 in"
+hole_diameter = "0.144 in"
+```
+
+## `grid_plate`
+
+A grid plate: a plate with a grid of holes, for holding work down,
+perhaps with chamfered holes and tooling holes.  `Tool_Models.md` draws
+one, with each size.  Chamfers take SolidCraft minutes to model, once;
+the model cache keeps the result.  It has a `name` even when it is not a
+file of its own.
+
+| Key               | Value   | Required | Meaning                            |
+| ----------------- | ------- | -------- | ---------------------------------- |
+| `description`     | string  | no       | What it is, in a few words.        |
+| `length`          | length  | yes      | Its size along X.                  |
+| `width`           | length  | yes      | Its size along Y.                  |
+| `height`          | length  | yes      | Its size along Z, its thickness.   |
+| `pitch`           | length  | yes      | The distance between grid holes,   |
+|                   |         |          | along X and Y.                     |
+| `edge`            | length  | yes      | The distance from a side to the    |
+|                   |         |          | nearest holes.                     |
+| `hole_diameter`   | length  | yes      | The diameter of the grid's holes.  |
+| `corner_radius`   | length  | no       | The radius of its four corners     |
+|                   |         |          | (square if not given).             |
+| `chamfer_depth`   | length  | no       | How deep the 45 degree chamfer on  |
+|                   |         |          | each grid hole's top edge is (none |
+|                   |         |          | if not given).                     |
+| `tooling_columns` | integer | no       | The number of columns of tooling   |
+|                   |         |          | holes, an even number (none if not |
+|                   |         |          | given).                            |
+| `tooling_rows`    | integer | no       | The number of rows of tooling      |
+|                   |         |          | holes, an even number (none if not |
+|                   |         |          | given).                            |
+| `tooling_pitch`   | length  | no       | The distance between tooling       |
+|                   |         |          | holes, along X and Y.              |
+| `tap_diameter`    | length  | no       | The diameter of the tooling holes  |
+|                   |         |          | to be threaded (the tap drill).    |
+| `close_diameter`  | length  | no       | The diameter of the close fit      |
+|                   |         |          | tooling holes.                     |
+| `manufacturer`    | string  | no       | Who made it.                       |
+| `vendor`          | string  | no       | Who sold it.                       |
+| `cost`            | money   | no       | What it cost.                      |
+| `acquired`        | date    | no       | When it was bought or made.        |
+
+```toml
+name = "Grid plate"
+description = "Aluminum, made in the shop"
+length = "5-1/2 in"
+width = "10-1/2 in"
+height = "1/2 in"
+pitch = "1/2 in"
+edge = "1/2 in"
+hole_diameter = "0.144 in"
+corner_radius = "1/4 in"
+chamfer_depth = "1/32 in"
+tooling_columns = 2
+tooling_rows = 4
+tooling_pitch = "3 in"
+tap_diameter = "0.159 in"
+close_diameter = "0.196 in"
 ```
 
 ## `materials`

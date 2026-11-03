@@ -463,14 +463,34 @@ class TestParallels(unittest.TestCase):
     """The numbers describing a set of parallels."""
 
     def test_heights(self) -> None:
-        """Pairs go from 1/2 in to 2 in, by 1/8 in."""
+        """Pairs go from 1/2 in to 1-5/8 in, by 1/8 in."""
         heights = [parallel.height for parallel in tools.PARALLELS]
-        self.assertEqual(len(heights), 2 * 13)
-        for index in range(13):
+        self.assertEqual(len(heights), 2 * 10)
+        for index in range(10):
             with self.subTest(index=index):
                 expected = (0.5 + index / 8.0) * 25.4
                 self.assertAlmostEqual(heights[2 * index], expected)
                 self.assertAlmostEqual(heights[2 * index + 1], expected)
+
+    def test_holes(self) -> None:
+        """Holes are optional, but need both sizes, and must fit."""
+        self.assertFalse(tools.SCParallel("P", 20.0, 4.0, 100.0).has_holes())
+        for spacing, diameter in (
+            (50.0, 0.0),
+            (0.0, 8.0),
+            (50.0, 20.0),
+            (8.0, 8.0),
+            (95.0, 8.0),
+        ):
+            with (
+                self.subTest(spacing=spacing, diameter=diameter),
+                self.assertRaises(ValueError),
+            ):
+                tools.SCParallel("P", 20.0, 4.0, 100.0, spacing, diameter)
+        parallel = tools.SCParallel("P", 20.0, 4.0, 100.0, 50.0, 10.0)
+        self.assertAlmostEqual(
+            parallel.volume(), 20.0 * 4.0 * 100.0 - 2.0 * math.pi * 25.0 * 4.0
+        )
 
     def test_size(self) -> None:
         """Each is 1/8 in thick and 6 in long, and has its own name."""
@@ -969,9 +989,7 @@ class TestModels(unittest.TestCase):
         assert isinstance(result, dict)
         bodies = result["bodies"]
         assert isinstance(bodies, list)
-        expected = [
-            parallel.block().volume() for parallel in tools.PARALLELS
-        ] + [
+        expected = [parallel.volume() for parallel in tools.PARALLELS] + [
             (prism.high[0] - prism.low[0])
             * (prism.high[1] - prism.low[1])
             * (prism.high[2] - prism.low[2])
@@ -982,7 +1000,8 @@ class TestModels(unittest.TestCase):
             assert isinstance(body, dict)
             found = body["volume"]
             assert isinstance(found, float)
-            self.assertAlmostEqual(found, volume, delta=1.0)
+            # Round faces measure a little off, so allow 1 %.
+            self.assertAlmostEqual(found, volume, delta=0.01 * volume)
 
     def test_slider_place(self) -> None:
         """The slider starts at the jaw's face, lifted, between the rails."""

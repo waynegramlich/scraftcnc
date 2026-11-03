@@ -47,10 +47,15 @@ from shops import (
     measure,
 )
 from tools import (
+    GRID_PLATE,
     KURT_D688,
     KURT_JAW_PLATE,
+    PARALLEL_HEIGHTS,
+    PARALLELS,
+    SCGridPlate,
     SCJawPlate,
     SCMachineVise,
+    SCParallel,
     SCViseBlock,
     SCViseNotches,
 )
@@ -2276,6 +2281,406 @@ def jaw_plate_section() -> str:
     )
 
 
+# The parallel that its section is drawn from.
+PARALLEL: SCParallel = next(
+    parallel for parallel in PARALLELS if parallel.name == "Parallel 3/4 in A"
+)
+
+
+# Function `parallel_views()`:
+def parallel_views() -> list[SCView]:
+    """Return the views of a parallel, in the document's order.
+
+    Returns:
+    * (`list[SCView]`): Its side, looking through its holes, and its end.
+    """
+    # Its sizes (inches).
+    p: SCParallel = PARALLEL
+    half: float = _in(p.length) / 2.0
+    tall: float = _in(p.height)
+    thick: float = _in(p.thickness)
+    holes: float = _in(p.hole_spacing) / 2.0
+    hole: float = _in(p.hole_diameter) / 2.0
+    up: float = tall / 2.0
+
+    # The side: the holes through it, and its center lines.
+    side_shapes: list[SCShape] = [_rectangle((-half, 0.0), (half, tall))]
+    for x in (-holes, holes):
+        side_shapes += [
+            _circle((x, up), hole, POCKET_FILL),
+            _center_line(False, x, up - hole, up + hole),
+        ]
+    side_shapes.append(_center_line(True, up, -half, half))
+    side_marks: list[SCMark] = [
+        SCDimension("length", True, -half, half, -STAND_OFF - ROW, (0.0, 0.0)),
+        SCDimension("hole_spacing", True, -holes, holes, -STAND_OFF, (up, up)),
+        SCDimension(
+            "height", False, 0.0, tall, -half - STAND_OFF, (-half, -half)
+        ),
+        SCDimension(
+            "hole_diameter",
+            True,
+            holes - hole,
+            holes + hole,
+            tall + STAND_OFF,
+            (up, up),
+        ),
+    ]
+
+    # The end: the holes hidden inside it.
+    end_shapes: list[SCShape] = [
+        _rectangle((-thick / 2.0, 0.0), (thick / 2.0, tall)),
+        _rectangle(
+            (-thick / 2.0, up - hole), (thick / 2.0, up + hole), "none", HIDDEN
+        ),
+    ]
+    end_marks: list[SCMark] = [
+        SCDimension(
+            "thickness",
+            True,
+            -thick / 2.0,
+            thick / 2.0,
+            -STAND_OFF,
+            (0.0, 0.0),
+        ),
+    ]
+    return [
+        SCView("side", "Side", side_shapes, side_marks),
+        SCView("end", "End", end_shapes, end_marks),
+    ]
+
+
+# Function `parallel_section()`:
+def parallel_section() -> str:
+    """Return the parallel's section of the document.
+
+    Returns:
+    * (`str`): Its Markdown.
+    """
+    # What it is, from its docstring, and its views.
+    doc: str = inspect.getdoc(SCParallel) or ""
+    about: str = doc.split("\n\nAttributes:", maxsplit=1)[0]
+    paragraphs: str = "\n\n".join(
+        textwrap.fill(paragraph, 72) for paragraph in about.split("\n\n")
+    )
+    views: list[SCView] = parallel_views()
+    numbers: dict[str, str] = vise_numbers(views)
+    images: str = "\n\n".join(
+        f"{view.title}:\n\n"
+        f"![Parallel, {view.name}]({SKETCHES}/parallel_{view.name}.svg)"
+        for view in views
+    )
+
+    # The sizes, by number, and the set on hand.
+    meanings: dict[str, str] = _attributes(SCParallel)
+    rows: list[list[str]] = _size_rows(numbers, meanings)
+    heights: str = textwrap.fill(
+        "`tools.PARALLELS` is a set of two of each of the standard "
+        "imperial heights, in inches: "
+        f"{', '.join(h.removesuffix(' in') for h in PARALLEL_HEIGHTS)}.  "
+        "Each is "
+        f"{_inches_text(PARALLEL.thickness)} thick and "
+        f"{_inches_text(PARALLEL.length)} long, with two holes "
+        f"{_inches_text(PARALLEL.hole_spacing)} apart, half as wide as "
+        "the parallel is tall.  Each is named for its height and A or B "
+        "(`Parallel 3/4 in A`).",
+        72,
+    )
+
+    # How to make one, and where a setup names one.
+    p: SCParallel = PARALLEL
+    python: str = (
+        "from scraftpybind import SCPyBind, connect\n"
+        "from tools import SCParallel\n"
+        "\n"
+        "# Its sizes in millimeters; the holes are optional.\n"
+        "parallel = SCParallel(\n"
+        '    "Parallel 3/4 in",\n'
+        f"    height={p.height:.3f},\n"
+        f"    thickness={p.thickness:.3f},\n"
+        f"    length={p.length:.1f},\n"
+        f"    hole_spacing={p.hole_spacing:.1f},\n"
+        f"    hole_diameter={p.hole_diameter:.3f},\n"
+        ")\n"
+        'with connect("8080") as transport:\n'
+        "    parallel.model(SCPyBind(transport), (0.0, 0.0, 0.0))\n"
+    )
+    setup: object = next(
+        item
+        for item in json.loads(
+            (HERE / "examples/setup/demo_plate.json").read_text(
+                encoding="utf-8"
+            )
+        )["tooling"]
+        if item["kind"] == "parallel"
+    )
+    return (
+        "## Parallel\n\n"
+        f"{paragraphs}\n\n"
+        f"The sketches are of `{PARALLEL.name}`, from `tools.PARALLELS`.\n"
+        "Hidden edges are dashed.\n\n"
+        f"{images}\n\n"
+        f"{markdown_table(rows)}\n\n"
+        f"{heights}\n\n"
+        "It is made in Python, in millimeters:\n\n"
+        f"```python\n{python}```\n\n"
+        "A setup file (`examples/setup/`) names one of the set by its\n"
+        "`type`:\n\n"
+        f"```json\n{json.dumps(setup, indent=2)}\n```\n\n"
+        f"{_interface_entry(tools, 'SCParallel', False)}"
+    )
+
+
+# The grid plate that its section is drawn from, and how much larger
+# its hole's section is drawn.
+GRID: SCGridPlate = GRID_PLATE
+DETAIL: float = 8.0
+
+
+# Function `grid_plate_views()`:
+def grid_plate_views() -> list[SCView]:
+    """Return the views of the grid plate, in the document's order.
+
+    Returns:
+    * (`list[SCView]`): The view from above, and a section through one
+      grid hole, drawn larger.
+    """
+    # The plate, its grid holes with their chamfers, and its tooling
+    # holes: the tap drill holes filled, the close fit holes open.
+    g: SCGridPlate = GRID
+    half_x: float = _in(g.length) / 2.0
+    half_y: float = _in(g.width) / 2.0
+    hole: float = _in(g.hole_diameter) / 2.0
+    top: float = _in(g.chamfered_diameter()) / 2.0
+    shapes: list[SCShape] = [
+        _outline(g.outline((0.0, 0.0)), TOOL_FILL),
+    ]
+    for x, y in g.hole_centers():
+        shapes.append(_circle((_in(x), _in(y)), top, "white"))
+        if top > hole:
+            shapes.append(_circle((_in(x), _in(y)), hole, "white"))
+    for x, y, diameter in g.tooling_holes():
+        fill: str = POCKET_FILL if diameter == g.tap_diameter else "white"
+        shapes.append(_circle((_in(x), _in(y)), _in(diameter) / 2.0, fill))
+
+    # Along the bottom: the edge, the pitch and the length; up the left
+    # side, the width; the tooling holes along the top.
+    columns: list[float] = [_in(x) for x, _ in g.hole_centers()[:2]]
+    tooling: list[tuple[float, float, float]] = [
+        (_in(x), _in(y), _in(d) / 2.0) for x, y, d in g.tooling_holes()
+    ]
+    below: float = -half_y - STAND_OFF
+    corner: float = _in(g.corner_radius)
+    marks: list[SCMark] = [
+        SCDimension(
+            "edge",
+            True,
+            -half_x,
+            columns[0],
+            below,
+            (-half_y, -half_y + _in(g.edge)),
+        ),
+        SCDimension(
+            "pitch",
+            True,
+            columns[0],
+            columns[1],
+            below,
+            (-half_y + _in(g.edge), -half_y + _in(g.edge)),
+        ),
+        SCDimension(
+            "length", True, -half_x, half_x, below - ROW, (below, below)
+        ),
+        SCDimension(
+            "width", False, -half_y, half_y, -half_x - STAND_OFF, (0.0, 0.0)
+        ),
+        SCRadius(
+            "corner_radius",
+            (half_x - corner, -half_y + corner),
+            corner,
+            -45.0,
+            (0.35, -0.35),
+        ),
+    ]
+    if tooling:
+        # The top row: one of each size, and the distance between them.
+        (x_tap, y_top, r_tap), (x_close, _, r_close) = tooling[-2:]
+        if r_tap > r_close:
+            (x_tap, r_tap), (x_close, r_close) = (
+                (x_close, r_close),
+                (x_tap, r_tap),
+            )
+        above: float = half_y + STAND_OFF
+        marks += [
+            SCDimension(
+                "tooling_pitch",
+                True,
+                tooling[-2][0],
+                tooling[-1][0],
+                above + ROW,
+                (y_top, y_top),
+            ),
+            SCDimension(
+                "tap_diameter",
+                True,
+                x_tap - r_tap,
+                x_tap + r_tap,
+                above,
+                (y_top, y_top),
+            ),
+            SCDimension(
+                "close_diameter",
+                True,
+                x_close - r_close,
+                x_close + r_close,
+                above,
+                (y_top, y_top),
+            ),
+        ]
+    return [
+        SCView("top", "Top", shapes, marks),
+        _grid_hole_section(),
+    ]
+
+
+# Function `_grid_hole_section()`:
+def _grid_hole_section() -> SCView:
+    """Return a section through one grid hole, `DETAIL` times size.
+
+    Returns:
+    * (`SCView`): The section, across the hole, a pitch wide.
+    """
+    g: SCGridPlate = GRID
+    side: float = _in(g.pitch) / 2.0 * DETAIL
+    hole: float = _in(g.hole_diameter) / 2.0 * DETAIL
+    deep: float = _in(g.chamfer_depth) * DETAIL
+    tall: float = _in(g.height) * DETAIL
+    left: Profile = [
+        (-side, 0.0),
+        (-hole, 0.0),
+        (-hole, tall - deep),
+        (-hole - deep, tall),
+        (-side, tall),
+    ]
+    right: Profile = [(-x, z) for x, z in reversed(left)]
+    shapes: list[SCShape] = [
+        _polygon(left),
+        _polygon(right),
+        _center_line(False, 0.0, 0.0, tall),
+    ]
+    marks: list[SCMark] = [
+        SCDimension(
+            "height", False, 0.0, tall, side + STAND_OFF, (side, side)
+        ),
+        SCDimension(
+            "hole_diameter", True, -hole, hole, -STAND_OFF, (0.0, 0.0)
+        ),
+        SCDimension(
+            "chamfer_depth",
+            False,
+            tall - deep,
+            tall,
+            -side - STAND_OFF,
+            (-hole, -side),
+        ),
+    ]
+    title: str = f"Section through a grid hole ({DETAIL:.0f} times size)"
+    return SCView("section", title, shapes, marks)
+
+
+# Function `grid_plate_section()`:
+def grid_plate_section() -> str:
+    """Return the grid plate's section of the document.
+
+    Returns:
+    * (`str`): Its Markdown.
+    """
+    # What it is, from its docstring, and its views.
+    doc: str = inspect.getdoc(SCGridPlate) or ""
+    about: str = doc.split("\n\nAttributes:", maxsplit=1)[0]
+    paragraphs: str = "\n\n".join(
+        textwrap.fill(paragraph, 72) for paragraph in about.split("\n\n")
+    )
+    views: list[SCView] = grid_plate_views()
+    numbers: dict[str, str] = vise_numbers(views)
+    images: str = "\n\n".join(
+        f"{view.title}:\n\n"
+        f"![Grid plate, {view.name}]({SKETCHES}/grid_plate_{view.name}.svg)"
+        for view in views
+    )
+
+    # The sizes, by number; then the rest, and how to make one.
+    meanings: dict[str, str] = _attributes(SCGridPlate)
+    rows: list[list[str]] = _size_rows(numbers, meanings)
+    others: str = "\n".join(
+        textwrap.fill(f"* `{key}`: {meaning}", 72, subsequent_indent="  ")
+        for key, meaning in meanings.items()
+        if key not in numbers
+    )
+    python: str = (
+        "from scmodelcache import SCModelCache\n"
+        "from scraftpybind import SCPyBind, connect\n"
+        "from tools import GRID_PLATE\n"
+        "\n"
+        "# Through the cache: slow the first time, then about a second.\n"
+        'with connect("8080") as transport:\n'
+        "    (plate,) = GRID_PLATE.cacheable()\n"
+        "    SCModelCache().insert(SCPyBind(transport), plate)\n"
+    )
+    toml: str = (HERE / "examples/shop/tooling.toml").read_text(
+        encoding="utf-8"
+    )
+    toml = toml[toml.index("[[grid_plates]]") :]
+    setup: object = next(
+        item
+        for item in json.loads(
+            (HERE / "examples/setup/demo_stack.json").read_text(
+                encoding="utf-8"
+            )
+        )["tooling"]
+        if item["kind"] == "grid_plate"
+    )
+    return (
+        "## Grid Plate\n\n"
+        f"{paragraphs}\n\n"
+        "The sketches are of `tools.GRID_PLATE`.  Its tap drill tooling\n"
+        "holes are filled, and its close fit ones open.\n\n"
+        f"{images}\n\n"
+        f"{markdown_table(rows)}\n\n"
+        f"Not a size:\n\n{others}\n\n"
+        "A shop describes its grid plates in a tooling file (`Shops.md`),\n"
+        "as `examples/shop/tooling.toml` describes `tools.GRID_PLATE`:\n\n"
+        f"```toml\n{toml}```\n\n"
+        "Or it is made in Python, in millimeters:\n\n"
+        f"```python\n{python}```\n\n"
+        "A setup file (`examples/setup/`) names one by its `type`, from\n"
+        "the shop's tooling files or `tools.py`:\n\n"
+        f"```json\n{json.dumps(setup, indent=2)}\n```\n\n"
+        f"{_interface_entry(tools, 'SCGridPlate', False)}"
+    )
+
+
+# Function `_inches_text()`:
+def _inches_text(millimeters: float) -> str:
+    """Return a length in inches, as a fraction where one fits.
+
+    Arguments:
+    * `millimeters` (`float`): The length (millimeters).
+
+    Returns:
+    * (`str`): The length, such as `1/8 in` or `6 in`.
+    """
+    eighths: float = _in(millimeters) * 8.0
+    whole: int = round(eighths)
+    assert abs(eighths - whole) < 1e-6, f"{millimeters=} is not in eighths"
+    inches, rest = divmod(whole, 8)
+    common: int = math.gcd(rest, 8)
+    fraction: str = f"{rest // common}/{8 // common}" if rest else ""
+    if inches and fraction:
+        return f"{inches}-{fraction} in"
+    return f"{fraction or inches} in"
+
+
 # Function `document()`:
 def document() -> str:
     """Return `Tool_Models.md`.
@@ -2286,7 +2691,7 @@ def document() -> str:
     lengths: str = ", ".join(f"`{unit}`" for unit in LENGTH)
     titles: list[str] = ["Python Interface"]
     titles += [page.title for page in PAGES]
-    titles += ["Machine Vise", "Jaw Plate"]
+    titles += ["Machine Vise", "Jaw Plate", "Parallel", "Grid Plate"]
     contents: str = "\n".join(
         f"* [{title}](#{title.lower().replace(' ', '-')})" for title in titles
     )
@@ -2302,6 +2707,8 @@ def document() -> str:
             *[section(page) for page in PAGES],
             vise_section(),
             jaw_plate_section(),
+            parallel_section(),
+            grid_plate_section(),
         ]
     )
 
@@ -2322,12 +2729,16 @@ def main() -> None:
         (directory / f"machine_vise_{view.name}.svg").write_text(
             view_sketch(view, numbers), encoding="utf-8"
         )
-    views = jaw_plate_views()
-    numbers = vise_numbers(views)
-    for view in views:
-        (directory / f"jaw_plate_{view.name}.svg").write_text(
-            view_sketch(view, numbers), encoding="utf-8"
-        )
+    for prefix, views in (
+        ("jaw_plate", jaw_plate_views()),
+        ("parallel", parallel_views()),
+        ("grid_plate", grid_plate_views()),
+    ):
+        numbers = vise_numbers(views)
+        for view in views:
+            (directory / f"{prefix}_{view.name}.svg").write_text(
+                view_sketch(view, numbers), encoding="utf-8"
+            )
 
 
 if __name__ == "__main__":

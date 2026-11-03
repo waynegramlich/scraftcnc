@@ -344,7 +344,7 @@ class TestHolders(unittest.TestCase):
         """Every tool, loaded or not, comes in `unique_id` order."""
         self.assertEqual(
             [tool["unique_id"] for _, tool in self.tools],
-            list(range(1, 13)),
+            list(range(1, 15)),
         )
 
     def test_digits(self) -> None:
@@ -400,3 +400,52 @@ class TestHolders(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestEveryShopTool(unittest.TestCase):
+    """Every kind of tool, built from the example shop's tools file."""
+
+    def test_every_kind_is_in_the_shop(self) -> None:
+        """The example shop has at least one tool of every kind."""
+        tools = sctoolmodel.shop_tools(shops.read(SHOP))
+        kinds = {key.removesuffix("s") for key, _ in tools}
+        self.assertEqual(kinds, set(shops.TOOL_KINDS))
+
+    def test_every_tool_builds(self) -> None:
+        """Each tool is one body, with its revolved profile's volume."""
+
+        def revolved(points: sctoolmodel.Profile) -> float:
+            """Return a profile's volume revolved about its axis."""
+            total = 0.0
+            for (r0, z0), (r1, z1) in zip(points, points[1:] + points[:1]):
+                total += (r0 * r0 + r0 * r1 + r1 * r1) * (z1 - z0)
+            return abs(total) * math.pi / 3.0
+
+        tools = sctoolmodel.shop_tools(shops.read(SHOP))
+        cli = shutil.which("solidcraft-cli") or str(CLI)
+        with SCHeadlessTransport(cli=cli) as transport:
+            solidcraft = SCPyBind(transport)
+            for index, (key, tool) in enumerate(tools):
+                with self.subTest(tool=tool["name"]):
+                    made = sctoolmodel.model_tool(
+                        solidcraft,
+                        f"Tool {tool['unique_id']}",
+                        (key, tool),
+                        (index * 50.0, 0.0, 0.0),
+                    )
+                    result = solidcraft.inspect.center_of_mass(
+                        bodies=[made.body]
+                    )
+                    assert isinstance(result, dict)
+                    bodies = result["bodies"]
+                    assert isinstance(bodies, list)
+                    self.assertEqual(len(bodies), 1)
+                    body = bodies[0]
+                    assert isinstance(body, dict)
+                    found = body["volume"]
+                    assert isinstance(found, float)
+                    # Round faces measure about 1 % low.
+                    expected = revolved(sctoolmodel.profile(key, tool))
+                    self.assertAlmostEqual(
+                        found / (expected * 25.4**3), 1.0, delta=0.02
+                    )

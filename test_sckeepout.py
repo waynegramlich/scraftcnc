@@ -465,13 +465,13 @@ class TestPrograms(unittest.TestCase):
         )
         self.assertEqual(found, [])
 
-    def test_tooling_plate_fails_as_predicted(self) -> None:
-        """The tooling plate's long edges, and nothing else, enter zones."""
+    def test_grid_plate_fails_as_predicted(self) -> None:
+        """The grid plate's long edges, and nothing else, enter zones."""
         setup = scsetup.SCSetup(
             json.loads(scsetup.EXAMPLE.read_text(encoding="utf-8"))
         )
         material = setup.materials[0]
-        cnc = sckeepout.tooling_plate_program(
+        cnc = sckeepout.grid_plate_program(
             material.parts[0].placement.turns,
             sckeepout.shop_machine_with_hole_drill(),
         )

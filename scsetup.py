@@ -11,7 +11,7 @@ all be cut with few tool changes.
 In the JSON, `location` is the `[x, y]` of an item's center, `height` is
 the Z of its bottom, and `orientation` is how far it is turned about its
 center, seen from above: counterclockwise is positive, in quarter turns.
-`examples/setup/tooling_plate.json` is an example.
+`examples/setup/grid_plate.json` is an example.
 
 ```
 python3 scsetup.py [FILE] 8080       # A GUI with `--control 8080`.
@@ -42,28 +42,28 @@ from scmodelcache import (
 )
 from scraftpybind import JSON, DocumentUnitsUnits, SCPyBind, connect
 from sctoolmodel import MM_PER_INCH
-from shops import ANGLE, LENGTH, measure
+from shops import ANGLE, LENGTH, grid_plates, measure, read
 from tools import (
+    GRID_PLATE,
     KURT_D688,
     MIKINI_1610L,
     MILL_TABLES,
     PARALLELS,
     TABLE_MARGIN,
-    TOOLING_PLATE,
     VISE_MARGIN,
     Point,
+    SCGridPlate,
     SCKeepOut,
     SCMachineVise,
     SCMillTable,
     SCParallel,
     SCPrism,
-    SCToolingPlate,
     _mm,
 )
 
 # The setup shown when no file is named.
 EXAMPLE: Path = Path(__file__).resolve().parent / (
-    "examples/setup/tooling_plate.json"
+    "examples/setup/grid_plate.json"
 )
 
 # How raw material looks: a translucent white box.
@@ -81,7 +81,20 @@ MACHINE_VISES: dict[str, SCMachineVise] = {KURT_D688.name: KURT_D688}
 PARALLEL_TYPES: dict[str, SCParallel] = {
     parallel.name: parallel for parallel in PARALLELS
 }
-PARTS: dict[str, SCToolingPlate] = {TOOLING_PLATE.name: TOOLING_PLATE}
+
+
+# The shop whose tooling the JSON can name, beyond what `tools.py` has.
+SHOP: Path = Path(__file__).resolve().parent / "examples/shop/home_shop.toml"
+
+
+# The grid plates the JSON can name: `tools.GRID_PLATE` and the shop's.
+PARTS: dict[str, SCGridPlate] = {
+    GRID_PLATE.name: GRID_PLATE,
+    **{
+        name: SCGridPlate.from_shop(plate)
+        for name, plate in grid_plates(read(SHOP)).items()
+    },
+}
 
 
 # Class `SCPlacement`:
@@ -251,7 +264,7 @@ class SCPlacedWork:
     """A chunk of material or a finished part, and where it goes.
 
     Attributes:
-    * `solid` (`SCPlate | SCToolingPlate`): The material or the part.
+    * `solid` (`SCPlate | SCGridPlate`): The material or the part.
     * `placement` (`SCPlacement`): Where it goes.
     * `parts` (`tuple[SCPlacedWork, ...]`):
       The parts to be made from it, if it is material.
@@ -261,7 +274,7 @@ class SCPlacedWork:
     """
 
     # Constructor arguments:
-    solid: SCPlate | SCToolingPlate = field(init=True)
+    solid: SCPlate | SCGridPlate = field(init=True)
     placement: SCPlacement = field(init=True)
     parts: tuple["SCPlacedWork", ...] = field(init=True, default=())
 
@@ -483,12 +496,12 @@ class _SCReader:
             layer = SCParallelLayer(PARALLEL_TYPES[name])
         elif kind == "machine_vise" and name in MACHINE_VISES:
             layer = self.vise(MACHINE_VISES[name], item["opening"], path)
-        elif kind == "tooling_plate" and name in PARTS:
+        elif kind == "grid_plate" and name in PARTS:
             layer = PARTS[name]
         elif kind not in (
             "mill_table",
             "parallel",
-            "tooling_plate",
+            "grid_plate",
             "machine_vise",
         ):
             self.problem(f"{path}.kind", f"{kind!r} is not a kind of tooling")

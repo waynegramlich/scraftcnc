@@ -487,7 +487,7 @@ class TestReader(SCCopiedShop):
             [
                 "linuxcnc.toml:1: `post_processor` is missing",
                 "shop_mill.toml:1: `version` is missing",
-                "home_shop.toml:13: location.kind: a `location` belongs here",
+                "home_shop.toml:14: location.kind: a `location` belongs here",
             ],
         )
 

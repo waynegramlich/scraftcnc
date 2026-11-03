@@ -17,7 +17,7 @@ depend on how they were made, and reports every violation:
   empty list means that everything really was checked.
 
 Run it to check the demonstration plate (which should have no keep out
-violations) and the tooling plate (whose long edges should).
+violations) and the grid plate (whose long edges should).
 """
 
 import json
@@ -34,7 +34,7 @@ from sctoolmodel import MM_PER_INCH
 from shops import cnc_machine, read
 from solidcraftcnc import RS274, SCCNC
 from solidcraftcnc_demo import END_MILL, MACHINE, MATERIAL, SHOP_FILE, cut_demo
-from tools import TOOLING_PLATE, Point, SCCylinder, SCPrism
+from tools import GRID_PLATE, Point, SCCylinder, SCPrism
 
 # What a violation can be.
 ViolationKind: TypeAlias = Literal["keep out", "rapid", "unchecked"]
@@ -51,7 +51,7 @@ NOT_MOVES: tuple[int, ...] = (17, 20, 43, 80, 90, 94, 98)
 # How far apart two heights may be and still be the same (inches).
 SAME: float = 1e-9
 
-# The drill for the tooling plate's holes (`tools.SCREW_FITS`: #6,
+# The drill for the grid plate's holes (`tools.SCREW_FITS`: #6,
 # close).
 HOLE_DRILL: SCTool = SCTool(
     50, "#27 drill", "drill", 0.144, 3000, 6.0, 6.0, 0.05
@@ -451,9 +451,9 @@ def report(cnc: SCCNC, violations: Sequence[SCViolation]) -> str:
     return "\n".join(text)
 
 
-# Function `tooling_plate_program()`:
-def tooling_plate_program(turns: int, machine: SCMachine) -> SCCNC:
-    """Return a program that drills and cuts out the tooling plate.
+# Function `grid_plate_program()`:
+def grid_plate_program(turns: int, machine: SCMachine) -> SCCNC:
+    """Return a program that drills and cuts out the grid plate.
 
     `SCCNC` does not cut an `SCRoundedPolygon`'s children yet, so it
     drills the holes and profiles the outline directly.
@@ -465,12 +465,12 @@ def tooling_plate_program(turns: int, machine: SCMachine) -> SCCNC:
     Returns:
     * (`SCCNC`): The program, from the middle of the plate's top.
     """
-    half_x: float = TOOLING_PLATE.length / 2.0 / MM_PER_INCH
-    half_y: float = TOOLING_PLATE.width / 2.0 / MM_PER_INCH
-    radius: float = TOOLING_PLATE.corner_radius / MM_PER_INCH
-    bottom: float = -TOOLING_PLATE.thickness / MM_PER_INCH
+    half_x: float = GRID_PLATE.length / 2.0 / MM_PER_INCH
+    half_y: float = GRID_PLATE.width / 2.0 / MM_PER_INCH
+    radius: float = GRID_PLATE.corner_radius / MM_PER_INCH
+    bottom: float = -GRID_PLATE.height / MM_PER_INCH
     outline: SCRoundedPolygon = SCRoundedPolygon(
-        TOOLING_PLATE.name,
+        GRID_PLATE.name,
         [
             SCCorner(-half_x, -half_y, radius),
             SCCorner(half_x, -half_y, radius),
@@ -480,12 +480,12 @@ def tooling_plate_program(turns: int, machine: SCMachine) -> SCCNC:
         bottom,
         0.0,
     )
-    cnc: SCCNC = SCCNC("Tooling plate", machine)
+    cnc: SCCNC = SCCNC("Grid plate", machine)
     cnc.change_tool(HOLE_DRILL.number)
     cnc.drill(
         [
             (x / MM_PER_INCH, y / MM_PER_INCH)
-            for x, y in TOOLING_PLATE.hole_centers()
+            for x, y in GRID_PLATE.hole_centers()
         ],
         bottom,
         through=True,
@@ -510,7 +510,7 @@ def shop_machine_with_hole_drill() -> SCMachine:
 
 # Function `main()`:
 def main() -> int:
-    """Check the demonstration plate and the tooling plate.
+    """Check the demonstration plate and the grid plate.
 
     Returns:
     * (`int`): The exit status.
@@ -521,10 +521,10 @@ def main() -> int:
     cnc.remap(0, -2.0, -1.5)
     print(report(cnc, check_program(cnc, work_zones(demo, demo.materials[0]))))
 
-    # The tooling plate is placed turned.
+    # The grid plate is placed turned.
     setup: SCSetup = SCSetup(json.loads(EXAMPLE.read_text(encoding="utf-8")))
     material: SCPlacedWork = setup.materials[0]
-    cnc = tooling_plate_program(
+    cnc = grid_plate_program(
         material.parts[0].placement.turns, shop_machine_with_hole_drill()
     )
     print(report(cnc, check_program(cnc, work_zones(setup, material))))

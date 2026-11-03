@@ -56,3 +56,16 @@ The user renamed the vise's parts: `SCMachineVise` with base, body, bed (rails a
 * The user: the Kurt style vise is "good enough" (2026-11-02).  A drill press vise is to come.
 * Whole suite, 2026-11-02, after the vise and jaw plate work: 438 tests, 2 failures from the renames (cache file `Kurt_D688_movable`; plate center of mass moved about 0.1 mm by the counterbores), both fixed and rerun; `test_plate_places` checks X to 0.01 mm, as SolidCraft's round faces put it 0.0008 mm off.
 * Next, when the user picks it up: parallels, tooling plate, a drill press vise; then tables and holders.
+
+## 2026-11-02: Parallels
+
+The user: parallels mostly have two holes, to lighten them and make them easier to handle; spacing and diameter optional.  `SCParallel` has `hole_spacing` and `hole_diameter` (0 for none, both or neither), `volume()`, holes cut along X halfway up.  The set is the standard imperial heights, 1/2 to 1-5/8 in (was to 2 in); each with holes 3 in apart, half its height across (Claude's estimate).  `test_mount`'s no-grip test now builds its own 1-7/8 in pair.  Page `Parallel` (side and end views) in `Tool_Models.md`.  Shown on screen: the vise with a 3/4 in pair against its jaw plates.  Tests not run.
+
+## 2026-11-02: Grid plate
+
+The user renamed the tooling plate a grid plate: `SCGridPlate`, `GRID_PLATE`, setup kind `grid_plate`, `examples/setup/grid_plate.json` (git mv).  Fields `height` (was `thickness`), `pitch` (X and Y, was `hole_spacing`), `edge`, `hole_diameter`, optional `corner_radius`, `chamfer_depth` (45 degrees, grid holes only), `tooling_columns`/`tooling_rows` (even, 0 for none), `tooling_pitch`, `tap_diameter`, `close_diameter`; tooling holes at cell centers, a checkerboard with a tap hole at the lowest corner, so plates are easy to make in pairs (the user).  `GRID_PLATE`: 1/32 in chamfer; 2 x 4 tooling holes on 3 in centers for #10-32 (Claude's choice).
+* Chamfers: `solid.chamfer` with every edge named by a point on it, one command: 30 s for 81 holes headless.  `solid.hole` countersinks hung (over 2 min); a 45 degree tapered extrude cut took 74 s and cut the wrong way.
+* Page `Grid Plate`: top view and an 8 times size section through a grid hole.
+* `solid.chamfer` names each hole's edge by the middle of its +Y half circle (the two halves meet along X).  In the GUI the 200 chamfers took about 5-1/2 minutes (client times out at 60 s; the command finishes); volume within 0.2 %.  The STEP cache should make it a one-time cost; not yet tried with `show_demo.py`.
+* Cached: `Grid_plate__0a8d619ce91c7e38.step` (1.4 MB) took 271 s to build headless the first time (load average to about 4 on 4 processors); inserting it took 1.0 s.  Calling `GRID_PLATE.model()` directly skips the cache; `cache.insert(solidcraft, GRID_PLATE.cacheable()[0])` uses it.
+* Without chamfers: built in the window 4.2 s, built for the cache 2.2 s, loaded from it 0.05 s (`Grid_plate__8b6da6fe732dc93e.step`).  Chart: `~/scraftcnc_charts/grid_plate_times.html` (outside version control).

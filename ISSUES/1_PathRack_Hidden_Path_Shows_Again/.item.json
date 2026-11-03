@@ -1,7 +1,7 @@
 {
-  "state": "Open",
+  "state": "Closed",
   "created": "2026-10-31T02:05:40Z",
-  "updated": "2026-10-31T02:05:41Z",
+  "updated": "2026-11-03T05:33:23Z",
   "history": [
     {
       "state": "Pending",
@@ -10,6 +10,10 @@
     {
       "state": "Open",
       "time": "2026-10-31T02:05:41Z"
+    },
+    {
+      "state": "Closed",
+      "time": "2026-11-03T05:33:23Z"
     }
   ],
   "tag": "phpsa"

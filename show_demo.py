@@ -4,7 +4,7 @@
 On Linux, this starts LinuxCNC's simulator (`serve_linuxcnc`, from
 `../scraftlinuxcnc`, in its `lcnc` box), a SolidCraft window with the
 demonstration's plate in it, standing on the table, vise, parallels and
-tooling plate of `examples/setup/demo_stack.json`, the watcher that
+grid plate of `examples/setup/demo_stack.json`, the watcher that
 moves the tool in SolidCraft (`sim_linuxcnc.py --watch`, in the box),
 and last the panel (`lcnc_panel.py`), stopped, with the demonstration's
 program open:
@@ -452,7 +452,7 @@ class SCShow:
         Raises:
         * `SCShowFailed`: If it fails.
         """
-        say("Modeling the table, vise, parallels and tooling plate.")
+        say("Modeling the table, vise, parallels and grid plate.")
         try:
             setup: SCSetup = SCSetup(
                 json.loads(STACK.read_text(encoding="utf-8"))

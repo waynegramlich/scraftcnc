@@ -1,5 +1,6 @@
 """Tests for `scmodelcache`: hashes, the files, and models in SolidCraft."""
 
+import dataclasses
 import json
 import os
 import shutil
@@ -27,6 +28,18 @@ def session(directory: Path) -> SCHeadlessTransport:
     return SCHeadlessTransport(
         shutil.which("solidcraft-cli") or str(CLI), (str(directory),)
     )
+
+
+# `GRID_PLATE` without its chamfers, which take minutes to model: the
+# same shape for every check here.
+FLAT_PLATE = dataclasses.replace(tools.GRID_PLATE, chamfer_depth=0.0)
+
+
+def setUpModule() -> None:
+    """Have setups name the unchamfered plate."""
+    patcher = mock.patch.dict(scsetup.PARTS, {"Grid plate": FLAT_PLATE})
+    patcher.start()
+    unittest.addModuleCleanup(patcher.stop)
 
 
 def centers(solidcraft: SCPyBind, bodies: list[str]) -> dict[str, list[float]]:

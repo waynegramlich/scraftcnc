@@ -21,6 +21,27 @@ VISE = tools.KURT_D688
 INCH = 25.4
 
 
+# A small grid plate, 5 by 5 holes, with chamfers and 2 by 2 tooling
+# holes: all of `SCGridPlate`, modeled in seconds rather than the
+# minutes that `GRID_PLATE`'s 200 chamfers take.
+SMALL_PLATE = tools.SCGridPlate(
+    name="Small grid plate",
+    length=2.5 * INCH,
+    width=2.5 * INCH,
+    height=0.5 * INCH,
+    pitch=0.5 * INCH,
+    edge=0.25 * INCH,
+    hole_diameter=tools.GRID_PLATE.hole_diameter,
+    corner_radius=0.125 * INCH,
+    chamfer_depth=tools.GRID_PLATE.chamfer_depth,
+    tooling_columns=2,
+    tooling_rows=2,
+    tooling_pitch=1.5 * INCH,
+    tap_diameter=tools.GRID_PLATE.tap_diameter,
+    close_diameter=tools.GRID_PLATE.close_diameter,
+)
+
+
 def work(length: float = 5.5, width: float = 12.0, thick: float = 0.5):
     """Return a plate, from its size in inches."""
     return mount.SCPlate("Work", length * INCH, width * INCH, thick * INCH)
@@ -97,7 +118,12 @@ class TestViseMount(unittest.TestCase):
 
     def test_no_grip(self) -> None:
         """Parallels as tall as the jaws leave nothing to grip."""
-        notes = "\n".join(self.build(6.0, "1-7/8 in", work()).notes)
+        # The set stops at 1-5/8 in, so make a taller pair.
+        tall = tools.SCParallel("Tall", 1.875 * INCH, 3.175, 6.0 * INCH)
+        pair = mount.SCParallelPair(tall, tall, 5.0 * INCH)
+        notes = "\n".join(
+            mount.vise_notes(TABLE, VISE, 6.0 * INCH, pair, work())
+        )
         self.assertIn("NO GRIP", notes)
 
     def test_buried(self) -> None:
@@ -171,12 +197,12 @@ class TestGarage(unittest.TestCase):
         self.assertIn("reaches 1.475 in past it", text)
 
 
-class TestToolingPlate(unittest.TestCase):
-    """The tooling plate's grid of holes."""
+class TestGridPlate(unittest.TestCase):
+    """The grid plate's grid of holes."""
 
     def test_grid(self) -> None:
         """The grid fills the plate, 1/2 in from all four sides."""
-        centers = tools.TOOLING_PLATE.hole_centers()
+        centers = tools.GRID_PLATE.hole_centers()
         self.assertEqual(len(centers), 10 * 20)
         self.assertAlmostEqual(centers[0][0], -2.25 * INCH)
         self.assertAlmostEqual(centers[0][1], -4.75 * INCH)
@@ -186,7 +212,7 @@ class TestToolingPlate(unittest.TestCase):
 
     def test_outline(self) -> None:
         """The outline is an `SCRoundedPolygon` with four 1/4 in corners."""
-        outline = tools.TOOLING_PLATE.outline((1.0, 2.0))
+        outline = tools.GRID_PLATE.outline((1.0, 2.0))
         self.assertEqual(len(outline.corners), 4)
         self.assertTrue(outline.is_ccw())
         for corner in outline.corners:
@@ -196,8 +222,8 @@ class TestToolingPlate(unittest.TestCase):
 
     def test_outline_has_the_holes(self) -> None:
         """The outline holds all of the grid, moved with its center."""
-        holes = tools.TOOLING_PLATE.outline((1.0, 2.0)).children
-        self.assertEqual(len(holes), 200)
+        holes = tools.GRID_PLATE.outline((1.0, 2.0)).children
+        self.assertEqual(len(holes), 200 + 8)
         self.assertAlmostEqual(holes[0].x, 1.0 - 2.25 * INCH)
         self.assertAlmostEqual(holes[0].y, 2.0 - 4.75 * INCH)
         self.assertAlmostEqual(holes[0].diameter, 0.144 * INCH)
@@ -213,19 +239,63 @@ class TestToolingPlate(unittest.TestCase):
                 self.assertLess(fit.close, fit.loose)
         six = tools.SCREW_FITS["#6"]
         self.assertEqual((six.close_drill, six.loose_drill), ("#27", "#25"))
-        self.assertEqual(tools.TOOLING_PLATE.hole_diameter, six.close)
+        self.assertEqual(tools.GRID_PLATE.hole_diameter, six.close)
 
     def test_refused(self) -> None:
         """A grid that does not fit the plate is refused."""
-        plate = tools.TOOLING_PLATE
+        plate = tools.GRID_PLATE
         for changes in (
             {"length": 5.3 * INCH},
             {"hole_diameter": 0.5 * INCH},
             {"hole_diameter": 0.0},
             {"edge": 6.0 * INCH},
+            {"chamfer_depth": 0.2 * INCH},
+            {"chamfer_depth": -1.0},
+            {"tooling_columns": 0},
+            {"tooling_rows": 3},
+            {"tooling_pitch": 2.5 * INCH},
+            {"tooling_pitch": 0.1 * INCH},
+            {"tooling_rows": 6},
+            {"tap_diameter": 0.0},
+            {"close_diameter": 0.6 * INCH},
         ):
             with self.subTest(changes=changes), self.assertRaises(ValueError):
                 dataclasses.replace(plate, **changes)
+
+    def test_tooling_holes(self) -> None:
+        """Tooling holes sit between grid holes, in a checkerboard."""
+        plate = tools.GRID_PLATE
+        holes = plate.tooling_holes()
+        self.assertEqual(len(holes), 2 * 4)
+        tap, close = plate.tap_diameter, plate.close_diameter
+        self.assertEqual(
+            [diameter for _, _, diameter in holes],
+            [tap, close, close, tap, tap, close, close, tap],
+        )
+        grid = plate.hole_centers()
+        for x, y, _ in holes:
+            nearest = sorted(math.dist((x, y), hole) for hole in grid)[:4]
+            for distance in nearest:
+                self.assertAlmostEqual(distance, plate.pitch / math.sqrt(2.0))
+        none = dataclasses.replace(plate, tooling_columns=0, tooling_rows=0)
+        self.assertEqual(none.tooling_holes(), [])
+
+    def test_volume(self) -> None:
+        """The volume takes out the holes and the chamfers."""
+        plate = dataclasses.replace(
+            tools.GRID_PLATE, tooling_columns=0, tooling_rows=0
+        )
+        flat = dataclasses.replace(plate, chamfer_depth=0.0)
+        hole = plate.hole_diameter / 2.0
+        top = hole + plate.chamfer_depth
+        frustum = (
+            math.pi
+            * plate.chamfer_depth
+            * ((top**2 + top * hole + hole**2) / 3.0 - hole**2)
+        )
+        self.assertAlmostEqual(
+            flat.volume() - plate.volume(), 200 * frustum, places=6
+        )
 
     def test_stack(self) -> None:
         """It stands on the table, with a keep-out around it."""
@@ -277,13 +347,16 @@ class TestModel(unittest.TestCase):
             self.assertEqual(result["interferences"], [])
             self.assertEqual(result["unchecked"], [])
 
-    def test_tooling_plate(self) -> None:
+    def test_grid_plate(self) -> None:
         """All of the holes are cut, and the plate sits on the table."""
         program = shutil.which("solidcraft-cli") or str(CLI)
         with SCHeadlessTransport(program) as transport:
             solidcraft = SCPyBind(transport)
-            plate = tools.TOOLING_PLATE
-            names = mount.PLATE_MOUNT.model(solidcraft)
+            plate = SMALL_PLATE
+            stack = mount.SCMount(
+                "Small", (mount.PLATE_MOUNT.layers[0], SMALL_PLATE)
+            )
+            names = stack.model(solidcraft)
 
             # Volumes of many holes measure a few percent off, so check
             # each hole's own faces (two half cylinders) instead.
@@ -293,7 +366,8 @@ class TestModel(unittest.TestCase):
                 face["cylinder"]
                 for face in faces["faces"]
                 if face.get("cylinder")
-                and face["cylinder"]["radius"] < plate.hole_diameter
+                and abs(face["cylinder"]["radius"] - plate.hole_diameter / 2.0)
+                < 0.001
             ]
             self.assertEqual(
                 {
@@ -302,11 +376,29 @@ class TestModel(unittest.TestCase):
                 },
                 {(round(x, 3), round(y, 3)) for x, y in plate.hole_centers()},
             )
-            self.assertEqual(len(holes), 2 * 200)
+            self.assertEqual(len(holes), 2 * 5 * 5)
             for hole in holes:
                 self.assertAlmostEqual(
                     hole["radius"], plate.hole_diameter / 2.0
                 )
+
+            # The tooling holes, by their two sizes.
+            for diameter in (plate.tap_diameter, plate.close_diameter):
+                found = [
+                    face
+                    for face in faces["faces"]
+                    if face.get("cylinder")
+                    and abs(face["cylinder"]["radius"] - diameter / 2.0)
+                    < 0.001
+                ]
+                self.assertEqual(len(found), 2 * 2, diameter)
+
+            # The chamfers take out what `volume()` says, within 1 %.
+            mass = solidcraft.inspect.center_of_mass(bodies=[names[1]])
+            assert isinstance(mass, dict)
+            self.assertAlmostEqual(
+                mass["bodies"][0]["volume"] / plate.volume(), 1.0, delta=0.01
+            )
             result = solidcraft.inspect.interference(bodies=names)
             assert isinstance(result, dict)
             self.assertEqual(result["interferences"], [])
@@ -320,7 +412,7 @@ class TestModel(unittest.TestCase):
             with mock.patch.object(
                 commands, "extrude", autospec=True, wraps=commands.extrude
             ) as extrude:
-                names = tools.TOOLING_PLATE.model(solidcraft, (0.0, 0.0, 0.0))
+                names = SMALL_PLATE.model(solidcraft, (0.0, 0.0, 0.0))
             self.assertEqual(extrude.call_count, 1)
             self.assertNotIn("operation", extrude.call_args.kwargs)
             self.assertEqual(len(names), 1)

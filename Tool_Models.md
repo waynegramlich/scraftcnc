@@ -32,6 +32,8 @@ form raises `SCShopError`.
 * [Double End Countersink](#double-end-countersink)
 * [Machine Vise](#machine-vise)
 * [Jaw Plate](#jaw-plate)
+* [Parallel](#parallel)
+* [Grid Plate](#grid-plate)
 
 ## Python Interface
 
@@ -1257,3 +1259,403 @@ SCJawPlate.model(
 ```
 
 Model the plate, with its holes and counterbores.
+
+## Parallel
+
+A parallel: a thin steel bar that work sits on in a vise.
+
+Parallels come in matched pairs, one under each side of the work. Most
+have two round holes through them, which make them lighter and easier to
+pick up; the holes are optional.
+
+It stands on edge, with its length along Y, the way it lies along the
+jaws of a vise whose lead screw runs along X.  Its holes go through it
+along X, halfway up, the same distance either side of its middle.  All
+lengths are in millimeters.
+
+The sketches are of `Parallel 3/4 in A`, from `tools.PARALLELS`.
+Hidden edges are dashed.
+
+Side:
+
+![Parallel, side](docs/tool_models/parallel_side.svg)
+
+End:
+
+![Parallel, end](docs/tool_models/parallel_end.svg)
+
+| Number | Units  | Description                                               |
+| ------ | ------ | --------------------------------------------------------- |
+| 1      | Length | `length`: Its size along Y.                               |
+| 2      | Length | `hole_spacing`: Optional. The distance between its two    |
+|        |        | holes' centers; 0 for no holes.                           |
+| 3      | Length | `height`: Its size along Z.                               |
+| 4      | Length | `hole_diameter`: Optional. The diameter of its holes; 0   |
+|        |        | for no holes.                                             |
+| 5      | Length | `thickness`: Its size along X.                            |
+
+`tools.PARALLELS` is a set of two of each of the standard imperial
+heights, in inches: 1/2, 5/8, 3/4, 7/8, 1, 1-1/8, 1-1/4, 1-3/8, 1-1/2,
+1-5/8.  Each is 1/8 in thick and 6 in long, with two holes 3 in apart,
+half as wide as the parallel is tall.  Each is named for its height and
+A or B (`Parallel 3/4 in A`).
+
+It is made in Python, in millimeters:
+
+```python
+from scraftpybind import SCPyBind, connect
+from tools import SCParallel
+
+# Its sizes in millimeters; the holes are optional.
+parallel = SCParallel(
+    "Parallel 3/4 in",
+    height=19.050,
+    thickness=3.175,
+    length=152.4,
+    hole_spacing=76.2,
+    hole_diameter=9.525,
+)
+with connect("8080") as transport:
+    parallel.model(SCPyBind(transport), (0.0, 0.0, 0.0))
+```
+
+A setup file (`examples/setup/`) names one of the set by its
+`type`:
+
+```json
+{
+  "kind": "parallel",
+  "type": "Parallel 1-1/2 in A",
+  "location": [
+    "0 in",
+    "2.9375 in"
+  ],
+  "height": "2.64 in",
+  "orientation": "-90 deg"
+}
+```
+
+### `tools.SCParallel`
+
+```python
+tools.SCParallel(
+    name: str,
+    height: float,
+    thickness: float,
+    length: float,
+    hole_spacing: float,
+    hole_diameter: float,
+)
+```
+
+A parallel: a thin steel bar that work sits on in a vise.
+
+Parallels come in matched pairs, one under each side of the work.
+Most have two round holes through them, which make them lighter and
+easier to pick up; the holes are optional.
+
+It stands on edge, with its length along Y, the way it lies along
+the jaws of a vise whose lead screw runs along X.  Its holes go
+through it along X, halfway up, the same distance either side of its
+middle.  All lengths are in millimeters.
+
+Attributes:
+* `name` (`str`): What it is.
+* `height` (`float`): Its size along Z.
+* `thickness` (`float`): Its size along X.
+* `length` (`float`): Its size along Y.
+* `hole_spacing` (`float`):
+  Optional.  The distance between its two holes' centers; 0 for no
+  holes.
+* `hole_diameter` (`float`):
+  Optional.  The diameter of its holes; 0 for no holes.
+
+```python
+SCParallel.has_holes() -> bool
+```
+
+Return True if the parallel has holes.
+
+```python
+SCParallel.volume() -> float
+```
+
+Return the volume its model should have.
+
+```python
+SCParallel.block() -> SCViseBlock
+```
+
+Return the parallel's shape.
+
+```python
+SCParallel.prism(center: Point) -> SCPrism
+```
+
+Return the rectangular prism that just encloses the parallel.
+
+```python
+SCParallel.model(solidcraft: SCPyBind, center: Point) -> str
+```
+
+Model the parallel, up from the center of its bottom edge.
+
+## Grid Plate
+
+A grid plate: a plate with a grid of holes, for holding work down.
+
+The grid has the same pitch along X and Y, and fills the plate, with its
+outer holes `edge` in from all four sides.  Each hole's top edge may be
+chamfered at 45 degrees.
+
+It may also have tooling holes, in an even number of rows and columns,
+centered on the plate, each one dead center between four of the grid's
+holes.  They come in two sizes, a tap drill for a thread and a close fit
+for the same screw, in a checkerboard: a tooling hole's neighbors along
+X and Y are the other size.  With them, grid plates are easy to make in
+pairs in a home shop, and pairs of them hold many parts made at the same
+time.
+
+Its outline is an `SCRoundedPolygon` with its four corners rounded and
+all of the holes inside, so that one extrude makes the plate; one
+chamfer command then does every chamfer.  All lengths are in
+millimeters.
+
+Chamfers take a lot of computing, once.  `GRID_PLATE`'s 200 took
+SolidCraft about 4-1/2 minutes, keeping four processors busy, against 2
+seconds without them.  The model cache (`scmodelcache.py`, which
+`scsetup.py` and `show_demo.py` use) keeps the plate as a STEP file in
+`~/.scraftcnc/tool_cache/`, which loads in about a second, so the cost
+comes again only when the plate's numbers change, or `tools.py`,
+`mount.py` or `scgeometry.py` does.  `model()` called directly does not
+use the cache.
+
+The sketches are of `tools.GRID_PLATE`.  Its tap drill tooling
+holes are filled, and its close fit ones open.
+
+Top:
+
+![Grid plate, top](docs/tool_models/grid_plate_top.svg)
+
+Section through a grid hole (8 times size):
+
+![Grid plate, section](docs/tool_models/grid_plate_section.svg)
+
+| Number | Units  | Description                                               |
+| ------ | ------ | --------------------------------------------------------- |
+| 1      | Length | `edge`: The distance from a side to the nearest holes.    |
+| 2      | Length | `pitch`: The distance between grid holes, along X and Y.  |
+| 3      | Length | `length`: Its size along X.                               |
+| 4      | Length | `width`: Its size along Y.                                |
+| 5      | Length | `corner_radius`: Optional. The radius of its corners.     |
+| 6      | Length | `tooling_pitch`: Optional. The distance between tooling   |
+|        |        | holes, along X and Y.                                     |
+| 7      | Length | `tap_diameter`: Optional. The diameter of the tooling     |
+|        |        | holes to be threaded (the tap drill).                     |
+| 8      | Length | `close_diameter`: Optional. The diameter of the close fit |
+|        |        | tooling holes.                                            |
+| 9      | Length | `height`: Its size along Z, its thickness.                |
+| 10     | Length | `hole_diameter`: The diameter of the grid's holes.        |
+| 11     | Length | `chamfer_depth`: Optional. How deep the 45 degree chamfer |
+|        |        | on each grid hole's top edge is; 0 for none. Slow to      |
+|        |        | model the first time (above).                             |
+
+Not a size:
+
+* `name`: What it is.
+* `tooling_columns`: Optional.  The number of columns of tooling holes,
+  an even number; 0 for none.
+* `tooling_rows`: Optional.  The number of rows of tooling holes, an
+  even number; 0 for none.
+
+A shop describes its grid plates in a tooling file (`Shops.md`),
+as `examples/shop/tooling.toml` describes `tools.GRID_PLATE`:
+
+```toml
+[[grid_plates]]
+name = "Grid plate"
+description = "Aluminum, made in the shop, with tooling holes for #10-32"
+length = "5-1/2 in"
+width = "10-1/2 in"
+height = "1/2 in"
+pitch = "1/2 in"
+edge = "1/2 in"
+hole_diameter = "0.144 in"
+corner_radius = "1/4 in"
+chamfer_depth = "1/32 in"
+tooling_columns = 2
+tooling_rows = 4
+tooling_pitch = "3 in"
+tap_diameter = "0.159 in"
+close_diameter = "0.196 in"
+```
+
+Or it is made in Python, in millimeters:
+
+```python
+from scmodelcache import SCModelCache
+from scraftpybind import SCPyBind, connect
+from tools import GRID_PLATE
+
+# Through the cache: slow the first time, then about a second.
+with connect("8080") as transport:
+    (plate,) = GRID_PLATE.cacheable()
+    SCModelCache().insert(SCPyBind(transport), plate)
+```
+
+A setup file (`examples/setup/`) names one by its `type`, from
+the shop's tooling files or `tools.py`:
+
+```json
+{
+  "kind": "grid_plate",
+  "type": "Grid plate",
+  "location": [
+    "2 in",
+    "1-1/2 in"
+  ],
+  "height": "-1 in",
+  "orientation": "90 deg"
+}
+```
+
+### `tools.SCGridPlate`
+
+```python
+tools.SCGridPlate(
+    name: str,
+    length: float,
+    width: float,
+    height: float,
+    pitch: float,
+    edge: float,
+    hole_diameter: float,
+    corner_radius: float,
+    chamfer_depth: float,
+    tooling_columns: int,
+    tooling_rows: int,
+    tooling_pitch: float,
+    tap_diameter: float,
+    close_diameter: float,
+)
+```
+
+A grid plate: a plate with a grid of holes, for holding work down.
+
+The grid has the same pitch along X and Y, and fills the plate, with
+its outer holes `edge` in from all four sides.  Each hole's top edge
+may be chamfered at 45 degrees.
+
+It may also have tooling holes, in an even number of rows and
+columns, centered on the plate, each one dead center between four of
+the grid's holes.  They come in two sizes, a tap drill for a thread
+and a close fit for the same screw, in a checkerboard: a tooling
+hole's neighbors along X and Y are the other size.  With them, grid
+plates are easy to make in pairs in a home shop, and pairs of them
+hold many parts made at the same time.
+
+Its outline is an `SCRoundedPolygon` with its four corners rounded
+and all of the holes inside, so that one extrude makes the plate;
+one chamfer command then does every chamfer.  All lengths are in
+millimeters.
+
+Chamfers take a lot of computing, once.  `GRID_PLATE`'s 200 took
+SolidCraft about 4-1/2 minutes, keeping four processors busy,
+against 2 seconds without them.  The model cache (`scmodelcache.py`,
+which `scsetup.py` and `show_demo.py` use) keeps the plate as a STEP
+file in `~/.scraftcnc/tool_cache/`, which loads in about a second,
+so the cost comes again only when the plate's numbers change, or
+`tools.py`, `mount.py` or `scgeometry.py` does.  `model()` called
+directly does not use the cache.
+
+Attributes:
+* `name` (`str`): What it is.
+* `length` (`float`): Its size along X.
+* `width` (`float`): Its size along Y.
+* `height` (`float`): Its size along Z, its thickness.
+* `pitch` (`float`): The distance between grid holes, along X and Y.
+* `edge` (`float`): The distance from a side to the nearest holes.
+* `hole_diameter` (`float`): The diameter of the grid's holes.
+* `corner_radius` (`float`): Optional.  The radius of its corners.
+* `chamfer_depth` (`float`):
+  Optional.  How deep the 45 degree chamfer on each grid hole's top
+  edge is; 0 for none.  Slow to model the first time (above).
+* `tooling_columns` (`int`):
+  Optional.  The number of columns of tooling holes, an even number;
+  0 for none.
+* `tooling_rows` (`int`):
+  Optional.  The number of rows of tooling holes, an even number; 0
+  for none.
+* `tooling_pitch` (`float`):
+  Optional.  The distance between tooling holes, along X and Y.
+* `tap_diameter` (`float`):
+  Optional.  The diameter of the tooling holes to be threaded (the
+  tap drill).
+* `close_diameter` (`float`):
+  Optional.  The diameter of the close fit tooling holes.
+
+```python
+SCGridPlate.from_shop(plate: dict[str, object]) -> 'SCGridPlate'
+```
+
+Return a grid plate described in a shop's tooling file.
+
+```python
+SCGridPlate.chamfered_diameter() -> float
+```
+
+Return the diameter of a grid hole at the plate's top.
+
+```python
+SCGridPlate.hole_centers() -> list[tuple[float, float]]
+```
+
+Return where the grid's holes are, from the plate's center.
+
+```python
+SCGridPlate.tooling_holes() -> list[tuple[float, float, float]]
+```
+
+Return where the tooling holes are, and their sizes.
+
+```python
+SCGridPlate.volume() -> float
+```
+
+Return the volume the model should have.
+
+```python
+SCGridPlate.seat() -> Point
+```
+
+Return the middle of the plate's top.
+
+```python
+SCGridPlate.outline(center: tuple[float, float]) -> SCRoundedPolygon
+```
+
+Return the plate's outline and holes, as seen from above.
+
+```python
+SCGridPlate.model(solidcraft: SCPyBind, center: Point) -> list[str]
+```
+
+Model the plate, up from the center of its bottom face.
+
+```python
+SCGridPlate.cacheable() -> tuple[SCCacheable, ...]
+```
+
+Return the plate as a model that can be cached.
+
+```python
+SCGridPlate.prism(center: Point) -> SCPrism
+```
+
+Return the rectangular prism that just encloses the plate.
+
+```python
+SCGridPlate.keep_out(center: Point) -> SCKeepOut
+```
+
+Return the prism around the plate.

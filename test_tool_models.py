@@ -38,6 +38,8 @@ class TestFiles(unittest.TestCase):
         for prefix, views in (
             ("machine_vise", tool_models.vise_views()),
             ("jaw_plate", tool_models.jaw_plate_views()),
+            ("parallel", tool_models.parallel_views()),
+            ("grid_plate", tool_models.grid_plate_views()),
         ):
             numbers = tool_models.vise_numbers(views)
             for view in views:

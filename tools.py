@@ -5,7 +5,7 @@ So far, the tables of Tormach's three entry level mills, each with its
 T-slots and the pockets at their ends that T-nuts drop in through;
 the keep-out regions around them that a tool must not enter; generic
 drills; double end countersinks; a vise; a set of parallels; and a
-tooling plate.
+grid plate.
 
 Every table has its top at `Z = 0`, its length along X and its center
 on `X = 0`.  Run as a program, it shows them all in SolidCraft:
@@ -132,8 +132,8 @@ PARALLEL_SET_GAP: float = 31.75
 # A machine tool blue gray.
 VISE_COLOR: str = "#4f6d8a"
 
-# How far a tooling plate's keep-out region is grown past the plate.
-TOOLING_PLATE_MARGIN: str = "1/8 in"
+# How far a grid plate's keep-out region is grown past the plate.
+GRID_PLATE_MARGIN: str = "1/8 in"
 
 # A bright, unpainted aluminum.
 ALUMINUM_COLOR: str = "#e4e7ea"
@@ -2754,18 +2754,29 @@ KURT_D688: SCMachineVise = SCMachineVise(
 class SCParallel:
     """A parallel: a thin steel bar that work sits on in a vise.
 
+    Parallels come in matched pairs, one under each side of the work.
+    Most have two round holes through them, which make them lighter and
+    easier to pick up; the holes are optional.
+
     It stands on edge, with its length along Y, the way it lies along
-    the jaws of a vise whose screw runs along X.  All lengths are in
-    millimeters.
+    the jaws of a vise whose lead screw runs along X.  Its holes go
+    through it along X, halfway up, the same distance either side of its
+    middle.  All lengths are in millimeters.
 
     Attributes:
     * `name` (`str`): What it is.
     * `height` (`float`): Its size along Z.
     * `thickness` (`float`): Its size along X.
     * `length` (`float`): Its size along Y.
+    * `hole_spacing` (`float`):
+      Optional.  The distance between its two holes' centers; 0 for no
+      holes.
+    * `hole_diameter` (`float`):
+      Optional.  The diameter of its holes; 0 for no holes.
 
     Constructor:
-    * `SCParallel(name, height, thickness, length)`
+    * `SCParallel(name, height, thickness, length, hole_spacing,
+      hole_diameter)`
     """
 
     # Constructor arguments:
@@ -2773,6 +2784,57 @@ class SCParallel:
     height: float = field(init=True)
     thickness: float = field(init=True)
     length: float = field(init=True)
+    hole_spacing: float = field(init=True, default=0.0)
+    hole_diameter: float = field(init=True, default=0.0)
+
+    # Method `SCParallel.__post_init__()`:
+    def __post_init__(self) -> None:
+        """Check that the parallel has a size, and its holes fit.
+
+        Raises:
+        * `ValueError`: If it has no size, it has only one of the hole
+          sizes, or its holes do not fit.
+        """
+        if min(self.height, self.thickness, self.length) <= 0.0:
+            raise ValueError(
+                f"{self.height=}, {self.thickness=}, {self.length=}"
+            )
+        radius: float = self.hole_diameter / 2.0
+        if (self.hole_spacing == 0.0) != (self.hole_diameter == 0.0):
+            raise ValueError(
+                f"{self.hole_spacing=} and {self.hole_diameter=} must both "
+                "be 0, for no holes, or both be given"
+            )
+        if self.has_holes() and (
+            radius < 0.0
+            or self.hole_diameter >= self.height
+            or self.hole_spacing <= self.hole_diameter
+            or self.hole_spacing / 2.0 + radius >= self.length / 2.0
+        ):
+            raise ValueError(
+                f"{self.hole_diameter=} at {self.hole_spacing=} does not "
+                f"fit {self.height=} and {self.length=}"
+            )
+
+    # Method `SCParallel.has_holes()`:
+    def has_holes(self) -> bool:
+        """Return True if the parallel has holes.
+
+        Returns:
+        * (`bool`): True if it has holes.
+        """
+        return self.hole_diameter != 0.0
+
+    # Method `SCParallel.volume()`:
+    def volume(self) -> float:
+        """Return the volume its model should have.
+
+        Returns:
+        * (`float`): The volume (cubic millimeters).
+        """
+        hole: float = math.pi * (self.hole_diameter / 2.0) ** 2
+        holes: float = 2.0 * hole * self.thickness if self.has_holes() else 0.0
+        return self.height * self.thickness * self.length - holes
 
     # Method `SCParallel.block()`:
     def block(self) -> SCViseBlock:
@@ -2819,11 +2881,37 @@ class SCParallel:
         """
         body: str = self.block().model(solidcraft, self.name, center)
         solidcraft.appearance.assign(bodies=[body], color=DRILL_COLOR)
+        if not self.has_holes():
+            return body
+
+        # Cut both holes through it, from its +X face.
+        x, y, z = center
+        solidcraft.sketch.create(
+            plane={
+                "origin": [x + self.thickness / 2.0, y, z],
+                "x_dir": [0.0, 1.0, 0.0],
+                "y_dir": [0.0, 0.0, 1.0],
+            },
+            name=f"{self.name} holes",
+        )
+        half: float = self.hole_spacing / 2.0
+        for across in (-half, half):
+            solidcraft.sketch.circle_center(
+                center=(across, self.height / 2.0),
+                diameter=self.hole_diameter,
+            )
+        solidcraft.sketch.finish()
+        solidcraft.solid.extrude(
+            distance=self.thickness,
+            direction="negative",
+            operation="cut",
+            targets=[body],
+        )
         return body
 
 
-# The heights of a set of parallels.  The set stops at 2 in, the high end
-# of what is sold.
+# The heights of a set of parallels: the standard imperial heights, 1/2
+# in up to 1-5/8 in, by 1/8 in (the user).
 PARALLEL_HEIGHTS: tuple[str, ...] = (
     "1/2 in",
     "5/8 in",
@@ -2835,18 +2923,19 @@ PARALLEL_HEIGHTS: tuple[str, ...] = (
     "1-3/8 in",
     "1-1/2 in",
     "1-5/8 in",
-    "1-3/4 in",
-    "1-7/8 in",
-    "2 in",
 )
 
 # A whole set: two parallels of each height, since work sits on a pair.
+# Each has two holes 3 in apart, half as wide as it is tall; the holes
+# are Claude's estimate of a typical set.
 PARALLELS: tuple[SCParallel, ...] = tuple(
     SCParallel(
         f"Parallel {height} {side}",
         _mm(height),
         _mm("1/8 in"),
         _mm("6 in"),
+        hole_spacing=_mm("3 in"),
+        hole_diameter=_mm(height) / 2.0,
     )
     for height in PARALLEL_HEIGHTS
     for side in "AB"
@@ -2977,102 +3066,306 @@ SCREW_FITS: dict[str, SCScrewFit] = {
 }
 
 
-# Class `SCToolingPlate`:
+# Class `SCGridPlate`:
 @dataclass(frozen=True, slots=True)
-class SCToolingPlate:
-    """A plate with a grid of holes through it, for holding work down.
+class SCGridPlate:
+    """A grid plate: a plate with a grid of holes, for holding work down.
+
+    The grid has the same pitch along X and Y, and fills the plate, with
+    its outer holes `edge` in from all four sides.  Each hole's top edge
+    may be chamfered at 45 degrees.
+
+    It may also have tooling holes, in an even number of rows and
+    columns, centered on the plate, each one dead center between four of
+    the grid's holes.  They come in two sizes, a tap drill for a thread
+    and a close fit for the same screw, in a checkerboard: a tooling
+    hole's neighbors along X and Y are the other size.  With them, grid
+    plates are easy to make in pairs in a home shop, and pairs of them
+    hold many parts made at the same time.
 
     Its outline is an `SCRoundedPolygon` with its four corners rounded
-    and the holes inside, so that one extrude makes the whole plate.
-    The grid fills the plate, with its outer holes `edge` in from all
-    four sides.  All lengths are in millimeters.
+    and all of the holes inside, so that one extrude makes the plate;
+    one chamfer command then does every chamfer.  All lengths are in
+    millimeters.
+
+    Chamfers take a lot of computing, once.  `GRID_PLATE`'s 200 took
+    SolidCraft about 4-1/2 minutes, keeping four processors busy,
+    against 2 seconds without them.  The model cache (`scmodelcache.py`,
+    which `scsetup.py` and `show_demo.py` use) keeps the plate as a STEP
+    file in `~/.scraftcnc/tool_cache/`, which loads in about a second,
+    so the cost comes again only when the plate's numbers change, or
+    `tools.py`, `mount.py` or `scgeometry.py` does.  `model()` called
+    directly does not use the cache.
 
     Attributes:
     * `name` (`str`): What it is.
     * `length` (`float`): Its size along X.
     * `width` (`float`): Its size along Y.
-    * `thickness` (`float`): Its size along Z.
-    * `hole_spacing` (`float`): The distance between hole centers.
+    * `height` (`float`): Its size along Z, its thickness.
+    * `pitch` (`float`): The distance between grid holes, along X and Y.
     * `edge` (`float`): The distance from a side to the nearest holes.
-    * `hole_diameter` (`float`): The diameter of the holes.
-    * `corner_radius` (`float`): The radius of its four corners.
+    * `hole_diameter` (`float`): The diameter of the grid's holes.
+    * `corner_radius` (`float`): Optional.  The radius of its corners.
+    * `chamfer_depth` (`float`):
+      Optional.  How deep the 45 degree chamfer on each grid hole's top
+      edge is; 0 for none.  Slow to model the first time (above).
+    * `tooling_columns` (`int`):
+      Optional.  The number of columns of tooling holes, an even number;
+      0 for none.
+    * `tooling_rows` (`int`):
+      Optional.  The number of rows of tooling holes, an even number; 0
+      for none.
+    * `tooling_pitch` (`float`):
+      Optional.  The distance between tooling holes, along X and Y.
+    * `tap_diameter` (`float`):
+      Optional.  The diameter of the tooling holes to be threaded (the
+      tap drill).
+    * `close_diameter` (`float`):
+      Optional.  The diameter of the close fit tooling holes.
 
     Constructor:
-    * `SCToolingPlate(name, length, width, thickness, hole_spacing, edge,
-      hole_diameter, corner_radius)`
+    * `SCGridPlate(name, length, width, height, pitch, edge,
+      hole_diameter, corner_radius, chamfer_depth, tooling_columns,
+      tooling_rows, tooling_pitch, tap_diameter, close_diameter)`
     """
 
     # Constructor arguments:
     name: str = field(init=True)
     length: float = field(init=True)
     width: float = field(init=True)
-    thickness: float = field(init=True)
-    hole_spacing: float = field(init=True)
+    height: float = field(init=True)
+    pitch: float = field(init=True)
     edge: float = field(init=True)
     hole_diameter: float = field(init=True)
     corner_radius: float = field(init=True, default=0.0)
+    chamfer_depth: float = field(init=True, default=0.0)
+    tooling_columns: int = field(init=True, default=0)
+    tooling_rows: int = field(init=True, default=0)
+    tooling_pitch: float = field(init=True, default=0.0)
+    tap_diameter: float = field(init=True, default=0.0)
+    close_diameter: float = field(init=True, default=0.0)
 
-    # Method `SCToolingPlate.__post_init__()`:
+    # Method `SCGridPlate.__post_init__()`:
     def __post_init__(self) -> None:
-        """Check that the holes make a whole grid, inside the plate.
+        """Check that the grid and the tooling holes fit the plate.
 
         Raises:
         * `ValueError`: If the grid does not reach `edge` from every
-          side, or the holes run into one another or a side.
+          side, the holes run into one another or a side, the chamfers
+          do not fit, or the tooling holes are not as described.
         """
+        if self.height <= 0.0 or self.pitch <= 0.0:
+            raise ValueError(f"{self.height=} and {self.pitch=}")
         for size in (self.length, self.width):
-            steps: float = (size - 2.0 * self.edge) / self.hole_spacing
+            steps: float = (size - 2.0 * self.edge) / self.pitch
             if steps < 0.0 or abs(steps - round(steps)) > 1.0e-9:
                 raise ValueError(
-                    f"{self.hole_spacing=} does not divide {size=} less "
+                    f"{self.pitch=} does not divide {size=} less "
                     f"{self.edge=} on both sides"
                 )
+        top: float = self.chamfered_diameter()
         if not (
-            0.0 < self.hole_diameter < min(self.hole_spacing, 2.0 * self.edge)
+            0.0 < self.hole_diameter
+            and top < min(self.pitch, 2.0 * self.edge)
+            and 0.0 <= self.chamfer_depth < self.height
         ):
             raise ValueError(
-                f"{self.hole_diameter=} does not fit {self.hole_spacing=} "
-                f"and {self.edge=}"
+                f"{self.hole_diameter=} with {self.chamfer_depth=} does "
+                f"not fit {self.pitch=} and {self.edge=}"
+            )
+        self._check_tooling()
+
+    # Method `SCGridPlate.from_shop()`:
+    @staticmethod
+    def from_shop(plate: dict[str, object]) -> "SCGridPlate":
+        """Return a grid plate described in a shop's tooling file.
+
+        Arguments:
+        * `plate` (`dict[str, object]`):
+          Its `[[grid_plates]]` entry, from `shops.read()`, which has
+          checked its keys and units.
+
+        Returns:
+        * (`SCGridPlate`): The plate, in millimeters.
+
+        Raises:
+        * `ValueError`: If its numbers do not make a grid plate.
+        """
+
+        # A length in millimeters, or 0 if it is not given.
+        def size(key: str) -> float:
+            return _mm(str(plate[key])) if key in plate else 0.0
+
+        # A count, or 0 if it is not given.
+        def count(key: str) -> int:
+            value: object = plate.get(key, 0)
+            assert isinstance(value, int)
+            return value
+
+        return SCGridPlate(
+            name=str(plate["name"]),
+            length=size("length"),
+            width=size("width"),
+            height=size("height"),
+            pitch=size("pitch"),
+            edge=size("edge"),
+            hole_diameter=size("hole_diameter"),
+            corner_radius=size("corner_radius"),
+            chamfer_depth=size("chamfer_depth"),
+            tooling_columns=count("tooling_columns"),
+            tooling_rows=count("tooling_rows"),
+            tooling_pitch=size("tooling_pitch"),
+            tap_diameter=size("tap_diameter"),
+            close_diameter=size("close_diameter"),
+        )
+
+    # Method `SCGridPlate._check_tooling()`:
+    def _check_tooling(self) -> None:
+        """Check that the tooling holes are as described.
+
+        Raises:
+        * `ValueError`: If the counts are odd or only one is given, the
+          holes are not between grid holes, or they run into one another
+          or the grid's holes.
+        """
+        counts: tuple[int, int] = (self.tooling_columns, self.tooling_rows)
+        if counts == (0, 0):
+            return
+        if min(counts) <= 0 or any(count % 2 for count in counts):
+            raise ValueError(
+                f"{self.tooling_columns=} and {self.tooling_rows=} must be "
+                "both 0, or both even"
             )
 
-    # Method `SCToolingPlate.hole_centers()`:
+        # Each tooling hole is at the middle of four grid holes.
+        for places, size in (
+            (self._tooling_places(self.tooling_columns), self.length),
+            (self._tooling_places(self.tooling_rows), self.width),
+        ):
+            grid: list[float] = _grid(size, self.edge, self.pitch)
+            for place in places:
+                cells: float = (place - grid[0]) / self.pitch - 0.5
+                if (
+                    abs(cells - round(cells)) > 1.0e-6
+                    or not grid[0] < place < grid[-1]
+                ):
+                    raise ValueError(
+                        f"{place=} is not between the grid's holes "
+                        f"along {size=}"
+                    )
+
+        # Clear of each other, and of the grid's holes, a half diagonal
+        # away.
+        largest: float = max(self.tap_diameter, self.close_diameter)
+        clear: float = (
+            largest + self.chamfered_diameter()
+        ) / 2.0 < self.pitch / math.sqrt(2.0)
+        if (
+            min(self.tap_diameter, self.close_diameter) <= 0.0
+            or largest >= self.tooling_pitch
+            or not clear
+        ):
+            raise ValueError(
+                f"{self.tap_diameter=} and {self.close_diameter=} at "
+                f"{self.tooling_pitch=} do not fit the grid"
+            )
+
+    # Method `SCGridPlate._tooling_places()`:
+    def _tooling_places(self, count: int) -> list[float]:
+        """Return the places of tooling holes along one side.
+
+        Arguments:
+        * `count` (`int`): How many there are along it.
+
+        Returns:
+        * (`list[float]`): The places, from the plate's middle, lowest
+          first (millimeters).
+        """
+        first: float = -self.tooling_pitch * (count - 1) / 2.0
+        return [first + index * self.tooling_pitch for index in range(count)]
+
+    # Method `SCGridPlate.chamfered_diameter()`:
+    def chamfered_diameter(self) -> float:
+        """Return the diameter of a grid hole at the plate's top.
+
+        Returns:
+        * (`float`): The diameter, with its chamfer (millimeters).
+        """
+        return self.hole_diameter + 2.0 * self.chamfer_depth
+
+    # Method `SCGridPlate.hole_centers()`:
     def hole_centers(self) -> list[tuple[float, float]]:
-        """Return where the holes are, from the center of the plate.
+        """Return where the grid's holes are, from the plate's center.
 
         Returns:
         * (`list[tuple[float, float]]`):
           Each hole's `(x, y)`, by rows from the most negative up.
         """
-        columns: list[float] = _grid(self.length, self.edge, self.hole_spacing)
-        rows: list[float] = _grid(self.width, self.edge, self.hole_spacing)
+        columns: list[float] = _grid(self.length, self.edge, self.pitch)
+        rows: list[float] = _grid(self.width, self.edge, self.pitch)
         return [(x, y) for y in rows for x in columns]
 
-    # Method `SCToolingPlate.volume()`:
+    # Method `SCGridPlate.tooling_holes()`:
+    def tooling_holes(self) -> list[tuple[float, float, float]]:
+        """Return where the tooling holes are, and their sizes.
+
+        The one at the lowest X and Y is a tap drill hole; the rest
+        make a checkerboard from it.
+
+        Returns:
+        * (`list[tuple[float, float, float]]`):
+          Each hole's `(x, y, diameter)`, from the plate's center, by
+          rows from the most negative up; none if it has none.
+        """
+        if not self.tooling_columns:
+            return []
+        columns: list[float] = self._tooling_places(self.tooling_columns)
+        rows: list[float] = self._tooling_places(self.tooling_rows)
+        return [
+            (
+                x,
+                y,
+                self.close_diameter if (i + j) % 2 else self.tap_diameter,
+            )
+            for j, y in enumerate(rows)
+            for i, x in enumerate(columns)
+        ]
+
+    # Method `SCGridPlate.volume()`:
     def volume(self) -> float:
         """Return the volume the model should have.
 
         Returns:
         * (`float`): The volume (cubic millimeters).
         """
-        area: float = (
-            self.length * self.width
-            - (4.0 - math.pi) * self.corner_radius**2
-            - len(self.hole_centers())
-            * math.pi
-            * (self.hole_diameter / 2.0) ** 2
+        # Each chamfer is a cone's frustum less the hole it surrounds.
+        hole: float = self.hole_diameter / 2.0
+        top: float = self.chamfered_diameter() / 2.0
+        deep: float = self.chamfer_depth
+        chamfer: float = (
+            math.pi * deep * ((top**2 + top * hole + hole**2) / 3.0 - hole**2)
         )
-        return area * self.thickness
+        grid: float = len(self.hole_centers()) * (
+            math.pi * hole**2 * self.height + chamfer
+        )
+        tooling: float = sum(
+            math.pi * (diameter / 2.0) ** 2 * self.height
+            for _, _, diameter in self.tooling_holes()
+        )
+        corners: float = (4.0 - math.pi) * self.corner_radius**2
+        whole: float = (self.length * self.width - corners) * self.height
+        return whole - grid - tooling
 
-    # Method `SCToolingPlate.seat()`:
+    # Method `SCGridPlate.seat()`:
     def seat(self) -> Point:
         """Return the middle of the plate's top.
 
         Returns:
         * (`Point`): It, from the center of the plate's bottom (mm).
         """
-        return (0.0, 0.0, self.thickness)
+        return (0.0, 0.0, self.height)
 
-    # Method `SCToolingPlate.outline()`:
+    # Method `SCGridPlate.outline()`:
     def outline(self, center: tuple[float, float]) -> SCRoundedPolygon:
         """Return the plate's outline and holes, as seen from above.
 
@@ -3080,12 +3373,17 @@ class SCToolingPlate:
         * `center` (`tuple[float, float]`): Its center's X and Y (mm).
 
         Returns:
-        * (`SCRoundedPolygon`): The outline, counter-clockwise.
+        * (`SCRoundedPolygon`): The outline, counter-clockwise, with the
+          grid's holes and then the tooling holes as its children.
         """
         x, y = center
         half_x: float = self.length / 2.0
         half_y: float = self.width / 2.0
         radius: float = self.corner_radius
+        holes: list[tuple[float, float, float]] = [
+            (hole_x, hole_y, self.hole_diameter)
+            for hole_x, hole_y in self.hole_centers()
+        ] + self.tooling_holes()
         return SCRoundedPolygon(
             self.name,
             [
@@ -3095,20 +3393,14 @@ class SCToolingPlate:
                 SCCorner(x - half_x, y + half_y, radius),
             ],
             0.0,
-            self.thickness,
+            self.height,
             [
-                SCHole(
-                    x + hole_x,
-                    y + hole_y,
-                    self.hole_diameter,
-                    self.thickness,
-                    0.0,
-                )
-                for hole_x, hole_y in self.hole_centers()
+                SCHole(x + hole_x, y + hole_y, diameter, self.height, 0.0)
+                for hole_x, hole_y, diameter in holes
             ],
         )
 
-    # Method `SCToolingPlate.model()`:
+    # Method `SCGridPlate.model()`:
     def model(self, solidcraft: SCPyBind, center: Point) -> list[str]:
         """Model the plate, up from the center of its bottom face.
 
@@ -3126,15 +3418,30 @@ class SCToolingPlate:
         self.outline((x, y)).sketch(solidcraft)
         solidcraft.sketch.finish()
         made: JSON = solidcraft.solid.extrude(
-            distance=self.thickness, body_name=self.name
+            distance=self.height, body_name=self.name
         )
         assert isinstance(made, dict)
         bodies: JSON = made["created_bodies"]
         assert isinstance(bodies, list) and isinstance(bodies[0], str)
-        solidcraft.appearance.assign(bodies=[bodies[0]], color=ALUMINUM_COLOR)
-        return [bodies[0]]
+        body: str = bodies[0]
 
-    # Method `SCToolingPlate.cacheable()`:
+        # Chamfer every grid hole's top edge at once, naming each edge by
+        # a point on it.  A hole's circle is two half circles that meet
+        # along X, so the point is the middle of the +Y one.
+        if self.chamfer_depth > 0.0:
+            radius: float = self.hole_diameter / 2.0
+            solidcraft.solid.chamfer(
+                edges=[
+                    [x + hole_x, y + hole_y + radius, z + self.height]
+                    for hole_x, hole_y in self.hole_centers()
+                ],
+                distance=self.chamfer_depth,
+                body=body,
+            )
+        solidcraft.appearance.assign(bodies=[body], color=ALUMINUM_COLOR)
+        return [body]
+
+    # Method `SCGridPlate.cacheable()`:
     def cacheable(self) -> tuple[SCCacheable, ...]:
         """Return the plate as a model that can be cached.
 
@@ -3150,7 +3457,7 @@ class SCToolingPlate:
             ),
         )
 
-    # Method `SCToolingPlate.prism()`:
+    # Method `SCGridPlate.prism()`:
     def prism(self, center: Point) -> SCPrism:
         """Return the rectangular prism that just encloses the plate.
 
@@ -3161,10 +3468,10 @@ class SCToolingPlate:
         * (`SCPrism`): The prism, named for the plate.
         """
         return box_prism(
-            self.name, (self.length, self.width, self.thickness), center
+            self.name, (self.length, self.width, self.height), center
         )
 
-    # Method `SCToolingPlate.keep_out()`:
+    # Method `SCGridPlate.keep_out()`:
     def keep_out(self, center: Point) -> SCKeepOut:
         """Return the prism around the plate.
 
@@ -3175,7 +3482,7 @@ class SCToolingPlate:
         * (`SCKeepOut`): One grown prism.
         """
         keep_out: SCKeepOut = SCKeepOut()
-        keep_out.add_prism(self.prism(center), TOOLING_PLATE_MARGIN)
+        keep_out.add_prism(self.prism(center), GRID_PLATE_MARGIN)
         return keep_out
 
 
@@ -3196,19 +3503,27 @@ def _grid(size: float, edge: float, spacing: float) -> list[float]:
     return [first + index * spacing for index in range(count)]
 
 
-# A tooling plate as the user described it, whose holes fill it at 1/2 in,
+# A grid plate as the user described it, whose holes fill it at 1/2 in,
 # reaching 1/2 in from all four sides.  The user gave no thickness; 1/2 in
-# is an estimate.  Its corners are 1/4 in rounds.  Each hole is a close
-# fit for a #6 screw.
-TOOLING_PLATE: SCToolingPlate = SCToolingPlate(
-    name="Tooling plate",
+# is an estimate.  Its corners are 1/4 in rounds.  Each grid hole is a
+# close fit for a #6 screw, with a 1/32 in chamfer.  Its tooling holes,
+# 2 by 4 on 3 in centers, are for #10-32 screws: #21 (0.159 in), the tap
+# drill, and a close fit; Claude's choice.
+GRID_PLATE: SCGridPlate = SCGridPlate(
+    name="Grid plate",
     length=_mm("5-1/2 in"),
     width=_mm("10-1/2 in"),
-    thickness=_mm("1/2 in"),
-    hole_spacing=_mm("1/2 in"),
+    height=_mm("1/2 in"),
+    pitch=_mm("1/2 in"),
     edge=_mm("1/2 in"),
     hole_diameter=SCREW_FITS["#6"].close,
     corner_radius=_mm("1/4 in"),
+    chamfer_depth=_mm("1/32 in"),
+    tooling_columns=2,
+    tooling_rows=4,
+    tooling_pitch=_mm("3 in"),
+    tap_diameter=_mm("0.159 in"),
+    close_diameter=SCREW_FITS["#10"].close,
 )
 
 
