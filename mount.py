@@ -39,11 +39,11 @@ from tools import (
     VISE_MARGIN,
     Point,
     SCKeepOut,
+    SCMachineVise,
     SCMillTable,
     SCParallel,
     SCPrism,
     SCTormach,
-    SCVise,
     SCViseBlock,
     _mm,
     box_prism,
@@ -204,37 +204,37 @@ class SCTableLayer:
         return keep_out
 
 
-# Class `SCViseLayer`:
+# Class `SCMachineViseLayer`:
 @dataclass(frozen=True, slots=True)
-class SCViseLayer:
-    """A vise, with its jaws set to an opening.
+class SCMachineViseLayer:
+    """A machine vise, with its jaws set to an opening.
 
-    The next layer stands on the rails, in the middle of the gap.  A
-    turned vise has its screw along Y, with the hexagon toward -Y (the
-    operator) and the fixed jaw toward +Y; otherwise its screw is along
+    The next layer stands on the bed, in the middle of the gap.  A
+    turned vise has its lead screw along Y, with the hexagon toward -Y (the
+    operator) and the fixed jaw toward +Y; otherwise its lead screw is along
     X, with the hexagon toward +X.
 
     Attributes:
-    * `vise` (`SCVise`): The vise.
-    * `opening` (`float`): The gap between its plates (millimeters).
-    * `turned` (`bool`): True if its screw runs along Y.
+    * `vise` (`SCMachineVise`): The vise.
+    * `opening` (`float`): The gap between its jaw plates (millimeters).
+    * `turned` (`bool`): True if its lead screw runs along Y.
 
     Constructor:
-    * `SCViseLayer(vise, opening, turned)`
+    * `SCMachineViseLayer(vise, opening, turned)`
     """
 
     # Constructor arguments:
-    vise: SCVise = field(init=True)
+    vise: SCMachineVise = field(init=True)
     opening: float = field(init=True)
     turned: bool = field(init=True, default=False)
 
-    # Method `SCViseLayer.name()`:
+    # Method `SCMachineViseLayer.name()`:
     @property
     def name(self) -> str:
         """Return the vise's name."""
         return self.vise.name
 
-    # Method `SCViseLayer.seat()`:
+    # Method `SCMachineViseLayer.seat()`:
     def seat(self) -> Point:
         """Return the middle of the gap, on top of the rails.
 
@@ -242,10 +242,10 @@ class SCViseLayer:
         * (`Point`): It, from the center of the base's bottom (mm).
         """
         gap: float = self.vise.gap_center(self.opening)
-        height: float = self.vise.base_height()
+        height: float = self.vise.bed_top()
         return (0.0, -gap, height) if self.turned else (gap, 0.0, height)
 
-    # Method `SCViseLayer.model()`:
+    # Method `SCMachineViseLayer.model()`:
     def model(self, solidcraft: SCPyBind, center: Point) -> list[str]:
         """Model the vise.
 
@@ -269,7 +269,7 @@ class SCViseLayer:
             solidcraft.solid.move(bodies=bodies, translate=(x, y, 0.0))
         return bodies
 
-    # Method `SCViseLayer.cacheable()`:
+    # Method `SCMachineViseLayer.cacheable()`:
     def cacheable(self) -> tuple[SCCacheable, ...]:
         """Return the vise as models that can be cached.
 
@@ -280,7 +280,7 @@ class SCViseLayer:
         """
         return () if self.turned else self.vise.cacheable(self.opening)
 
-    # Method `SCViseLayer.keep_out()`:
+    # Method `SCMachineViseLayer.keep_out()`:
     def keep_out(self, center: Point) -> SCKeepOut:
         """Return the prisms around the base and each jaw.
 
@@ -688,7 +688,7 @@ def parallel_pair(height: str, spacing: float) -> SCParallelPair:
 # Function `vise_notes()`:
 def vise_notes(
     table: SCMillTable,
-    vise: SCVise,
+    vise: SCMachineVise,
     opening: float,
     pair: SCParallelPair,
     work: SCPlate,
@@ -697,8 +697,8 @@ def vise_notes(
 
     Arguments:
     * `table` (`SCMillTable`): The table under the vise.
-    * `vise` (`SCVise`): The vise.
-    * `opening` (`float`): The gap between its plates (millimeters).
+    * `vise` (`SCMachineVise`): The vise.
+    * `opening` (`float`): The gap between its jaw plates (millimeters).
     * `pair` (`SCParallelPair`): The parallels under the work.
     * `work` (`SCPlate`): The work.
 
@@ -716,7 +716,9 @@ def vise_notes(
         )
 
     # The jaws grip what is below their tops.
-    grip: float = min(vise.plate.height - pair.first.height, work.thickness)
+    grip: float = min(
+        vise.jaw_plate.height - pair.first.height, work.thickness
+    )
     if grip > 0.0:
         notes.append(
             f"The jaws can grip {_inches(grip)} of the "
@@ -726,7 +728,7 @@ def vise_notes(
         notes.append("NO GRIP: the work sits above the tops of the jaws.")
 
     # A tool stays above the jaws' keep-outs, which may hide the work.
-    proud: float = pair.first.height + work.thickness - vise.plate.height
+    proud: float = pair.first.height + work.thickness - vise.jaw_plate.height
     clearance: float = proud - _mm(VISE_MARGIN)
     if clearance > 0.0:
         notes.append(
@@ -740,7 +742,7 @@ def vise_notes(
         )
 
     # Work past the jaws and the table has nothing under or beside it.
-    past_jaws: float = (work.width - vise.plate.width) / 2.0
+    past_jaws: float = (work.width - vise.jaw_plate.width) / 2.0
     if past_jaws > 0.0:
         notes.append(
             f"The work reaches {_inches(past_jaws)} past the jaws at each "
@@ -758,7 +760,7 @@ def vise_notes(
 # Function `vise_mount()`:
 def vise_mount(
     table: SCMillTable,
-    vise: SCVise,
+    vise: SCMachineVise,
     opening: float,
     height: str,
     work: SCPlate,
@@ -771,8 +773,8 @@ def vise_mount(
 
     Arguments:
     * `table` (`SCMillTable`): The table.
-    * `vise` (`SCVise`): The vise.
-    * `opening` (`float`): The gap between its plates (millimeters).
+    * `vise` (`SCMachineVise`): The vise.
+    * `opening` (`float`): The gap between its jaw plates (millimeters).
     * `height` (`str`): The parallels' height, as `PARALLELS` names it.
     * `work` (`SCPlate`): The work, whose `length` lies across the jaws.
 
@@ -789,32 +791,32 @@ def vise_mount(
     pair: SCParallelPair = parallel_pair(height, work.length - thickness)
     return SCMount(
         f"{work.name} in a {vise.name} on a {table.name}",
-        (SCTableLayer(table), SCViseLayer(vise, opening), pair, work),
+        (SCTableLayer(table), SCMachineViseLayer(vise, opening), pair, work),
         vise_notes(table, vise, opening, pair, work),
     )
 
 
 # Function `turned_vise_notes()`:
 def turned_vise_notes(
-    table: SCMillTable, vise: SCVise, opening: float, y_travel: float
+    table: SCMillTable, vise: SCMachineVise, opening: float, y_travel: float
 ) -> tuple[str, ...]:
     """Return how a vise centered on a table, turned along Y, fits it.
 
     Arguments:
     * `table` (`SCMillTable`): The table, whose width lies along Y.
-    * `vise` (`SCVise`): The vise.
-    * `opening` (`float`): The gap between its plates (millimeters).
+    * `vise` (`SCMachineVise`): The vise.
+    * `opening` (`float`): The gap between its jaw plates (millimeters).
     * `y_travel` (`float`): How far the Y axis travels (millimeters).
 
     Returns:
     * (`tuple[str, ...]`): The notes, one sentence each.
     """
     # The base's length against the table's width.
-    past_table: float = (vise.bottom.length - table.width) / 2.0
-    hex_past: float = past_table + vise.screw_stick_out + vise.hex_length
+    past_table: float = (vise.base.length - table.width) / 2.0
+    hex_past: float = past_table + vise.lead_screw_stick_out + vise.hex_length
     notes: list[str] = []
     notes.append(
-        f"The base is {_inches(vise.bottom.length)} long on a "
+        f"The base is {_inches(vise.base.length)} long on a "
         f"{_inches(table.width)} wide table: {_inches(past_table)} past "
         f"the rear edge, and {_inches(past_table)} past the front, or "
         f"{_inches(hex_past)} to the end of the hexagon."
@@ -849,7 +851,7 @@ GARAGE_MOUNT: SCMount = SCMount(
     f"{KURT_D688.name} on a {MIKINI_1610L.name}",
     (
         SCTableLayer(MIKINI_1610L),
-        SCViseLayer(KURT_D688, GARAGE_OPENING, turned=True),
+        SCMachineViseLayer(KURT_D688, GARAGE_OPENING, turned=True),
     ),
     turned_vise_notes(
         MIKINI_1610L, KURT_D688, GARAGE_OPENING, MIKINI_Y_TRAVEL

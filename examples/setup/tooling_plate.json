@@ -14,7 +14,7 @@
       "orientation": "0 deg"
     },
     {
-      "kind": "vise",
+      "kind": "machine_vise",
       "type": "Kurt D688",
       "opening": "6 in",
       "location": ["0 in", "-3.15 in"],

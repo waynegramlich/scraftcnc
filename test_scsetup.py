@@ -49,11 +49,11 @@ class TestExample(unittest.TestCase):
         self.assertAlmostEqual(
             table.placement.z + tools.MIKINI_1610L.thickness, 0.0
         )
-        self.assertAlmostEqual(first.placement.z, vise.base_height())
-        self.assertAlmostEqual(second.placement.z, vise.base_height())
+        self.assertAlmostEqual(first.placement.z, vise.bed_top())
+        self.assertAlmostEqual(second.placement.z, vise.bed_top())
         self.assertAlmostEqual(
             self.setup.materials[0].placement.z,
-            vise.base_height() + first.layer.parallel.height,
+            vise.bed_top() + first.layer.parallel.height,
         )
 
     def test_parallels_next_to_jaws(self) -> None:
@@ -237,7 +237,7 @@ class TestDemoStack(unittest.TestCase):
         table, vise, first, second, plate = self.setup.tooling
         rails = table.placement.z + tools.MIKINI_1610L.thickness
         self.assertAlmostEqual(vise.placement.z, rails)
-        rails += tools.KURT_D688.base_height()
+        rails += tools.KURT_D688.bed_top()
         self.assertAlmostEqual(first.placement.z, rails)
         self.assertAlmostEqual(second.placement.z, rails)
         self.assertAlmostEqual(

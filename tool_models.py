@@ -34,7 +34,9 @@ from typing import TypeAlias
 import scraftpybind
 import sctoolmodel
 import shops
-from sctoolmodel import COUNTERSINK_TIP_FLAT, Profile, profile
+import tools
+from scgeometry import SCArc, SCRoundedPolygon, SCSegment
+from sctoolmodel import COUNTERSINK_TIP_FLAT, MM_PER_INCH, Profile, profile
 from shops import (
     ANGLE,
     KINDS,
@@ -43,6 +45,14 @@ from shops import (
     check_tool,
     markdown_table,
     measure,
+)
+from tools import (
+    KURT_D688,
+    KURT_JAW_PLATE,
+    SCJawPlate,
+    SCMachineVise,
+    SCViseBlock,
+    SCViseNotches,
 )
 
 # Where the files go.
@@ -645,42 +655,10 @@ def sketch(page: SCModelPage) -> str:
     ]
     xs: list[float] = [r for r, _ in outline]
     zs: list[float] = [z for _, z in outline]
-    for dimension in dimensions:
-        (xs if dimension.across else zs).extend(
-            (dimension.low, dimension.high)
-        )
-        sign: float = _away(dimension)
-        (zs if dimension.across else xs).append(
-            dimension.at + sign * LETTER_OFF * 1.5
-        )
+    _extend(dimensions, xs, zs)
 
-    # The page, with a white background for dark themes.
-    left: float = (min(xs) - MARGIN) * SCALE
-    top: float = (-max(zs) - MARGIN) * SCALE
-    width: float = (max(xs) - min(xs) + 2 * MARGIN) * SCALE
-    height: float = (max(zs) - min(zs) + 2 * MARGIN) * SCALE
-    root: ET.Element = ET.Element(
-        "svg",
-        {
-            "xmlns": "http://www.w3.org/2000/svg",
-            "viewBox": f"{left:.1f} {top:.1f} {width:.1f} {height:.1f}",
-            "width": f"{width * SHOWN:.0f}",
-            "height": f"{height * SHOWN:.0f}",
-        },
-    )
-    ET.SubElement(
-        root,
-        "rect",
-        {
-            "x": f"{left:.1f}",
-            "y": f"{top:.1f}",
-            "width": f"{width:.1f}",
-            "height": f"{height:.1f}",
-            "fill": "white",
-        },
-    )
-
-    # The tool, and its center line.
+    # The page, then the tool, and its center line.
+    root: ET.Element = _root(xs, zs)
     ET.SubElement(
         root,
         "polygon",
@@ -710,6 +688,65 @@ def sketch(page: SCModelPage) -> str:
             _radius(root, mark, letters[mark.key])
     ET.indent(root)
     return ET.tostring(root, encoding="unicode") + "\n"
+
+
+# Function `_extend()`:
+def _extend(
+    dimensions: list[SCDimension], xs: list[float], zs: list[float]
+) -> None:
+    """Add how far dimension lines and their letters reach.
+
+    Arguments:
+    * `dimensions` (`list[SCDimension]`): The dimension lines.
+    * `xs` (`list[float]`): The X of everything drawn (inches), added to.
+    * `zs` (`list[float]`): The Z of everything drawn (inches), added to.
+    """
+    for dimension in dimensions:
+        (xs if dimension.across else zs).extend(
+            (dimension.low, dimension.high)
+        )
+        sign: float = _away(dimension)
+        (zs if dimension.across else xs).append(
+            dimension.at + sign * LETTER_OFF * 1.5
+        )
+
+
+# Function `_root()`:
+def _root(xs: list[float], zs: list[float]) -> ET.Element:
+    """Return a new sketch, with a white background for dark themes.
+
+    Arguments:
+    * `xs` (`list[float]`): The X of everything drawn on it (inches).
+    * `zs` (`list[float]`): The Z of everything drawn on it (inches).
+
+    Returns:
+    * (`ET.Element`): The sketch's `svg` element.
+    """
+    left: float = (min(xs) - MARGIN) * SCALE
+    top: float = (-max(zs) - MARGIN) * SCALE
+    width: float = (max(xs) - min(xs) + 2 * MARGIN) * SCALE
+    height: float = (max(zs) - min(zs) + 2 * MARGIN) * SCALE
+    root: ET.Element = ET.Element(
+        "svg",
+        {
+            "xmlns": "http://www.w3.org/2000/svg",
+            "viewBox": f"{left:.1f} {top:.1f} {width:.1f} {height:.1f}",
+            "width": f"{width * SHOWN:.0f}",
+            "height": f"{height * SHOWN:.0f}",
+        },
+    )
+    ET.SubElement(
+        root,
+        "rect",
+        {
+            "x": f"{left:.1f}",
+            "y": f"{top:.1f}",
+            "width": f"{width:.1f}",
+            "height": f"{height:.1f}",
+            "fill": "white",
+        },
+    )
+    return root
 
 
 # Function `_away()`:
@@ -1066,7 +1103,11 @@ def _constructor(shown: str, node: ast.ClassDef) -> str:
         ):
             hint: str = ast.unparse(item.annotation)
             parts.append(f"{item.target.id}: {hint}")
-    return f"{shown}({', '.join(parts)})"
+    line: str = f"{shown}({', '.join(parts)})"
+    if len(line) <= 79:
+        return line
+    listed: str = "".join(f"    {part},\n" for part in parts)
+    return f"{shown}(\n{listed})"
 
 
 # Function `_interface_entry()`:
@@ -1170,6 +1211,1071 @@ def section(page: SCModelPage) -> str:
     )
 
 
+# Class `SCShape`:
+@dataclass(frozen=True, slots=True)
+class SCShape:
+    """One shape in a view of a model.
+
+    Attributes:
+    * `path` (`str`): Its SVG path, in pixels.
+    * `points` (`Profile`):
+      Points that reach as far as it does, as X and Z in inches.
+    * `fill` (`str`): Its fill color, or `"none"`.
+    * `dashes` (`str`): An SVG `stroke-dasharray`, or `""` for none.
+
+    Constructor:
+    * `SCShape(path, points, fill, dashes)`
+    """
+
+    # Constructor arguments:
+    path: str = field(init=True)
+    points: Profile = field(init=True)
+    fill: str = field(init=True, default=TOOL_FILL)
+    dashes: str = field(init=True, default="")
+
+
+# Class `SCView`:
+@dataclass(frozen=True, slots=True)
+class SCView:
+    """One view of a model of tooling, drawn from its numbers.
+
+    Attributes:
+    * `name` (`str`): The view's name, which names its file.
+    * `title` (`str`): What the document calls it.
+    * `shapes` (`list[SCShape]`): What is drawn, farthest first.
+    * `marks` (`list[SCMark]`):
+      Its dimension lines and radii, whose keys are paths such as
+      `base.length`.
+
+    Constructor:
+    * `SCView(name, title, shapes, marks)`
+    """
+
+    # Constructor arguments:
+    name: str = field(init=True)
+    title: str = field(init=True)
+    shapes: list[SCShape] = field(init=True)
+    marks: list[SCMark] = field(init=True)
+
+
+# The machine vise that its page is drawn from, and the space between
+# rows of dimension lines (inches).
+VISE: SCMachineVise = KURT_D688
+VISE_NAME: str = "KURT_D688"
+ROW: float = 0.4
+
+# How the floor of a pocket and hidden edges are drawn.
+POCKET_FILL: str = "#aab4bd"
+HIDDEN: str = "8 5"
+CENTER_LINE: str = "12 4 3 4"
+
+
+# Function `_in()`:
+def _in(millimeters: float) -> float:
+    """Return a length in inches.
+
+    Arguments:
+    * `millimeters` (`float`): The length (millimeters).
+
+    Returns:
+    * (`float`): The length (inches).
+    """
+    return millimeters / MM_PER_INCH
+
+
+# Function `_xy()`:
+def _xy(x: float, z: float) -> str:
+    """Return a point as SVG path pixels.
+
+    Arguments:
+    * `x` (`float`): Its X (inches).
+    * `z` (`float`): Its Z (inches), which points up.
+
+    Returns:
+    * (`str`): Its pixels, with Y pointing down.
+    """
+    return f"{x * SCALE:.1f} {-z * SCALE:.1f}"
+
+
+# Function `_rectangle()`:
+def _rectangle(
+    low: tuple[float, float],
+    high: tuple[float, float],
+    fill: str = TOOL_FILL,
+    dashes: str = "",
+) -> SCShape:
+    """Return a rectangle.
+
+    Arguments:
+    * `low` (`tuple[float, float]`): Its lowest X and Z (inches).
+    * `high` (`tuple[float, float]`): Its highest X and Z (inches).
+    * `fill` (`str`): Its fill color, or `"none"`.
+    * `dashes` (`str`): An SVG `stroke-dasharray`, or `""` for none.
+
+    Returns:
+    * (`SCShape`): The rectangle.
+    """
+    corners: Profile = [
+        low,
+        (high[0], low[1]),
+        high,
+        (low[0], high[1]),
+    ]
+    return _polygon(corners, fill, dashes)
+
+
+# Function `_polygon()`:
+def _polygon(
+    corners: Profile, fill: str = TOOL_FILL, dashes: str = ""
+) -> SCShape:
+    """Return a polygon.
+
+    Arguments:
+    * `corners` (`Profile`): Its corners, as X and Z in inches.
+    * `fill` (`str`): Its fill color, or `"none"`.
+    * `dashes` (`str`): An SVG `stroke-dasharray`, or `""` for none.
+
+    Returns:
+    * (`SCShape`): The polygon.
+    """
+    path: str = "M " + " L ".join(_xy(x, z) for x, z in corners) + " Z"
+    return SCShape(path, corners, fill, dashes)
+
+
+# Function `_circle()`:
+def _circle(
+    center: tuple[float, float],
+    radius: float,
+    fill: str = TOOL_FILL,
+    dashes: str = "",
+) -> SCShape:
+    """Return a circle.
+
+    Arguments:
+    * `center` (`tuple[float, float]`): Its center (inches).
+    * `radius` (`float`): Its radius (inches).
+    * `fill` (`str`): Its fill color, or `"none"`.
+    * `dashes` (`str`): An SVG `stroke-dasharray`, or `""` for none.
+
+    Returns:
+    * (`SCShape`): The circle, as two half circles.
+    """
+    x, z = center
+    pixels: float = radius * SCALE
+    arc: str = f"A {pixels:.1f} {pixels:.1f} 0 0 0"
+    path: str = (
+        f"M {_xy(x - radius, z)} {arc} {_xy(x + radius, z)} "
+        f"{arc} {_xy(x - radius, z)} Z"
+    )
+    points: Profile = [(x - radius, z - radius), (x + radius, z + radius)]
+    return SCShape(path, points, fill, dashes)
+
+
+# Function `_outline()`:
+def _outline(
+    polygon: SCRoundedPolygon, fill: str = TOOL_FILL, dashes: str = ""
+) -> SCShape:
+    """Return an outline seen from above, with true arcs.
+
+    Arguments:
+    * `polygon` (`SCRoundedPolygon`): The outline (millimeters).
+    * `fill` (`str`): Its fill color, or `"none"`.
+    * `dashes` (`str`): An SVG `stroke-dasharray`, or `""` for none.
+
+    Returns:
+    * (`SCShape`): The outline, with X and Y as the sketch's X and Z.
+    """
+    segments: tuple[SCSegment, ...] = polygon.segments
+    start: tuple[float, float] = segments[0].start
+    path: str = f"M {_xy(_in(start[0]), _in(start[1]))}"
+    points: Profile = []
+    for segment in segments:
+        x: float = _in(segment.end[0])
+        z: float = _in(segment.end[1])
+        points.append((x, z))
+        if isinstance(segment, SCArc):
+            # Y points down in SVG, so a counter-clockwise arc has a
+            # sweep flag of 0.
+            pixels: float = _in(segment.radius) * SCALE
+            large: int = 1 if abs(segment.sweep) > math.pi else 0
+            sweep: int = 0 if segment.sweep > 0.0 else 1
+            path += f" A {pixels:.1f} {pixels:.1f} 0 {large} {sweep}"
+            path += f" {_xy(x, z)}"
+        else:
+            path += f" L {_xy(x, z)}"
+    return SCShape(path + " Z", points, fill, dashes)
+
+
+# Function `_center_line()`:
+def _center_line(across: bool, at: float, low: float, high: float) -> SCShape:
+    """Return a center line, reaching past what it centers.
+
+    Arguments:
+    * `across` (`bool`): True for a line along X, False for one along Z.
+    * `at` (`float`): Where it sits, in the other direction (inches).
+    * `low` (`float`): Where what it centers starts (inches).
+    * `high` (`float`): Where what it centers ends (inches).
+
+    Returns:
+    * (`SCShape`): The line, unfilled.
+    """
+    ends: Profile = [
+        (low - CENTER_LINE_PAST, at),
+        (high + CENTER_LINE_PAST, at),
+    ]
+    if not across:
+        ends = [(x, z) for z, x in ends]
+    path: str = f"M {_xy(*ends[0])} L {_xy(*ends[1])}"
+    return SCShape(path, ends, "none", CENTER_LINE)
+
+
+# Class `_SCViseSizes`:
+# It holds one number for each place that the views measure from.
+@dataclass(frozen=True, slots=True)
+class _SCViseSizes:  # pylint: disable=too-many-instance-attributes
+    """Where the parts of the machine vise's sample are, in inches.
+
+    X is along the lead screw, toward the hexagon; Y across; Z up from
+    the bottom of the base.  The jaws are as far open as they go.
+
+    Attributes (alphabetized):
+    * `bed_bottom` (`float`): The Z of the bottom of the bed.
+    * `bed_top` (`float`): The Z of the top of the bed.
+    * `face` (`float`): The X of the movable jaw's clamping face.
+    * `fixed_face` (`float`): The X of the fixed jaw's clamping face.
+    * `gap` (`float`): Half of the gap between the rails.
+    * `half` (`float`): Half of the body's length.
+    * `hex_end` (`float`): The X of the end of the hexagon.
+    * `jaw_top` (`float`): The Z of the top of the jaws.
+    * `moving_end` (`float`): The X of the end of the movable jaw.
+    * `outer` (`float`): The Y of the rails' outer sides.
+    * `plate` (`float`): A jaw plate's thickness.
+    * `screw_z` (`float`): The Z of the lead screw's axis.
+    * `stick` (`float`): The X of the end of the lead screw's cylinder.
+
+    Constructor:
+    * `_SCViseSizes()`
+    """
+
+    # Attributes set by `__post_init__()` (alphabetized):
+    bed_bottom: float = field(init=False, default=0.0)
+    bed_top: float = field(init=False, default=0.0)
+    face: float = field(init=False, default=0.0)
+    fixed_face: float = field(init=False, default=0.0)
+    gap: float = field(init=False, default=0.0)
+    half: float = field(init=False, default=0.0)
+    hex_end: float = field(init=False, default=0.0)
+    jaw_top: float = field(init=False, default=0.0)
+    moving_end: float = field(init=False, default=0.0)
+    outer: float = field(init=False, default=0.0)
+    plate: float = field(init=False, default=0.0)
+    screw_z: float = field(init=False, default=0.0)
+    stick: float = field(init=False, default=0.0)
+
+    # Method `_SCViseSizes.__post_init__()`:
+    def __post_init__(self) -> None:
+        """Work out where the parts are."""
+        v: SCMachineVise = VISE
+        sizes: dict[str, float] = {
+            "bed_bottom": v.base.height + v.body.height,
+            "bed_top": v.bed_top(),
+            "face": v.movable_face(v.max_opening),
+            "fixed_face": -v.body.length / 2.0 + v.fixed_jaw.length,
+            "gap": v.rail_gap / 2.0,
+            "half": v.body.length / 2.0,
+            "hex_end": v.body.length / 2.0
+            + v.lead_screw_stick_out
+            + v.hex_length,
+            "jaw_top": v.bed_top() + v.fixed_jaw.height,
+            "moving_end": v.movable_face(v.max_opening) + v.movable_jaw.length,
+            "outer": v.rail_gap / 2.0 + v.rail_width,
+            "plate": v.jaw_plate.length,
+            "screw_z": v.lead_screw_height,
+            "stick": v.body.length / 2.0 + v.lead_screw_stick_out,
+        }
+        for name, millimeters in sizes.items():
+            object.__setattr__(self, name, _in(millimeters))
+
+
+# Function `_hexagon()`:
+def _hexagon() -> Profile:
+    """Return the corners of the hexagon on the lead screw's end.
+
+    Returns:
+    * (`Profile`): Each corner's Y and Z from the lead screw's axis
+      (inches).
+    """
+    return [(_in(y), _in(z)) for y, z in VISE.hexagon()]
+
+
+# Function `_vise_top()`:
+def _vise_top(s: _SCViseSizes) -> SCView:
+    """Return the machine vise seen from above.
+
+    Arguments:
+    * `s` (`_SCViseSizes`): Where its parts are.
+
+    Returns:
+    * (`SCView`): The view, X to the right and Y up.
+    """
+    # The pocket's floor and the lead screw in it, the bed, the jaws and
+    # their plates, then the lead screw's end.
+    v: SCMachineVise = VISE
+    end: float = _in(v.end_block_length)
+    screw: float = _in(v.lead_screw_diameter) / 2.0
+    hex_y: float = max(y for y, _ in _hexagon())
+    jaw: float = _in(v.fixed_jaw.width) / 2.0
+    plate: float = _in(v.jaw_plate.width) / 2.0
+    moving: float = _in(v.movable_jaw.width) / 2.0
+    blocks: list[tuple[float, float]] = [
+        (-s.half, -s.half + end),
+        (s.half - end, s.half),
+    ]
+    shapes: list[SCShape] = [
+        _rectangle(
+            (-s.half + end, -s.gap), (s.half - end, s.gap), POCKET_FILL
+        ),
+        _rectangle((-s.half + end, -screw), (s.half, screw)),
+        _rectangle((-s.half, s.gap), (s.half, s.outer)),
+        _rectangle((-s.half, -s.outer), (s.half, -s.gap)),
+        *[_rectangle((low, -s.gap), (high, s.gap)) for low, high in blocks],
+        _rectangle((-s.half, -jaw), (s.fixed_face, jaw)),
+        _rectangle((s.fixed_face, -plate), (s.fixed_face + s.plate, plate)),
+        _rectangle((s.face - s.plate, -plate), (s.face, plate)),
+        _rectangle((s.face, -moving), (s.moving_end, moving)),
+        _rectangle((s.half, -screw), (s.stick, screw)),
+        _rectangle((s.stick, -hex_y), (s.hex_end, hex_y)),
+    ]
+
+    # Hidden: the base and the body with their notches, and the end
+    # blocks under the jaws; and the center line.
+    shapes += [
+        _outline(
+            v.base.outline("base", notches=v.base_notches), "none", HIDDEN
+        ),
+        _outline(
+            v.body.outline("body", notches=v.body_notches), "none", HIDDEN
+        ),
+        *[
+            _rectangle((low, -s.gap), (high, s.gap), "none", HIDDEN)
+            for low, high in blocks
+        ],
+        _center_line(False, 0.0, -s.outer, s.outer),
+    ]
+    return SCView("top", "Top", shapes, _vise_top_marks(s))
+
+
+# Function `_vise_top_marks()`:
+def _vise_top_marks(s: _SCViseSizes) -> list[SCMark]:
+    """Return the dimension lines and radii of the view from above.
+
+    Arguments:
+    * `s` (`_SCViseSizes`): Where the parts are.
+
+    Returns:
+    * (`list[SCMark]`): The marks.
+    """
+    # The lengths along the top, from the fixed jaw out to the hexagon.
+    v: SCMachineVise = VISE
+    end: float = _in(v.end_block_length)
+    screw: float = _in(v.lead_screw_diameter) / 2.0
+    hex_y: float = max(y for y, _ in _hexagon())
+    jaw: float = _in(v.fixed_jaw.width) / 2.0
+    above: float = s.outer + STAND_OFF
+    marks: list[SCMark] = [
+        SCDimension(
+            "fixed_jaw.length", True, -s.half, s.fixed_face, above, (jaw, jaw)
+        ),
+        SCDimension(
+            "max_opening",
+            True,
+            s.fixed_face + s.plate,
+            s.face - s.plate,
+            above,
+            (jaw, jaw),
+        ),
+        SCDimension(
+            "movable_jaw.length", True, s.face, s.moving_end, above, (jaw, jaw)
+        ),
+        SCDimension(
+            "lead_screw_stick_out",
+            True,
+            s.half,
+            s.stick,
+            above,
+            (screw, screw),
+        ),
+        SCDimension(
+            "hex_length", True, s.stick, s.hex_end, above, (hex_y, hex_y)
+        ),
+        SCDimension(
+            "base.length", True, -s.half, s.half, above + ROW, (above, above)
+        ),
+    ]
+
+    # Below: the notches, the screw end's end block, and the body.
+    base_y: float = -_in(v.base.width) / 2.0
+    body_y: float = -_in(v.body.width) / 2.0
+    base_x: float = _in(v.base_notches.centers[-1])
+    body_x: float = _in(v.body_notches.centers[0])
+    base_w: float = _in(v.base_notches.width) / 2.0
+    body_w: float = _in(v.body_notches.width) / 2.0
+    below: float = -s.outer - STAND_OFF
+    marks += [
+        SCDimension(
+            "body_notches.width",
+            True,
+            body_x - body_w,
+            body_x + body_w,
+            below,
+            (body_y, body_y),
+        ),
+        SCDimension(
+            "base_notches.width",
+            True,
+            base_x - base_w,
+            base_x + base_w,
+            below,
+            (base_y, base_y),
+        ),
+        SCDimension(
+            "end_block_length",
+            True,
+            s.half - end,
+            s.half,
+            below,
+            (-s.gap, -s.gap),
+        ),
+        SCDimension(
+            "body_notches.centers",
+            True,
+            body_x,
+            0.0,
+            below - ROW,
+            (body_y + _in(v.body_notches.depth), below - ROW),
+        ),
+        SCDimension(
+            "base_notches.centers",
+            True,
+            0.0,
+            base_x,
+            below - ROW,
+            (below - ROW, base_y + _in(v.base_notches.depth)),
+        ),
+        SCDimension(
+            "body.length",
+            True,
+            -s.half,
+            s.half,
+            below - 2 * ROW,
+            (body_y, body_y),
+        ),
+    ]
+
+    # The notches' depths, beside them, and the rails, past the hexagon.
+    base_out: float = base_x + base_w + STAND_OFF
+    body_out: float = body_x - body_w - STAND_OFF
+    past: float = s.hex_end + STAND_OFF
+    marks += [
+        SCDimension(
+            "base_notches.depth",
+            False,
+            base_y,
+            base_y + _in(v.base_notches.depth),
+            base_out,
+            (base_x + base_w, base_x + base_w),
+        ),
+        SCDimension(
+            "body_notches.depth",
+            False,
+            body_y,
+            body_y + _in(v.body_notches.depth),
+            body_out,
+            (body_x - body_w, body_x - body_w),
+        ),
+        SCDimension(
+            "rail_width", False, s.gap, s.outer, past, (s.half, s.half)
+        ),
+        SCDimension("rail_gap", False, -s.gap, s.gap, past, (s.half, s.half)),
+        SCDimension(
+            "fixed_jaw.width",
+            False,
+            -jaw,
+            jaw,
+            -s.half - STAND_OFF,
+            (-s.half, -s.half),
+        ),
+    ]
+    return marks + _vise_radii(s)
+
+
+# Function `_vise_radii()`:
+def _vise_radii(s: _SCViseSizes) -> list[SCMark]:
+    """Return the radii of the view from above.
+
+    The base's are on its +X notch and corner, on the -Y side, and the
+    body's on its -X notch and corner.
+
+    Arguments:
+    * `s` (`_SCViseSizes`): Where the parts are.
+
+    Returns:
+    * (`list[SCMark]`): The radii.
+    """
+    v: SCMachineVise = VISE
+    marks: list[SCMark] = []
+    for name, block, notches, side, corner in (
+        ("base", v.base, v.base_notches, 1.0, s.half),
+        ("body", v.body, v.body_notches, -1.0, -s.half),
+    ):
+        # The notch's corners on the side away from the vise's center.
+        edge: float = -_in(block.width) / 2.0
+        x: float = _in(notches.centers[0 if side < 0 else -1])
+        x += side * _in(notches.width) / 2.0
+        inner: float = _in(notches.inner_radius)
+        outer: float = _in(notches.outer_radius)
+        deep: float = edge + _in(notches.depth)
+        rounded: float = _in(block.corner_radius)
+        marks += [
+            SCRadius(
+                f"{name}_notches.inner_radius",
+                (x - side * inner, deep - inner),
+                inner,
+                90.0 + side * 45.0,
+                (side * 0.2, 0.3),
+            ),
+            SCRadius(
+                f"{name}_notches.outer_radius",
+                (x + side * outer, edge + outer),
+                outer,
+                -90.0 - side * 45.0,
+                (-side * 0.05, -0.32),
+            ),
+            SCRadius(
+                f"{name}.corner_radius",
+                (corner - side * rounded, edge + rounded),
+                rounded,
+                -90.0 + side * 45.0,
+                (side * 0.25, 0.12),
+            ),
+        ]
+    return marks
+
+
+# Function `_vise_back()`:
+def _vise_back(s: _SCViseSizes) -> SCView:
+    """Return the machine vise seen from its lead screw's end.
+
+    Arguments:
+    * `s` (`_SCViseSizes`): Where its parts are.
+
+    Returns:
+    * (`SCView`): The view, Y to the right and Z up.
+    """
+    # The movable jaw, the base, the body and the bed, the lead screw's
+    # hole, the lead screw and its hexagon; hidden, the movable jaw
+    # plate's holes and counterbores.
+    v: SCMachineVise = VISE
+    base: float = _in(v.base.width) / 2.0
+    body: float = _in(v.body.width) / 2.0
+    moving: float = _in(v.movable_jaw.width) / 2.0
+    screw: float = _in(v.lead_screw_diameter) / 2.0
+    hole: float = _in(v.lead_screw_hole_diameter) / 2.0
+    holes_x: float = _in(v.jaw_plate.hole_spacing) / 2.0
+    holes_z: float = s.bed_top + _in(v.jaw_plate.hole_height)
+    hexagon: Profile = [(y, s.screw_z + z) for y, z in _hexagon()]
+    shapes: list[SCShape] = [
+        _rectangle((-moving, s.bed_top), (moving, s.jaw_top)),
+        _rectangle((-base, 0.0), (base, _in(v.base.height))),
+        _rectangle((-body, _in(v.base.height)), (body, s.bed_bottom)),
+        _rectangle((-s.outer, s.bed_bottom), (s.outer, s.bed_top)),
+        _circle((0.0, s.screw_z), hole, POCKET_FILL),
+        _circle((0.0, s.screw_z), screw),
+        _polygon(hexagon),
+        *[
+            _circle((x, holes_z), _in(diameter) / 2.0, "none", HIDDEN)
+            for x in (-holes_x, holes_x)
+            for diameter in (
+                v.jaw_plate.hole_diameter,
+                v.jaw_plate.counterbore_diameter,
+            )
+        ],
+        _center_line(False, 0.0, 0.0, s.jaw_top),
+    ]
+
+    # The widths, above and below; the lead screw's height on the left,
+    # and its sizes on the right.
+    flat: float = max(y for y, z in _hexagon() if z > 0.0)
+    left: float = -s.outer - STAND_OFF
+    right: float = s.outer + STAND_OFF
+    marks: list[SCMark] = [
+        SCDimension(
+            "movable_jaw.width",
+            True,
+            -moving,
+            moving,
+            s.jaw_top + STAND_OFF,
+            (s.jaw_top, s.jaw_top),
+        ),
+        SCDimension("base.width", True, -base, base, -STAND_OFF, (0.0, 0.0)),
+        SCDimension(
+            "body.width",
+            True,
+            -body,
+            body,
+            -STAND_OFF - ROW,
+            (_in(v.base.height), _in(v.base.height)),
+        ),
+        SCDimension(
+            "lead_screw_height", False, 0.0, s.screw_z, left, (-base, -screw)
+        ),
+        SCDimension(
+            "hex_size",
+            False,
+            s.screw_z - _in(v.hex_size) / 2.0,
+            s.screw_z + _in(v.hex_size) / 2.0,
+            right,
+            (flat, flat),
+        ),
+        SCDimension(
+            "lead_screw_diameter",
+            False,
+            s.screw_z - screw,
+            s.screw_z + screw,
+            right + ROW,
+            (0.0, 0.0),
+        ),
+        SCDimension(
+            "lead_screw_hole_diameter",
+            False,
+            s.screw_z - hole,
+            s.screw_z + hole,
+            right + 2 * ROW,
+            (0.0, 0.0),
+        ),
+    ]
+    return SCView("back", "Back (the hexagon's end)", shapes, marks)
+
+
+# Function `_vise_side()`:
+def _vise_side(s: _SCViseSizes) -> SCView:
+    """Return the machine vise seen from its -Y side.
+
+    Arguments:
+    * `s` (`_SCViseSizes`): Where its parts are.
+
+    Returns:
+    * (`SCView`): The view, X to the right and Z up.
+    """
+    # The lead screw's end, the body and the base with their notches
+    # (seen face on), the bed, then the jaws and jaw plates.
+    v: SCMachineVise = VISE
+    screw: float = _in(v.lead_screw_diameter) / 2.0
+    hex_z: float = _in(v.hex_size) / 2.0
+    base_top: float = _in(v.base.height)
+    shapes: list[SCShape] = [
+        _rectangle((s.half, s.screw_z - screw), (s.stick, s.screw_z + screw)),
+        _rectangle(
+            (s.stick, s.screw_z - hex_z), (s.hex_end, s.screw_z + hex_z)
+        ),
+    ]
+    for low, high, notches in (
+        (base_top, s.bed_bottom, v.body_notches),
+        (0.0, base_top, v.base_notches),
+    ):
+        shapes.append(_rectangle((-s.half, low), (s.half, high)))
+        width: float = _in(notches.width) / 2.0
+        shapes += [
+            _rectangle((_in(x) - width, low), (_in(x) + width, high))
+            for x in notches.centers
+        ]
+    shapes += [
+        _rectangle((-s.half, s.bed_bottom), (s.half, s.bed_top)),
+        _rectangle((-s.half, s.bed_top), (s.fixed_face, s.jaw_top)),
+        _rectangle(
+            (s.fixed_face, s.bed_top),
+            (s.fixed_face + s.plate, s.bed_top + _in(v.jaw_plate.height)),
+        ),
+        _rectangle(
+            (s.face - s.plate, s.bed_top),
+            (s.face, s.bed_top + _in(v.jaw_plate.height)),
+        ),
+        _rectangle((s.face, s.bed_top), (s.moving_end, s.jaw_top)),
+    ]
+
+    # The heights: the stack on the left, the movable jaw on the right.
+    left: float = -s.half - STAND_OFF
+    edge: tuple[float, float] = (-s.half, -s.half)
+    marks: list[SCMark] = [
+        SCDimension("base.height", False, 0.0, base_top, left, edge),
+        SCDimension("body.height", False, base_top, s.bed_bottom, left, edge),
+        SCDimension("rail_height", False, s.bed_bottom, s.bed_top, left, edge),
+        SCDimension(
+            "fixed_jaw.height", False, s.bed_top, s.jaw_top, left, edge
+        ),
+        SCDimension(
+            "movable_jaw.height",
+            False,
+            s.bed_top,
+            s.jaw_top,
+            s.hex_end + STAND_OFF,
+            (s.moving_end, s.moving_end),
+        ),
+    ]
+    return SCView("side", "Side (from -Y)", shapes, marks)
+
+
+# Function `vise_views()`:
+def vise_views() -> list[SCView]:
+    """Return the views of the machine vise, in the document's order.
+
+    Returns:
+    * (`list[SCView]`): The top, back and side views.
+    """
+    sizes: _SCViseSizes = _SCViseSizes()
+    return [_vise_top(sizes), _vise_back(sizes), _vise_side(sizes)]
+
+
+# Function `vise_numbers()`:
+def vise_numbers(views: list[SCView]) -> dict[str, str]:
+    """Return the number of each size drawn, in the order drawn.
+
+    Arguments:
+    * `views` (`list[SCView]`): The views.
+
+    Returns:
+    * (`dict[str, str]`): Each size's path and number.
+    """
+    keys: list[str] = [mark.key for view in views for mark in view.marks]
+    return {key: str(number) for number, key in enumerate(keys, 1)}
+
+
+# Function `view_sketch()`:
+def view_sketch(view: SCView, numbers: dict[str, str]) -> str:
+    """Return one view, as an SVG file.
+
+    Arguments:
+    * `view` (`SCView`): The view.
+    * `numbers` (`dict[str, str]`): What each mark is labeled with.
+
+    Returns:
+    * (`str`): The SVG file's text.
+    """
+    # The page, big enough for the shapes, the dimension lines and the
+    # radii's letters.
+    xs: list[float] = [x for shape in view.shapes for x, _ in shape.points]
+    zs: list[float] = [z for shape in view.shapes for _, z in shape.points]
+    _extend(
+        [mark for mark in view.marks if isinstance(mark, SCDimension)], xs, zs
+    )
+    for mark in view.marks:
+        if isinstance(mark, SCRadius):
+            xs.append(mark.center[0] + mark.letter_at[0])
+            zs.append(mark.center[1] + mark.letter_at[1])
+    root: ET.Element = _root(xs, zs)
+
+    # The shapes, then the marks.
+    for shape in view.shapes:
+        attributes: dict[str, str] = {
+            "d": shape.path,
+            "fill": shape.fill,
+            "stroke": INK,
+            "stroke-width": "1" if shape.dashes else "2",
+            "stroke-linejoin": "round",
+        }
+        if shape.dashes:
+            attributes["stroke-dasharray"] = shape.dashes
+        ET.SubElement(root, "path", attributes)
+    for mark in view.marks:
+        if isinstance(mark, SCDimension):
+            _dimension(root, mark, numbers[mark.key])
+        elif isinstance(mark, SCRadius):
+            _radius(root, mark, numbers[mark.key])
+    ET.indent(root)
+    return ET.tostring(root, encoding="unicode") + "\n"
+
+
+# Function `_attributes()`:
+def _attributes(cls: type) -> dict[str, str]:
+    """Return what a class's docstring says each attribute is.
+
+    Arguments:
+    * `cls` (`type`): The class.
+
+    Returns:
+    * (`dict[str, str]`): Each attribute's meaning, on one line.
+    """
+    doc: str = inspect.getdoc(cls) or ""
+    listed: str = doc.split("Attributes:\n", maxsplit=1)[1]
+    listed = listed.split("\n\n", maxsplit=1)[0]
+    meanings: dict[str, str] = {}
+    name: str = ""
+    for line in listed.splitlines():
+        if line.startswith("* `"):
+            name = line[3:].split("`", maxsplit=1)[0]
+            meanings[name] = line.split("):", maxsplit=1)[1].strip()
+        else:
+            meanings[name] = f"{meanings[name]} {line.strip()}".strip()
+    return meanings
+
+
+# Function `vise_sizes()`:
+def vise_sizes() -> dict[str, str]:
+    """Return every size of a machine vise, and what it means.
+
+    Returns:
+    * (`dict[str, str]`): Each size's path (such as `base.length`) and
+      its meaning, from the docstrings, in the order of the fields.  The
+      jaw plate has a section of its own.
+    """
+    parts: dict[type, dict[str, str]] = {
+        part: _attributes(part) for part in (SCViseBlock, SCViseNotches)
+    }
+    meanings: dict[str, str] = {}
+    for name, meaning in _attributes(SCMachineVise).items():
+        part: object = getattr(VISE, name)
+        if isinstance(part, (str, SCJawPlate)):
+            continue
+        if type(part) not in parts:
+            meanings[name] = meaning
+            continue
+        for key, inner in parts[type(part)].items():
+            joined: str = (
+                f"{meaning.rstrip('.')}: {inner[0].lower()}{inner[1:]}"
+            )
+            meanings[f"{name}.{key}"] = joined
+    return meanings
+
+
+# Function `vise_section()`:
+def vise_section() -> str:
+    """Return the machine vise's section of the document.
+
+    Returns:
+    * (`str`): Its Markdown.
+    """
+    # What it is, from its docstring, and its views.
+    doc: str = inspect.getdoc(SCMachineVise) or ""
+    about: str = doc.split("\n\nAttributes:", maxsplit=1)[0]
+    paragraphs: str = "\n\n".join(
+        textwrap.fill(paragraph, 72) for paragraph in about.split("\n\n")
+    )
+    views: list[SCView] = vise_views()
+    numbers: dict[str, str] = vise_numbers(views)
+    images: str = "\n\n".join(
+        f"{view.title}:\n\n"
+        f"![Machine vise, {view.name}]"
+        f"({SKETCHES}/machine_vise_{view.name}.svg)"
+        for view in views
+    )
+
+    # The sizes, by number; then those not drawn.
+    meanings: dict[str, str] = vise_sizes()
+    rows: list[list[str]] = _size_rows(numbers, meanings)
+    hidden: str = ", ".join(
+        f"`{key}`" for key in meanings if key not in numbers
+    )
+
+    # How to make one, and where a setup names one.
+    setup: object = next(
+        item
+        for item in json.loads(
+            (HERE / "examples/setup/demo_plate.json").read_text(
+                encoding="utf-8"
+            )
+        )["tooling"]
+        if item["kind"] == "machine_vise"
+    )
+    python: str = (
+        "from scraftpybind import SCPyBind, connect\n"
+        f"from tools import {VISE_NAME}\n"
+        "\n"
+        'with connect("8080") as transport:\n'
+        f"    {VISE_NAME}.model(SCPyBind(transport), opening=76.2)\n"
+    )
+    interface: str = "\n".join(
+        _interface_entry(tools, name, False)
+        for name in ("SCMachineVise", "SCViseBlock", "SCViseNotches")
+    )
+    return (
+        "## Machine Vise\n\n"
+        f"{paragraphs}\n\n"
+        "The sketches are of `tools.KURT_D688`, opened as far as it goes.\n"
+        "Hidden edges are dashed.  Its jaw plates are separate parts,\n"
+        "described in [Jaw Plate](#jaw-plate).\n\n"
+        f"{images}\n\n"
+        f"{markdown_table(rows)}\n\n"
+        f"{textwrap.fill(f'Not drawn (square on the sample): {hidden}.', 72)}"
+        "\n\n"
+        "A machine vise has no tools file entry yet, so it is made in\n"
+        "Python, in millimeters, like `tools.KURT_D688`:\n\n"
+        f"```python\n{python}```\n\n"
+        "A setup file (`examples/setup/`) names one by its `type`:\n\n"
+        f"```json\n{json.dumps(setup, indent=2)}\n```\n\n"
+        f"{interface}"
+    )
+
+
+# Function `_size_rows()`:
+def _size_rows(
+    numbers: dict[str, str], meanings: dict[str, str]
+) -> list[list[str]]:
+    """Return the rows of a table of sizes, by number.
+
+    Arguments:
+    * `numbers` (`dict[str, str]`): Each size's number.
+    * `meanings` (`dict[str, str]`): Each size's meaning.
+
+    Returns:
+    * (`list[list[str]]`): The heading row, then one row a size.
+    """
+    rows: list[list[str]] = [["Number", "Units", "Description"]]
+    for key, number in numbers.items():
+        units: str = "Lengths" if key.endswith(".centers") else "Length"
+        rows.append([number, units, f"`{key}`: {meanings[key]}"])
+    return rows
+
+
+# The jaw plate that its section is drawn from.
+JAW_PLATE: SCJawPlate = KURT_JAW_PLATE
+JAW_PLATE_NAME: str = "KURT_JAW_PLATE"
+
+
+# Function `jaw_plate_views()`:
+def jaw_plate_views() -> list[SCView]:
+    """Return the views of the jaw plate, in the document's order.
+
+    Both are drawn with the plate's width across: from above, with its
+    clamping face toward the bottom; and looking at its clamping face.
+
+    Returns:
+    * (`list[SCView]`): The top and face views.
+    """
+    # The plate's sizes (inches).
+    p: SCJawPlate = JAW_PLATE
+    thick: float = _in(p.length)
+    half: float = _in(p.width) / 2.0
+    tall: float = _in(p.height)
+    holes: float = _in(p.hole_spacing) / 2.0
+    hole: float = _in(p.hole_diameter) / 2.0
+    bore: float = _in(p.counterbore_diameter) / 2.0
+    deep: float = _in(p.counterbore_depth)
+    up: float = _in(p.hole_height)
+
+    # From above: each hole and counterbore hidden inside, the clamping
+    # face at the bottom.
+    top_shapes: list[SCShape] = [_rectangle((-half, 0.0), (half, thick))]
+    for x in (-holes, holes):
+        top_shapes += [
+            _rectangle((x - bore, 0.0), (x + bore, deep), "none", HIDDEN),
+            _rectangle((x - hole, deep), (x + hole, thick), "none", HIDDEN),
+            _center_line(False, x, 0.0, thick),
+        ]
+    top_marks: list[SCMark] = [
+        SCDimension(
+            "length", False, 0.0, thick, half + STAND_OFF, (half, half)
+        ),
+        SCDimension(
+            "counterbore_depth",
+            False,
+            0.0,
+            deep,
+            -half - STAND_OFF,
+            (-half, -holes - bore),
+        ),
+    ]
+
+    # The clamping face: the counterbores, with the holes through them.
+    face_shapes: list[SCShape] = [_rectangle((-half, 0.0), (half, tall))]
+    for x in (-holes, holes):
+        face_shapes += [
+            _circle((x, up), bore),
+            _circle((x, up), hole, POCKET_FILL),
+            _center_line(False, x, up - bore, up + bore),
+        ]
+    face_shapes.append(_center_line(True, up, -half, half))
+    face_marks: list[SCMark] = [
+        SCDimension("width", True, -half, half, -STAND_OFF - ROW, (0.0, 0.0)),
+        SCDimension("hole_spacing", True, -holes, holes, -STAND_OFF, (up, up)),
+        SCDimension(
+            "height", False, 0.0, tall, -half - STAND_OFF, (-half, -half)
+        ),
+        SCDimension(
+            "hole_height", False, 0.0, up, half + STAND_OFF, (half, holes)
+        ),
+        SCDimension(
+            "counterbore_diameter",
+            True,
+            -holes - bore,
+            -holes + bore,
+            tall + STAND_OFF,
+            (up, up),
+        ),
+        SCDimension(
+            "hole_diameter",
+            True,
+            holes - hole,
+            holes + hole,
+            tall + STAND_OFF,
+            (up, up),
+        ),
+    ]
+    return [
+        SCView("top", "Top (clamping face down)", top_shapes, top_marks),
+        SCView("face", "Clamping face", face_shapes, face_marks),
+    ]
+
+
+# Function `jaw_plate_section()`:
+def jaw_plate_section() -> str:
+    """Return the jaw plate's section of the document.
+
+    Returns:
+    * (`str`): Its Markdown.
+    """
+    # What it is, from its docstring, and its views.
+    doc: str = inspect.getdoc(SCJawPlate) or ""
+    about: str = doc.split("\n\nAttributes:", maxsplit=1)[0]
+    paragraphs: str = "\n\n".join(
+        textwrap.fill(paragraph, 72) for paragraph in about.split("\n\n")
+    )
+    views: list[SCView] = jaw_plate_views()
+    numbers: dict[str, str] = vise_numbers(views)
+    images: str = "\n\n".join(
+        f"{view.title}:\n\n"
+        f"![Jaw plate, {view.name}]({SKETCHES}/jaw_plate_{view.name}.svg)"
+        for view in views
+    )
+
+    # The sizes, by number; then the rest, and how to make one.
+    meanings: dict[str, str] = _attributes(SCJawPlate)
+    rows: list[list[str]] = _size_rows(numbers, meanings)
+    others: str = "\n".join(
+        textwrap.fill(f"* `{key}`: {meaning}", 72, subsequent_indent="  ")
+        for key, meaning in meanings.items()
+        if key not in numbers
+    )
+    python: str = (
+        "from scraftpybind import SCPyBind, connect\n"
+        f"from tools import {JAW_PLATE_NAME}\n"
+        "\n"
+        'with connect("8080") as transport:\n'
+        f'    {JAW_PLATE_NAME}.model(SCPyBind(transport), "Jaw plate")\n'
+    )
+    return (
+        "## Jaw Plate\n\n"
+        f"{paragraphs}\n\n"
+        f"The sketches are of `tools.{JAW_PLATE_NAME}`, the plate on\n"
+        "`tools.KURT_D688`.  Hidden edges are dashed.\n\n"
+        f"{images}\n\n"
+        f"{markdown_table(rows)}\n\n"
+        f"Not a size:\n\n{others}\n\n"
+        "Like the vise, it is made in Python, in millimeters:\n\n"
+        f"```python\n{python}```\n\n"
+        f"{_interface_entry(tools, 'SCJawPlate', False)}"
+    )
+
+
 # Function `document()`:
 def document() -> str:
     """Return `Tool_Models.md`.
@@ -1180,6 +2286,7 @@ def document() -> str:
     lengths: str = ", ".join(f"`{unit}`" for unit in LENGTH)
     titles: list[str] = ["Python Interface"]
     titles += [page.title for page in PAGES]
+    titles += ["Machine Vise", "Jaw Plate"]
     contents: str = "\n".join(
         f"* [{title}](#{title.lower().replace(' ', '-')})" for title in titles
     )
@@ -1193,6 +2300,8 @@ def document() -> str:
             f"## Contents\n\n{contents}\n",
             f"## Python Interface\n\n{interface}",
             *[section(page) for page in PAGES],
+            vise_section(),
+            jaw_plate_section(),
         ]
     )
 
@@ -1206,6 +2315,18 @@ def main() -> None:
     for page in PAGES:
         (directory / f"{page.kind}.svg").write_text(
             sketch(page), encoding="utf-8"
+        )
+    views: list[SCView] = vise_views()
+    numbers: dict[str, str] = vise_numbers(views)
+    for view in views:
+        (directory / f"machine_vise_{view.name}.svg").write_text(
+            view_sketch(view, numbers), encoding="utf-8"
+        )
+    views = jaw_plate_views()
+    numbers = vise_numbers(views)
+    for view in views:
+        (directory / f"jaw_plate_{view.name}.svg").write_text(
+            view_sketch(view, numbers), encoding="utf-8"
         )
 
 

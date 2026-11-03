@@ -41,11 +41,11 @@ class TestFirstMount(unittest.TestCase):
         """The work is midway between the plates, along X."""
         x = mount.FIRST_MOUNT.places()[3][0]
         fixed = (
-            -VISE.middle.length / 2.0
+            -VISE.body.length / 2.0
             + VISE.fixed_jaw.length
-            + VISE.plate.length
+            + VISE.jaw_plate.length
         )
-        moving = VISE.moving_face(6.0 * INCH) - VISE.plate.length
+        moving = VISE.movable_face(6.0 * INCH) - VISE.jaw_plate.length
         self.assertAlmostEqual(x - fixed, moving - x)
         self.assertAlmostEqual(moving - fixed, 6.0 * INCH)
 

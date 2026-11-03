@@ -30,6 +30,8 @@ form raises `SCShopError`.
 * [Double Angle Cutter](#double-angle-cutter)
 * [Single End Countersink](#single-end-countersink)
 * [Double End Countersink](#double-end-countersink)
+* [Machine Vise](#machine-vise)
+* [Jaw Plate](#jaw-plate)
 
 ## Python Interface
 
@@ -727,3 +729,531 @@ overall_length = "3 in"
 angle = "60 deg"
 point_angle = "90 deg"
 ```
+
+## Machine Vise
+
+A machine vise, of the kind that Kurt makes.
+
+A picture rather than a true vise: enough to know what it is.  A real
+Kurt is one casting; the model stacks it in layers, named from the
+bottom up: the base, the body and the bed.  On the bed sit the fixed jaw
+and the movable jaw, each with a jaw plate on its clamping face.
+
+The base and the body are blocks, stacked and centered on one another.
+They have notches in both sides that line up, for hold downs: the body's
+are bigger, so that a box wrench fits around the nut.  The bed is two
+rails that run the whole length, with an end block between them at each
+end.  Under the opening that leaves, the body has a pocket down to the
+base, where the lead screw shows.
+
+The lead screw is a cylinder along X, from the pocket's -X end out
+through a hole in the body's +X end, ending in an extruded hexagon.
+
+The jaws sit on the bed: the fixed jaw at the -X end, away from the
+hexagon, and the movable jaw opening toward +X.  Under the movable jaw,
+a slider fits between the rails and reaches down through the pocket,
+with a hole that the lead screw goes through.  It starts at the jaw's
+clamping face and is shorter than the jaw by an end block's length, so
+that the jaw reaches the bed's +X end as the slider meets the end block.
+The jaw plates do the actual clamping; each has two holes for the screws
+that hold it on.
+
+All lengths are in millimeters.
+
+The sketches are of `tools.KURT_D688`, opened as far as it goes.
+Hidden edges are dashed.  Its jaw plates are separate parts,
+described in [Jaw Plate](#jaw-plate).
+
+Top:
+
+![Machine vise, top](docs/tool_models/machine_vise_top.svg)
+
+Back (the hexagon's end):
+
+![Machine vise, back](docs/tool_models/machine_vise_back.svg)
+
+Side (from -Y):
+
+![Machine vise, side](docs/tool_models/machine_vise_side.svg)
+
+| Number | Units   | Description                                              |
+| ------ | ------- | -------------------------------------------------------- |
+| 1      | Length  | `fixed_jaw.length`: The jaw that stays put: its size     |
+|        |         | along X, the lead screw's direction.                     |
+| 2      | Length  | `max_opening`: The largest gap between the jaw plates.   |
+| 3      | Length  | `movable_jaw.length`: The jaw that the lead screw moves: |
+|        |         | its size along X, the lead screw's direction.            |
+| 4      | Length  | `lead_screw_stick_out`: How far the lead screw's         |
+|        |         | cylinder reaches past the body's +X end.                 |
+| 5      | Length  | `hex_length`: The hexagon's size along X.                |
+| 6      | Length  | `base.length`: The bottom layer: its size along X, the   |
+|        |         | lead screw's direction.                                  |
+| 7      | Length  | `body_notches.width`: The notches in the body, at the    |
+|        |         | same places but bigger: a notch's size along X.          |
+| 8      | Length  | `base_notches.width`: The notches in the base: a notch's |
+|        |         | size along X.                                            |
+| 9      | Length  | `end_block_length`: An end block's size along X.         |
+| 10     | Lengths | `body_notches.centers`: The notches in the body, at the  |
+|        |         | same places but bigger: the X of each notch's center     |
+|        |         | (X1, X2, ...), from the block's center, from most        |
+|        |         | negative up. Empty, the sides are plain.                 |
+| 11     | Lengths | `base_notches.centers`: The notches in the base: the X   |
+|        |         | of each notch's center (X1, X2, ...), from the block's   |
+|        |         | center, from most negative up. Empty, the sides are      |
+|        |         | plain.                                                   |
+| 12     | Length  | `body.length`: The layer on the base: its size along X,  |
+|        |         | the lead screw's direction.                              |
+| 13     | Length  | `base_notches.depth`: The notches in the base: how far a |
+|        |         | notch reaches in from the side.                          |
+| 14     | Length  | `body_notches.depth`: The notches in the body, at the    |
+|        |         | same places but bigger: how far a notch reaches in from  |
+|        |         | the side.                                                |
+| 15     | Length  | `rail_width`: A bed rail's size along Y.                 |
+| 16     | Length  | `rail_gap`: The distance between the rails.              |
+| 17     | Length  | `fixed_jaw.width`: The jaw that stays put: its size      |
+|        |         | along Y.                                                 |
+| 18     | Length  | `base_notches.inner_radius`: The notches in the base:    |
+|        |         | the radius of its two corners farthest in.               |
+| 19     | Length  | `base_notches.outer_radius`: The notches in the base:    |
+|        |         | the radius of its two corners where it meets the side.   |
+| 20     | Length  | `base.corner_radius`: The bottom layer: the radius of    |
+|        |         | its four corners.                                        |
+| 21     | Length  | `body_notches.inner_radius`: The notches in the body, at |
+|        |         | the same places but bigger: the radius of its two        |
+|        |         | corners farthest in.                                     |
+| 22     | Length  | `body_notches.outer_radius`: The notches in the body, at |
+|        |         | the same places but bigger: the radius of its two        |
+|        |         | corners where it meets the side.                         |
+| 23     | Length  | `body.corner_radius`: The layer on the base: the radius  |
+|        |         | of its four corners.                                     |
+| 24     | Length  | `movable_jaw.width`: The jaw that the lead screw moves:  |
+|        |         | its size along Y.                                        |
+| 25     | Length  | `base.width`: The bottom layer: its size along Y.        |
+| 26     | Length  | `body.width`: The layer on the base: its size along Y.   |
+| 27     | Length  | `lead_screw_height`: The height of the lead screw's axis |
+|        |         | above the base's bottom.                                 |
+| 28     | Length  | `hex_size`: The size across the flats of the hexagon on  |
+|        |         | the lead screw's end.                                    |
+| 29     | Length  | `lead_screw_diameter`: The lead screw's diameter.        |
+| 30     | Length  | `lead_screw_hole_diameter`: The diameter of the hole for |
+|        |         | the lead screw in the body's end.                        |
+| 31     | Length  | `base.height`: The bottom layer: its size along Z.       |
+| 32     | Length  | `body.height`: The layer on the base: its size along Z.  |
+| 33     | Length  | `rail_height`: The height of the bed: its rails and end  |
+|        |         | blocks.                                                  |
+| 34     | Length  | `fixed_jaw.height`: The jaw that stays put: its size     |
+|        |         | along Z.                                                 |
+| 35     | Length  | `movable_jaw.height`: The jaw that the lead screw moves: |
+|        |         | its size along Z.                                        |
+
+Not drawn (square on the sample): `fixed_jaw.corner_radius`,
+`movable_jaw.corner_radius`.
+
+A machine vise has no tools file entry yet, so it is made in
+Python, in millimeters, like `tools.KURT_D688`:
+
+```python
+from scraftpybind import SCPyBind, connect
+from tools import KURT_D688
+
+with connect("8080") as transport:
+    KURT_D688.model(SCPyBind(transport), opening=76.2)
+```
+
+A setup file (`examples/setup/`) names one by its `type`:
+
+```json
+{
+  "kind": "machine_vise",
+  "type": "Kurt D688",
+  "opening": "6 in",
+  "location": [
+    "0 in",
+    "-3.15 in"
+  ],
+  "height": "0 in",
+  "orientation": "-90 deg"
+}
+```
+
+### `tools.SCMachineVise`
+
+```python
+tools.SCMachineVise(
+    name: str,
+    base: SCViseBlock,
+    body: SCViseBlock,
+    base_notches: SCViseNotches,
+    body_notches: SCViseNotches,
+    rail_width: float,
+    rail_height: float,
+    rail_gap: float,
+    end_block_length: float,
+    fixed_jaw: SCViseBlock,
+    movable_jaw: SCViseBlock,
+    jaw_plate: SCJawPlate,
+    max_opening: float,
+    lead_screw_diameter: float,
+    lead_screw_stick_out: float,
+    lead_screw_height: float,
+    lead_screw_hole_diameter: float,
+    hex_size: float,
+    hex_length: float,
+)
+```
+
+A machine vise, of the kind that Kurt makes.
+
+A picture rather than a true vise: enough to know what it is.  A real
+Kurt is one casting; the model stacks it in layers, named from the
+bottom up: the base, the body and the bed.  On the bed sit the fixed
+jaw and the movable jaw, each with a jaw plate on its clamping face.
+
+The base and the body are blocks, stacked and centered on one
+another.  They have notches in both sides that line up, for hold
+downs: the body's are bigger, so that a box wrench fits around the
+nut.  The bed is two rails that run the whole length, with an end
+block between them at each end.  Under the opening that leaves, the
+body has a pocket down to the base, where the lead screw shows.
+
+The lead screw is a cylinder along X, from the pocket's -X end out
+through a hole in the body's +X end, ending in an extruded hexagon.
+
+The jaws sit on the bed: the fixed jaw at the -X end, away from the
+hexagon, and the movable jaw opening toward +X.  Under the movable
+jaw, a slider fits between the rails and reaches down through the
+pocket, with a hole that the lead screw goes through.  It starts at
+the jaw's clamping face and is shorter than the jaw by an end block's
+length, so that the jaw reaches the bed's +X end as the slider meets
+the end block.  The jaw plates do the actual clamping; each has two
+holes for the screws that hold it on.
+
+All lengths are in millimeters.
+
+Attributes:
+* `name` (`str`): What it is.
+* `base` (`SCViseBlock`): The bottom layer.
+* `body` (`SCViseBlock`): The layer on the base.
+* `base_notches` (`SCViseNotches`): The notches in the base.
+* `body_notches` (`SCViseNotches`):
+  The notches in the body, at the same places but bigger.
+* `rail_width` (`float`): A bed rail's size along Y.
+* `rail_height` (`float`): The height of the bed: its rails and end
+  blocks.
+* `rail_gap` (`float`): The distance between the rails.
+* `end_block_length` (`float`): An end block's size along X.
+* `fixed_jaw` (`SCViseBlock`): The jaw that stays put.
+* `movable_jaw` (`SCViseBlock`): The jaw that the lead screw moves.
+* `jaw_plate` (`SCJawPlate`): The jaw plate on each jaw.
+* `max_opening` (`float`): The largest gap between the jaw plates.
+* `lead_screw_diameter` (`float`): The lead screw's diameter.
+* `lead_screw_stick_out` (`float`):
+  How far the lead screw's cylinder reaches past the body's +X end.
+* `lead_screw_height` (`float`):
+  The height of the lead screw's axis above the base's bottom.
+* `lead_screw_hole_diameter` (`float`):
+  The diameter of the hole for the lead screw in the body's end.
+* `hex_size` (`float`):
+  The size across the flats of the hexagon on the lead screw's end.
+* `hex_length` (`float`): The hexagon's size along X.
+
+```python
+SCMachineVise.bed_top() -> float
+```
+
+Return the height of the top of the bed, above the base's bottom.
+
+```python
+SCMachineVise.overall_length() -> float
+```
+
+Return the vise's length, out to the end of the hexagon.
+
+```python
+SCMachineVise.opening_length() -> float
+```
+
+Return the length of the opening between the end blocks.
+
+```python
+SCMachineVise.slider() -> SCViseBlock
+```
+
+Return the block under the movable jaw, between the rails.
+
+```python
+SCMachineVise.slider_volume() -> float
+```
+
+Return the volume the slider's model should have.
+
+```python
+SCMachineVise.jaw_plate_volume() -> float
+```
+
+Return the volume a jaw plate's model should have.
+
+```python
+SCMachineVise.movable_face(opening: float) -> float
+```
+
+Return the X of the movable jaw's clamping face, behind its plate.
+
+```python
+SCMachineVise.gap_center(opening: float) -> float
+```
+
+Return the X of the middle of the gap between the jaw plates.
+
+```python
+SCMachineVise.hexagon() -> list[tuple[float, float]]
+```
+
+Return the corners of the lead screw's hexagon, flats up and down.
+
+```python
+SCMachineVise.body_volume() -> float
+```
+
+Return the volume the body's model should have.
+
+```python
+SCMachineVise.lead_screw_volume() -> float
+```
+
+Return the volume the lead screw's model should have.
+
+```python
+SCMachineVise.keep_out(
+    center: Point = (0.0, 0.0, 0.0),
+    opening: float = 0.0,
+    margin: str = VISE_MARGIN,
+) -> SCKeepOut
+```
+
+Return the regions around the vise that a tool must not enter.
+
+```python
+SCMachineVise.model(
+    solidcraft: SCPyBind,
+    center: Point = (0.0, 0.0, 0.0),
+    opening: float = 0.0,
+    lift: float = 0.0,
+) -> list[str]
+```
+
+Model the vise, up from the center of the base's bottom face.
+
+```python
+SCMachineVise.cacheable(opening: float) -> tuple[SCCacheable, ...]
+```
+
+Return the vise as models that can be cached.
+
+### `tools.SCViseBlock`
+
+```python
+tools.SCViseBlock(
+    length: float,
+    width: float,
+    height: float,
+    corner_radius: float,
+)
+```
+
+A block of a vise: a layer of its base, or a jaw.
+
+Its outline is a rectangle with rounded corners, and perhaps notches
+in its sides, extruded straight up.  All lengths are in millimeters.
+
+Attributes:
+* `length` (`float`): Its size along X, the lead screw's direction.
+* `width` (`float`): Its size along Y.
+* `height` (`float`): Its size along Z.
+* `corner_radius` (`float`): The radius of its four corners.
+
+```python
+SCViseBlock.outline(
+    name: str,
+    center: tuple[float, float] = (0.0, 0.0),
+    notches: SCViseNotches | None = None,
+) -> SCRoundedPolygon
+```
+
+Return the block's outline, as seen from above.
+
+```python
+SCViseBlock.volume(notches: SCViseNotches | None = None) -> float
+```
+
+Return the volume the model should have.
+
+```python
+SCViseBlock.model(
+    solidcraft: SCPyBind,
+    name: str,
+    center: Point = (0.0, 0.0, 0.0),
+    notches: SCViseNotches | None = None,
+) -> str
+```
+
+Model the block, up from the center of its bottom face.
+
+### `tools.SCViseNotches`
+
+```python
+tools.SCViseNotches(
+    centers: tuple[float, ...],
+    width: float,
+    depth: float,
+    inner_radius: float,
+    outer_radius: float,
+)
+```
+
+The notches in both sides of one layer of a vise's base.
+
+Each side has one rectangular notch per center, so the notches on
+the two sides line up.  All four of a notch's corners are rounded.
+All lengths are in millimeters.
+
+Attributes:
+* `centers` (`tuple[float, ...]`):
+  The X of each notch's center (X1, X2, ...), from the block's
+  center, from most negative up.  Empty, the sides are plain.
+* `width` (`float`): A notch's size along X.
+* `depth` (`float`): How far a notch reaches in from the side.
+* `inner_radius` (`float`): The radius of its two corners farthest in.
+* `outer_radius` (`float`):
+  The radius of its two corners where it meets the side.
+
+```python
+SCViseNotches.side_corners(edge_y: float, direction: int) -> list[SCCorner]
+```
+
+Return the corners of the notches along one side of a block.
+
+```python
+SCViseNotches.area() -> float
+```
+
+Return the area that all of the notches remove from a block.
+
+## Jaw Plate
+
+A jaw plate: the replaceable part of a vise's jaw that clamps.
+
+A machine vise's jaw plates are separate parts, each held to its jaw by
+two socket head cap screws.  Each screw goes through a counterbore in
+the clamping face, so that its head sits below the face.  The hole
+patterns are standard enough that plates from one maker fit another's
+vises: a 6 in vise has holes on 3.875 in centers, for 1/2-13 screws.
+
+The plate is a block: `length` is its thickness, from its clamping face
+back to its jaw; `width` runs across the vise, and `height` up. All
+lengths are in millimeters.
+
+The sketches are of `tools.KURT_JAW_PLATE`, the plate on
+`tools.KURT_D688`.  Hidden edges are dashed.
+
+Top (clamping face down):
+
+![Jaw plate, top](docs/tool_models/jaw_plate_top.svg)
+
+Clamping face:
+
+![Jaw plate, face](docs/tool_models/jaw_plate_face.svg)
+
+| Number | Units  | Description                                               |
+| ------ | ------ | --------------------------------------------------------- |
+| 1      | Length | `length`: Its thickness, from its clamping face back.     |
+| 2      | Length | `counterbore_depth`: How deep the counterbores reach in   |
+|        |        | from the clamping face.                                   |
+| 3      | Length | `width`: Its size across the vise.                        |
+| 4      | Length | `hole_spacing`: The distance between its two holes.       |
+| 5      | Length | `height`: Its size up.                                    |
+| 6      | Length | `hole_height`: The height of its holes' centers above its |
+|        |        | bottom.                                                   |
+| 7      | Length | `counterbore_diameter`: The diameter of the counterbores, |
+|        |        | for the screws' heads.                                    |
+| 8      | Length | `hole_diameter`: The diameter of its holes.               |
+
+Not a size:
+
+* `screw`: The screws that hold it on (e.g. `1/2-13 SHCS`).
+
+Like the vise, it is made in Python, in millimeters:
+
+```python
+from scraftpybind import SCPyBind, connect
+from tools import KURT_JAW_PLATE
+
+with connect("8080") as transport:
+    KURT_JAW_PLATE.model(SCPyBind(transport), "Jaw plate")
+```
+
+### `tools.SCJawPlate`
+
+```python
+tools.SCJawPlate(
+    screw: str,
+    length: float,
+    width: float,
+    height: float,
+    hole_spacing: float,
+    hole_diameter: float,
+    hole_height: float,
+    counterbore_diameter: float,
+    counterbore_depth: float,
+)
+```
+
+A jaw plate: the replaceable part of a vise's jaw that clamps.
+
+A machine vise's jaw plates are separate parts, each held to its jaw
+by two socket head cap screws.  Each screw goes through a counterbore
+in the clamping face, so that its head sits below the face.  The
+hole patterns are standard enough that plates from one maker fit
+another's vises: a 6 in vise has holes on 3.875 in centers, for
+1/2-13 screws.
+
+The plate is a block: `length` is its thickness, from its clamping
+face back to its jaw; `width` runs across the vise, and `height` up.
+All lengths are in millimeters.
+
+Attributes:
+* `screw` (`str`): The screws that hold it on (e.g. `1/2-13 SHCS`).
+* `length` (`float`): Its thickness, from its clamping face back.
+* `width` (`float`): Its size across the vise.
+* `height` (`float`): Its size up.
+* `hole_spacing` (`float`): The distance between its two holes.
+* `hole_diameter` (`float`): The diameter of its holes.
+* `hole_height` (`float`):
+  The height of its holes' centers above its bottom.
+* `counterbore_diameter` (`float`):
+  The diameter of the counterbores, for the screws' heads.
+* `counterbore_depth` (`float`):
+  How deep the counterbores reach in from the clamping face.
+
+```python
+SCJawPlate.block() -> SCViseBlock
+```
+
+Return the plate without its holes.
+
+```python
+SCJawPlate.volume() -> float
+```
+
+Return the volume its model should have.
+
+```python
+SCJawPlate.model(
+    solidcraft: SCPyBind,
+    name: str,
+    center: Point = (0.0, 0.0, 0.0),
+    facing: float = 1.0,
+) -> str
+```
+
+Model the plate, with its holes and counterbores.

@@ -49,3 +49,7 @@ given a unique JSON tree of their arguments, which `SCCacheable.shape` already t
 * Center of mass differs by up to 0.006 mm between a built body with round faces and its STEP.
 * `body.rename` works on inserted bodies; a taken name gets ` (2)`.  `solid.remove` keeps the features.
 * Killing a GUI leaves recovery files that bring up a "Recover unsaved design?" dialog in the next: remove them by PID.
+
+## 2026-11-02
+
+The vise is now `SCMachineVise` with an `SCJawPlate`; setup files name it with kind `machine_vise`.  Neither has a kind in the shop files yet.

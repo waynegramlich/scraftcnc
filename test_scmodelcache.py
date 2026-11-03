@@ -192,7 +192,7 @@ class TestLive(unittest.TestCase):
                         got_axis, want_axis, places=1, msg=name
                     )
             self.assertEqual(
-                appearance["Kurt D688 screw"]["color"], tools.DRILL_COLOR
+                appearance["Kurt D688 lead screw"]["color"], tools.DRILL_COLOR
             )
             self.assertEqual(
                 appearance["Kurt D688 slider"]["color"], tools.VISE_COLOR
@@ -266,7 +266,7 @@ class TestLive(unittest.TestCase):
         """The vise is two files, which any opening shares."""
         vise = scsetup.KURT_D688
         for opening in (10.0, 100.0):
-            layer = scsetup.SCViseLayer(vise, opening)
+            layer = scsetup.SCMachineViseLayer(vise, opening)
             with session(self.directory) as transport:
                 scsetup.SCPlacement(0.0, 0.0, 0.0, 0).model(
                     layer, SCPyBind(transport), self.cache
@@ -276,7 +276,7 @@ class TestLive(unittest.TestCase):
             sorted(
                 path.name.split("__")[0] for path in self.directory.iterdir()
             ),
-            ["Kurt_D688", "Kurt_D688_moving"],
+            ["Kurt_D688", "Kurt_D688_movable"],
         )
 
     def test_tool_with_lines_at_a_place(self) -> None:

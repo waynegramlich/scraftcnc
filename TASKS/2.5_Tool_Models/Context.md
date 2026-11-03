@@ -11,7 +11,7 @@ drills, vise, parallels and keep-outs; with `countersinks`, `largest` or an orde
 
 * Tormach tables follow Tormach's drawing, "T-Slot Spacing on Tormach Mills", over conflicting spec sheets (770 slots 50 mm, 440 slots
   10 mm; 460 x 160, 660 x 205, 860 x 240 mm).  Plate thickness and pockets are scaled or assumed.
-* Keep-outs: new bodies, `#e03c31`, opacity 0.25.  `SCVise.keep_out()` gives three prisms, grown 1/8 in, overlapping where they meet.
+* Keep-outs: new bodies, `#e03c31`, opacity 0.25.  `SCMachineVise.keep_out()` gives three prisms, grown 1/8 in, overlapping where they meet.
 * Flutes are lines (the user: end mills and drills are variations of a grooved cylinder; fly cutters much later).  They stand 1 % of
   the radius off the surface; `sketch.spline3d`, 12 points a turn; none on the tips (the user).  From memory, as the tools files have no
   such keys: 30 degree helix for end mills and drills, others straight; 2 flutes for drills and countersink ends.
@@ -34,3 +34,7 @@ drills, vise, parallels and keep-outs; with `countersinks`, `largest` or an orde
 * Round bodies measure about 1.1 % low in volume.  A revolve coming to a point on its axis shows errors in the GUI.
 * `browser.visibility(items=[...], visible=False)` hides bodies.  `timeline.delete(features=[sketch name])` removes a sketch and its
   extrude.
+
+## 2026-11-02: Vise terms and jaw plates
+
+`SCVise` is now `SCMachineVise`: base, body, bed (rails and end blocks), fixed and movable jaws, lead screw, hex; `bed_top()` was `base_height()`.  Jaw plates are their own part, `SCJawPlate` (`KURT_JAW_PLATE`), with counterbored holes cut from the clamping face; each plate in the vise faces the other.  Pages for both are in `Tool_Models.md` (`T.dtm~2.5.2`).

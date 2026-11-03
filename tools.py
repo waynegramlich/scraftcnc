@@ -1487,7 +1487,7 @@ class SCViseBlock:
     in its sides, extruded straight up.  All lengths are in millimeters.
 
     Attributes:
-    * `length` (`float`): Its size along X, the screw's direction.
+    * `length` (`float`): Its size along X, the lead screw's direction.
     * `width` (`float`): Its size along Y.
     * `height` (`float`): Its size along Z.
     * `corner_radius` (`float`): The radius of its four corners.
@@ -1612,279 +1612,426 @@ class SCViseBlock:
         return bodies[0]
 
 
-# Class `SCVise`:
+# Class `SCJawPlate`:
 @dataclass(frozen=True, slots=True)
-class SCVise:
-    """A milling vise, of the kind that Kurt makes.
+class SCJawPlate:
+    """A jaw plate: the replaceable part of a vise's jaw that clamps.
 
-    A picture rather than a true vise: enough to know what it is.
+    A machine vise's jaw plates are separate parts, each held to its jaw
+    by two socket head cap screws.  Each screw goes through a counterbore
+    in the clamping face, so that its head sits below the face.  The
+    hole patterns are standard enough that plates from one maker fit
+    another's vises: a 6 in vise has holes on 3.875 in centers, for
+    1/2-13 screws.
 
-    The bottom and the middle are blocks, stacked and centered on one
+    The plate is a block: `length` is its thickness, from its clamping
+    face back to its jaw; `width` runs across the vise, and `height` up.
+    All lengths are in millimeters.
+
+    Attributes:
+    * `screw` (`str`): The screws that hold it on (e.g. `1/2-13 SHCS`).
+    * `length` (`float`): Its thickness, from its clamping face back.
+    * `width` (`float`): Its size across the vise.
+    * `height` (`float`): Its size up.
+    * `hole_spacing` (`float`): The distance between its two holes.
+    * `hole_diameter` (`float`): The diameter of its holes.
+    * `hole_height` (`float`):
+      The height of its holes' centers above its bottom.
+    * `counterbore_diameter` (`float`):
+      The diameter of the counterbores, for the screws' heads.
+    * `counterbore_depth` (`float`):
+      How deep the counterbores reach in from the clamping face.
+
+    Constructor:
+    * `SCJawPlate(screw, length, width, height, hole_spacing,
+      hole_diameter, hole_height, counterbore_diameter,
+      counterbore_depth)`
+    """
+
+    # Constructor arguments:
+    screw: str = field(init=True)
+    length: float = field(init=True)
+    width: float = field(init=True)
+    height: float = field(init=True)
+    hole_spacing: float = field(init=True)
+    hole_diameter: float = field(init=True)
+    hole_height: float = field(init=True)
+    counterbore_diameter: float = field(init=True)
+    counterbore_depth: float = field(init=True)
+
+    # Method `SCJawPlate.__post_init__()`:
+    def __post_init__(self) -> None:
+        """Check that the holes and counterbores fit the plate.
+
+        Raises:
+        * `ValueError`: If the plate has no size, or they do not fit.
+        """
+        if min(self.length, self.width, self.height) <= 0.0:
+            raise ValueError(f"{self.length=}, {self.width=}, {self.height=}")
+
+        # The counterbores are the wider part of each hole, so they are
+        # what must fit, beside each other and inside the plate.
+        hole: float = self.hole_diameter / 2.0
+        counterbore: float = self.counterbore_diameter / 2.0
+        if not 0.0 < hole < counterbore or not (
+            0.0 < self.counterbore_depth < self.length
+        ):
+            raise ValueError(
+                f"{self.hole_diameter=} and {self.counterbore_diameter=} "
+                f"{self.counterbore_depth=} deep do not fit the plate"
+            )
+        if (
+            self.hole_spacing <= 2.0 * counterbore
+            or self.hole_spacing / 2.0 + counterbore >= self.width / 2.0
+            or self.hole_height - counterbore <= 0.0
+            or self.hole_height + counterbore >= self.height
+        ):
+            raise ValueError(
+                f"{self.hole_diameter=} and {self.counterbore_diameter=} "
+                f"{self.counterbore_depth=} deep, at {self.hole_spacing=} "
+                f"and {self.hole_height=}, do not fit the plate"
+            )
+
+    # Method `SCJawPlate.block()`:
+    def block(self) -> SCViseBlock:
+        """Return the plate without its holes.
+
+        Returns:
+        * (`SCViseBlock`): The block.
+        """
+        return SCViseBlock(self.length, self.width, self.height)
+
+    # Method `SCJawPlate.volume()`:
+    def volume(self) -> float:
+        """Return the volume its model should have.
+
+        Returns:
+        * (`float`): The volume (cubic millimeters).
+        """
+        hole: float = math.pi * (self.hole_diameter / 2.0) ** 2
+        counterbore: float = math.pi * (self.counterbore_diameter / 2.0) ** 2
+        deep: float = self.counterbore_depth
+        each: float = hole * (self.length - deep) + counterbore * deep
+        return self.block().volume() - 2.0 * each
+
+    # Method `SCJawPlate.model()`:
+    def model(
+        self,
+        solidcraft: SCPyBind,
+        name: str,
+        center: Point = (0.0, 0.0, 0.0),
+        facing: float = 1.0,
+    ) -> str:
+        """Model the plate, with its holes and counterbores.
+
+        Its thickness is along X, and its width along Y.
+
+        Arguments:
+        * `solidcraft` (`SCPyBind`): The SolidCraft session.
+        * `name` (`str`): The body's name.
+        * `center` (`Point`): The center of its bottom face (mm).
+        * `facing` (`float`):
+          `1.0` if its clamping face faces +X, `-1.0` if it faces -X.
+
+        Returns:
+        * (`str`): The body's name (SolidCraft may change it, if the
+          name is taken).
+        """
+        body: str = self.block().model(solidcraft, name, center)
+
+        # Cut the holes through it, then the counterbores, each from the
+        # clamping face in.  The face's sketch looks back into the plate.
+        x, y, z = center
+        plane: dict[str, JSON] = {
+            "origin": [x + facing * self.length / 2.0, y, z],
+            "x_dir": [0.0, facing, 0.0],
+            "y_dir": [0.0, 0.0, 1.0],
+        }
+        half: float = self.hole_spacing / 2.0
+        for diameter, depth, part in (
+            (self.hole_diameter, self.length, "holes"),
+            (
+                self.counterbore_diameter,
+                self.counterbore_depth,
+                "counterbores",
+            ),
+        ):
+            solidcraft.sketch.create(plane=plane, name=f"{name} {part}")
+            for across in (-half, half):
+                solidcraft.sketch.circle_center(
+                    center=(across, self.hole_height), diameter=diameter
+                )
+            solidcraft.sketch.finish()
+            solidcraft.solid.extrude(
+                distance=depth,
+                direction="negative",
+                operation="cut",
+                targets=[body],
+            )
+        return body
+
+
+# Class `SCMachineVise`:
+@dataclass(frozen=True, slots=True)
+class SCMachineVise:
+    """A machine vise, of the kind that Kurt makes.
+
+    A picture rather than a true vise: enough to know what it is.  A real
+    Kurt is one casting; the model stacks it in layers, named from the
+    bottom up: the base, the body and the bed.  On the bed sit the fixed
+    jaw and the movable jaw, each with a jaw plate on its clamping face.
+
+    The base and the body are blocks, stacked and centered on one
     another.  They have notches in both sides that line up, for hold
-    downs: the middle's are bigger, so that a box wrench fits around the
-    nut.  On top, two rails run the whole length, with a block between
-    them at each end.  Under the opening that leaves, the middle has a
-    pocket down to the bottom, where the screw shows.
+    downs: the body's are bigger, so that a box wrench fits around the
+    nut.  The bed is two rails that run the whole length, with an end
+    block between them at each end.  Under the opening that leaves, the
+    body has a pocket down to the base, where the lead screw shows.
 
-    The screw is a cylinder along X, from the pocket's -X end out through
-    a hole in the middle's +X end, ending in an extruded hexagon.
+    The lead screw is a cylinder along X, from the pocket's -X end out
+    through a hole in the body's +X end, ending in an extruded hexagon.
 
-    The jaws sit on the rails: the fixed jaw at the -X end, away from the
-    hexagon, and the moving jaw opening toward +X.  Under the moving jaw,
-    a slider fits between the rails and reaches down through the pocket,
-    with a hole that the screw goes through.  It starts at the jaw's
-    clamping face and is shorter than the jaw by an end block's length, so
-    that the jaw reaches the base's +X end as the slider meets the end
-    block.  A plate on each jaw's clamping face does the actual clamping,
-    with two holes for the screws that hold it on.
+    The jaws sit on the bed: the fixed jaw at the -X end, away from the
+    hexagon, and the movable jaw opening toward +X.  Under the movable
+    jaw, a slider fits between the rails and reaches down through the
+    pocket, with a hole that the lead screw goes through.  It starts at
+    the jaw's clamping face and is shorter than the jaw by an end block's
+    length, so that the jaw reaches the bed's +X end as the slider meets
+    the end block.  The jaw plates do the actual clamping; each has two
+    holes for the screws that hold it on.
 
     All lengths are in millimeters.
 
     Attributes:
     * `name` (`str`): What it is.
-    * `bottom` (`SCViseBlock`): The base's bottom layer.
-    * `middle` (`SCViseBlock`): The base's middle layer.
-    * `bottom_notches` (`SCViseNotches`): The notches in the bottom.
-    * `middle_notches` (`SCViseNotches`):
-      The notches in the middle, at the same places but bigger.
-    * `rail_width` (`float`): A rail's size along Y.
-    * `rail_height` (`float`): The height of the rails and end blocks.
+    * `base` (`SCViseBlock`): The bottom layer.
+    * `body` (`SCViseBlock`): The layer on the base.
+    * `base_notches` (`SCViseNotches`): The notches in the base.
+    * `body_notches` (`SCViseNotches`):
+      The notches in the body, at the same places but bigger.
+    * `rail_width` (`float`): A bed rail's size along Y.
+    * `rail_height` (`float`): The height of the bed: its rails and end
+      blocks.
     * `rail_gap` (`float`): The distance between the rails.
     * `end_block_length` (`float`): An end block's size along X.
     * `fixed_jaw` (`SCViseBlock`): The jaw that stays put.
-    * `moving_jaw` (`SCViseBlock`): The jaw that the screw moves.
-    * `plate` (`SCViseBlock`):
-      A jaw plate, whose `length` is its thickness along X.
-    * `plate_hole_spacing` (`float`): The distance between its holes.
-    * `plate_hole_diameter` (`float`): The diameter of its holes.
-    * `plate_hole_height` (`float`):
-      The height of its holes' centers above its bottom.
-    * `max_opening` (`float`): The largest gap between the plates.
-    * `screw_diameter` (`float`): The screw's diameter.
-    * `screw_stick_out` (`float`):
-      How far the screw's cylinder reaches past the base's +X end.
-    * `screw_height` (`float`):
-      The height of the screw's axis above the base's bottom.
-    * `screw_hole_diameter` (`float`):
-      The diameter of the hole for the screw in the middle's end.
+    * `movable_jaw` (`SCViseBlock`): The jaw that the lead screw moves.
+    * `jaw_plate` (`SCJawPlate`): The jaw plate on each jaw.
+    * `max_opening` (`float`): The largest gap between the jaw plates.
+    * `lead_screw_diameter` (`float`): The lead screw's diameter.
+    * `lead_screw_stick_out` (`float`):
+      How far the lead screw's cylinder reaches past the body's +X end.
+    * `lead_screw_height` (`float`):
+      The height of the lead screw's axis above the base's bottom.
+    * `lead_screw_hole_diameter` (`float`):
+      The diameter of the hole for the lead screw in the body's end.
     * `hex_size` (`float`):
-      The size across the flats of the hexagon on the screw's end.
+      The size across the flats of the hexagon on the lead screw's end.
     * `hex_length` (`float`): The hexagon's size along X.
 
     Constructor:
-    * `SCVise(name, bottom, middle, bottom_notches, middle_notches,
+    * `SCMachineVise(name, base, body, base_notches, body_notches,
       rail_width, rail_height, rail_gap, end_block_length, fixed_jaw,
-      moving_jaw, plate, plate_hole_spacing, plate_hole_diameter,
-      plate_hole_height, max_opening, screw_diameter, screw_stick_out,
-      screw_height, screw_hole_diameter, hex_size, hex_length)`
+      movable_jaw, jaw_plate, max_opening, lead_screw_diameter,
+      lead_screw_stick_out, lead_screw_height, lead_screw_hole_diameter,
+      hex_size, hex_length)`
     """
 
     # Constructor arguments:
     name: str = field(init=True)
-    bottom: SCViseBlock = field(init=True)
-    middle: SCViseBlock = field(init=True)
-    bottom_notches: SCViseNotches = field(init=True)
-    middle_notches: SCViseNotches = field(init=True)
+    base: SCViseBlock = field(init=True)
+    body: SCViseBlock = field(init=True)
+    base_notches: SCViseNotches = field(init=True)
+    body_notches: SCViseNotches = field(init=True)
     rail_width: float = field(init=True)
     rail_height: float = field(init=True)
     rail_gap: float = field(init=True)
     end_block_length: float = field(init=True)
     fixed_jaw: SCViseBlock = field(init=True)
-    moving_jaw: SCViseBlock = field(init=True)
-    plate: SCViseBlock = field(init=True)
-    plate_hole_spacing: float = field(init=True)
-    plate_hole_diameter: float = field(init=True)
-    plate_hole_height: float = field(init=True)
+    movable_jaw: SCViseBlock = field(init=True)
+    jaw_plate: SCJawPlate = field(init=True)
     max_opening: float = field(init=True)
-    screw_diameter: float = field(init=True)
-    screw_stick_out: float = field(init=True)
-    screw_height: float = field(init=True)
-    screw_hole_diameter: float = field(init=True)
+    lead_screw_diameter: float = field(init=True)
+    lead_screw_stick_out: float = field(init=True)
+    lead_screw_height: float = field(init=True)
+    lead_screw_hole_diameter: float = field(init=True)
     hex_size: float = field(init=True)
     hex_length: float = field(init=True)
 
-    # Method `SCVise.__post_init__()`:
+    # Method `SCMachineVise.__post_init__()`:
     def __post_init__(self) -> None:
         """Check that the parts fit together.
 
         Raises:
         * `ValueError`: If the notches, the rails, the end blocks, the
-          jaws, the slider or the screw do not fit.
+          jaws, the slider or the lead screw do not fit.
         """
         self._check_notches()
 
-        # The rails must have a size, and stay on the middle.
+        # The bed's rails must have a size, and stay on the body.
         rails: float = self.rail_gap + 2.0 * self.rail_width
         if (
             min(self.rail_width, self.rail_height, self.rail_gap) <= 0.0
-            or rails > self.bottom.width
+            or rails > self.base.width
         ):
             raise ValueError(
                 f"{self.rail_width=}, {self.rail_height=} and "
-                f"{self.rail_gap=} do not fit {self.bottom.width=}"
+                f"{self.rail_gap=} do not fit {self.base.width=}"
             )
 
         # The end blocks must leave an opening between them.
-        if not 0.0 < 2.0 * self.end_block_length < self.middle.length:
+        if not 0.0 < 2.0 * self.end_block_length < self.body.length:
             raise ValueError(
-                f"{self.end_block_length=} does not fit {self.middle.length=}"
+                f"{self.end_block_length=} does not fit {self.body.length=}"
             )
 
-        # The jaws and plates must stay on the rails when wide open.
+        # The jaws and jaw plates must stay on the bed when wide open.
         jaws: float = (
             self.fixed_jaw.length
-            + 2.0 * self.plate.length
+            + 2.0 * self.jaw_plate.length
             + self.max_opening
-            + self.moving_jaw.length
+            + self.movable_jaw.length
         )
-        if self.max_opening <= 0.0 or jaws > self.middle.length:
+        if self.max_opening <= 0.0 or jaws > self.body.length:
             raise ValueError(
                 f"{self.max_opening=} and the jaws need {jaws:g} of "
-                f"{self.middle.length=}"
+                f"{self.body.length=}"
             )
 
         # The jaws must match, and leave the slider some length.
         if (
-            self.fixed_jaw.width != self.moving_jaw.width
-            or self.fixed_jaw.height != self.moving_jaw.height
-            or self.fixed_jaw.width > self.bottom.width
+            self.fixed_jaw.width != self.movable_jaw.width
+            or self.fixed_jaw.height != self.movable_jaw.height
+            or self.fixed_jaw.width > self.base.width
         ):
             raise ValueError(
-                f"{self.fixed_jaw=} and {self.moving_jaw=} must match, on "
-                f"{self.bottom.width=}"
+                f"{self.fixed_jaw=} and {self.movable_jaw=} must match, on "
+                f"{self.base.width=}"
             )
-        if self.moving_jaw.length <= self.end_block_length:
+        if self.movable_jaw.length <= self.end_block_length:
             raise ValueError(
-                f"{self.moving_jaw.length=} must exceed "
+                f"{self.movable_jaw.length=} must exceed "
                 f"{self.end_block_length=}"
             )
-        self._check_plate()
-        self._check_screw()
+        self._check_jaw_plate()
+        self._check_lead_screw()
 
-    # Method `SCVise._check_notches()`:
+    # Method `SCMachineVise._check_notches()`:
     def _check_notches(self) -> None:
         """Check that the notches line up and fit their layers.
 
         Raises:
-        * `ValueError`: If they are not at the same places, the middle's
-          do not clear the bottom's or reach the pocket, or they do not
+        * `ValueError`: If they are not at the same places, the body's
+          do not clear the base's or reach the pocket, or they do not
           fit their layers.
         """
-        bottom: SCViseNotches = self.bottom_notches
-        middle: SCViseNotches = self.middle_notches
-        if bottom.centers != middle.centers:
+        base: SCViseNotches = self.base_notches
+        body: SCViseNotches = self.body_notches
+        if base.centers != body.centers:
             raise ValueError(
-                f"{bottom.centers=} must line up with {middle.centers=}"
+                f"{base.centers=} must line up with {body.centers=}"
             )
 
-        # The middle's notches must leave the bottom's open from above,
+        # The body's notches must leave the base's open from above,
         # and a wall beside the pocket.
-        bottom_in: float = self.bottom.width / 2.0 - bottom.depth
-        middle_in: float = self.middle.width / 2.0 - middle.depth
-        if middle.width < bottom.width or middle_in > bottom_in:
-            raise ValueError(f"{middle=} must clear {bottom=}")
-        if middle.centers and middle_in <= self.rail_gap / 2.0:
-            raise ValueError(f"{middle=} reaches the pocket")
+        base_in: float = self.base.width / 2.0 - base.depth
+        body_in: float = self.body.width / 2.0 - body.depth
+        if body.width < base.width or body_in > base_in:
+            raise ValueError(f"{body=} must clear {base=}")
+        if body.centers and body_in <= self.rail_gap / 2.0:
+            raise ValueError(f"{body=} reaches the pocket")
 
         # Making the outlines raises if the notches do not fit.
-        self.bottom.outline(self.name, notches=bottom)
-        self.middle.outline(self.name, notches=middle)
+        self.base.outline(self.name, notches=base)
+        self.body.outline(self.name, notches=body)
 
-    # Method `SCVise._check_plate()`:
-    def _check_plate(self) -> None:
-        """Check that a plate fits its jaw, and its holes fit the plate.
-
-        Raises:
-        * `ValueError`: If they do not.
-        """
-        if (
-            self.plate.width > self.fixed_jaw.width
-            or self.plate.height > self.fixed_jaw.height
-        ):
-            raise ValueError(f"{self.plate=} must fit {self.fixed_jaw=}")
-        radius: float = self.plate_hole_diameter / 2.0
-        if (
-            radius <= 0.0
-            or self.plate_hole_spacing / 2.0 + radius >= self.plate.width / 2.0
-            or self.plate_hole_spacing <= 2.0 * radius
-            or self.plate_hole_height - radius <= 0.0
-            or self.plate_hole_height + radius >= self.plate.height
-        ):
-            raise ValueError(
-                f"{self.plate_hole_diameter=} at {self.plate_hole_spacing=} "
-                f"and {self.plate_hole_height=} do not fit {self.plate=}"
-            )
-
-    # Method `SCVise._check_screw()`:
-    def _check_screw(self) -> None:
-        """Check that the screw fits its hole, and its hole the middle.
+    # Method `SCMachineVise._check_jaw_plate()`:
+    def _check_jaw_plate(self) -> None:
+        """Check that a jaw plate fits its jaw.
 
         Raises:
         * `ValueError`: If it does not.
         """
-        radius: float = self.screw_hole_diameter / 2.0
         if (
-            not 0.0 < self.screw_diameter <= self.screw_hole_diameter
-            or self.screw_hole_diameter >= self.rail_gap
-            or self.screw_height - radius < self.bottom.height
-            or self.screw_height + radius
-            > self.bottom.height + self.middle.height
+            self.jaw_plate.width > self.fixed_jaw.width
+            or self.jaw_plate.height > self.fixed_jaw.height
+        ):
+            raise ValueError(f"{self.jaw_plate=} must fit {self.fixed_jaw=}")
+
+    # Method `SCMachineVise._check_lead_screw()`:
+    def _check_lead_screw(self) -> None:
+        """Check that the lead screw fits its hole, and its hole the body.
+
+        Raises:
+        * `ValueError`: If it does not.
+        """
+        radius: float = self.lead_screw_hole_diameter / 2.0
+        if (
+            not 0.0 < self.lead_screw_diameter <= self.lead_screw_hole_diameter
+            or self.lead_screw_hole_diameter >= self.rail_gap
+            or self.lead_screw_height - radius < self.base.height
+            or self.lead_screw_height + radius
+            > self.base.height + self.body.height
         ):
             raise ValueError(
-                f"{self.screw_diameter=} in {self.screw_hole_diameter=} at "
-                f"{self.screw_height=} does not fit in {self.middle=} "
+                f"{self.lead_screw_diameter=} in "
+                f"{self.lead_screw_hole_diameter=} at "
+                f"{self.lead_screw_height=} does not fit in {self.body=} "
                 f"with {self.rail_gap=}"
             )
-        if min(self.screw_stick_out, self.hex_size, self.hex_length) <= 0.0:
+        if (
+            min(self.lead_screw_stick_out, self.hex_size, self.hex_length)
+            <= 0.0
+        ):
             raise ValueError(
-                f"{self.screw_stick_out=}, {self.hex_size=}, "
+                f"{self.lead_screw_stick_out=}, {self.hex_size=}, "
                 f"{self.hex_length=}"
             )
 
-    # Method `SCVise.base_height()`:
-    def base_height(self) -> float:
-        """Return the height of the base, up to the top of the rails.
+    # Method `SCMachineVise.bed_top()`:
+    def bed_top(self) -> float:
+        """Return the height of the top of the bed, above the base's bottom.
 
         Returns:
         * (`float`): The height (millimeters).
         """
-        return self.bottom.height + self.middle.height + self.rail_height
+        return self.base.height + self.body.height + self.rail_height
 
-    # Method `SCVise.overall_length()`:
+    # Method `SCMachineVise.overall_length()`:
     def overall_length(self) -> float:
         """Return the vise's length, out to the end of the hexagon.
 
         Returns:
         * (`float`): The length (millimeters).
         """
-        return self.middle.length + self.screw_stick_out + self.hex_length
+        return self.body.length + self.lead_screw_stick_out + self.hex_length
 
-    # Method `SCVise.opening_length()`:
+    # Method `SCMachineVise.opening_length()`:
     def opening_length(self) -> float:
         """Return the length of the opening between the end blocks.
 
         Returns:
         * (`float`): The length (millimeters).
         """
-        return self.middle.length - 2.0 * self.end_block_length
+        return self.body.length - 2.0 * self.end_block_length
 
-    # Method `SCVise.slider()`:
+    # Method `SCMachineVise.slider()`:
     def slider(self) -> SCViseBlock:
-        """Return the block under the moving jaw, between the rails.
+        """Return the block under the movable jaw, between the rails.
 
         Returns:
         * (`SCViseBlock`):
-          The slider: as wide as the end blocks, shorter than the moving
+          The slider: as wide as the end blocks, shorter than the movable
           jaw by an end block's length, and reaching from the jaw's bottom
           down to the pocket's floor.  Its hole is not included.
         """
         return SCViseBlock(
-            self.moving_jaw.length - self.end_block_length,
+            self.movable_jaw.length - self.end_block_length,
             self.rail_gap,
-            self.middle.height + self.rail_height,
+            self.body.height + self.rail_height,
         )
 
-    # Method `SCVise.slider_volume()`:
+    # Method `SCMachineVise.slider_volume()`:
     def slider_volume(self) -> float:
         """Return the volume the slider's model should have.
 
@@ -1893,26 +2040,25 @@ class SCVise:
         """
         slider: SCViseBlock = self.slider()
         hole: float = (
-            math.pi * (self.screw_diameter / 2.0) ** 2 * slider.length
+            math.pi * (self.lead_screw_diameter / 2.0) ** 2 * slider.length
         )
         return slider.volume() - hole
 
-    # Method `SCVise.plate_volume()`:
-    def plate_volume(self) -> float:
+    # Method `SCMachineVise.jaw_plate_volume()`:
+    def jaw_plate_volume(self) -> float:
         """Return the volume a jaw plate's model should have.
 
         Returns:
         * (`float`): The volume (cubic millimeters).
         """
-        hole: float = math.pi * (self.plate_hole_diameter / 2.0) ** 2
-        return self.plate.volume() - 2.0 * hole * self.plate.length
+        return self.jaw_plate.volume()
 
-    # Method `SCVise.moving_face()`:
-    def moving_face(self, opening: float) -> float:
-        """Return the X of the moving jaw's clamping face, behind its plate.
+    # Method `SCMachineVise.movable_face()`:
+    def movable_face(self, opening: float) -> float:
+        """Return the X of the movable jaw's clamping face, behind its plate.
 
         Arguments:
-        * `opening` (`float`): The gap between the plates (millimeters).
+        * `opening` (`float`): The gap between the jaw plates (millimeters).
 
         Returns:
         * (`float`): Its X, from the center of the base (millimeters).
@@ -1925,18 +2071,18 @@ class SCVise:
                 f"{opening=} must be from 0 to {self.max_opening=}"
             )
         return (
-            -self.middle.length / 2.0
+            -self.body.length / 2.0
             + self.fixed_jaw.length
-            + 2.0 * self.plate.length
+            + 2.0 * self.jaw_plate.length
             + opening
         )
 
-    # Method `SCVise.gap_center()`:
+    # Method `SCMachineVise.gap_center()`:
     def gap_center(self, opening: float) -> float:
-        """Return the X of the middle of the gap between the plates.
+        """Return the X of the middle of the gap between the jaw plates.
 
         Arguments:
-        * `opening` (`float`): The gap between the plates (millimeters).
+        * `opening` (`float`): The gap between the jaw plates (millimeters).
 
         Returns:
         * (`float`): Its X, from the center of the base (millimeters).
@@ -1944,15 +2090,17 @@ class SCVise:
         Raises:
         * `ValueError`: If `opening` is out of range.
         """
-        return self.moving_face(opening) - self.plate.length - opening / 2.0
+        return (
+            self.movable_face(opening) - self.jaw_plate.length - opening / 2.0
+        )
 
-    # Method `SCVise.hexagon()`:
+    # Method `SCMachineVise.hexagon()`:
     def hexagon(self) -> list[tuple[float, float]]:
-        """Return the corners of the screw's hexagon, flats up and down.
+        """Return the corners of the lead screw's hexagon, flats up and down.
 
         Returns:
         * (`list[tuple[float, float]]`):
-          The `(y, z)` of each corner, from the screw's axis.
+          The `(y, z)` of each corner, from the lead screw's axis.
         """
         radius: float = self.hex_size / math.sqrt(3.0)
         return [
@@ -1963,43 +2111,43 @@ class SCVise:
             for index in range(6)
         ]
 
-    # Method `SCVise.middle_volume()`:
-    def middle_volume(self) -> float:
-        """Return the volume the middle's model should have.
+    # Method `SCMachineVise.body_volume()`:
+    def body_volume(self) -> float:
+        """Return the volume the body's model should have.
 
         Returns:
         * (`float`): The volume (cubic millimeters).
         """
         pocket: float = (
-            self.opening_length() * self.rail_gap * self.middle.height
+            self.opening_length() * self.rail_gap * self.body.height
         )
         hole: float = (
             math.pi
-            * (self.screw_hole_diameter / 2.0) ** 2
+            * (self.lead_screw_hole_diameter / 2.0) ** 2
             * self.end_block_length
         )
-        return self.middle.volume(self.middle_notches) - pocket - hole
+        return self.body.volume(self.body_notches) - pocket - hole
 
-    # Method `SCVise.screw_volume()`:
-    def screw_volume(self) -> float:
-        """Return the volume the screw's model should have.
+    # Method `SCMachineVise.lead_screw_volume()`:
+    def lead_screw_volume(self) -> float:
+        """Return the volume the lead screw's model should have.
 
         Returns:
         * (`float`): The volume (cubic millimeters).
         """
         cylinder: float = (
             math.pi
-            * (self.screw_diameter / 2.0) ** 2
+            * (self.lead_screw_diameter / 2.0) ** 2
             * (
                 self.opening_length()
                 + self.end_block_length
-                + self.screw_stick_out
+                + self.lead_screw_stick_out
             )
         )
         hexagon: float = math.sqrt(3.0) / 2.0 * self.hex_size**2
         return cylinder + hexagon * self.hex_length
 
-    # Method `SCVise.keep_out()`:
+    # Method `SCMachineVise.keep_out()`:
     # Each edge of the three prisms gets a name, past `pylint`'s limit.
     def keep_out(  # pylint: disable=too-many-locals
         self,
@@ -2010,13 +2158,13 @@ class SCVise:
         """Return the regions around the vise that a tool must not enter.
 
         One prism holds the base and the hexagon, one the fixed jaw and
-        its plate, and one the moving jaw and its plate.  The moving
+        its plate, and one the movable jaw and its plate.  The movable
         jaw's reaches out to the end of the hexagon, which is where the
         jaw and the wrench on the hexagon go.
 
         Arguments:
         * `center` (`Point`): The center of the base's bottom face (mm).
-        * `opening` (`float`): The gap between the plates (mm).
+        * `opening` (`float`): The gap between the jaw plates (mm).
         * `margin` (`str`):
           How far to grow each prism, with its unit (such as `"1/8 in"`).
 
@@ -2027,21 +2175,25 @@ class SCVise:
         * `ValueError`: If `opening` is out of range.
         """
         x, y, z = center
-        half_x: float = self.middle.length / 2.0
-        hex_end: float = x + half_x + self.screw_stick_out + self.hex_length
-        half_base: float = self.bottom.width / 2.0
+        half_x: float = self.body.length / 2.0
+        hex_end: float = (
+            x + half_x + self.lead_screw_stick_out + self.hex_length
+        )
+        half_base: float = self.base.width / 2.0
         half_jaw: float = self.fixed_jaw.width / 2.0
-        rails: float = z + self.base_height()
+        rails: float = z + self.bed_top()
         jaw_top: float = rails + self.fixed_jaw.height
         fixed_end: float = (
-            x - half_x + self.fixed_jaw.length + self.plate.length
+            x - half_x + self.fixed_jaw.length + self.jaw_plate.length
         )
-        moving_start: float = x + self.moving_face(opening) - self.plate.length
+        moving_start: float = (
+            x + self.movable_face(opening) - self.jaw_plate.length
+        )
 
         keep_out: SCKeepOut = SCKeepOut()
         for name, low, high in (
             (
-                "base",
+                "base to bed",
                 (x - half_x, y - half_base, z),
                 (hex_end, y + half_base, rails),
             ),
@@ -2051,7 +2203,7 @@ class SCVise:
                 (fixed_end, y + half_jaw, jaw_top),
             ),
             (
-                "moving jaw",
+                "movable jaw",
                 (moving_start, y - half_jaw, rails),
                 (hex_end, y + half_jaw, jaw_top),
             ),
@@ -2061,7 +2213,7 @@ class SCVise:
             )
         return keep_out
 
-    # Method `SCVise.model()`:
+    # Method `SCMachineVise.model()`:
     def model(
         self,
         solidcraft: SCPyBind,
@@ -2074,27 +2226,29 @@ class SCVise:
         Arguments:
         * `solidcraft` (`SCPyBind`): The SolidCraft session.
         * `center` (`Point`): The center of the bottom face (mm).
-        * `opening` (`float`): The gap between the plates (mm).
+        * `opening` (`float`): The gap between the jaw plates (mm).
         * `lift` (`float`):
-          How far to raise the jaws, the slider and the plates off the
-          rails, to see how they go together (mm).
+          How far to raise the jaws, the slider and the jaw plates off
+          the bed, to see how they go together (mm).
 
         Returns:
         * (`list[str]`):
-          The names of the bodies: the bottom, the middle, the rails, the
-          end blocks, the screw, the jaws, the slider and the plates.
+          The names of the bodies: the base, the body, the rails, the end
+          blocks, the lead screw, the jaws, the slider and the jaw plates.
 
         Raises:
         * `ValueError`: If `opening` is out of range.
         """
         # Stack the blocks, each on the one before.
         return [
-            *self._model_base(solidcraft, center),
+            *self._model_stationary(solidcraft, center),
             *self._model_jaws(solidcraft, center, opening, lift),
         ]
 
-    # Method `SCVise._model_base()`:
-    def _model_base(self, solidcraft: SCPyBind, center: Point) -> list[str]:
+    # Method `SCMachineVise._model_stationary()`:
+    def _model_stationary(
+        self, solidcraft: SCPyBind, center: Point
+    ) -> list[str]:
         """Model what never moves, but for the fixed jaw and its plate.
 
         Arguments:
@@ -2103,29 +2257,29 @@ class SCVise:
 
         Returns:
         * (`list[str]`):
-          The names of the bodies: the bottom, the middle, the rails, the
-          end blocks and the screw.
+          The names of the bodies: the base, the body, the rails, the end
+          blocks and the lead screw.
         """
         x, y, z = center
-        bottom: str = self.bottom.model(
-            solidcraft, f"{self.name} bottom", center, self.bottom_notches
+        base: str = self.base.model(
+            solidcraft, f"{self.name} base", center, self.base_notches
         )
-        middle: str = self.middle.model(
+        body: str = self.body.model(
             solidcraft,
-            f"{self.name} middle",
-            (x, y, z + self.bottom.height),
-            self.middle_notches,
+            f"{self.name} body",
+            (x, y, z + self.base.height),
+            self.body_notches,
         )
-        self._cut_pocket(solidcraft, middle, center)
-        self._cut_screw_hole(solidcraft, middle, center)
+        self._cut_pocket(solidcraft, body, center)
+        self._cut_lead_screw_hole(solidcraft, body, center)
         return [
-            bottom,
-            middle,
-            *self._model_rails(solidcraft, center),
-            self._model_screw(solidcraft, center),
+            base,
+            body,
+            *self._model_bed(solidcraft, center),
+            self._model_lead_screw(solidcraft, center),
         ]
 
-    # Method `SCVise.cacheable()`:
+    # Method `SCMachineVise.cacheable()`:
     def cacheable(self, opening: float) -> tuple[SCCacheable, ...]:
         """Return the vise as models that can be cached.
 
@@ -2133,7 +2287,7 @@ class SCVise:
         everything else is another, so an opening needs no new files.
 
         Arguments:
-        * `opening` (`float`): The gap between the plates (mm).
+        * `opening` (`float`): The gap between the jaw plates (mm).
 
         Returns:
         * (`tuple[SCCacheable, ...]`): The vise, then what moves.
@@ -2144,30 +2298,36 @@ class SCVise:
                 self.name,
                 tooling_shape(self, "fixed"),
                 lambda solidcraft: [
-                    *self._model_base(solidcraft, origin),
+                    *self._model_stationary(solidcraft, origin),
                     self._model_fixed_jaw(solidcraft, origin, 0.0),
-                    self._model_fixed_plate(solidcraft, origin, 0.0),
+                    self._model_fixed_jaw_plate(solidcraft, origin, 0.0),
                 ],
                 color_of=lambda body: (
                     DRILL_COLOR if " screw" in body else VISE_COLOR
                 ),
             ),
             SCCacheable(
-                f"{self.name} moving",
-                tooling_shape(self, "moving"),
+                f"{self.name} movable",
+                tooling_shape(self, "movable"),
                 lambda solidcraft: [
-                    self._model_moving_jaw(solidcraft, origin, 0.0, 0.0),
+                    self._model_movable_jaw(solidcraft, origin, 0.0, 0.0),
                     self._model_slider(
-                        solidcraft, origin, self.moving_face(0.0), 0.0
+                        solidcraft, origin, self.movable_face(0.0), 0.0
                     ),
-                    self._model_moving_plate(solidcraft, origin, 0.0, 0.0),
+                    self._model_movable_jaw_plate(
+                        solidcraft, origin, 0.0, 0.0
+                    ),
                 ],
-                (self.moving_face(opening) - self.moving_face(0.0), 0.0, 0.0),
+                (
+                    self.movable_face(opening) - self.movable_face(0.0),
+                    0.0,
+                    0.0,
+                ),
                 lambda _body: VISE_COLOR,
             ),
         )
 
-    # Method `SCVise._end_plane()`:
+    # Method `SCMachineVise._end_plane()`:
     def _end_plane(self, center: Point, end_x: float) -> dict[str, JSON]:
         """Return a plane across the vise that faces +X.
 
@@ -2188,49 +2348,49 @@ class SCVise:
             "y_dir": [0.0, 0.0, 1.0],
         }
 
-    # Method `SCVise._cut_pocket()`:
+    # Method `SCMachineVise._cut_pocket()`:
     def _cut_pocket(
         self, solidcraft: SCPyBind, body: str, center: Point
     ) -> None:
-        """Cut the pocket in the middle, under the rails' opening.
+        """Cut the pocket in the body, under the bed's opening.
 
         Arguments:
         * `solidcraft` (`SCPyBind`): The SolidCraft session.
-        * `body` (`str`): The middle's body.
+        * `body` (`str`): The body's SolidCraft body.
         * `center` (`Point`): The center of the base's bottom face (mm).
         """
         x, y, z = center
         name: str = f"{self.name} pocket"
         solidcraft.sketch.create(
-            plane="XY", offset=z + self.bottom.height, name=name
+            plane="XY", offset=z + self.base.height, name=name
         )
         pocket: SCViseBlock = SCViseBlock(
-            self.opening_length(), self.rail_gap, self.middle.height
+            self.opening_length(), self.rail_gap, self.body.height
         )
         pocket.outline(name, (x, y)).sketch(solidcraft)
         solidcraft.sketch.finish()
         solidcraft.solid.extrude(
-            distance=self.middle.height, operation="cut", targets=[body]
+            distance=self.body.height, operation="cut", targets=[body]
         )
 
-    # Method `SCVise._cut_screw_hole()`:
-    def _cut_screw_hole(
+    # Method `SCMachineVise._cut_lead_screw_hole()`:
+    def _cut_lead_screw_hole(
         self, solidcraft: SCPyBind, body: str, center: Point
     ) -> None:
-        """Cut the hole for the screw, through the middle's +X end wall.
+        """Cut the hole for the lead screw, through the body's +X end.
 
         Arguments:
         * `solidcraft` (`SCPyBind`): The SolidCraft session.
-        * `body` (`str`): The middle's body.
+        * `body` (`str`): The body's SolidCraft body.
         * `center` (`Point`): The center of the base's bottom face (mm).
         """
         solidcraft.sketch.create(
-            plane=self._end_plane(center, self.middle.length / 2.0),
-            name=f"{self.name} screw hole",
+            plane=self._end_plane(center, self.body.length / 2.0),
+            name=f"{self.name} lead screw hole",
         )
         solidcraft.sketch.circle_center(
-            center=(0.0, self.screw_height),
-            diameter=self.screw_hole_diameter,
+            center=(0.0, self.lead_screw_height),
+            diameter=self.lead_screw_hole_diameter,
         )
         solidcraft.sketch.finish()
         solidcraft.solid.extrude(
@@ -2240,9 +2400,9 @@ class SCVise:
             targets=[body],
         )
 
-    # Method `SCVise._model_rails()`:
-    def _model_rails(self, solidcraft: SCPyBind, center: Point) -> list[str]:
-        """Model the two rails, and the two end blocks between them.
+    # Method `SCMachineVise._model_bed()`:
+    def _model_bed(self, solidcraft: SCPyBind, center: Point) -> list[str]:
+        """Model the bed: two rails, and two end blocks between them.
 
         Arguments:
         * `solidcraft` (`SCPyBind`): The SolidCraft session.
@@ -2252,15 +2412,15 @@ class SCVise:
         * (`list[str]`): The names of the rails, then the end blocks.
         """
         x, y, z = center
-        top: float = z + self.bottom.height + self.middle.height
+        top: float = z + self.base.height + self.body.height
         rail: SCViseBlock = SCViseBlock(
-            self.middle.length, self.rail_width, self.rail_height
+            self.body.length, self.rail_width, self.rail_height
         )
         block: SCViseBlock = SCViseBlock(
             self.end_block_length, self.rail_gap, self.rail_height
         )
         rail_y: float = (self.rail_gap + self.rail_width) / 2.0
-        block_x: float = (self.middle.length - self.end_block_length) / 2.0
+        block_x: float = (self.body.length - self.end_block_length) / 2.0
         return [
             rail.model(
                 solidcraft, f"{self.name} front rail", (x, y - rail_y, top)
@@ -2272,11 +2432,13 @@ class SCVise:
                 solidcraft, f"{self.name} fixed end", (x - block_x, y, top)
             ),
             block.model(
-                solidcraft, f"{self.name} screw end", (x + block_x, y, top)
+                solidcraft,
+                f"{self.name} lead screw end",
+                (x + block_x, y, top),
             ),
         ]
 
-    # Method `SCVise._model_jaws()`:
+    # Method `SCMachineVise._model_jaws()`:
     def _model_jaws(
         self,
         solidcraft: SCPyBind,
@@ -2289,7 +2451,7 @@ class SCVise:
         Arguments:
         * `solidcraft` (`SCPyBind`): The SolidCraft session.
         * `center` (`Point`): The center of the base's bottom face (mm).
-        * `opening` (`float`): The gap between the plates (mm).
+        * `opening` (`float`): The gap between the jaw plates (mm).
         * `lift` (`float`): How far to raise them all (mm).
 
         Returns:
@@ -2298,15 +2460,15 @@ class SCVise:
         """
         return [
             self._model_fixed_jaw(solidcraft, center, lift),
-            self._model_moving_jaw(solidcraft, center, opening, lift),
+            self._model_movable_jaw(solidcraft, center, opening, lift),
             self._model_slider(
-                solidcraft, center, self.moving_face(opening), lift
+                solidcraft, center, self.movable_face(opening), lift
             ),
-            self._model_fixed_plate(solidcraft, center, lift),
-            self._model_moving_plate(solidcraft, center, opening, lift),
+            self._model_fixed_jaw_plate(solidcraft, center, lift),
+            self._model_movable_jaw_plate(solidcraft, center, opening, lift),
         ]
 
-    # Method `SCVise._model_fixed_jaw()`:
+    # Method `SCMachineVise._model_fixed_jaw()`:
     def _model_fixed_jaw(
         self, solidcraft: SCPyBind, center: Point, lift: float
     ) -> str:
@@ -2321,18 +2483,18 @@ class SCVise:
         * (`str`): The body's name.
         """
         x, y, z = center
-        fixed_x: float = -(self.middle.length - self.fixed_jaw.length) / 2.0
+        fixed_x: float = -(self.body.length - self.fixed_jaw.length) / 2.0
         return self.fixed_jaw.model(
             solidcraft,
             f"{self.name} fixed jaw",
-            (x + fixed_x, y, z + self.base_height() + lift),
+            (x + fixed_x, y, z + self.bed_top() + lift),
         )
 
-    # Method `SCVise._model_fixed_plate()`:
-    def _model_fixed_plate(
+    # Method `SCMachineVise._model_fixed_jaw_plate()`:
+    def _model_fixed_jaw_plate(
         self, solidcraft: SCPyBind, center: Point, lift: float
     ) -> str:
-        """Model the plate on the fixed jaw.
+        """Model the jaw plate on the fixed jaw.
 
         Arguments:
         * `solidcraft` (`SCPyBind`): The SolidCraft session.
@@ -2343,117 +2505,81 @@ class SCVise:
         * (`str`): The body's name.
         """
         x, y, z = center
-        fixed_face: float = -self.middle.length / 2.0 + self.fixed_jaw.length
-        return self._model_plate(
+        fixed_face: float = -self.body.length / 2.0 + self.fixed_jaw.length
+        return self.jaw_plate.model(
             solidcraft,
-            f"{self.name} fixed plate",
+            f"{self.name} fixed jaw plate",
             (
-                x + fixed_face + self.plate.length / 2.0,
+                x + fixed_face + self.jaw_plate.length / 2.0,
                 y,
-                z + self.base_height() + lift,
+                z + self.bed_top() + lift,
             ),
         )
 
-    # Method `SCVise._model_moving_jaw()`:
-    def _model_moving_jaw(
+    # Method `SCMachineVise._model_movable_jaw()`:
+    def _model_movable_jaw(
         self,
         solidcraft: SCPyBind,
         center: Point,
         opening: float,
         lift: float,
     ) -> str:
-        """Model the moving jaw.
+        """Model the movable jaw.
 
         Arguments:
         * `solidcraft` (`SCPyBind`): The SolidCraft session.
         * `center` (`Point`): The center of the base's bottom face (mm).
-        * `opening` (`float`): The gap between the plates (mm).
+        * `opening` (`float`): The gap between the jaw plates (mm).
         * `lift` (`float`): How far to raise it (mm).
 
         Returns:
         * (`str`): The body's name.
         """
         x, y, z = center
-        face: float = self.moving_face(opening)
-        return self.moving_jaw.model(
+        face: float = self.movable_face(opening)
+        return self.movable_jaw.model(
             solidcraft,
-            f"{self.name} moving jaw",
+            f"{self.name} movable jaw",
             (
-                x + face + self.moving_jaw.length / 2.0,
+                x + face + self.movable_jaw.length / 2.0,
                 y,
-                z + self.base_height() + lift,
+                z + self.bed_top() + lift,
             ),
         )
 
-    # Method `SCVise._model_moving_plate()`:
-    def _model_moving_plate(
+    # Method `SCMachineVise._model_movable_jaw_plate()`:
+    def _model_movable_jaw_plate(
         self,
         solidcraft: SCPyBind,
         center: Point,
         opening: float,
         lift: float,
     ) -> str:
-        """Model the plate on the moving jaw.
+        """Model the jaw plate on the movable jaw.
 
         Arguments:
         * `solidcraft` (`SCPyBind`): The SolidCraft session.
         * `center` (`Point`): The center of the base's bottom face (mm).
-        * `opening` (`float`): The gap between the plates (mm).
+        * `opening` (`float`): The gap between the jaw plates (mm).
         * `lift` (`float`): How far to raise it (mm).
 
         Returns:
         * (`str`): The body's name.
         """
         x, y, z = center
-        face: float = self.moving_face(opening)
-        return self._model_plate(
+        face: float = self.movable_face(opening)
+        return self.jaw_plate.model(
             solidcraft,
-            f"{self.name} moving plate",
+            f"{self.name} movable jaw plate",
             (
-                x + face - self.plate.length / 2.0,
+                x + face - self.jaw_plate.length / 2.0,
                 y,
-                z + self.base_height() + lift,
+                z + self.bed_top() + lift,
             ),
+            facing=-1.0,
         )
 
-    # Method `SCVise._model_plate()`:
-    def _model_plate(
-        self, solidcraft: SCPyBind, name: str, center: Point
-    ) -> str:
-        """Model a jaw plate, with the holes for its two screws.
-
-        Arguments:
-        * `solidcraft` (`SCPyBind`): The SolidCraft session.
-        * `name` (`str`): The body's name.
-        * `center` (`Point`): The center of the plate's bottom face (mm).
-
-        Returns:
-        * (`str`): The body's name (SolidCraft may change it, if the
-          name is taken).
-        """
-        body: str = self.plate.model(solidcraft, name, center)
-
-        # Cut both holes back through it from its +X face.
-        solidcraft.sketch.create(
-            plane=self._end_plane(center, self.plate.length / 2.0),
-            name=f"{name} holes",
-        )
-        half: float = self.plate_hole_spacing / 2.0
-        for across in (-half, half):
-            solidcraft.sketch.circle_center(
-                center=(across, self.plate_hole_height),
-                diameter=self.plate_hole_diameter,
-            )
-        solidcraft.sketch.finish()
-        solidcraft.solid.extrude(
-            distance=self.plate.length,
-            direction="negative",
-            operation="cut",
-            targets=[body],
-        )
-        return body
-
-    # Method `SCVise._model_slider()`:
+    # Method `SCMachineVise._model_slider()`:
     def _model_slider(
         self,
         solidcraft: SCPyBind,
@@ -2461,12 +2587,12 @@ class SCVise:
         face: float,
         lift: float,
     ) -> str:
-        """Model the slider, with the hole that the screw goes through.
+        """Model the slider, with the hole that the lead screw goes through.
 
         Arguments:
         * `solidcraft` (`SCPyBind`): The SolidCraft session.
         * `center` (`Point`): The center of the base's bottom face (mm).
-        * `face` (`float`): The X of the moving jaw's clamping face (mm).
+        * `face` (`float`): The X of the movable jaw's clamping face (mm).
         * `lift` (`float`): How far to raise it (mm).
 
         Returns:
@@ -2482,7 +2608,7 @@ class SCVise:
             (
                 x + face + slider.length / 2.0,
                 y,
-                z + self.bottom.height + lift,
+                z + self.base.height + lift,
             ),
         )
 
@@ -2492,8 +2618,8 @@ class SCVise:
             name=f"{self.name} slider hole",
         )
         solidcraft.sketch.circle_center(
-            center=(0.0, self.screw_height + lift),
-            diameter=self.screw_diameter,
+            center=(0.0, self.lead_screw_height + lift),
+            diameter=self.lead_screw_diameter,
         )
         solidcraft.sketch.finish()
         solidcraft.solid.extrude(
@@ -2504,9 +2630,9 @@ class SCVise:
         )
         return body
 
-    # Method `SCVise._model_screw()`:
-    def _model_screw(self, solidcraft: SCPyBind, center: Point) -> str:
-        """Model the screw: a cylinder, with a hexagon on its end.
+    # Method `SCMachineVise._model_lead_screw()`:
+    def _model_lead_screw(self, solidcraft: SCPyBind, center: Point) -> str:
+        """Model the lead screw: a cylinder, with a hexagon on its end.
 
         Arguments:
         * `solidcraft` (`SCPyBind`): The SolidCraft session.
@@ -2519,19 +2645,20 @@ class SCVise:
         # The cylinder, from the pocket's -X end out past the +X end.
         solidcraft.sketch.create(
             plane=self._end_plane(center, -self.opening_length() / 2.0),
-            name=f"{self.name} screw",
+            name=f"{self.name} lead screw",
         )
         solidcraft.sketch.circle_center(
-            center=(0.0, self.screw_height), diameter=self.screw_diameter
+            center=(0.0, self.lead_screw_height),
+            diameter=self.lead_screw_diameter,
         )
         solidcraft.sketch.finish()
         made: JSON = solidcraft.solid.extrude(
             distance=(
                 self.opening_length()
                 + self.end_block_length
-                + self.screw_stick_out
+                + self.lead_screw_stick_out
             ),
-            body_name=f"{self.name} screw",
+            body_name=f"{self.name} lead screw",
         )
         assert isinstance(made, dict)
         bodies: JSON = made["created_bodies"]
@@ -2541,13 +2668,13 @@ class SCVise:
         # Join the hexagon onto its end.
         solidcraft.sketch.create(
             plane=self._end_plane(
-                center, self.middle.length / 2.0 + self.screw_stick_out
+                center, self.body.length / 2.0 + self.lead_screw_stick_out
             ),
             name=f"{self.name} hex",
         )
         solidcraft.sketch.line(
             points=[
-                [across, self.screw_height + up]
+                [across, self.lead_screw_height + up]
                 for across, up in self.hexagon()
             ],
             closed=True,
@@ -2562,30 +2689,43 @@ class SCVise:
 
 # Kurt's D688: its jaw plate's height, opening, and overall length and
 # height come from used machinery listings (1.735 in, 8.8 in, and 16.75 x
-# 4.375 in).  All of its layers are 6 in wide but the middle, at the
+# 4.375 in).  All of its layers are 6 in wide but the body, at the
 # user's word; the listings' 8.25 in overall width is not used.  The usual
 # 6 in plate's thickness and holes come from the user's notes: about
 # 0.725 in, on 3-7/8 in centers, for 1/2-13 screws, with centers 0.940 in
-# or more above the bottom (17/32 in is a clearance hole).  Its 3/4 in hex
+# or more above the bottom (17/32 in is a clearance hole).  Its 20 mm
+# counterbores are the usual size for those screws; 17/32 in deep, to
+# sink a 1/2 in tall head, is an estimate.  Its 3/4 in hex
 # comes from the Shars 2026 catalog, page 317, which sells handles for it
 # (7/8 in for Kurt's 8 in vises).  Everything else is an estimate, good
 # enough to know what it is.
-KURT_D688: SCVise = SCVise(
+KURT_JAW_PLATE: SCJawPlate = SCJawPlate(
+    screw="1/2-13 SHCS",
+    length=_mm("0.725 in"),
+    width=_mm("6 in"),
+    height=_mm("1.735 in"),
+    hole_spacing=_mm("3-7/8 in"),
+    hole_diameter=_mm("17/32 in"),
+    hole_height=_mm("0.94 in"),
+    counterbore_diameter=_mm("20 mm"),
+    counterbore_depth=_mm("17/32 in"),
+)
+KURT_D688: SCMachineVise = SCMachineVise(
     name="Kurt D688",
-    bottom=SCViseBlock(
+    base=SCViseBlock(
         _mm("15.75 in"), _mm("6 in"), _mm("0.5 in"), _mm("1/2 in")
     ),
-    middle=SCViseBlock(
+    body=SCViseBlock(
         _mm("15.75 in"), _mm("5-1/4 in"), _mm("1.39 in"), _mm("1/2 in")
     ),
-    bottom_notches=SCViseNotches(
+    base_notches=SCViseNotches(
         centers=(_mm("-4 in"), _mm("4 in")),
         width=_mm("7/8 in"),
         depth=_mm("7/8 in"),
         inner_radius=_mm("1/4 in"),
         outer_radius=_mm("1/8 in"),
     ),
-    middle_notches=SCViseNotches(
+    body_notches=SCViseNotches(
         centers=(_mm("-4 in"), _mm("4 in")),
         width=_mm("1-3/4 in"),
         depth=_mm("1 in"),
@@ -2597,16 +2737,13 @@ KURT_D688: SCVise = SCVise(
     rail_gap=_mm("2-1/2 in"),
     end_block_length=_mm("1-1/2 in"),
     fixed_jaw=SCViseBlock(_mm("1 in"), _mm("6 in"), _mm("1.735 in")),
-    moving_jaw=SCViseBlock(_mm("3-3/4 in"), _mm("6 in"), _mm("1.735 in")),
-    plate=SCViseBlock(_mm("0.725 in"), _mm("6 in"), _mm("1.735 in")),
-    plate_hole_spacing=_mm("3-7/8 in"),
-    plate_hole_diameter=_mm("17/32 in"),
-    plate_hole_height=_mm("0.94 in"),
+    movable_jaw=SCViseBlock(_mm("3-3/4 in"), _mm("6 in"), _mm("1.735 in")),
+    jaw_plate=KURT_JAW_PLATE,
     max_opening=_mm("8.8 in"),
-    screw_diameter=_mm("1 in"),
-    screw_stick_out=_mm("1/4 in"),
-    screw_height=_mm("1.195 in"),
-    screw_hole_diameter=_mm("1-1/8 in"),
+    lead_screw_diameter=_mm("1 in"),
+    lead_screw_stick_out=_mm("1/4 in"),
+    lead_screw_height=_mm("1.195 in"),
+    lead_screw_hole_diameter=_mm("1-1/8 in"),
     hex_size=_mm("3/4 in"),
     hex_length=_mm("3/4 in"),
 )

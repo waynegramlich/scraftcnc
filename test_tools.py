@@ -165,18 +165,18 @@ class TestVise(unittest.TestCase):
         """The D688 has the overall size its listings give."""
         vise = tools.KURT_D688
         self.assertAlmostEqual(
-            vise.base_height() + vise.fixed_jaw.height, 4.375 * 25.4
+            vise.bed_top() + vise.fixed_jaw.height, 4.375 * 25.4
         )
         self.assertAlmostEqual(vise.overall_length(), 16.75 * 25.4)
-        self.assertAlmostEqual(vise.bottom.width, 6.0 * 25.4)
+        self.assertAlmostEqual(vise.base.width, 6.0 * 25.4)
 
         # The middle is two or three times as high as the bottom.
-        self.assertGreaterEqual(vise.middle.height, 2.0 * vise.bottom.height)
-        self.assertLessEqual(vise.middle.height, 3.0 * vise.bottom.height)
+        self.assertGreaterEqual(vise.body.height, 2.0 * vise.base.height)
+        self.assertLessEqual(vise.body.height, 3.0 * vise.base.height)
 
         # The third layer is as wide as the lower two.
         self.assertAlmostEqual(
-            vise.rail_gap + 2.0 * vise.rail_width, vise.bottom.width
+            vise.rail_gap + 2.0 * vise.rail_width, vise.base.width
         )
 
         # The jaws are two or three times as high as the rails, and the
@@ -184,55 +184,55 @@ class TestVise(unittest.TestCase):
         self.assertGreaterEqual(vise.fixed_jaw.height, 2.0 * vise.rail_height)
         self.assertLessEqual(vise.fixed_jaw.height, 3.0 * vise.rail_height)
         self.assertGreaterEqual(
-            vise.moving_jaw.length, 3.0 * vise.fixed_jaw.length
+            vise.movable_jaw.length, 3.0 * vise.fixed_jaw.length
         )
         self.assertLessEqual(
-            vise.moving_jaw.length, 4.0 * vise.fixed_jaw.length
+            vise.movable_jaw.length, 4.0 * vise.fixed_jaw.length
         )
-        self.assertAlmostEqual(vise.fixed_jaw.width, vise.bottom.width)
-        self.assertLess(vise.middle.width, vise.bottom.width)
-        self.assertAlmostEqual(vise.plate.width, 6.0 * 25.4)
-        self.assertAlmostEqual(vise.plate_hole_spacing, 3.875 * 25.4)
+        self.assertAlmostEqual(vise.fixed_jaw.width, vise.base.width)
+        self.assertLess(vise.body.width, vise.base.width)
+        self.assertAlmostEqual(vise.jaw_plate.width, 6.0 * 25.4)
+        self.assertAlmostEqual(vise.jaw_plate.hole_spacing, 3.875 * 25.4)
         self.assertAlmostEqual(vise.max_opening, 8.8 * 25.4)
         self.assertAlmostEqual(vise.hex_size, 0.75 * 25.4)
 
     def test_slider(self) -> None:
-        """The slider fits the rails, and is shorter than the moving jaw."""
+        """The slider fits the rails, and is shorter than the movable jaw."""
         vise = tools.KURT_D688
         slider = vise.slider()
         self.assertAlmostEqual(
-            slider.length, vise.moving_jaw.length - vise.end_block_length
+            slider.length, vise.movable_jaw.length - vise.end_block_length
         )
         self.assertEqual(slider.width, vise.rail_gap)
         self.assertAlmostEqual(
-            slider.height, vise.middle.height + vise.rail_height
+            slider.height, vise.body.height + vise.rail_height
         )
         self.assertLess(
-            vise.bottom.height,
-            vise.screw_height - vise.screw_diameter / 2.0,
+            vise.base.height,
+            vise.lead_screw_height - vise.lead_screw_diameter / 2.0,
         )
 
     def test_moving_face(self) -> None:
         """The jaws touch at no opening, and stay on the base when open."""
         vise = tools.KURT_D688
-        half = vise.middle.length / 2.0
+        half = vise.body.length / 2.0
         self.assertAlmostEqual(
-            vise.moving_face(0.0),
-            -half + vise.fixed_jaw.length + 2.0 * vise.plate.length,
+            vise.movable_face(0.0),
+            -half + vise.fixed_jaw.length + 2.0 * vise.jaw_plate.length,
         )
-        wide = vise.moving_face(vise.max_opening)
-        self.assertLessEqual(wide + vise.moving_jaw.length, half)
+        wide = vise.movable_face(vise.max_opening)
+        self.assertLessEqual(wide + vise.movable_jaw.length, half)
 
         # The slider never runs into either end block.
         self.assertGreaterEqual(
-            vise.moving_face(0.0), -half + vise.end_block_length
+            vise.movable_face(0.0), -half + vise.end_block_length
         )
         self.assertLessEqual(
             wide + vise.slider().length, half - vise.end_block_length
         )
         for opening in (-1.0, vise.max_opening + 1.0):
             with self.subTest(opening=opening), self.assertRaises(ValueError):
-                vise.moving_face(opening)
+                vise.movable_face(opening)
 
     def test_keep_out(self) -> None:
         """The prisms hold the base and hexagon, and each jaw and plate."""
@@ -241,9 +241,9 @@ class TestVise(unittest.TestCase):
         base, fixed, moving = vise.keep_out(
             (10.0, 20.0, 30.0), VISE_OPENING
         ).prisms
-        half = vise.middle.length / 2.0
-        hex_end = 10.0 + half + vise.screw_stick_out + vise.hex_length
-        rails = 30.0 + vise.base_height()
+        half = vise.body.length / 2.0
+        hex_end = 10.0 + half + vise.lead_screw_stick_out + vise.hex_length
+        rails = 30.0 + vise.bed_top()
         top = rails + vise.fixed_jaw.height
 
         # All three are as wide as the vise, and grown on all sides.
@@ -259,15 +259,22 @@ class TestVise(unittest.TestCase):
         self.assertAlmostEqual(fixed.low[0], 10.0 - half - margin)
         self.assertAlmostEqual(
             fixed.high[0],
-            10.0 - half + vise.fixed_jaw.length + vise.plate.length + margin,
+            10.0
+            - half
+            + vise.fixed_jaw.length
+            + vise.jaw_plate.length
+            + margin,
         )
         self.assertAlmostEqual(fixed.low[2], rails - margin)
         self.assertAlmostEqual(fixed.high[2], top + margin)
 
-        # The moving jaw's starts at its plate, and reaches the hexagon's end.
+        # The movable jaw's starts at its jaw plate, and reaches the hex.
         self.assertAlmostEqual(
             moving.low[0],
-            10.0 + vise.moving_face(VISE_OPENING) - vise.plate.length - margin,
+            10.0
+            + vise.movable_face(VISE_OPENING)
+            - vise.jaw_plate.length
+            - margin,
         )
         self.assertAlmostEqual(moving.high[0], hex_end + margin)
         self.assertAlmostEqual(moving.low[2], rails - margin)
@@ -368,6 +375,34 @@ class TestVise(unittest.TestCase):
             with self.subTest(args=args), self.assertRaises(ValueError):
                 tools.SCViseBlock(*args)
 
+    def test_jaw_plate_refused(self) -> None:
+        """A jaw plate whose holes do not fit is refused."""
+        for sizes in (
+            {"length": 0.0},
+            {"hole_diameter": 0.0},
+            {"hole_diameter": 25.0},
+            {"counterbore_depth": 0.0},
+            {"counterbore_depth": 20.0},
+            {"hole_spacing": 10.0},
+            {"hole_spacing": 6.0 * 25.4},
+            {"hole_height": 5.0},
+            {"hole_height": 40.0},
+        ):
+            with self.subTest(sizes=sizes), self.assertRaises(ValueError):
+                dataclasses.replace(tools.KURT_JAW_PLATE, **sizes)
+
+    def test_jaw_plate_volume(self) -> None:
+        """A jaw plate's volume takes out its holes and counterbores."""
+        plate = tools.KURT_JAW_PLATE
+        hole = math.pi * (plate.hole_diameter / 2.0) ** 2
+        counterbore = math.pi * (plate.counterbore_diameter / 2.0) ** 2
+        deep = plate.counterbore_depth
+        self.assertAlmostEqual(
+            plate.volume(),
+            plate.length * plate.width * plate.height
+            - 2.0 * (hole * (plate.length - deep) + counterbore * deep),
+        )
+
     def test_vise_refused(self) -> None:
         """Parts that do not fit together are refused."""
 
@@ -380,6 +415,10 @@ class TestVise(unittest.TestCase):
             """Return notches with the given places and sizes."""
             return tools.SCViseNotches(centers, width, depth, radius, 1.0)
 
+        def plate(**sizes: float) -> tools.SCJawPlate:
+            """Return the D688's jaw plate with some sizes changed."""
+            return dataclasses.replace(tools.KURT_JAW_PLATE, **sizes)
+
         jaw = tools.KURT_D688.fixed_jaw
         for change in (
             {"rail_width": 0.0},
@@ -389,37 +428,32 @@ class TestVise(unittest.TestCase):
             {"end_block_length": 0.0},
             {"end_block_length": 8.0 * 25.4},
             {"max_opening": 11.0 * 25.4},
-            {"plate": tools.SCViseBlock(18.0, 300.0, 40.0)},
-            {"plate": tools.SCViseBlock(18.0, 152.4, 50.0)},
-            {"plate_hole_spacing": 6.0 * 25.4},
-            {"plate_hole_spacing": 10.0},
-            {"plate_hole_diameter": 0.0},
-            {"plate_hole_height": 2.0},
-            {"plate_hole_height": 40.0},
+            {"jaw_plate": plate(width=300.0, hole_spacing=200.0)},
+            {"jaw_plate": plate(height=50.0)},
             {"fixed_jaw": tools.SCViseBlock(38.1, 100.0, jaw.height)},
             {"fixed_jaw": tools.SCViseBlock(38.1, jaw.width, 50.0)},
-            {"moving_jaw": tools.SCViseBlock(30.0, jaw.width, jaw.height)},
+            {"movable_jaw": tools.SCViseBlock(30.0, jaw.width, jaw.height)},
             {
                 "fixed_jaw": tools.SCViseBlock(38.1, 300.0, jaw.height),
-                "moving_jaw": tools.SCViseBlock(133.35, 300.0, jaw.height),
+                "movable_jaw": tools.SCViseBlock(133.35, 300.0, jaw.height),
             },
-            {"screw_height": 0.6 * 25.4},
-            {"screw_height": 1.6 * 25.4},
-            {"screw_hole_diameter": 0.9 * 25.4},
+            {"lead_screw_height": 0.6 * 25.4},
+            {"lead_screw_height": 1.6 * 25.4},
+            {"lead_screw_hole_diameter": 0.9 * 25.4},
             {"rail_gap": 1.0 * 25.4},
-            {"screw_stick_out": 0.0},
+            {"lead_screw_stick_out": 0.0},
             {"hex_size": 0.0},
             {"hex_length": 0.0},
             # Notches that overlap, run off the end or do not fit.
-            {"bottom_notches": notches((0.0, 2.54), 25.4)},
-            {"bottom_notches": notches((7.8 * 25.4,), 25.4)},
-            {"bottom_notches": notches((-101.6, 101.6), 25.4, radius=20.0)},
+            {"base_notches": notches((0.0, 2.54), 25.4)},
+            {"base_notches": notches((7.8 * 25.4,), 25.4)},
+            {"base_notches": notches((-101.6, 101.6), 25.4, radius=20.0)},
             # Middle notches that are not in line, do not clear the
             # bottom's, or break into the pocket.
-            {"middle_notches": notches((-101.6, 90.0), 44.45)},
-            {"middle_notches": notches((-101.6, 101.6), 20.0)},
-            {"middle_notches": notches((-101.6, 101.6), 44.45, depth=5.0)},
-            {"middle_notches": notches((-101.6, 101.6), 44.45, depth=80.0)},
+            {"body_notches": notches((-101.6, 90.0), 44.45)},
+            {"body_notches": notches((-101.6, 101.6), 20.0)},
+            {"body_notches": notches((-101.6, 101.6), 44.45, depth=5.0)},
+            {"body_notches": notches((-101.6, 101.6), 44.45, depth=80.0)},
         ):
             with self.subTest(change=change), self.assertRaises(ValueError):
                 dataclasses.replace(tools.KURT_D688, **change)
@@ -665,18 +699,18 @@ class TestModels(unittest.TestCase):
         self.assertEqual(
             [name.removeprefix("Kurt D688 ") for name in names],
             [
-                "bottom",
-                "middle",
+                "base",
+                "body",
                 "front rail",
                 "back rail",
                 "fixed end",
-                "screw end",
-                "screw",
+                "lead screw end",
+                "lead screw",
                 "fixed jaw",
-                "moving jaw",
+                "movable jaw",
                 "slider",
-                "fixed plate",
-                "moving plate",
+                "fixed jaw plate",
+                "movable jaw plate",
             ],
         )
         assert isinstance(result, dict)
@@ -691,22 +725,22 @@ class TestModels(unittest.TestCase):
     def test_vise_volumes(self) -> None:
         """The vise's bodies have the volumes worked out by hand."""
         vise = tools.KURT_D688
-        length = vise.middle.length
+        length = vise.body.length
         rail = length * vise.rail_width * vise.rail_height
         block = vise.end_block_length * vise.rail_gap * vise.rail_height
         expected = (
-            vise.bottom.volume(vise.bottom_notches),
-            vise.middle_volume(),
+            vise.base.volume(vise.base_notches),
+            vise.body_volume(),
             rail,
             rail,
             block,
             block,
-            vise.screw_volume(),
+            vise.lead_screw_volume(),
             vise.fixed_jaw.volume(),
-            vise.moving_jaw.volume(),
+            vise.movable_jaw.volume(),
             vise.slider_volume(),
-            vise.plate_volume(),
-            vise.plate_volume(),
+            vise.jaw_plate_volume(),
+            vise.jaw_plate_volume(),
         )
         bodies = self._vise_bodies()
         self.assertEqual(len(bodies), len(expected))
@@ -719,18 +753,18 @@ class TestModels(unittest.TestCase):
     def test_vise_places(self) -> None:
         """The vise's bodies are centered where they should be."""
         vise = tools.KURT_D688
-        top = 30.0 + vise.bottom.height + vise.middle.height
+        top = 30.0 + vise.base.height + vise.body.height
         rail_y = (vise.rail_gap + vise.rail_width) / 2.0
-        block_x = (vise.middle.length - vise.end_block_length) / 2.0
+        block_x = (vise.body.length - vise.end_block_length) / 2.0
         rail_z = top + vise.rail_height / 2.0
         places = {
-            0: (10.0, 20.0, 30.0 + vise.bottom.height / 2.0),
+            0: (10.0, 20.0, 30.0 + vise.base.height / 2.0),
             2: (10.0, 20.0 - rail_y, rail_z),
             3: (10.0, 20.0 + rail_y, rail_z),
             4: (10.0 - block_x, 20.0, rail_z),
             5: (10.0 + block_x, 20.0, rail_z),
         }
-        face = vise.moving_face(VISE_OPENING)
+        face = vise.movable_face(VISE_OPENING)
         jaw_z = (
             top + vise.rail_height + VISE_LIFT + vise.fixed_jaw.height / 2.0
         )
@@ -741,7 +775,7 @@ class TestModels(unittest.TestCase):
             20.0,
             jaw_z,
         )
-        places[8] = (10.0 + face + vise.moving_jaw.length / 2.0, 20.0, jaw_z)
+        places[8] = (10.0 + face + vise.movable_jaw.length / 2.0, 20.0, jaw_z)
         bodies = self._vise_bodies()
         for index, place in places.items():
             center = bodies[index]["center"]
@@ -758,16 +792,33 @@ class TestModels(unittest.TestCase):
         assert isinstance(center[2], float)
         self.assertGreater(center[0], 10.0)
         self.assertAlmostEqual(center[1], 20.0, places=3)
-        self.assertAlmostEqual(center[2], 30.0 + vise.screw_height, places=3)
+        self.assertAlmostEqual(
+            center[2], 30.0 + vise.lead_screw_height, places=3
+        )
 
     def test_plate_places(self) -> None:
         """Each plate is on its jaw's clamping face, facing the other."""
         vise = tools.KURT_D688
-        half = vise.plate.length / 2.0
-        fixed = -vise.middle.length / 2.0 + vise.fixed_jaw.length
+        plate = vise.jaw_plate
+        half = plate.length / 2.0
+        fixed = -vise.body.length / 2.0 + vise.fixed_jaw.length
+
+        # The counterbores, in the clamping face, move each plate's
+        # center of mass back from its middle, toward its jaw.
+        deep = plate.counterbore_depth
+        bores = 2.0 * math.pi * (plate.counterbore_diameter / 2.0) ** 2 * deep
+        holes = (
+            2.0
+            * math.pi
+            * (plate.hole_diameter / 2.0) ** 2
+            * (plate.length - deep)
+        )
+        back = (bores * (half - deep / 2.0) - holes * deep / 2.0) / (
+            plate.volume()
+        )
         expected = (
-            10.0 + fixed + half,
-            10.0 + vise.moving_face(VISE_OPENING) - half,
+            10.0 + fixed + half - back,
+            10.0 + vise.movable_face(VISE_OPENING) - half + back,
         )
         bodies = self._vise_bodies()
         for body, place in zip(bodies[10:], expected):
@@ -775,17 +826,19 @@ class TestModels(unittest.TestCase):
             assert isinstance(center, list)
             assert isinstance(center[0], float)
             assert isinstance(center[1], float)
-            self.assertAlmostEqual(center[0], place, places=3)
+            # SolidCraft's round faces are a little off, which moves
+            # the center of mass about 0.001 mm.
+            self.assertAlmostEqual(center[0], place, places=2)
             self.assertAlmostEqual(center[1], 20.0, places=3)
 
     def test_plates_gap(self) -> None:
         """The opening is measured between the plates."""
         vise = tools.KURT_D688
-        fixed = -vise.middle.length / 2.0 + vise.fixed_jaw.length
+        fixed = -vise.body.length / 2.0 + vise.fixed_jaw.length
         self.assertAlmostEqual(
-            vise.moving_face(VISE_OPENING)
-            - vise.plate.length
-            - (fixed + vise.plate.length),
+            vise.movable_face(VISE_OPENING)
+            - vise.jaw_plate.length
+            - (fixed + vise.jaw_plate.length),
             VISE_OPENING,
         )
 
@@ -939,7 +992,9 @@ class TestModels(unittest.TestCase):
         assert isinstance(center[0], float) and isinstance(center[1], float)
         self.assertAlmostEqual(
             center[0],
-            10.0 + vise.moving_face(VISE_OPENING) + vise.slider().length / 2.0,
+            10.0
+            + vise.movable_face(VISE_OPENING)
+            + vise.slider().length / 2.0,
             places=3,
         )
         self.assertAlmostEqual(center[1], 20.0, places=3)

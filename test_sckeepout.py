@@ -13,13 +13,13 @@ from shops import cnc_machine, read
 from solidcraftcnc import SCCNC
 from solidcraftcnc_demo import MACHINE, MATERIAL, SHOP_FILE, cut_demo
 
-JAWS = ("Kurt D688 fixed jaw", "Kurt D688 moving jaw")
+JAWS = ("Kurt D688 fixed jaw", "Kurt D688 movable jaw")
 PARALLELS = ("Parallel 1-1/2 in A", "Parallel 1-1/2 in B")
 
 # Each zone's top, in inches from the top of the 1/2 in material.
 TOPS = {
     "Mikini 1610L": -4.515,
-    "Kurt D688 base": -1.875,
+    "Kurt D688 base to bed": -1.875,
     JAWS[0]: -0.14,
     JAWS[1]: -0.14,
     PARALLELS[0]: -0.375,

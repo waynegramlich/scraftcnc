@@ -28,10 +28,10 @@ from typing import Any, cast
 
 from mount import (
     SCLayer,
+    SCMachineViseLayer,
     SCParallelLayer,
     SCPlate,
     SCTableLayer,
-    SCViseLayer,
     _inches,
 )
 from scmodelcache import (
@@ -53,11 +53,11 @@ from tools import (
     VISE_MARGIN,
     Point,
     SCKeepOut,
+    SCMachineVise,
     SCMillTable,
     SCParallel,
     SCPrism,
     SCToolingPlate,
-    SCVise,
     _mm,
 )
 
@@ -77,7 +77,7 @@ TOLERANCE: float = 1.0e-6
 TABLES: dict[str, SCMillTable] = {
     table.name: table for table in (*MILL_TABLES, MIKINI_1610L)
 }
-VISES: dict[str, SCVise] = {KURT_D688.name: KURT_D688}
+MACHINE_VISES: dict[str, SCMachineVise] = {KURT_D688.name: KURT_D688}
 PARALLEL_TYPES: dict[str, SCParallel] = {
     parallel.name: parallel for parallel in PARALLELS
 }
@@ -471,7 +471,7 @@ class _SCReader:
         kind: Any = entry.get("kind") if isinstance(entry, dict) else None
         names: tuple[str, ...] = ("kind", "type", "location", "height")
         names += ("orientation",)
-        if kind == "vise":
+        if kind == "machine_vise":
             names += ("opening",)
         item: dict[str, Any] = self.keys(entry, path, names)
         placement: SCPlacement = self.placement(item, path)
@@ -481,27 +481,34 @@ class _SCReader:
             layer = SCTableLayer(TABLES[name])
         elif kind == "parallel" and name in PARALLEL_TYPES:
             layer = SCParallelLayer(PARALLEL_TYPES[name])
-        elif kind == "vise" and name in VISES:
-            layer = self.vise(VISES[name], item["opening"], path)
+        elif kind == "machine_vise" and name in MACHINE_VISES:
+            layer = self.vise(MACHINE_VISES[name], item["opening"], path)
         elif kind == "tooling_plate" and name in PARTS:
             layer = PARTS[name]
-        elif kind not in ("mill_table", "parallel", "tooling_plate", "vise"):
+        elif kind not in (
+            "mill_table",
+            "parallel",
+            "tooling_plate",
+            "machine_vise",
+        ):
             self.problem(f"{path}.kind", f"{kind!r} is not a kind of tooling")
         else:
             self.problem(f"{path}.type", f"{name!r} is not a known {kind}")
         return None if layer is None else SCPlacedTool(layer, placement)
 
     # Method `_SCReader.vise()`:
-    def vise(self, vise: SCVise, entry: Any, path: str) -> SCViseLayer | None:
+    def vise(
+        self, vise: SCMachineVise, entry: Any, path: str
+    ) -> SCMachineViseLayer | None:
         """Return a vise with its jaws set.
 
         Arguments:
-        * `vise` (`SCVise`): The vise.
+        * `vise` (`SCMachineVise`): The vise.
         * `entry` (`Any`): The opening, from the JSON.
         * `path` (`str`): The vise's entry's name, for problems.
 
         Returns:
-        * (`SCViseLayer | None`): The vise, or `None` on a problem.
+        * (`SCMachineViseLayer | None`): The vise, or `None` on a problem.
         """
         opening: float = self.length(entry, f"{path}.opening")
         if not 0.0 <= opening <= vise.max_opening:
@@ -511,7 +518,7 @@ class _SCReader:
                 f"that a {vise.name} opens",
             )
             return None
-        return SCViseLayer(vise, opening)
+        return SCMachineViseLayer(vise, opening)
 
     # Method `_SCReader.part()`:
     def part(self, entry: Any, path: str) -> SCPlacedWork | None:
@@ -605,20 +612,20 @@ def _part_notes(material: SCPlacedWork) -> list[str]:
 
 
 # Function `_gap()`:
-def _gap(layer: SCViseLayer, placement: SCPlacement) -> SCPrism:
-    """Return the space between a vise's plates, up to their tops.
+def _gap(layer: SCMachineViseLayer, placement: SCPlacement) -> SCPrism:
+    """Return the space between a vise's jaw plates, up to their tops.
 
     Arguments:
-    * `layer` (`SCViseLayer`): The vise.
+    * `layer` (`SCMachineViseLayer`): The vise.
     * `placement` (`SCPlacement`): Where it goes.
 
     Returns:
     * (`SCPrism`): The space, as the vise is placed.
     """
-    vise: SCVise = layer.vise
+    vise: SCMachineVise = layer.vise
     middle: float = placement.x + vise.gap_center(layer.opening)
-    half_jaw: float = vise.plate.width / 2.0
-    rails: float = placement.z + vise.base_height()
+    half_jaw: float = vise.jaw_plate.width / 2.0
+    rails: float = placement.z + vise.bed_top()
     return placement.turned(
         SCPrism(
             "gap",
@@ -630,7 +637,7 @@ def _gap(layer: SCViseLayer, placement: SCPlacement) -> SCPrism:
             (
                 middle + layer.opening / 2.0,
                 placement.y + half_jaw,
-                rails + vise.plate.height,
+                rails + vise.jaw_plate.height,
             ),
         )
     )
@@ -644,13 +651,13 @@ def _held_notes(tool: SCPlacedTool, material: SCPlacedWork) -> list[str]:
 
     Arguments:
     * `tool` (`SCPlacedTool`):
-      The vise, whose `layer` is a `SCViseLayer`.
+      The vise, whose `layer` is a `SCMachineViseLayer`.
     * `material` (`SCPlacedWork`): The material.
 
     Returns:
     * (`list[str]`): The notes, one sentence each.
     """
-    assert isinstance(tool.layer, SCViseLayer)
+    assert isinstance(tool.layer, SCMachineViseLayer)
     gap: SCPrism = _gap(tool.layer, tool.placement)
     bounds: SCPrism = material.bounds()
     across: int = 1 if tool.placement.turns % 2 else 0
@@ -865,7 +872,7 @@ class SCSetup:
             tables[0].keep_out().prisms[0].grown(-_mm(TABLE_MARGIN))
         )
         for tool in self.tooling:
-            if isinstance(tool.layer, SCViseLayer):
+            if isinstance(tool.layer, SCMachineViseLayer):
                 base: SCPrism = (
                     tool.keep_out().prisms[0].grown(-_mm(VISE_MARGIN))
                 )
@@ -921,7 +928,7 @@ class SCSetup:
         for material in self.materials:
             notes.extend(_part_notes(material))
             for tool in self.tooling:
-                if isinstance(tool.layer, SCViseLayer):
+                if isinstance(tool.layer, SCMachineViseLayer):
                     notes.extend(_held_notes(tool, material))
         notes.extend(self._table_notes())
         notes.extend(self._reach_notes())

@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-376.0 -249.5 752.0 365.5" width="376" height="183">
+  <rect x="-376.0" y="-249.5" width="752.0" height="365.5" fill="white" />
+  <path d="M -300.0 -0.0 L 300.0 -0.0 L 300.0 -173.5 L -300.0 -173.5 Z" fill="#dfe4e8" stroke="#222222" stroke-width="2" stroke-linejoin="round" />
+  <path d="M -233.1 -94.0 A 39.4 39.4 0 0 0 -154.4 -94.0 A 39.4 39.4 0 0 0 -233.1 -94.0 Z" fill="#dfe4e8" stroke="#222222" stroke-width="2" stroke-linejoin="round" />
+  <path d="M -220.3 -94.0 A 26.6 26.6 0 0 0 -167.2 -94.0 A 26.6 26.6 0 0 0 -220.3 -94.0 Z" fill="#aab4bd" stroke="#222222" stroke-width="2" stroke-linejoin="round" />
+  <path d="M -193.8 -42.6 L -193.8 -145.4" fill="none" stroke="#222222" stroke-width="1" stroke-linejoin="round" stroke-dasharray="12 4 3 4" />
+  <path d="M 154.4 -94.0 A 39.4 39.4 0 0 0 233.1 -94.0 A 39.4 39.4 0 0 0 154.4 -94.0 Z" fill="#dfe4e8" stroke="#222222" stroke-width="2" stroke-linejoin="round" />
+  <path d="M 167.2 -94.0 A 26.6 26.6 0 0 0 220.3 -94.0 A 26.6 26.6 0 0 0 167.2 -94.0 Z" fill="#aab4bd" stroke="#222222" stroke-width="2" stroke-linejoin="round" />
+  <path d="M 193.8 -42.6 L 193.8 -145.4" fill="none" stroke="#222222" stroke-width="1" stroke-linejoin="round" stroke-dasharray="12 4 3 4" />
+  <path d="M -312.0 -94.0 L 312.0 -94.0" fill="none" stroke="#222222" stroke-width="1" stroke-linejoin="round" stroke-dasharray="12 4 3 4" />
+  <line x1="-300.0" y1="-0.0" x2="-300.0" y2="74.5" stroke="#222222" stroke-width="1" />
+  <line x1="300.0" y1="-0.0" x2="300.0" y2="74.5" stroke="#222222" stroke-width="1" />
+  <line x1="-300.0" y1="70.0" x2="300.0" y2="70.0" stroke="#222222" stroke-width="1" />
+  <polygon points="-300.0,70.0 -291.0,67.0 -291.0,73.0" fill="#222222" />
+  <polygon points="300.0,70.0 291.0,67.0 291.0,73.0" fill="#222222" />
+  <text x="0.0" y="90.3" font-family="sans-serif" font-size="18" font-weight="bold" text-anchor="middle" fill="#222222">3</text>
+  <line x1="-193.8" y1="-94.0" x2="-193.8" y2="34.5" stroke="#222222" stroke-width="1" />
+  <line x1="193.8" y1="-94.0" x2="193.8" y2="34.5" stroke="#222222" stroke-width="1" />
+  <line x1="-193.8" y1="30.0" x2="193.8" y2="30.0" stroke="#222222" stroke-width="1" />
+  <polygon points="-193.8,30.0 -184.8,27.0 -184.8,33.0" fill="#222222" />
+  <polygon points="193.8,30.0 184.8,27.0 184.8,33.0" fill="#222222" />
+  <text x="0.0" y="50.3" font-family="sans-serif" font-size="18" font-weight="bold" text-anchor="middle" fill="#222222">4</text>
+  <line x1="-300.0" y1="-0.0" x2="-334.5" y2="-0.0" stroke="#222222" stroke-width="1" />
+  <line x1="-300.0" y1="-173.5" x2="-334.5" y2="-173.5" stroke="#222222" stroke-width="1" />
+  <line x1="-330.0" y1="-0.0" x2="-330.0" y2="-173.5" stroke="#222222" stroke-width="1" />
+  <polygon points="-330.0,-0.0 -327.0,-9.0 -333.0,-9.0" fill="#222222" />
+  <polygon points="-330.0,-173.5 -327.0,-164.5 -333.0,-164.5" fill="#222222" />
+  <text x="-344.0" y="-80.5" font-family="sans-serif" font-size="18" font-weight="bold" text-anchor="middle" fill="#222222">5</text>
+  <line x1="300.0" y1="-0.0" x2="334.5" y2="-0.0" stroke="#222222" stroke-width="1" />
+  <line x1="193.8" y1="-94.0" x2="334.5" y2="-94.0" stroke="#222222" stroke-width="1" />
+  <line x1="330.0" y1="-0.0" x2="330.0" y2="-94.0" stroke="#222222" stroke-width="1" />
+  <polygon points="330.0,-0.0 333.0,-9.0 327.0,-9.0" fill="#222222" />
+  <polygon points="330.0,-94.0 333.0,-85.0 327.0,-85.0" fill="#222222" />
+  <text x="344.0" y="-40.7" font-family="sans-serif" font-size="18" font-weight="bold" text-anchor="middle" fill="#222222">6</text>
+  <line x1="-233.1" y1="-94.0" x2="-233.1" y2="-208.0" stroke="#222222" stroke-width="1" />
+  <line x1="-154.4" y1="-94.0" x2="-154.4" y2="-208.0" stroke="#222222" stroke-width="1" />
+  <line x1="-233.1" y1="-203.5" x2="-154.4" y2="-203.5" stroke="#222222" stroke-width="1" />
+  <polygon points="-233.1,-203.5 -224.1,-206.5 -224.1,-200.5" fill="#222222" />
+  <polygon points="-154.4,-203.5 -163.4,-206.5 -163.4,-200.5" fill="#222222" />
+  <text x="-193.8" y="-211.2" font-family="sans-serif" font-size="18" font-weight="bold" text-anchor="middle" fill="#222222">7</text>
+  <line x1="167.2" y1="-94.0" x2="167.2" y2="-208.0" stroke="#222222" stroke-width="1" />
+  <line x1="220.3" y1="-94.0" x2="220.3" y2="-208.0" stroke="#222222" stroke-width="1" />
+  <line x1="167.2" y1="-203.5" x2="220.3" y2="-203.5" stroke="#222222" stroke-width="1" />
+  <polygon points="167.2,-203.5 176.2,-206.5 176.2,-200.5" fill="#222222" />
+  <polygon points="220.3,-203.5 211.3,-206.5 211.3,-200.5" fill="#222222" />
+  <text x="193.8" y="-211.2" font-family="sans-serif" font-size="18" font-weight="bold" text-anchor="middle" fill="#222222">8</text>
+</svg>

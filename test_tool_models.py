@@ -32,6 +32,27 @@ class TestFiles(unittest.TestCase):
             self.assertEqual(text, tool_models.sketch(page))
             ET.fromstring(text)
 
+    def test_vise_sketches_are_current(self) -> None:
+        """Each view of the vise and jaw plate is current, and good XML."""
+        path = tool_models.HERE / tool_models.SKETCHES
+        for prefix, views in (
+            ("machine_vise", tool_models.vise_views()),
+            ("jaw_plate", tool_models.jaw_plate_views()),
+        ):
+            numbers = tool_models.vise_numbers(views)
+            for view in views:
+                name = f"{prefix}_{view.name}.svg"
+                text = (path / name).read_text(encoding="utf-8")
+                self.assertEqual(text, tool_models.view_sketch(view, numbers))
+                ET.fromstring(text)
+
+    def test_vise_sizes_all_listed(self) -> None:
+        """Every size drawn is a size of the vise, drawn once."""
+        views = tool_models.vise_views()
+        keys = [mark.key for view in views for mark in view.marks]
+        self.assertEqual(len(keys), len(set(keys)))
+        self.assertLessEqual(set(keys), set(tool_models.vise_sizes()))
+
     def test_no_wide_lines(self) -> None:
         """No line of the document is wider than `MARKDOWN_WIDTH`."""
         for line in tool_models.document().splitlines():
