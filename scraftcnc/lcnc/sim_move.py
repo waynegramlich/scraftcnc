@@ -35,7 +35,7 @@ from ..pybind.scraftpybind import (
 
 # A `solidcraft-cli` extracted from SolidCraft's AppImage, for
 # headless sessions when none is on the `PATH` (as in
-# `solidcraftcnc_demo.py`).
+# `demo.py`).
 SOLIDCRAFT_CLI: Path = (
     Path(__file__).resolve().parents[2]
     / "solidcraft/squashfs-root/usr/bin/solidcraft-cli"

@@ -1,11 +1,19 @@
-"""Tests for `solidcraftcnc.py`: run `python3 -m unittest -v`."""
+"""Tests for `gcode.py`: run `python3 -m unittest -v`."""
 
 import math
 import re
 import unittest
 from collections.abc import Sequence
 
-from scraftcnc.scgeometry import (
+from scraftcnc.demo import demo_islands, demo_pocket
+from scraftcnc.gcode import (
+    SCCNC,
+    SCRing,
+    _number,
+    cut_order,
+    plan_pocket,
+)
+from scraftcnc.geometry import (
     SCArc,
     SCCorner,
     SCLoop,
@@ -13,16 +21,8 @@ from scraftcnc.scgeometry import (
     SCSegment,
     distance_to,
 )
-from scraftcnc.scmachine import SCMachine, SCTool
-from scraftcnc.solidcraftcnc import (
-    SCCNC,
-    SCRing,
-    _number,
-    cut_order,
-    plan_pocket,
-)
-from scraftcnc.solidcraftcnc_demo import demo_islands, demo_pocket
-from test_scgeometry import dumbbell, square
+from scraftcnc.machine import SCMachine, SCTool
+from test_geometry import dumbbell, square
 
 
 # Function `machine()`:

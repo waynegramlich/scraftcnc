@@ -2,8 +2,8 @@
 
 `SCCNC` collects RS-274 commands, each a plain dictionary of words
 (e.g. `{"G": 1, "X": 1.0, "F": 12.0}`), and writes them as G-code.  It
-works in inches, with a machine and its tool table (`scmachine`), and
-cuts the shapes of `scgeometry` (such as `SCRoundedPolygon`): along
+works in inches, with a machine and its tool table (`machine`), and
+cuts the shapes of `geometry` (such as `SCRoundedPolygon`): along
 their outlines (`SCCNC.profile()`) and out of their insides
 (`SCCNC.pocket()`).  It drills (`SCCNC.drill()`) where they go down
 (`SCCNC.pocket_entries()`, `SCCNC.profile_entry()`), so that an end
@@ -24,7 +24,7 @@ from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from typing import Literal, TypeAlias
 
-from .scgeometry import (
+from .geometry import (
     EPSILON,
     JOIN,
     TOUCH,
@@ -45,7 +45,7 @@ from .scgeometry import (
     turn_between,
     unit,
 )
-from .scmachine import SCMachine, SCTool
+from .machine import SCMachine, SCTool
 
 # One RS-274 command: its words, in order, keyed by letter (e.g.
 # `{"G": 1, "X": 10.0}`).  The key `comment` holds a comment line's

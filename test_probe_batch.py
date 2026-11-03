@@ -11,7 +11,7 @@ from probe_batch import (
     path_steps,
     sketch_steps,
 )
-from scraftcnc.scplot import SCMove, SpacePoint, command_moves, read_gcode
+from scraftcnc.plot import SCMove, SpacePoint, command_moves, read_gcode
 
 # A small program: a rapid, a cut, a jump, an arc, a tool change.
 GCODE: str = """(Tool 4)

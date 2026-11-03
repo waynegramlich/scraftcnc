@@ -1,7 +1,7 @@
 """Plot an `SCCNC` program's tool path as a page that can be turned.
 
 `plot_html()` returns a self-contained page (the template
-`scplot_template.html`, with the path filled in) that draws every move
+`plot_template.html`, with the path filled in) that draws every move
 in 3D: rapids dashed, cuts shaded by depth, with the part's outlines
 and the tool.  It can be turned, zoomed, and played through, with the
 G-code beside it.  `write_plot()` saves it to a file.
@@ -26,14 +26,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, TypeAlias, TypedDict
 
-from .scgeometry import SCRoundedPolygon, point_at
-from .solidcraftcnc import RS274, SCCNC
+from .gcode import RS274, SCCNC
+from .geometry import SCRoundedPolygon, point_at
 
 if TYPE_CHECKING:
     from .pybind.scraftpybind import JSON, SCPyBind
 
 # The page the path is filled into.
-TEMPLATE: Path = Path(__file__).resolve().parent / "scplot_template.html"
+TEMPLATE: Path = Path(__file__).resolve().parent / "plot_template.html"
 
 # Arcs are drawn as lines, one per this many radians of their sweep.
 ARC_STEP: float = math.radians(5.0)

@@ -1,16 +1,16 @@
-"""Tests for `sckeepout`: programs against a Table/Vise/Parallels setup."""
+"""Tests for `keepout`: programs against a Table/Vise/Parallels setup."""
 
 import json
 import math
 import random
 import unittest
 
-from scraftcnc import sckeepout, scsetup
-from scraftcnc.scgeometry import SLOP, SCArc, SCLine
-from scraftcnc.scmachine import SCMachine, SCTool
+from scraftcnc import keepout, setups
+from scraftcnc.demo import MACHINE, MATERIAL, SHOP_FILE, cut_demo
+from scraftcnc.gcode import SCCNC
+from scraftcnc.geometry import SLOP, SCArc, SCLine
+from scraftcnc.machine import SCMachine, SCTool
 from scraftcnc.shops import cnc_machine, read
-from scraftcnc.solidcraftcnc import SCCNC
-from scraftcnc.solidcraftcnc_demo import MACHINE, MATERIAL, SHOP_FILE, cut_demo
 
 JAWS = ("Kurt D688 fixed jaw", "Kurt D688 movable jaw")
 PARALLELS = ("Parallel 1-1/2 in A", "Parallel 1-1/2 in B")
@@ -28,10 +28,10 @@ TOPS = {
 
 def setup_zones():
     """Return the example setup's zones."""
-    setup = scsetup.SCSetup(
-        json.loads(scsetup.EXAMPLE.read_text(encoding="utf-8"))
+    setup = setups.SCSetup(
+        json.loads(setups.EXAMPLE.read_text(encoding="utf-8"))
     )
-    return sckeepout.work_zones(setup, setup.materials[0])
+    return keepout.work_zones(setup, setup.materials[0])
 
 
 def machine(tools=()):
@@ -64,7 +64,7 @@ def program(number=1, tools=()):
 
 
 def rectangle_distance(point, box):
-    """Return how far a point is from a box, with no `scgeometry`."""
+    """Return how far a point is from a box, with no `geometry`."""
     low_x, high_x, low_y, high_y = box
     across = max(low_x - point[0], 0.0, point[0] - high_x)
     along = max(low_y - point[1], 0.0, point[1] - high_y)
@@ -97,12 +97,12 @@ class TestZones(unittest.TestCase):
 
     def test_material_elsewhere(self) -> None:
         """The zones follow the work origin."""
-        data = json.loads(scsetup.EXAMPLE.read_text(encoding="utf-8"))
+        data = json.loads(setups.EXAMPLE.read_text(encoding="utf-8"))
         data["materials"][0]["location"] = ["1 in", "0 in"]
         data["materials"][0]["height"] = "4.5 in"
         data["materials"][0]["parts"] = []
-        setup = scsetup.SCSetup(data)
-        zones = sckeepout.work_zones(setup, setup.materials[0])
+        setup = setups.SCSetup(data)
+        zones = keepout.work_zones(setup, setup.materials[0])
         table = next(zone for zone in zones if zone.name == "Mikini 1610L")
         self.assertAlmostEqual(table.box[1], 14.125, places=6)
         self.assertAlmostEqual(table.z_end, 0.125 - 5.0, places=6)
@@ -118,7 +118,7 @@ class TestCrashes(unittest.TestCase):
             found.kind == "keep out"
             and found.zone == name
             and found.line == last
-            for found in sckeepout.check_program(cnc, setup_zones())
+            for found in keepout.check_program(cnc, setup_zones())
         )
 
     def sides(self, zone):
@@ -238,14 +238,14 @@ class TestCrashes(unittest.TestCase):
         """A canned cycle is a vertical move down to its bottom."""
         cnc = program(2)
         cnc.drill([(0.0, 3.5)], -0.2)
-        found = sckeepout.check_program(cnc, setup_zones())
+        found = keepout.check_program(cnc, setup_zones())
         self.assertEqual(
             [item.zone for item in found if item.kind == "keep out"],
             [JAWS[0]],
         )
         cnc = program(2)
         cnc.drill([(0.0, 0.0)], -0.5, through=True)
-        self.assertEqual(sckeepout.check_program(cnc, setup_zones()), [])
+        self.assertEqual(keepout.check_program(cnc, setup_zones()), [])
 
     def test_widest_radius(self) -> None:
         """A chamfer bit is checked at its widest, not at its tip."""
@@ -275,7 +275,7 @@ class TestCrashes(unittest.TestCase):
         cnc.linear(z=-5.0)
         names = {
             found.zone
-            for found in sckeepout.check_program(cnc, setup_zones())
+            for found in keepout.check_program(cnc, setup_zones())
             if found.kind == "keep out"
         }
         self.assertEqual(names, set(TOPS) - {JAWS[1], PARALLELS[1]})
@@ -316,7 +316,7 @@ class TestBruteForce(unittest.TestCase):
                     chord[0] / 2.0 - chord[1] / length * along,
                     chord[1] / 2.0 + chord[0] / length * along,
                 )
-                move = sckeepout.arc_segments(start, end, offset, code)[0]
+                move = keepout.arc_segments(start, end, offset, code)[0]
                 center = move.center
                 first = math.atan2(start[1] - center[1], start[0] - center[0])
                 points = [
@@ -357,7 +357,7 @@ class TestRapids(unittest.TestCase):
         """Return the texts of a program's rapid violations."""
         return [
             found.text
-            for found in sckeepout.check_program(cnc, [])
+            for found in keepout.check_program(cnc, [])
             if found.kind == "rapid"
         ]
 
@@ -403,7 +403,7 @@ class TestUnchecked(unittest.TestCase):
         """Return a program's `unchecked` lines."""
         return [
             found.line
-            for found in sckeepout.check_program(cnc, [])
+            for found in keepout.check_program(cnc, [])
             if found.kind == "unchecked"
         ]
 
@@ -454,28 +454,28 @@ class TestPrograms(unittest.TestCase):
 
     def test_demo_is_clear(self) -> None:
         """The demonstration plate stays out of every zone."""
-        setup = scsetup.SCSetup(
-            json.loads(sckeepout.DEMO_SETUP.read_text(encoding="utf-8"))
+        setup = setups.SCSetup(
+            json.loads(keepout.DEMO_SETUP.read_text(encoding="utf-8"))
         )
         cnc = cut_demo()[0]
         cnc.remap(0, -2.0, -1.5)
-        found = sckeepout.check_program(
-            cnc, sckeepout.work_zones(setup, setup.materials[0])
+        found = keepout.check_program(
+            cnc, keepout.work_zones(setup, setup.materials[0])
         )
         self.assertEqual(found, [])
 
     def test_grid_plate_fails_as_predicted(self) -> None:
         """The grid plate's long edges, and nothing else, enter zones."""
-        setup = scsetup.SCSetup(
-            json.loads(scsetup.EXAMPLE.read_text(encoding="utf-8"))
+        setup = setups.SCSetup(
+            json.loads(setups.EXAMPLE.read_text(encoding="utf-8"))
         )
         material = setup.materials[0]
-        cnc = sckeepout.grid_plate_program(
+        cnc = keepout.grid_plate_program(
             material.parts[0].placement.turns,
-            sckeepout.shop_machine_with_hole_drill(),
+            keepout.shop_machine_with_hole_drill(),
         )
-        zones = sckeepout.work_zones(setup, material)
-        found = sckeepout.check_program(cnc, zones)
+        zones = keepout.work_zones(setup, material)
+        found = keepout.check_program(cnc, zones)
         self.assertEqual({item.kind for item in found}, {"keep out"})
         names = {item.zone for item in found if item.kind == "keep out"}
         self.assertEqual(names, set(JAWS) | set(PARALLELS))
@@ -556,9 +556,7 @@ class TestReport(unittest.TestCase):
         cnc = program()
         cnc.rapid(0.0, 3.5)
         cnc.linear(z=-0.2)
-        text = sckeepout.report(
-            cnc, sckeepout.check_program(cnc, setup_zones())
-        )
+        text = keepout.report(cnc, keepout.check_program(cnc, setup_zones()))
         self.assertIn("1 keep out: Kurt D688 fixed jaw", text)
         self.assertIn("G1 Z-0.2", text)
         self.assertIn(f"line {len(cnc.commands)}:", text)

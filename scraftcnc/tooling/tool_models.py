@@ -5,7 +5,7 @@ Each kind of model has one `SCModelPage`: a sample of it, and where the
 dimensions go on its sketch.  Everything else comes from elsewhere, so
 that the document can not disagree with the code: each size's letter
 and meaning from the schema in `shops.py`, and the sketch's outline
-from `sctoolmodel.profile()`.  A test keeps the files in step:
+from `cutter_models.profile()`.  A test keeps the files in step:
 
 ```
 ./tool_models.py
@@ -32,8 +32,8 @@ from types import ModuleType
 from typing import TypeAlias
 
 from .. import shops
+from ..geometry import SCArc, SCRoundedPolygon, SCSegment
 from ..pybind import scraftpybind
-from ..scgeometry import SCArc, SCRoundedPolygon, SCSegment
 from ..shops import (
     ANGLE,
     KINDS,
@@ -43,8 +43,8 @@ from ..shops import (
     markdown_table,
     measure,
 )
-from . import sctoolmodel, tools
-from .sctoolmodel import COUNTERSINK_TIP_FLAT, MM_PER_INCH, Profile, profile
+from . import cutter_models, tools
+from .cutter_models import COUNTERSINK_TIP_FLAT, MM_PER_INCH, Profile, profile
 from .tools import (
     GRID_PLATE,
     KURT_D688,
@@ -602,8 +602,8 @@ PAGES: tuple[SCModelPage, ...] = (
 # a module and a name in it, and True to give only the first paragraph
 # of its docstring (`SCPyBind` lists every command there is).
 INTERFACE: tuple[tuple[ModuleType, str, bool], ...] = (
-    (sctoolmodel, "model_description", False),
-    (sctoolmodel, "SCModeledTool", False),
+    (cutter_models, "model_description", False),
+    (cutter_models, "SCModeledTool", False),
     (shops, "check_tool", False),
     (shops, "SCShopError", False),
     (scraftpybind, "connect", False),
@@ -1037,7 +1037,7 @@ def _python(page: SCModelPage) -> str:
     )
     return (
         "from scraftcnc.pybind.scraftpybind import SCPyBind, connect\n"
-        "from sctoolmodel import model_description\n"
+        "from cutter_models import model_description\n"
         "\n"
         'with connect("8080") as transport:\n'
         "    model_description(\n"
@@ -1209,7 +1209,7 @@ def section(page: SCModelPage) -> str:
         f"![{page.title} sketch]({SKETCHES}/{page.kind}.svg)\n\n"
         f"{markdown_table(rows)}\n\n"
         f"Other keys:\n\n{others}\n\n"
-        f"JSON:\n\n```\n./sctoolmodel.py 8080 '{described}'\n```\n\n"
+        f"JSON:\n\n```\n./cutter_models.py 8080 '{described}'\n```\n\n"
         f"Python:\n\n```python\n{_python(page)}```\n\n"
         f"A tools file:\n\n```toml\n{_toml(page)}```\n"
     )
@@ -2617,7 +2617,7 @@ def grid_plate_section() -> str:
         if key not in numbers
     )
     python: str = (
-        "from scmodelcache import SCModelCache\n"
+        "from model_cache import SCModelCache\n"
         "from scraftcnc.pybind.scraftpybind import SCPyBind, connect\n"
         "from tools import GRID_PLATE\n"
         "\n"

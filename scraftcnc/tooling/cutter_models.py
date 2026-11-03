@@ -29,14 +29,14 @@ Arcs are drawn as short straight lines, which is plenty for a picture.
 Run this to see every tool of the example shop in SolidCraft:
 
 ```
-./sctoolmodel.py 8080
+./cutter_models.py 8080
 ```
 
 Or give one tool, as JSON (`Tool_Models.md` describes them), to add it
 to the design at the origin:
 
 ```
-./sctoolmodel.py 8080 '{"kind": "end_mill", "diameter": "1/4 in", ...}'
+./cutter_models.py 8080 '{"kind": "end_mill", "diameter": "1/4 in", ...}'
 ```
 """
 
@@ -56,15 +56,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
 
-from ..pybind.scraftpybind import JSON, SCPyBind, connect
-from ..scmodelcache import (
+from ..model_cache import (
     SCCacheable,
     SCInserted,
     SCModelCache,
     cache_for,
     placement_matrix,
 )
-from ..scplot import SCStep, SpacePoint, send_batch, sketch_steps
+from ..plot import SCStep, SpacePoint, send_batch, sketch_steps
+from ..pybind.scraftpybind import JSON, SCPyBind, connect
 from ..shops import (
     ANGLE,
     CNC_KINDS,

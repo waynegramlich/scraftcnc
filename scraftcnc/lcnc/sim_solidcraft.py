@@ -3,8 +3,8 @@
 The SolidCraft side of the simulation (`T.rlg~3.3`), split out of
 `sim_linuxcnc.py`, which drives LinuxCNC and hands each position it
 polls to listeners.  `SCSolidCraftDisplay` is such a listener: every
-tool of a shop's machine is modeled (`sctoolmodel`), hidden, in a
-SolidCraft session where `solidcraftcnc_demo.py` has modeled the part,
+tool of a shop's machine is modeled (`cutter_models`), hidden, in a
+SolidCraft session where `demo.py` has modeled the part,
 and the one in the spindle is shown, following the position.  Each
 tool's planned path is drawn from the program, one tool ahead of the
 run, as a hidden 3D sketch built with one batch (`probe_batch`), and
@@ -19,7 +19,7 @@ It is used through `sim_linuxcnc.py`'s `--solidcraft PORT` (or
 ```
 python3 -m scraftcnc.lcnc.serve_linuxcnc &
 solidcraft --control 8080 &
-python3 -m scraftcnc.solidcraftcnc_demo --no-path --opaque 8080 > demo.ngc
+python3 -m scraftcnc.demo --no-path --opaque 8080 > demo.ngc
 distrobox enter lcnc -- python3 -m scraftcnc.lcnc.sim_linuxcnc demo.ngc --solidcraft 8080
 ```
 
@@ -37,16 +37,16 @@ from typing import Protocol
 
 from probe_batch import path_steps, send_batch, sketch_steps
 
+from ..model_cache import SCModelCache
+from ..plot import SCMove, command_moves, read_gcode
 from ..pybind.scraftpybind import (
     SCHeadlessTransport,
     SCPyBind,
     SCTransport,
     connect,
 )
-from ..scmodelcache import SCModelCache
-from ..scplot import SCMove, command_moves, read_gcode
 from ..shops import loaded_tools, read
-from ..tooling.sctoolmodel import SCModeledTool, model_tool
+from ..tooling.cutter_models import SCModeledTool, model_tool
 
 # SolidCraft's coordinates are millimeters.
 MM_PER_INCH: float = 25.4

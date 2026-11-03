@@ -2,8 +2,8 @@
 """Time drawing a program's planned path as one 3D sketch per tool.
 
 A probe for showing the planned tool path in SolidCraft (`T.rlg~3.3`):
-the moves of a G-code file (read by `scplot.read_gcode()` and
-`scplot.command_moves()`) are grouped by the tool in the spindle, and
+the moves of a G-code file (read by `plot.read_gcode()` and
+`plot.command_moves()`) are grouped by the tool in the spindle, and
 each tool's cuts and its rapids become a 3D sketch, built with one
 `engine.batch` request: `sketch.create`, `sketch.options` (3D, points,
 profile, constraints and dimensions not shown), one `sketch.line3d` per
@@ -23,7 +23,7 @@ circle as two), and only helices are broken into lines.  With
 `--mixed`, a tool's cuts and rapids share one sketch.
 
 With `--plate`, the demonstration's plate is modeled first (by
-`solidcraftcnc_demo.py`, with its own drawing of the path left out),
+`demo.py`, with its own drawing of the path left out),
 in the same session, and its G-code is the one drawn unless `--ngc`
 is given.  A new design is started first unless `--keep` is given.
 With `--toggle`, each sketch is then hidden and shown again
@@ -52,7 +52,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TypeAlias
 
-from scraftcnc import solidcraftcnc_demo
+from scraftcnc import demo
+from scraftcnc.plot import SCMove, SpacePoint, command_moves, read_gcode
 from scraftcnc.pybind.scraftpybind import (
     JSON,
     SCHeadlessTransport,
@@ -61,7 +62,6 @@ from scraftcnc.pybind.scraftpybind import (
     SCTransport,
     connect,
 )
-from scraftcnc.scplot import SCMove, SpacePoint, command_moves, read_gcode
 
 # The most points `sketch.line3d` takes in one call.
 MAX_POINTS: int = 500
@@ -118,7 +118,7 @@ def _planar(move: SCMove) -> bool:
 def arc_steps(points: Sequence[SpacePoint]) -> list[SCStep]:
     """Return `sketch.arc3d` steps for an arc in one plane.
 
-    The arc's points (`scplot`'s, evenly spaced) give its middle; a
+    The arc's points (`plot`'s, evenly spaced) give its middle; a
     whole circle (ending where it starts) is drawn as two halves, since
     three points can not name it.
 
@@ -317,7 +317,7 @@ def wires_made(reply: Mapping[str, JSON]) -> int:
 class _SCShared(SCTransport):
     """A transport that passes requests on, and never closes it.
 
-    So that `solidcraftcnc_demo.model()`, which closes the transport it
+    So that `demo.model()`, which closes the transport it
     makes, models the plate in the probe's own session.
 
     Attributes:
@@ -360,7 +360,7 @@ def model_plate(transport: SCTransport) -> str:
     # The demonstration, with its path drawing left out, in this
     # session, its G-code caught.
     shared: _SCShared = _SCShared(transport)
-    names: dict[str, object] = vars(solidcraftcnc_demo)
+    names: dict[str, object] = vars(demo)
     saved: dict[str, object] = {
         "sketch_path": names["sketch_path"],
         "connect": names["connect"],
@@ -370,9 +370,9 @@ def model_plate(transport: SCTransport) -> str:
     status: int
     try:
         names.update(sketch_path=lambda *_: [], connect=lambda _: shared)
-        sys.argv = ["solidcraftcnc_demo.py", "shared"]
+        sys.argv = ["demo.py", "shared"]
         with contextlib.redirect_stdout(gcode):
-            status = solidcraftcnc_demo.main()
+            status = demo.main()
     finally:
         names.update(saved)
         sys.argv = arguments
@@ -449,11 +449,9 @@ def main() -> int:
     if (
         isinstance(transport, SCHeadlessTransport)
         and shutil.which(transport.cli) is None
-        and solidcraftcnc_demo.SOLIDCRAFT_CLI.exists()
+        and demo.SOLIDCRAFT_CLI.exists()
     ):
-        transport = SCHeadlessTransport(
-            cli=str(solidcraftcnc_demo.SOLIDCRAFT_CLI)
-        )
+        transport = SCHeadlessTransport(cli=str(demo.SOLIDCRAFT_CLI))
 
     with transport:
         # A new design, and the plate, as asked.

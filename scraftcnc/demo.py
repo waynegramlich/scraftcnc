@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Cut and model a demonstration shape with `solidcraftcnc`.
+"""Cut and model a demonstration shape with `gcode`.
 
 It prints the G-code for a notched plate, with a hole through it and a
 pocket in it (around three islands), whose corners each have their own
@@ -13,10 +13,10 @@ smaller than it.  With a SolidCraft GUI's control port (`solidcraft --control
 PORT`) or `headless`, it also models the plate in SolidCraft:
 
 ```
-python3 -m scraftcnc.solidcraftcnc_demo > demo.ngc
-python3 -m scraftcnc.solidcraftcnc_demo --plot demo.html > demo.ngc
-python3 -m scraftcnc.solidcraftcnc_demo 8080 > demo.ngc
-python3 -m scraftcnc.solidcraftcnc_demo headless > demo.ngc
+python3 -m scraftcnc.demo > demo.ngc
+python3 -m scraftcnc.demo --plot demo.html > demo.ngc
+python3 -m scraftcnc.demo 8080 > demo.ngc
+python3 -m scraftcnc.demo headless > demo.ngc
 ```
 """
 
@@ -27,6 +27,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
+from .gcode import SCCNC, Stage
+from .geometry import SCCorner, SCRoundedPolygon, point_at
+from .machine import SCMachine, SCTool
+from .plot import sketch_path, write_plot
 from .pybind.scraftpybind import (
     JSON,
     SCHeadlessTransport,
@@ -34,11 +38,7 @@ from .pybind.scraftpybind import (
     SCTransport,
     connect,
 )
-from .scgeometry import SCCorner, SCRoundedPolygon, point_at
-from .scmachine import SCMachine, SCTool
-from .scplot import sketch_path, write_plot
 from .shops import cnc_machine, read
-from .solidcraftcnc import SCCNC, Stage
 
 # A `solidcraft-cli` extracted from SolidCraft's AppImage, for
 # headless sessions when none is on the `PATH` (if it is there; it is
@@ -530,7 +530,7 @@ def main() -> int:
                 arguments[0], part, cnc, path=path, opaque=opaque
             )
         except OSError as error:
-            print(f"solidcraftcnc_demo.py: {error}", file=sys.stderr)
+            print(f"demo.py: {error}", file=sys.stderr)
             return 1
         print(f"{plate.name}: {profiles} profile(s)", file=sys.stderr)
         # The plate's sketch has 2 profiles (the plate around its hole,

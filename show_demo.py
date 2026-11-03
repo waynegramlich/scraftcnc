@@ -42,9 +42,9 @@ from types import FrameType
 
 from scraftcnc.lcnc.lcnc_client import PORT as LINUXCNC_PORT
 from scraftcnc.lcnc.lcnc_client import SCBridgeError, SCClient
+from scraftcnc.model_cache import SCModelCache
 from scraftcnc.pybind.scraftpybind import SCPyBind, SCSolidCraftError, connect
-from scraftcnc.scmodelcache import SCModelCache
-from scraftcnc.scsetup import SCSetup
+from scraftcnc.setups import SCSetup
 
 # Where everything is.
 PROJECT: Path = Path(__file__).resolve().parent
@@ -429,7 +429,7 @@ class SCShow:
             self.logs["model"].open("wb") as log,
         ):
             done = subprocess.run(
-                [sys.executable, "-m", "scraftcnc.solidcraftcnc_demo",
+                [sys.executable, "-m", "scraftcnc.demo",
                  "--no-path", "--opaque", str(self.options.solidcraft_port)],
                 cwd=PROJECT,
                 stdin=subprocess.DEVNULL,

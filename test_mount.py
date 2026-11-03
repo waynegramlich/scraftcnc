@@ -7,8 +7,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from scraftcnc.geometry import SCCorner, SCHole, SCRoundedPolygon
 from scraftcnc.pybind.scraftpybind import SCHeadlessTransport, SCPyBind
-from scraftcnc.scgeometry import SCCorner, SCHole, SCRoundedPolygon
 from scraftcnc.tooling import mount, tools
 
 # An extracted `solidcraft-cli` (as the demo uses) for the live test.

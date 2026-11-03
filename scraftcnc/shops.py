@@ -40,7 +40,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, TypeAlias, cast
 
-from .scmachine import DrillCycle, SCMachine, SCTool, ToolKind
+from .machine import DrillCycle, SCMachine, SCTool, ToolKind
 
 # The format version that this module reads and describes.
 FORMAT_VERSION: str = "0.0.1"
@@ -2020,7 +2020,7 @@ def _measurement(value: object, units: dict[str, float]) -> tuple[float, str]:
 
     Returns:
     * (`tuple[float, str]`):
-      Its value in the units used inside (as for `scmachine`) and
+      Its value in the units used inside (as for `machine`) and
       `""`, or `0.0` and the problem.
     """
     # It must be a string, of a number and a unit.

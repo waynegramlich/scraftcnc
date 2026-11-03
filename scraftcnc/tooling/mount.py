@@ -21,9 +21,9 @@ import sys
 from dataclasses import dataclass, field
 from typing import Protocol
 
+from ..model_cache import SCCacheable
 from ..pybind.scraftpybind import SCPyBind, connect
-from ..scmodelcache import SCCacheable
-from .sctoolmodel import MM_PER_INCH
+from .cutter_models import MM_PER_INCH
 from .tools import (
     ALUMINUM_COLOR,
     DRILL_COLOR,

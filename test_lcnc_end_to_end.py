@@ -1,6 +1,6 @@
 """The whole path, end to end, with no display.
 
-G-code from `solidcraftcnc_demo.py`, through a `lcnc_panel.py --headless`
+G-code from `demo.py`, through a `lcnc_panel.py --headless`
 pressed through its command port, to `serve_linuxcnc` and a real LinuxCNC
 simulator.  This takes about two minutes and needs LinuxCNC installed
 (`install_linuxcnc` from `scraftcnc/lcnc/`) with nothing on its port, so
@@ -32,7 +32,7 @@ from typing import Any, ClassVar
 
 from scraftcnc import shops
 from scraftcnc.lcnc import lcnc_client
-from scraftcnc.scplot import SCMove, command_moves, read_gcode
+from scraftcnc.plot import SCMove, command_moves, read_gcode
 
 HERE: Path = Path(__file__).resolve().parent
 SERVER_DIRECTORY: Path = HERE
@@ -377,7 +377,7 @@ class TestEndToEnd(unittest.TestCase):
     def test_path_of_the_demonstration(self) -> None:
         """The whole demonstration: every sample lies on its path."""
         done = subprocess.run(
-            [sys.executable, "-m", "scraftcnc.solidcraftcnc_demo"],
+            [sys.executable, "-m", "scraftcnc.demo"],
             cwd=HERE,
             capture_output=True,
             text=True,

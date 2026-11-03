@@ -27,19 +27,19 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Literal, TypeAlias
 
-from .scgeometry import SCArc, SCCorner, SCLine, SCRoundedPolygon, SCSegment
-from .scmachine import SCMachine, SCTool
-from .scsetup import EXAMPLE, SCPlacedWork, SCSetup
-from .shops import cnc_machine, read
-from .solidcraftcnc import RS274, SCCNC
-from .solidcraftcnc_demo import (
+from .demo import (
     END_MILL,
     MACHINE,
     MATERIAL,
     SHOP_FILE,
     cut_demo,
 )
-from .tooling.sctoolmodel import MM_PER_INCH
+from .gcode import RS274, SCCNC
+from .geometry import SCArc, SCCorner, SCLine, SCRoundedPolygon, SCSegment
+from .machine import SCMachine, SCTool
+from .setups import EXAMPLE, SCPlacedWork, SCSetup
+from .shops import cnc_machine, read
+from .tooling.cutter_models import MM_PER_INCH
 from .tooling.tools import GRID_PLATE, Point, SCCylinder, SCPrism
 
 # What a violation can be.

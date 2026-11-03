@@ -14,8 +14,8 @@ center, seen from above: counterclockwise is positive, in quarter turns.
 `examples/setup/grid_plate.json` is an example.
 
 ```
-python3 scsetup.py [FILE] 8080       # A GUI with `--control 8080`.
-python3 scsetup.py [FILE] headless   # No window; prints the report.
+python3 setups.py [FILE] 8080       # A GUI with `--control 8080`.
+python3 setups.py [FILE] headless   # No window; prints the report.
 ```
 """
 
@@ -26,19 +26,20 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
+from .model_cache import (
+    SCInserted,
+    SCModelCache,
+    cache_for,
+    placement_matrix,
+)
 from .pybind.scraftpybind import (
     JSON,
     DocumentUnitsUnits,
     SCPyBind,
     connect,
 )
-from .scmodelcache import (
-    SCInserted,
-    SCModelCache,
-    cache_for,
-    placement_matrix,
-)
 from .shops import ANGLE, LENGTH, grid_plates, measure, read
+from .tooling.cutter_models import MM_PER_INCH
 from .tooling.mount import (
     SCLayer,
     SCMachineViseLayer,
@@ -47,7 +48,6 @@ from .tooling.mount import (
     SCTableLayer,
     _inches,
 )
-from .tooling.sctoolmodel import MM_PER_INCH
 from .tooling.tools import (
     GRID_PLATE,
     KURT_D688,

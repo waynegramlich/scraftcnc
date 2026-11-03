@@ -1,11 +1,11 @@
-"""Tests for `scmachine.py`: run `python3 -m unittest -v`."""
+"""Tests for `machine.py`: run `python3 -m unittest -v`."""
 
 import unittest
 from pathlib import Path
 
-from scraftcnc.scmachine import SCMachine, SCTool
+from scraftcnc.machine import SCMachine, SCTool
 from scraftcnc.shops import cnc_machine, read
-from test_solidcraftcnc import machine
+from test_gcode import machine
 
 # The example shop.
 SHOP_FILE: Path = (

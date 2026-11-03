@@ -9,7 +9,7 @@ from pathlib import Path
 
 from scraftcnc import shops
 from scraftcnc.pybind.scraftpybind import SCHeadlessTransport, SCPyBind
-from scraftcnc.tooling import sctoolmodel, tool_models
+from scraftcnc.tooling import cutter_models, tool_models
 
 
 class TestFiles(unittest.TestCase):
@@ -173,13 +173,13 @@ class TestCheckTool(unittest.TestCase):
     shutil.which("solidcraft-cli"), "`solidcraft-cli` is not on the `PATH`"
 )
 class TestModelDescription(unittest.TestCase):
-    """`sctoolmodel.model_description()`, in a real session."""
+    """`cutter_models.model_description()`, in a real session."""
 
     def test_models_each_sample(self) -> None:
         """Each sample becomes a body, named for its kind."""
         for page in tool_models.PAGES:
             with SCHeadlessTransport() as transport:
-                modeled = sctoolmodel.model_description(
+                modeled = cutter_models.model_description(
                     SCPyBind(transport), page.sample
                 )
             self.assertEqual(modeled.body, page.kind.replace("_", " "))

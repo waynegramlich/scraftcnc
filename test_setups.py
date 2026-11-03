@@ -1,4 +1,4 @@
-"""Tests for `scsetup`: setups read from JSON."""
+"""Tests for `setups`: setups read from JSON."""
 
 import copy
 import dataclasses
@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from scraftcnc import scsetup
+from scraftcnc import setups
 from scraftcnc.pybind.scraftpybind import SCHeadlessTransport, SCPyBind
 from scraftcnc.tooling import tools
 
@@ -24,21 +24,21 @@ FLAT_PLATE = dataclasses.replace(tools.GRID_PLATE, chamfer_depth=0.0)
 
 def setUpModule() -> None:
     """Have setups name the unchamfered plate."""
-    patcher = mock.patch.dict(scsetup.PARTS, {"Grid plate": FLAT_PLATE})
+    patcher = mock.patch.dict(setups.PARTS, {"Grid plate": FLAT_PLATE})
     patcher.start()
     unittest.addModuleCleanup(patcher.stop)
 
 
 def example():
     """Return the example setup's JSON."""
-    return json.loads(scsetup.EXAMPLE.read_text(encoding="utf-8"))
+    return json.loads(setups.EXAMPLE.read_text(encoding="utf-8"))
 
 
 class TestExample(unittest.TestCase):
     """The example: a grid plate from a chunk, in a vise."""
 
     def setUp(self) -> None:
-        self.setup = scsetup.SCSetup(example())
+        self.setup = setups.SCSetup(example())
 
     def test_items(self) -> None:
         """Everything in the JSON is there."""
@@ -71,7 +71,7 @@ class TestExample(unittest.TestCase):
 
     def test_parallels_next_to_jaws(self) -> None:
         """Each parallel touches a jaw's plate, along the jaw."""
-        gap = scsetup._gap(
+        gap = setups._gap(
             self.setup.tooling[1].layer, self.setup.tooling[1].placement
         )
         self.assertAlmostEqual(gap.high[1], 3.0 * INCH)
@@ -121,7 +121,7 @@ class TestShopGridPlates(unittest.TestCase):
 
     def test_same_as_tools(self) -> None:
         """The shop's plate is `tools.GRID_PLATE`, so it shares its cache."""
-        shop = scsetup.grid_plates(scsetup.read(scsetup.SHOP))
+        shop = setups.grid_plates(setups.read(setups.SHOP))
         self.assertEqual(
             tools.SCGridPlate.from_shop(shop["Grid plate"]), tools.GRID_PLATE
         )
@@ -154,7 +154,7 @@ class TestProblems(unittest.TestCase):
         setup_json = copy.deepcopy(example())
         change(setup_json)
         with self.assertRaises(ValueError) as caught:
-            scsetup.SCSetup(setup_json)
+            setups.SCSetup(setup_json)
         return str(caught.exception)
 
     def test_no_unit(self) -> None:
@@ -210,7 +210,7 @@ class TestProblems(unittest.TestCase):
     def test_not_object(self) -> None:
         """A setup must be an object."""
         with self.assertRaises(ValueError):
-            scsetup.SCSetup([])
+            setups.SCSetup([])
 
 
 class TestOtherSetups(unittest.TestCase):
@@ -220,28 +220,28 @@ class TestOtherSetups(unittest.TestCase):
         """Material wider than the gap is reported."""
         setup_json = example()
         setup_json["tooling"][1]["opening"] = "5 in"
-        text = "\n".join(scsetup.SCSetup(setup_json).notes())
+        text = "\n".join(setups.SCSetup(setup_json).notes())
         self.assertIn("DOES NOT FIT", text)
 
     def test_not_clamped(self) -> None:
         """Material narrower than the gap is reported."""
         setup_json = example()
         setup_json["materials"][0]["size"][0] = "5 in"
-        text = "\n".join(scsetup.SCSetup(setup_json).notes())
+        text = "\n".join(setups.SCSetup(setup_json).notes())
         self.assertIn("NOT CLAMPED: Raw aluminum is 1.000 in narrower", text)
 
     def test_out_of_reach(self) -> None:
         """A part past the travel is reported."""
         setup_json = example()
         setup_json["machine"]["y_travel"] = "4 in"
-        text = "\n".join(scsetup.SCSetup(setup_json).notes())
+        text = "\n".join(setups.SCSetup(setup_json).notes())
         self.assertIn("OUT OF REACH: Grid plate reaches 0.750 in", text)
 
     def test_part_does_not_fit(self) -> None:
         """Material too small for the part is reported."""
         setup_json = example()
         setup_json["materials"][0]["size"][1] = "10 in"
-        text = "\n".join(scsetup.SCSetup(setup_json).notes())
+        text = "\n".join(setups.SCSetup(setup_json).notes())
         self.assertIn(
             "Grid plate reaches past Raw aluminum along X, by 0.250 in "
             "on the low side and 0.250 in on the high side",
@@ -250,7 +250,7 @@ class TestOtherSetups(unittest.TestCase):
 
     def test_part_margin(self) -> None:
         """The material is 1/2 in past the part at both ends."""
-        material = scsetup.SCSetup(example()).materials[0]
+        material = setups.SCSetup(example()).materials[0]
         room = material.bounds()
         part = material.parts[0].bounds()
         self.assertAlmostEqual(part.low[0] - room.low[0], 0.5 * INCH)
@@ -262,7 +262,7 @@ class TestOtherSetups(unittest.TestCase):
         setup_json["materials"].append(
             copy.deepcopy(setup_json["materials"][0])
         )
-        setup = scsetup.SCSetup(setup_json)
+        setup = setups.SCSetup(setup_json)
         self.assertEqual(len(setup.materials), 2)
 
 
@@ -271,7 +271,7 @@ class TestDemoStack(unittest.TestCase):
 
     def setUp(self) -> None:
         path = HERE / "examples/setup/demo_stack.json"
-        self.setup = scsetup.SCSetup(
+        self.setup = setups.SCSetup(
             json.loads(path.read_text(encoding="utf-8"))
         )
 
@@ -321,7 +321,7 @@ class TestModel(unittest.TestCase):
     def test_model(self) -> None:
         """Nothing overlaps, and everything lands where the JSON says."""
         program = shutil.which("solidcraft-cli") or str(CLI)
-        setup = scsetup.SCSetup(example())
+        setup = setups.SCSetup(example())
         with SCHeadlessTransport(program) as transport:
             solidcraft = SCPyBind(transport)
             names = setup.model(solidcraft)

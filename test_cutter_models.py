@@ -1,4 +1,4 @@
-"""Tests for `sctoolmodel`: the tools' profiles and their models."""
+"""Tests for `cutter_models`: the tools' profiles and their models."""
 
 import itertools
 import math
@@ -9,7 +9,7 @@ from typing import cast
 
 from scraftcnc import shops
 from scraftcnc.pybind.scraftpybind import SCHeadlessTransport, SCPyBind
-from scraftcnc.tooling import sctoolmodel
+from scraftcnc.tooling import cutter_models
 
 # The example shop, and an extracted `solidcraft-cli` (as the demo
 # uses) for the live test.
@@ -32,7 +32,7 @@ class TestProfiles(unittest.TestCase):
         self.assertEqual(sorted(tools), [1, 2, 4, 5, 6, 7, 8, 9])
         for number, (key, tool) in tools.items():
             with self.subTest(number=number):
-                outline = sctoolmodel.profile(key, tool)
+                outline = cutter_models.profile(key, tool)
                 length = shops.measure(tool["overall_length"], shops.LENGTH)
                 self.assertEqual(outline[0], (0.0, 0.0))
                 self.assertEqual(outline[-1], (0.0, length))
@@ -44,7 +44,7 @@ class TestProfiles(unittest.TestCase):
         """A drill's tip is a cone at its point angle."""
         key, tool = example_tools()[4]
         self.assertEqual(key, "drills")
-        outline = sctoolmodel.profile(key, tool)
+        outline = cutter_models.profile(key, tool)
         radius = 15 / 64 / 2
         self.assertAlmostEqual(outline[1][0], radius)
         self.assertAlmostEqual(
@@ -54,16 +54,16 @@ class TestProfiles(unittest.TestCase):
     def test_ball_end(self) -> None:
         """A ball end mill's points around its end are on the ball."""
         key, tool = example_tools()[7]
-        outline = sctoolmodel.profile(key, tool)
+        outline = cutter_models.profile(key, tool)
         radius = 0.125
         ball = [(r, z) for r, z in outline if z <= radius]
-        self.assertEqual(len(ball), sctoolmodel.ARC_STEPS + 1)
+        self.assertEqual(len(ball), cutter_models.ARC_STEPS + 1)
         for r, z in ball:
             self.assertAlmostEqual(math.hypot(r, z - radius), radius)
 
     def test_bull_nose(self) -> None:
         """A bull nose's end rounds up to its side."""
-        outline = sctoolmodel.profile(
+        outline = cutter_models.profile(
             "end_mills",
             {
                 "diameter": "1/2 in",
@@ -79,7 +79,7 @@ class TestProfiles(unittest.TestCase):
 
     def test_double_angle_at_its_rim(self) -> None:
         """A double angle cutter's included angle is at its rim."""
-        outline = sctoolmodel.profile(
+        outline = cutter_models.profile(
             "double_angle_cutters",
             {
                 "diameter": "3/4 in",
@@ -101,15 +101,19 @@ class TestProfiles(unittest.TestCase):
             "overall_length": "2 in",
             "angle": "90 deg",
         }
-        single = sctoolmodel.profile("single_countersinks", sink)
+        single = cutter_models.profile("single_countersinks", sink)
         self.assertEqual(single[-2:], [(0.25, 2.0), (0.0, 2.0)])
         self.assertAlmostEqual(single[4][1], 0.375)
-        double = sctoolmodel.profile("double_countersinks", sink)
+        double = cutter_models.profile("double_countersinks", sink)
         for (r1, z1), (r2, z2) in zip(double, reversed(double)):
             self.assertAlmostEqual(r1, r2)
             self.assertAlmostEqual(z1 + z2, 2.0)
-        single_runs = sctoolmodel.tool_flute_runs("single_countersinks", sink)
-        double_runs = sctoolmodel.tool_flute_runs("double_countersinks", sink)
+        single_runs = cutter_models.tool_flute_runs(
+            "single_countersinks", sink
+        )
+        double_runs = cutter_models.tool_flute_runs(
+            "double_countersinks", sink
+        )
         self.assertEqual(len(double_runs), 2 * len(single_runs))
 
     def test_drill_shank(self) -> None:
@@ -121,7 +125,7 @@ class TestProfiles(unittest.TestCase):
             "point_angle": "90 deg",
         }
         plain = [(0.0, 0.0), (0.25, 0.25), (0.25, 4.0), (0.0, 4.0)]
-        outline = sctoolmodel.profile
+        outline = cutter_models.profile
         self.assertEqual(outline("drills", drill), plain)
         self.assertEqual(
             outline("drills", {**drill, "shank_length": "1 in"}), plain
@@ -142,7 +146,7 @@ class TestProfiles(unittest.TestCase):
         """A rougher's 1/4 in flutes step out to its 3/8 in shank."""
         key, tool = example_tools()[8]
         self.assertEqual(
-            sctoolmodel.profile(key, tool),
+            cutter_models.profile(key, tool),
             [
                 (0.0, 0.0),
                 (0.125, 0.0),
@@ -156,7 +160,7 @@ class TestProfiles(unittest.TestCase):
     def test_chamfer_mill(self) -> None:
         """A 90 degree chamfer mill rises one for one to its diameter."""
         key, tool = example_tools()[5]
-        outline = sctoolmodel.profile(key, tool)
+        outline = cutter_models.profile(key, tool)
         self.assertEqual(outline[1], (0.01, 0.0))
         self.assertAlmostEqual(outline[2][0], 0.0625)
         self.assertAlmostEqual(outline[2][1], 0.0625 - 0.01)
@@ -164,9 +168,9 @@ class TestProfiles(unittest.TestCase):
     def test_corner_rounding_mill(self) -> None:
         """A corner rounding mill's quarter circle is hollow."""
         key, tool = example_tools()[6]
-        outline = sctoolmodel.profile(key, tool)
+        outline = cutter_models.profile(key, tool)
         tip, radius = 0.0469 / 2, 0.0625
-        arc = outline[1 : 2 + sctoolmodel.ARC_STEPS]
+        arc = outline[1 : 2 + cutter_models.ARC_STEPS]
         self.assertAlmostEqual(arc[0][0], tip)
         self.assertAlmostEqual(arc[-1][0], tip + radius)
         self.assertAlmostEqual(arc[-1][1], radius)
@@ -176,7 +180,7 @@ class TestProfiles(unittest.TestCase):
     def test_double_angle_cutter(self) -> None:
         """A double angle cutter's head is widest halfway up."""
         key, tool = example_tools()[9]
-        outline = sctoolmodel.profile(key, tool)
+        outline = cutter_models.profile(key, tool)
         self.assertEqual(
             outline[1:4], [(0.0625, 0.0), (0.125, 0.0625), (0.0625, 0.125)]
         )
@@ -184,7 +188,7 @@ class TestProfiles(unittest.TestCase):
     def test_unknown_kind(self) -> None:
         """A tool of another kind is a plain cylinder."""
         self.assertEqual(
-            sctoolmodel.profile(
+            cutter_models.profile(
                 "probes", {"diameter": "1/8 in", "overall_length": "2 in"}
             ),
             [(0.0, 0.0), (0.0625, 0.0), (0.0625, 2.0), (0.0, 2.0)],
@@ -203,8 +207,8 @@ class TestModel(unittest.TestCase):
         cli = "solidcraft-cli" if shutil.which("solidcraft-cli") else str(CLI)
         with SCHeadlessTransport(cli=cli) as transport:
             solidcraft = SCPyBind(transport)
-            body = sctoolmodel.model(
-                solidcraft, "Drill", sctoolmodel.profile(key, tool)
+            body = cutter_models.model(
+                solidcraft, "Drill", cutter_models.profile(key, tool)
             )
             solidcraft.component.from_bodies(bodies=[body])
             properties = solidcraft.occurrence.properties(
@@ -228,7 +232,7 @@ class TestFlutes(unittest.TestCase):
         """Index the example shop's tools by their `unique_id`."""
         self.tools = {
             tool["unique_id"]: (key, tool)
-            for key, tool in sctoolmodel.shop_tools(shops.read(SHOP))
+            for key, tool in cutter_models.shop_tools(shops.read(SHOP))
         }
 
     def test_every_tool_has_lines(self) -> None:
@@ -236,7 +240,7 @@ class TestFlutes(unittest.TestCase):
         for key, tool in self.tools.values():
             with self.subTest(tool=tool["name"]):
                 length = shops.measure(tool["overall_length"], shops.LENGTH)
-                runs = sctoolmodel.tool_flute_runs(key, tool)
+                runs = cutter_models.tool_flute_runs(key, tool)
                 self.assertTrue(runs)
                 for _, points in runs:
                     self.assertGreaterEqual(len(points), 2)
@@ -246,7 +250,7 @@ class TestFlutes(unittest.TestCase):
     def test_path_stops_at_length_of_cut(self) -> None:
         """A drill's flutes end at its `length_of_cut`, on its side."""
         key, tool = self.tools[5]
-        path = sctoolmodel.flute_path(key, tool)
+        path = cutter_models.flute_path(key, tool)
         cut = shops.measure(tool["length_of_cut"], shops.LENGTH)
         radius = shops.measure(tool["diameter"], shops.LENGTH) / 2
         self.assertEqual(path[0], (0.0, 0.0))
@@ -256,7 +260,7 @@ class TestFlutes(unittest.TestCase):
     def test_helical_edges(self) -> None:
         """Each helical flute has two edges, splines, off the tip."""
         key, tool = self.tools[4]
-        runs = sctoolmodel.tool_flute_runs(key, tool)
+        runs = cutter_models.tool_flute_runs(key, tool)
         self.assertEqual(len(runs), 2 * cast(int, tool["flutes"]))
         for command, points in runs:
             self.assertEqual(command, "sketch.spline3d")
@@ -264,10 +268,10 @@ class TestFlutes(unittest.TestCase):
 
     def test_helix_lead(self) -> None:
         """A helix turns by the rise over its lead, right handed."""
-        points = sctoolmodel.flute_runs(
+        points = cutter_models.flute_runs(
             [(0.0, 0.0), (1.0, 0.0), (1.0, 10.0)], 1, 30.0
         )[0][1]
-        lifted = 1.0 + sctoolmodel.FLUTE_LIFT
+        lifted = 1.0 + cutter_models.FLUTE_LIFT
         lead = 2.0 * math.pi * lifted / math.tan(math.radians(30.0))
         rise = points[1][2] - points[0][2]
         turned = math.atan2(points[1][1], points[1][0]) - math.atan2(
@@ -278,7 +282,7 @@ class TestFlutes(unittest.TestCase):
 
     def test_runout_closes(self) -> None:
         """A flute's two edges meet where the flute ends."""
-        runs = sctoolmodel.flute_runs(
+        runs = cutter_models.flute_runs(
             [(0.0, 0.0), (1.0, 0.0), (1.0, 10.0)], 1, 30.0
         )
         for first, second in zip(runs[0][1][-1], runs[1][1][-1], strict=True):
@@ -287,7 +291,7 @@ class TestFlutes(unittest.TestCase):
     def test_straight_flutes(self) -> None:
         """Straight flutes are one line each, off the surface."""
         key, tool = self.tools[7]
-        runs = sctoolmodel.tool_flute_runs(key, tool)
+        runs = cutter_models.tool_flute_runs(key, tool)
         self.assertEqual(len(runs), tool["flutes"])
         for command, points in runs:
             self.assertEqual(command, "sketch.line3d")
@@ -297,15 +301,15 @@ class TestFlutes(unittest.TestCase):
         """A straight fluted tool's line starts past the flat on its tip."""
         key, tool = self.tools[7]
         tip = shops.measure(tool["tip_diameter"], shops.LENGTH) / 2
-        self.assertEqual(sctoolmodel.flute_path(key, tool)[0], (tip, 0.0))
+        self.assertEqual(cutter_models.flute_path(key, tool)[0], (tip, 0.0))
 
     def test_no_known_flutes(self) -> None:
         """A kind of tool with no known flutes gets no lines."""
-        self.assertEqual(sctoolmodel.tool_flute_runs("other", {}), [])
+        self.assertEqual(cutter_models.tool_flute_runs("other", {}), [])
 
     def test_steps(self) -> None:
         """The steps place the lines, in millimeters, in one sketch."""
-        steps = sctoolmodel.flute_steps(
+        steps = cutter_models.flute_steps(
             "T",
             [("sketch.line3d", [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])],
             (1.0, 2.0, 3.0),
@@ -322,8 +326,8 @@ class TestFlutes(unittest.TestCase):
 
     def test_lift(self) -> None:
         """A flat end and a side each stand off by the whole lift."""
-        lift = sctoolmodel.FLUTE_LIFT
-        points = sctoolmodel.flute_runs(
+        lift = cutter_models.FLUTE_LIFT
+        points = cutter_models.flute_runs(
             [(0.0, 0.0), (1.0, 0.0), (1.0, 0.1)], 1
         )[0][1]
         self.assertAlmostEqual(points[0][2], -lift)
@@ -337,7 +341,7 @@ class TestHolders(unittest.TestCase):
 
     def setUp(self) -> None:
         self.shop = shops.read(SHOP)
-        self.tools = sctoolmodel.shop_tools(self.shop)
+        self.tools = cutter_models.shop_tools(self.shop)
         self.tool = dict(self.tools[0][1])
 
     def test_tools_in_order(self) -> None:
@@ -349,13 +353,13 @@ class TestHolders(unittest.TestCase):
 
     def test_digits(self) -> None:
         """The longest number sets the number of bands."""
-        self.assertEqual(sctoolmodel.unique_id_digits(self.tools), 2)
-        self.assertEqual(sctoolmodel.unique_id_digits(self.tools[:9]), 1)
-        self.assertEqual(sctoolmodel.unique_id_digits([]), 1)
+        self.assertEqual(cutter_models.unique_id_digits(self.tools), 2)
+        self.assertEqual(cutter_models.unique_id_digits(self.tools[:9]), 1)
+        self.assertEqual(cutter_models.unique_id_digits([]), 1)
 
     def test_colors(self) -> None:
         """Bands read from the base, with leading zeros."""
-        colors = sctoolmodel.RESISTOR_COLORS
+        colors = cutter_models.RESISTOR_COLORS
         for number, digits, expected in (
             (1, 2, (0, 1)),
             (47, 2, (4, 7)),
@@ -363,7 +367,7 @@ class TestHolders(unittest.TestCase):
             (9, 1, (9,)),
         ):
             self.tool["unique_id"] = number
-            bands = sctoolmodel.holder_bands(self.tool, digits)
+            bands = cutter_models.holder_bands(self.tool, digits)
             self.assertEqual(
                 [color for color, _ in bands],
                 [colors[digit] for digit in expected],
@@ -373,10 +377,10 @@ class TestHolders(unittest.TestCase):
         """The bands stack up into one straight truncated cone."""
         self.tool["unique_id"] = 123
         self.tool["holder"] = ["r8", "1/4 in"]
-        bands = sctoolmodel.holder_bands(self.tool, 3)
+        bands = cutter_models.holder_bands(self.tool, 3)
 
         # They meet, from the base at the top down to the tool end.
-        length = sctoolmodel.HOLDER_LENGTH
+        length = cutter_models.HOLDER_LENGTH
         self.assertAlmostEqual(bands[0][1][2][1], length)
         self.assertAlmostEqual(bands[-1][1][0][1], 0.0)
         for upper, lower in itertools.pairwise(bands):
@@ -385,16 +389,16 @@ class TestHolders(unittest.TestCase):
 
         # The ends have the right radii.
         self.assertAlmostEqual(
-            bands[0][1][2][0], sctoolmodel.HOLDER_BASE_DIAMETER / 2
+            bands[0][1][2][0], cutter_models.HOLDER_BASE_DIAMETER / 2
         )
         self.assertAlmostEqual(
-            bands[-1][1][1][0], (0.25 + sctoolmodel.HOLDER_WALL) / 2
+            bands[-1][1][1][0], (0.25 + cutter_models.HOLDER_WALL) / 2
         )
 
     def test_wide_bore(self) -> None:
         """A bore wider than the base widens the base: no upside down cone."""
         self.tool["holder"] = ["cat50", "2 in"]
-        bands = sctoolmodel.holder_bands(self.tool, 1)
+        bands = cutter_models.holder_bands(self.tool, 1)
         self.assertEqual(bands[0][1][1][0], bands[0][1][2][0])
 
 
@@ -407,27 +411,27 @@ class TestEveryShopTool(unittest.TestCase):
 
     def test_every_kind_is_in_the_shop(self) -> None:
         """The example shop has at least one tool of every kind."""
-        tools = sctoolmodel.shop_tools(shops.read(SHOP))
+        tools = cutter_models.shop_tools(shops.read(SHOP))
         kinds = {key.removesuffix("s") for key, _ in tools}
         self.assertEqual(kinds, set(shops.TOOL_KINDS))
 
     def test_every_tool_builds(self) -> None:
         """Each tool is one body, with its revolved profile's volume."""
 
-        def revolved(points: sctoolmodel.Profile) -> float:
+        def revolved(points: cutter_models.Profile) -> float:
             """Return a profile's volume revolved about its axis."""
             total = 0.0
             for (r0, z0), (r1, z1) in zip(points, points[1:] + points[:1]):
                 total += (r0 * r0 + r0 * r1 + r1 * r1) * (z1 - z0)
             return abs(total) * math.pi / 3.0
 
-        tools = sctoolmodel.shop_tools(shops.read(SHOP))
+        tools = cutter_models.shop_tools(shops.read(SHOP))
         cli = shutil.which("solidcraft-cli") or str(CLI)
         with SCHeadlessTransport(cli=cli) as transport:
             solidcraft = SCPyBind(transport)
             for index, (key, tool) in enumerate(tools):
                 with self.subTest(tool=tool["name"]):
-                    made = sctoolmodel.model_tool(
+                    made = cutter_models.model_tool(
                         solidcraft,
                         f"Tool {tool['unique_id']}",
                         (key, tool),
@@ -445,7 +449,7 @@ class TestEveryShopTool(unittest.TestCase):
                     found = body["volume"]
                     assert isinstance(found, float)
                     # Round faces measure about 1 % low.
-                    expected = revolved(sctoolmodel.profile(key, tool))
+                    expected = revolved(cutter_models.profile(key, tool))
                     self.assertAlmostEqual(
                         found / (expected * 25.4**3), 1.0, delta=0.02
                     )

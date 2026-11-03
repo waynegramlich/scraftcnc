@@ -1,4 +1,4 @@
-"""Tests for `scmodelcache`: hashes, the files, and models in SolidCraft."""
+"""Tests for `model_cache`: hashes, the files, and models in SolidCraft."""
 
 import dataclasses
 import json
@@ -10,10 +10,10 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from scraftcnc import scmodelcache, scsetup
+from scraftcnc import model_cache, setups
 from scraftcnc.pybind.scraftpybind import SCHeadlessTransport, SCPyBind
 from scraftcnc.shops import read
-from scraftcnc.tooling import sctoolmodel, tools
+from scraftcnc.tooling import cutter_models, tools
 
 HERE: Path = Path(__file__).resolve().parent
 CLI: Path = HERE / "solidcraft/squashfs-root/usr/bin/solidcraft-cli"
@@ -35,7 +35,7 @@ FLAT_PLATE = dataclasses.replace(tools.GRID_PLATE, chamfer_depth=0.0)
 
 def setUpModule() -> None:
     """Have setups name the unchamfered plate."""
-    patcher = mock.patch.dict(scsetup.PARTS, {"Grid plate": FLAT_PLATE})
+    patcher = mock.patch.dict(setups.PARTS, {"Grid plate": FLAT_PLATE})
     patcher.start()
     unittest.addModuleCleanup(patcher.stop)
 
@@ -51,30 +51,30 @@ class TestHash(unittest.TestCase):
 
     def test_digits(self) -> None:
         """A hash is 16 hex digits."""
-        self.assertRegex(scmodelcache.shape_hash({"a": 1}), "^[0-9a-f]{16}$")
+        self.assertRegex(model_cache.shape_hash({"a": 1}), "^[0-9a-f]{16}$")
 
     def test_key_order(self) -> None:
         """The order of a tree's keys does not matter."""
         self.assertEqual(
-            scmodelcache.shape_hash({"a": 1, "b": [2, {"c": 3, "d": 4}]}),
-            scmodelcache.shape_hash({"b": [2, {"d": 4, "c": 3}], "a": 1}),
+            model_cache.shape_hash({"a": 1, "b": [2, {"c": 3, "d": 4}]}),
+            model_cache.shape_hash({"b": [2, {"d": 4, "c": 3}], "a": 1}),
         )
 
     def test_values(self) -> None:
         """A different value is a different hash."""
         self.assertNotEqual(
-            scmodelcache.shape_hash({"a": 1.0}),
-            scmodelcache.shape_hash({"a": 1.5}),
+            model_cache.shape_hash({"a": 1.0}),
+            model_cache.shape_hash({"a": 1.5}),
         )
 
     def test_path(self) -> None:
         """A file is MODEL_NAME__HASH.step, with a safe name."""
-        cache = scmodelcache.SCModelCache(Path("/cache"))
+        cache = model_cache.SCModelCache(Path("/cache"))
         shape = {"a": 1}
-        model = scmodelcache.SCCacheable("1/4 in mill", shape, lambda _: [])
+        model = model_cache.SCCacheable("1/4 in mill", shape, lambda _: [])
         self.assertEqual(
             cache.path(model),
-            Path(f"/cache/1_4_in_mill__{scmodelcache.shape_hash(shape)}.step"),
+            Path(f"/cache/1_4_in_mill__{model_cache.shape_hash(shape)}.step"),
         )
 
     def test_source_digest(self) -> None:
@@ -82,9 +82,9 @@ class TestHash(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "code.py"
             path.write_text("a", encoding="utf-8")
-            first = scmodelcache.source_digest([path])
+            first = model_cache.source_digest([path])
             path.write_text("b", encoding="utf-8")
-            self.assertNotEqual(first, scmodelcache.source_digest([path]))
+            self.assertNotEqual(first, model_cache.source_digest([path]))
 
 
 class TestMatrix(unittest.TestCase):
@@ -99,7 +99,7 @@ class TestMatrix(unittest.TestCase):
             (3, (10.0, 21.0)),
             (4, (11.0, 20.0)),
         ):
-            matrix = scmodelcache.placement_matrix(
+            matrix = model_cache.placement_matrix(
                 turns, (10.0, 20.0, 30.0), (1.0, 0.0, 2.0)
             )
             self.assertEqual((matrix[0][3], matrix[1][3]), want)
@@ -112,12 +112,12 @@ class TestSweep(unittest.TestCase):
     def test_sweep(self) -> None:
         """An old file is deleted and a young one kept, in one pass."""
         with tempfile.TemporaryDirectory() as directory:
-            cache = scmodelcache.SCModelCache(Path(directory) / "a" / "b")
+            cache = model_cache.SCModelCache(Path(directory) / "a" / "b")
             cache.sweep()
             old = cache.directory / "old__0.step"
             young = cache.directory / "young__0.step"
             late = cache.directory / "late__0.step"
-            week = time.time() - scmodelcache.MAX_AGE
+            week = time.time() - model_cache.MAX_AGE
             for path, when in ((old, week - 60.0), (young, week + 60.0)):
                 path.write_text("", encoding="utf-8")
                 os.utime(path, (when, when))
@@ -139,8 +139,8 @@ class TestLive(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.directory = Path(temporary.name)
-        self.cache = scmodelcache.SCModelCache(self.directory)
-        self.setup = scsetup.SCSetup(
+        self.cache = model_cache.SCModelCache(self.directory)
+        self.setup = setups.SCSetup(
             json.loads(STACK.read_text(encoding="utf-8"))
         )
 
@@ -151,12 +151,12 @@ class TestLive(unittest.TestCase):
         def build(solidcraft: SCPyBind) -> list[str]:
             builds.append(1)
             return [
-                sctoolmodel.model(
+                cutter_models.model(
                     solidcraft, "Pin", [(0, 0), (1, 0), (1, 2), (0, 2)]
                 )
             ]
 
-        model = scmodelcache.SCCacheable("Pin", {"pin": 1}, build)
+        model = model_cache.SCCacheable("Pin", {"pin": 1}, build)
         path = self.cache.path(model)
         with session(self.directory) as transport:
             solidcraft = SCPyBind(transport)
@@ -176,8 +176,8 @@ class TestLive(unittest.TestCase):
         """A directory that can not be made means building, with no file."""
         blocker = self.directory / "file"
         blocker.write_text("", encoding="utf-8")
-        cache = scmodelcache.SCModelCache(blocker / "cache")
-        model = scmodelcache.SCCacheable("Pin", {"pin": 1}, lambda _: [])
+        cache = model_cache.SCModelCache(blocker / "cache")
+        model = model_cache.SCCacheable("Pin", {"pin": 1}, lambda _: [])
         with session(self.directory) as transport:
             solidcraft = SCPyBind(transport)
             self.assertIsNone(cache.insert(solidcraft, model))
@@ -233,7 +233,7 @@ class TestLive(unittest.TestCase):
             solidcraft.document.units(units="in")
             commands = type(solidcraft.document)
             with (
-                mock.patch.object(scmodelcache, "HEADLESS_CLI", program),
+                mock.patch.object(model_cache, "HEADLESS_CLI", program),
                 mock.patch.object(
                     commands,
                     "units",
@@ -256,15 +256,15 @@ class TestLive(unittest.TestCase):
         def build(solidcraft: SCPyBind) -> list[str]:
             sessions.append(solidcraft)
             return [
-                sctoolmodel.model(
+                cutter_models.model(
                     solidcraft, "Pin", [(0, 0), (1, 0), (1, 2), (0, 2)]
                 )
             ]
 
-        model = scmodelcache.SCCacheable("Pin", {"pin": 2}, build)
+        model = model_cache.SCCacheable("Pin", {"pin": 2}, build)
         with (
             session(self.directory) as transport,
-            mock.patch.object(scmodelcache, "HEADLESS_CLI", cli),
+            mock.patch.object(model_cache, "HEADLESS_CLI", cli),
         ):
             solidcraft = SCPyBind(transport)
             self.assertEqual(
@@ -275,11 +275,11 @@ class TestLive(unittest.TestCase):
 
     def test_vise_two_files(self) -> None:
         """The vise is two files, which any opening shares."""
-        vise = scsetup.KURT_D688
+        vise = setups.KURT_D688
         for opening in (10.0, 100.0):
-            layer = scsetup.SCMachineViseLayer(vise, opening)
+            layer = setups.SCMachineViseLayer(vise, opening)
             with session(self.directory) as transport:
-                scsetup.SCPlacement(0.0, 0.0, 0.0, 0).model(
+                setups.SCPlacement(0.0, 0.0, 0.0, 0).model(
                     layer, SCPyBind(transport), self.cache
                 )
         self.assertFalse(self.cache.broken)
@@ -292,18 +292,18 @@ class TestLive(unittest.TestCase):
 
     def test_tool_with_lines_at_a_place(self) -> None:
         """A cached tool lands, and moves, with its flute lines."""
-        tool = sctoolmodel.shop_tools(read(sctoolmodel.EXAMPLE_SHOP))[4]
+        tool = cutter_models.shop_tools(read(cutter_models.EXAMPLE_SHOP))[4]
         at = (2.0, 1.0, 3.0)
         with session(self.directory) as transport:
             solidcraft = SCPyBind(transport)
             want = centers(
                 solidcraft,
-                [sctoolmodel.model_tool(solidcraft, "T", tool, at).body],
+                [cutter_models.model_tool(solidcraft, "T", tool, at).body],
             )["T"]
         for _ in range(2):
             with session(self.directory) as transport:
                 solidcraft = SCPyBind(transport)
-                made = sctoolmodel.model_tool(
+                made = cutter_models.model_tool(
                     solidcraft, "T5", tool, at, "#123456", self.cache
                 )
                 self.assertFalse(self.cache.broken)

@@ -2,8 +2,8 @@
 """Move one tool of each kind, with lines in place of its flutes.
 
 A probe of tools as plain bodies with their flutes only drawn on them,
-each body and its lines in one component (`sctoolmodel.model_tool()`,
-and for the countersink `sctoolmodel.as_component()`).  They stand in a
+each body and its lines in one component (`cutter_models.model_tool()`,
+and for the countersink `cutter_models.as_component()`).  They stand in a
 row along X, and each moves up and down in a small circle, in one
 `engine.batch` per frame, until SolidCraft closes or `LIMIT` seconds
 pass:
@@ -19,10 +19,10 @@ import argparse
 import math
 import time
 
+from scraftcnc.plot import SCStep, send_batch
 from scraftcnc.pybind.scraftpybind import SCPyBind, SCSolidCraftError, connect
-from scraftcnc.scplot import SCStep, send_batch
 from scraftcnc.shops import read
-from scraftcnc.tooling.sctoolmodel import (
+from scraftcnc.tooling.cutter_models import (
     EXAMPLE_SHOP,
     MM_PER_INCH,
     as_component,

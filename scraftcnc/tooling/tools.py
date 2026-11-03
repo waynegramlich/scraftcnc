@@ -34,12 +34,12 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
+from ..geometry import SCCorner, SCHole, SCRoundedPolygon
+from ..model_cache import SCCacheable, source_digest
+from ..plot import send_batch
 from ..pybind.scraftpybind import JSON, SCPyBind, connect
-from ..scgeometry import SCCorner, SCHole, SCRoundedPolygon
-from ..scmodelcache import SCCacheable, source_digest
-from ..scplot import send_batch
 from ..shops import LENGTH, measure
-from .sctoolmodel import (
+from .cutter_models import (
     COUNTERSINK_TIP_FLAT,
     MM_PER_INCH,
     FluteRun,
@@ -143,7 +143,7 @@ ALUMINUM_COLOR: str = "#e4e7ea"
 # nothing else would notice that a cached model is out of date.
 TOOLING_SOURCES: tuple[Path, ...] = (
     Path(__file__).resolve().parent / "mount.py",
-    Path(__file__).resolve().parents[1] / "scgeometry.py",
+    Path(__file__).resolve().parents[1] / "geometry.py",
     Path(__file__).resolve().parent / "tools.py",
 )
 
@@ -3091,11 +3091,11 @@ class SCGridPlate:
 
     Chamfers take a lot of computing, once.  `GRID_PLATE`'s 200 took
     SolidCraft about 4-1/2 minutes, keeping four processors busy,
-    against 2 seconds without them.  The model cache (`scmodelcache.py`,
-    which `scsetup.py` and `show_demo.py` use) keeps the plate as a STEP
+    against 2 seconds without them.  The model cache (`model_cache.py`,
+    which `setups.py` and `show_demo.py` use) keeps the plate as a STEP
     file in `~/.scraftcnc/tool_cache/`, which loads in about a second,
     so the cost comes again only when the plate's numbers change, or
-    `tools.py`, `mount.py` or `scgeometry.py` does.  `model()` called
+    `tools.py`, `mount.py` or `geometry.py` does.  `model()` called
     directly does not use the cache.
 
     Attributes:

@@ -17,14 +17,14 @@ fails, or on Ctrl-C, the program is stopped.
 The one listener so far is `sim_solidcraft.py`'s `SCSolidCraftDisplay`
 (`T.rlg~3.3`), turned on by `--solidcraft PORT` (or `headless`):
 every tool of the machine is modeled in SolidCraft, where
-`solidcraftcnc_demo.py` has modeled the part, and the one in the
+`demo.py` has modeled the part, and the one in the
 spindle follows the position; the whole planned path is the
 demo's own sketches:
 
 ```
 python3 -m scraftcnc.lcnc.serve_linuxcnc &
 solidcraft --control 8080 &
-./solidcraftcnc_demo.py --no-path --opaque 8080 > demo.ngc
+./demo.py --no-path --opaque 8080 > demo.ngc
 distrobox enter lcnc -- ./sim_linuxcnc.py demo.ngc --solidcraft 8080
 ```
 

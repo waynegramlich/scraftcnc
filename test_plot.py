@@ -1,4 +1,4 @@
-"""Tests for `scplot.py`: run `python3 -m unittest -v`."""
+"""Tests for `plot.py`: run `python3 -m unittest -v`."""
 
 import json
 import math
@@ -6,17 +6,17 @@ import re
 import unittest
 from typing import Any, cast
 
-from scraftcnc.scgeometry import SCArc
-from scraftcnc.scplot import (
+from scraftcnc.gcode import SCCNC
+from scraftcnc.geometry import SCArc
+from scraftcnc.plot import (
     command_moves,
     path_moves,
     plot_html,
     read_gcode,
     sketch_path,
 )
-from scraftcnc.solidcraftcnc import SCCNC
-from test_scgeometry import square
-from test_solidcraftcnc import milling
+from test_gcode import milling
+from test_geometry import square
 
 
 # Class `TestPlot`:

@@ -1,4 +1,4 @@
-"""Tests for `scgeometry.py`: run `python3 -m unittest -v`."""
+"""Tests for `geometry.py`: run `python3 -m unittest -v`."""
 
 # It takes many tests to cover this module's geometry, so it is longer
 # than `pylint` likes.
@@ -9,7 +9,7 @@ import random
 import types
 import unittest
 
-from scraftcnc.scgeometry import (
+from scraftcnc.geometry import (
     SLOP,
     SCArc,
     SCCorner,
@@ -461,7 +461,7 @@ class TestLineEnters(unittest.TestCase):
 
     # Method `TestLineEnters.test_against_formulas()`:
     def test_against_formulas(self) -> None:
-        """Random lines agree with formulas that use no `scgeometry`."""
+        """Random lines agree with formulas that use no `geometry`."""
 
         generator: random.Random = random.Random(5)
         for poly, past in (
@@ -631,7 +631,7 @@ class TestArcEnters(unittest.TestCase):
 
     # Method `TestArcEnters.test_against_formulas()`:
     def test_against_formulas(self) -> None:
-        """Random arcs agree with formulas that use no `scgeometry`."""
+        """Random arcs agree with formulas that use no `geometry`."""
         generator: random.Random = random.Random(6)
         for poly, past in (
             (square(20.0, 5.0), past_square),
@@ -1420,7 +1420,7 @@ class TestLeaves(unittest.TestCase):
 
     # Method `TestLeaves.test_against_formulas()`:
     def test_against_formulas(self) -> None:
-        """Random moves agree with formulas that use no `scgeometry`."""
+        """Random moves agree with formulas that use no `geometry`."""
         generator: random.Random = random.Random(16)
         poly: SCRoundedPolygon = square(20.0, 5.0)
         answers: list[bool] = []
