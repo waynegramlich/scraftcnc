@@ -5,3 +5,17 @@ The user expects things to change all over, and missing features to be found as 
 ## 2026-11-02: Where things stand
 
 The user is writing this task's `Details.md`, and sub-tasks will follow.  Ready to integrate: `SCMachineVise` with `SCJawPlate`, `SCParallel` with optional holes (a set of 1/2 to 1-5/8 in), `SCGridPlate` (chamfers, tooling holes, and kind `grid_plate` in the shop's tooling files), and every cutter kind built from `examples/shop/tools.toml` with holders; all documented in `Tool_Models.md`.  Stock stays blocks of material for a while (`T.sm~2.4` pending).  `T.tm~2.5`, `T.ctfs~2.5.1` and `T.dtm~2.5.2` are suspended, as more tools are coming; vises, jaw plates, parallels and mill tables still have no kinds in the shop files.  `I.phpsa~1` is closed, never reproduced.  The chamfered grid plate takes about 5 minutes to build after any change to `tools.py`, `mount.py` or `scgeometry.py` (cache key), then 1 s from the cache.
+
+## 2026-11-03: One tree (`T.rd~5.1`, closed)
+
+Everything is now one repository, run from its top with `python3 -m`,
+nothing installed: the package `scraftcnc/` (`pybind/`, `lcnc/`,
+`hmi/`, `tooling/`; no `sc` module prefixes, classes keep `SC`),
+`tests/` (`python3 -m unittest discover -s tests -t .`, 519 tests,
+coverage 90.5%), `./show_demo.py` at the top.  `mypy.ini` and
+`ruff.toml` hold the coding rules' settings.  The old `scraftpybind`
+and `scraftlinuxcnc` repositories are archived (`I.amgr~2`).  The CI
+workflow `probe_linuxcnc.yml` passes.  Next: `T.npfetc~5.3` (a path per
+tool change); SolidCraft's hover translucency is a quirk, documented in
+`README.md` (`I.mpgtis~3`).  The LinuxCNC end-to-end suite
+(`SCRAFTCNC_LINUXCNC=1`) has not been run since the reorganization.

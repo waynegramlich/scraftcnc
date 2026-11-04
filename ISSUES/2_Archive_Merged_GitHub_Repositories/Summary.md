@@ -1,1 +1,3 @@
 # Summary of `I.amgr` Archive Merged GitHub Repositories
+
+Done 2026-11-03, after `T.rd~5.1` merged both repositories into `scraftcnc` with their history (`scraftcnc/pybind/`, `scraftcnc/lcnc/`).  Each old README got a notice at the top saying where the code went (committed and pushed by the user: `scraftpybind` `15d56dd`, `scraftlinuxcnc` `b9ec8d3`), then both were archived with `gh repo archive` (read-only; `scraftpybind` stays public, `scraftlinuxcnc` private; Settings unarchives).  The workflow that came with `scraftlinuxcnc`, `probe_linuxcnc.yml`, passes in `scraftcnc` (run 41750735861, after fixing a `zip(strict=True)` in `demo_linuxcnc` that run 41750403585 caught).

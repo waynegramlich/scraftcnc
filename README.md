@@ -118,6 +118,12 @@ Each step below needs a little more than the one before it.
    and the panel, stopped.  Press Start in the panel, and the tool cuts
    the plate in SolidCraft.  The panel's Quit button closes everything.
 
+   Keep the mouse pointer out of SolidCraft's window while it runs:
+   SolidCraft makes what is under the pointer see-through, so a pointer
+   resting over the plate or the vise makes them flicker translucent.
+   SolidCraft also opens a series of panels while it builds everything;
+   leave them be.
+
 ## The Files
 
 The code is the package `scraftcnc/`:

@@ -1,11 +1,15 @@
 {
-  "state": "Pending",
+  "state": "Closed",
   "created": "2026-11-03T22:46:07Z",
-  "updated": "2026-11-03T22:46:07Z",
+  "updated": "2026-11-04T01:22:17Z",
   "history": [
     {
       "state": "Pending",
       "time": "2026-11-03T22:46:07Z"
+    },
+    {
+      "state": "Closed",
+      "time": "2026-11-04T01:22:17Z"
     }
   ],
   "tag": "amgr"

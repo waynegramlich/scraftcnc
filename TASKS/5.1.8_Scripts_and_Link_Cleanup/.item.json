@@ -1,7 +1,7 @@
 {
-  "state": "Open",
+  "state": "Closed",
   "created": "2026-11-03T22:46:08Z",
-  "updated": "2026-11-03T23:27:09Z",
+  "updated": "2026-11-04T01:22:17Z",
   "history": [
     {
       "state": "Pending",
@@ -10,6 +10,10 @@
     {
       "state": "Open",
       "time": "2026-11-03T23:27:09Z"
+    },
+    {
+      "state": "Closed",
+      "time": "2026-11-04T01:22:17Z"
     }
   ],
   "tag": "salc"

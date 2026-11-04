@@ -1,0 +1,16 @@
+{
+  "state": "Closed",
+  "created": "2026-11-04T01:08:56Z",
+  "updated": "2026-11-04T01:22:17Z",
+  "history": [
+    {
+      "state": "Pending",
+      "time": "2026-11-04T01:08:56Z"
+    },
+    {
+      "state": "Closed",
+      "time": "2026-11-04T01:22:17Z"
+    }
+  ],
+  "tag": "mpgtis"
+}
