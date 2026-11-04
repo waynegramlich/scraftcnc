@@ -19,3 +19,8 @@ workflow `probe_linuxcnc.yml` passes.  Next: `T.npfetc~5.3` (a path per
 tool change); SolidCraft's hover translucency is a quirk, documented in
 `README.md` (`I.mpgtis~3`).  The LinuxCNC end-to-end suite
 (`SCRAFTCNC_LINUXCNC=1`) has not been run since the reorganization.
+
+## 2026-11-04: `T.emsagc~5.2` design questions
+
+Designing the `.nc` comment format, by question rounds with the user;
+see `T.emsagc~5.2`'s `Context.md`.  Nothing coded yet.
