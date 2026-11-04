@@ -8,7 +8,7 @@ cube (40 mm along +Y) that never moves, so that it is clear on the
 screen which one moved.  It prints how long each move took to answer:
 
 ```
-python3 -m scraftcnc.lcnc.sim_move 8080                      # 1 mm steps, 40 a second
+python3 -m scraftcnc.lcnc.sim_move 8080      # 1 mm steps, 40 a second
 python3 -m scraftcnc.lcnc.sim_move 8080 --step 20 --interval 1 --report
 python3 -m scraftcnc.lcnc.sim_move headless --method solid
 ```

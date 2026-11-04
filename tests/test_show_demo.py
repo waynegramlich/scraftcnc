@@ -1,13 +1,19 @@
+#!/usr/bin/env python3
 """Tests of `show_demo.py` that start nothing."""
 
 import os
 import socket
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
-from scripts import show_demo
+# Run as `./tests/test_show_demo.py` too: the repository root goes on
+# the path, so that `show_demo` can be imported.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+import show_demo
 
 
 class TestLeftovers(unittest.TestCase):

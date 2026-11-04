@@ -103,15 +103,17 @@ class TestPlot(unittest.TestCase):
         expected = path_moves(cnc)
         moves = command_moves(commands)
         self.assertEqual(len(moves), len(expected))
-        for move, want in zip(moves, expected):
+        for move, want in zip(moves, expected, strict=True):
             self.assertEqual(
                 (move["g"], move["line"], move["tool"]),
                 (want["g"], want["line"], want["tool"]),
             )
             self.assertAlmostEqual(move["f"], want["f"])
             self.assertEqual(len(move["pts"]), len(want["pts"]))
-            for point, want_point in zip(move["pts"], want["pts"]):
-                for value, want_value in zip(point, want_point):
+            for point, want_point in zip(
+                move["pts"], want["pts"], strict=True
+            ):
+                for value, want_value in zip(point, want_point, strict=True):
                     self.assertAlmostEqual(value, want_value, places=3)
 
     # Method `TestPlot.test_page()`:

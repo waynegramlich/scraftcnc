@@ -955,7 +955,7 @@ def scraftpybind_lines(class_names: dict[str, str]) -> list[str]:
         "",
         "    # Method `SCPyBind.execute()`:",
         # A generated line, kept whole so that it can be searched for.
-        "    def execute(self, command: str, params: Mapping[str, JSON]) -> JSON:",
+        "    def execute(self, command: str, params: Mapping[str, JSON]) -> JSON:",  # noqa: E501
         '        """Run any SolidCraft command by its id (`engine.execute`).',
         "",
         "        Arguments:",

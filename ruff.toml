@@ -2,3 +2,8 @@
 # `scraftpybind` names.
 target-version = "py311"
 line-length = 79
+
+[lint]
+# The Python Coding Rules' selection: `flake8-bugbear` (`B`) and the
+# `pycodestyle` errors and warnings (`E`, `W`).
+extend-select = ["B", "E", "W"]

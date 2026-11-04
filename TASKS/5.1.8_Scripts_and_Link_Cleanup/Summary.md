@@ -1,1 +1,3 @@
 # Summary of `T.salc` Scripts and Link Cleanup
+
+`show_demo.py` went to `scripts/`, then back to the root at the user's request (`./show_demo.py` must just work; it puts the root on `sys.path`, so it runs from any directory, as does `./tests/test_show_demo.py`); `scripts/` holds `coverage_from_trace.py`; `probe_flutes.py` and `probe_reveal.py` were deleted.  The links `scraftpybind.py`, `lcnc_client.py`, `scraftlinuxcnc`, `rs274` and `aic` are gone; `solidcraft` and `SharsMD` (the dated catalog, not for git) stay, ignored.  `aic` and `ai_contexts` are now an editable `uv tool` install of `../aicontexts`, so they always run the working copy.  Part of `T.rd~5.1`.

@@ -79,7 +79,7 @@ def check_position(lcnc: SCClient, wanted: tuple[float, float, float]) -> None:
     * `RuntimeError`: If it is somewhere else.
     """
     position: list[float] = lcnc.stat("actual_position")["actual_position"]
-    if any(abs(a - b) > NEAR for a, b in zip(position, wanted)):
+    if any(abs(a - b) > NEAR for a, b in zip(position, wanted, strict=True)):
         raise RuntimeError(f"At {position[:3]}, not {wanted}.")
 
 

@@ -20,7 +20,8 @@ It is used through `sim_linuxcnc.py`'s `--solidcraft PORT` (or
 python3 -m scraftcnc.lcnc.serve_linuxcnc &
 solidcraft --control 8080 &
 python3 -m scraftcnc.demo --no-path --opaque 8080 > demo.ngc
-distrobox enter lcnc -- python3 -m scraftcnc.lcnc.sim_linuxcnc demo.ngc --solidcraft 8080
+distrobox enter lcnc -- python3 -m scraftcnc.lcnc.sim_linuxcnc demo.ngc \
+    --solidcraft 8080
 ```
 
 When SolidCraft fails or stops answering (as when its window is

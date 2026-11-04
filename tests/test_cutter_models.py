@@ -105,7 +105,7 @@ class TestProfiles(unittest.TestCase):
         self.assertEqual(single[-2:], [(0.25, 2.0), (0.0, 2.0)])
         self.assertAlmostEqual(single[4][1], 0.375)
         double = cutter_models.profile("double_countersinks", sink)
-        for (r1, z1), (r2, z2) in zip(double, reversed(double)):
+        for (r1, z1), (r2, z2) in zip(double, reversed(double), strict=True):
             self.assertAlmostEqual(r1, r2)
             self.assertAlmostEqual(z1 + z2, 2.0)
         single_runs = cutter_models.tool_flute_runs(
@@ -421,7 +421,9 @@ class TestEveryShopTool(unittest.TestCase):
         def revolved(points: cutter_models.Profile) -> float:
             """Return a profile's volume revolved about its axis."""
             total = 0.0
-            for (r0, z0), (r1, z1) in zip(points, points[1:] + points[:1]):
+            for (r0, z0), (r1, z1) in zip(
+                points, points[1:] + points[:1], strict=True
+            ):
                 total += (r0 * r0 + r0 * r1 + r1 * r1) * (z1 - z0)
             return abs(total) * math.pi / 3.0
 

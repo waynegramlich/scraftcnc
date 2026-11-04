@@ -22,8 +22,10 @@ the slider:
 ```
 python3 -m scraftcnc.lcnc.serve_linuxcnc &
 python3 -m scraftcnc.hmi.lcnc_panel demo.ngc
-python3 -m scraftcnc.hmi.lcnc_panel --dry-run demo.ngc      # The window alone.
-python3 -m scraftcnc.hmi.lcnc_panel --headless --port 5007  # No window: for tests.
+# The window alone:
+python3 -m scraftcnc.hmi.lcnc_panel --dry-run demo.ngc
+# No window, for tests:
+python3 -m scraftcnc.hmi.lcnc_panel --headless --port 5007
 ```
 
 With `--headless`, the panel is built from `lcnc_headless.py` in place

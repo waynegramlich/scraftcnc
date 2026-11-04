@@ -5,12 +5,12 @@ On Linux, this starts LinuxCNC's simulator (`serve_linuxcnc`, from
 `scraftcnc/lcnc/`, in its `lcnc` box), a SolidCraft window with the
 demonstration's plate in it, standing on the table, vise, parallels and
 grid plate of `examples/setup/demo_stack.json`, the watcher that
-moves the tool in SolidCraft (`sim_linuxcnc.py --watch`, in the box),
+moves the tool in SolidCraft (`sim_linuxcnc --watch`, in the box),
 and last the panel (`lcnc_panel.py`), stopped, with the demonstration's
 program open:
 
 ```
-./scripts/show_demo.py
+./show_demo.py
 ```
 
 Press Start in the panel; the tool cuts the plate in SolidCraft.  The
@@ -40,9 +40,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from types import FrameType
 
-# Run as `./scripts/show_demo.py`: the repository root goes on the
-# path, so that the `scraftcnc` package can be imported.
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+# Run as `./show_demo.py` (from any directory): the repository root
+# goes on the path, so that the `scraftcnc` package can be imported.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from scraftcnc.lcnc.lcnc_client import PORT as LINUXCNC_PORT
 from scraftcnc.lcnc.lcnc_client import SCBridgeError, SCClient
@@ -51,7 +51,7 @@ from scraftcnc.pybind.scraftpybind import SCPyBind, SCSolidCraftError, connect
 from scraftcnc.setups import SCSetup
 
 # Where everything is.
-PROJECT: Path = Path(__file__).resolve().parent.parent
+PROJECT: Path = Path(__file__).resolve().parent
 SERVER_PROJECT: Path = PROJECT
 SOLIDCRAFT_BESIDE: Path = (
     PROJECT.parent / "solidcraft" / "solidcraft-linux-x86_64.AppImage"
@@ -483,7 +483,8 @@ class SCShow:
         self.start(
             "watcher",
             ["podman", "exec", "-u", getpass.getuser(), "-w", str(PROJECT),
-             BOX, "python3", "-u", "-m", "scraftcnc.lcnc.sim_linuxcnc", "--watch",
+             BOX, "python3", "-u", "-m", "scraftcnc.lcnc.sim_linuxcnc",
+             "--watch",
              str(self.program),
              "--solidcraft", str(self.options.solidcraft_port)],
         )  # fmt: skip
@@ -604,7 +605,7 @@ class SCShow:
         if "watcher" in self.running:
             subprocess.run(
                 ["pkill", "-INT", "-f",
-                 f"sim_linuxcnc.py --watch {self.program}"],
+                 f"scraftcnc.lcnc.sim_linuxcnc --watch {self.program}"],
                 check=False,
             )  # fmt: skip
             self.close_one("watcher")

@@ -858,7 +858,7 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         axis: int
         letter: str
         value: float | None
-        for axis, (letter, value) in enumerate(zip("XYZ", axes)):
+        for axis, (letter, value) in enumerate(zip("XYZ", axes, strict=True)):
             if value is not None and value != old[axis]:
                 command[letter] = value
                 new[axis] = value

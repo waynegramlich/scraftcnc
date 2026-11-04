@@ -12,8 +12,10 @@ a grid plate; or `first`, a Tormach 770 table with a Kurt vise, a
 pair of parallels and an aluminum plate.
 
 ```
-python3 -m scraftcnc.tooling.mount 8080 [garage|plate|first]     # A GUI on that port.
-python3 -m scraftcnc.tooling.mount headless [garage|plate|first] # No window; a report.
+# A GUI on that port:
+python3 -m scraftcnc.tooling.mount 8080 [garage|plate|first]
+# No window; a report:
+python3 -m scraftcnc.tooling.mount headless [garage|plate|first]
 ```
 """
 
@@ -453,7 +455,7 @@ class SCParallelPair:
         return [
             parallel.model(solidcraft, place)
             for parallel, place in zip(
-                (self.first, self.second), self.centers(center)
+                (self.first, self.second), self.centers(center), strict=True
             )
         ]
 
@@ -478,7 +480,7 @@ class SCParallelPair:
         """
         keep_out: SCKeepOut = SCKeepOut()
         for parallel, place in zip(
-            (self.first, self.second), self.centers(center)
+            (self.first, self.second), self.centers(center), strict=True
         ):
             keep_out.add_prism(parallel.prism(place), PARALLEL_MARGIN)
         return keep_out
@@ -622,7 +624,9 @@ class SCMount:
           then the `notes`.
         """
         lines: list[str] = [f"{self.name}:"]
-        for layer, place in reversed(list(zip(self.layers, self.places()))):
+        for layer, place in reversed(
+            list(zip(self.layers, self.places(), strict=True))
+        ):
             seat: float = place[2] + layer.seat()[2]
             lines.append(
                 f"  {_inches(place[2]):>10} to {_inches(seat):>10}  "
@@ -642,7 +646,7 @@ class SCMount:
         * (`list[str]`): The names of the bodies, from the bottom up.
         """
         bodies: list[str] = []
-        for layer, place in zip(self.layers, self.places()):
+        for layer, place in zip(self.layers, self.places(), strict=True):
             bodies.extend(layer.model(solidcraft, place))
         return bodies
 
@@ -654,7 +658,7 @@ class SCMount:
         * (`SCKeepOut`): The regions, from the bottom up.
         """
         keep_out: SCKeepOut = SCKeepOut()
-        for layer, place in zip(self.layers, self.places()):
+        for layer, place in zip(self.layers, self.places(), strict=True):
             regions: SCKeepOut = layer.keep_out(place)
             keep_out.prisms.extend(regions.prisms)
             keep_out.cylinders.extend(regions.cylinders)

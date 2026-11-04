@@ -673,7 +673,7 @@ def tube_path(
         kind.append(name)
     names: list[str]
     look: tuple[str, float]
-    for names, look in zip(bodies, looks):
+    for names, look in zip(bodies, looks, strict=True):
         if names:
             solidcraft.appearance.assign(
                 bodies=names, color=look[0], opacity=look[1]

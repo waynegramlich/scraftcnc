@@ -20,3 +20,7 @@
   (the working copy), which may be newer.
 * Checks: ruff clean; imports of the moved modules and their tests;
   `./scripts/show_demo.py --help`.  No tests, no mypy.
+
+## 2026-11-03: show_demo.py back at the root
+
+The user: "`./show_demo.py` must just work" (no `make`).  `scripts/show_demo.py` moved back with `git mv`; `tests/test_show_demo.py` got a shebang, `+x` and the same path block, so it runs directly too.

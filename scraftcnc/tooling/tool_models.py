@@ -1067,7 +1067,7 @@ def _signature(shown: str, node: ast.FunctionDef) -> str:
         len(arguments.args) - len(arguments.defaults)
     ) + list(arguments.defaults)
     parts: list[str] = []
-    for argument, default in zip(arguments.args, defaults):
+    for argument, default in zip(arguments.args, defaults, strict=True):
         if argument.annotation is not None:
             part: str = f"{argument.arg}: {ast.unparse(argument.annotation)}"
             if default is not None:

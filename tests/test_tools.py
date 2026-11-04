@@ -89,7 +89,9 @@ class TestKeepOut(unittest.TestCase):
         tormach = tools.SCTormach(None)  # type: ignore[arg-type]
         keep_out = tormach.mill_table_keep_out()
         self.assertEqual(len(keep_out.prisms), len(tools.MILL_TABLES))
-        for table, prism in zip(tools.MILL_TABLES, keep_out.prisms):
+        for table, prism in zip(
+            tools.MILL_TABLES, keep_out.prisms, strict=True
+        ):
             with self.subTest(table=table.name):
                 self.assertAlmostEqual(
                     prism.high[0] - prism.low[0], table.length + 6.35
@@ -113,7 +115,7 @@ class TestDrill(unittest.TestCase):
                 arcs = tools.SCDrill("D", 20.0, 100.0, flutes).section()
                 self.assertEqual(len(arcs), 2 * flutes)
                 for (_, _, end), (start, _, _) in zip(
-                    arcs, arcs[1:] + arcs[:1]
+                    arcs, arcs[1:] + arcs[:1], strict=True
                 ):
                     self.assertAlmostEqual(end[0], start[0])
                     self.assertAlmostEqual(end[1], start[1])
@@ -611,7 +613,7 @@ class TestCountersinks(unittest.TestCase):
         for sink in tools.DOUBLE_END_COUNTERSINKS.values():
             points = sink.profile()
             for (r_low, z_low), (r_high, z_high) in zip(
-                points, reversed(points)
+                points, reversed(points), strict=True
             ):
                 self.assertAlmostEqual(r_low, r_high)
                 self.assertAlmostEqual(z_low + z_high, sink.overall_length)
@@ -651,7 +653,7 @@ class TestModels(unittest.TestCase):
         assert isinstance(result, dict)
         bodies = result["bodies"]
         assert isinstance(bodies, list)
-        for table, body in zip(tools.MILL_TABLES, bodies):
+        for table, body in zip(tools.MILL_TABLES, bodies, strict=True):
             assert isinstance(body, dict)
             volume = body["volume"]
             assert isinstance(volume, float)
@@ -680,7 +682,7 @@ class TestModels(unittest.TestCase):
         assert isinstance(result, dict)
         bodies = result["bodies"]
         assert isinstance(bodies, list)
-        for body, volume in zip(bodies, expected):
+        for body, volume in zip(bodies, expected, strict=True):
             assert isinstance(body, dict)
             found = body["volume"]
             assert isinstance(found, float)
@@ -703,7 +705,9 @@ class TestModels(unittest.TestCase):
         assert isinstance(bodies, list)
         count = len(tools.SAMPLE_DRILLS)
         self.assertEqual(len(bodies), 2 * count)
-        for drill_body, region in zip(bodies[:count], bodies[count:]):
+        for drill_body, region in zip(
+            bodies[:count], bodies[count:], strict=True
+        ):
             assert isinstance(drill_body, dict) and isinstance(region, dict)
             drill_volume = drill_body["volume"]
             region_volume = region["volume"]
@@ -768,7 +772,7 @@ class TestModels(unittest.TestCase):
         )
         bodies = self._vise_bodies()
         self.assertEqual(len(bodies), len(expected))
-        for body, volume in zip(bodies, expected):
+        for body, volume in zip(bodies, expected, strict=True):
             found = body["volume"]
             assert isinstance(found, float)
             # SolidCraft measures round parts about 1.1 % low.
@@ -804,7 +808,7 @@ class TestModels(unittest.TestCase):
         for index, place in places.items():
             center = bodies[index]["center"]
             assert isinstance(center, list)
-            for value, expected in zip(center, place):
+            for value, expected in zip(center, place, strict=True):
                 assert isinstance(value, float)
                 self.assertAlmostEqual(value, expected, places=6)
 
@@ -845,7 +849,7 @@ class TestModels(unittest.TestCase):
             10.0 + vise.movable_face(VISE_OPENING) - half + back,
         )
         bodies = self._vise_bodies()
-        for body, place in zip(bodies[10:], expected):
+        for body, place in zip(bodies[10:], expected, strict=True):
             center = body["center"]
             assert isinstance(center, list)
             assert isinstance(center[0], float)
@@ -969,7 +973,7 @@ class TestModels(unittest.TestCase):
         bodies = result["bodies"]
         assert isinstance(bodies, list)
         self.assertEqual(len(bodies), 3)
-        for body, prism in zip(bodies, keep_out.prisms):
+        for body, prism in zip(bodies, keep_out.prisms, strict=True):
             assert isinstance(body, dict)
             found = body["volume"]
             assert isinstance(found, float)
@@ -1000,7 +1004,7 @@ class TestModels(unittest.TestCase):
             for prism in keep_out.prisms
         ]
         self.assertEqual(len(bodies), len(expected))
-        for body, volume in zip(bodies, expected):
+        for body, volume in zip(bodies, expected, strict=True):
             assert isinstance(body, dict)
             found = body["volume"]
             assert isinstance(found, float)
@@ -1044,7 +1048,7 @@ class TestModels(unittest.TestCase):
             for prism in keep_out.prisms
         ]
         self.assertEqual(len(bodies), len(expected))
-        for body, volume in zip(bodies, expected):
+        for body, volume in zip(bodies, expected, strict=True):
             assert isinstance(body, dict)
             found = body["volume"]
             assert isinstance(found, float)

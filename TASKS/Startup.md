@@ -27,6 +27,7 @@
 @5.1.8_Scripts_and_Link_Cleanup/Details.md
 @5.1.8_Scripts_and_Link_Cleanup/Context.md
 @5.2_Create_More_Tools/Details.md
+@5.3_New_Path_for_Each_Tool_Change/Details.md
 @../ISSUES/2_Archive_Merged_GitHub_Repositories/Details.md
 @../ISSUES/1_PathRack_Hidden_Path_Shows_Again/Summary.md
 @3_Simulation/Summary.md

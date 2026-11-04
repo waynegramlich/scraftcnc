@@ -372,6 +372,7 @@ class TestReader(SCCopiedShop):
                         "end_mills[3]",
                         "drills[0]",
                     ),
+                    strict=True,
                 )
             ],
         )

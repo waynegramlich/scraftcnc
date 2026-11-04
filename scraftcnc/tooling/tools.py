@@ -11,11 +11,16 @@ Every table has its top at `Z = 0`, its length along X and its center
 on `X = 0`.  Run as a program, it shows them all in SolidCraft:
 
 ```
-python3 -m scraftcnc.tooling.tools 8080       # A GUI started with `--control 8080`.
-python3 -m scraftcnc.tooling.tools headless   # No window; prints the bodies it made.
-python3 -m scraftcnc.tooling.tools 8080 countersinks   # Only the double end countersinks.
-python3 -m scraftcnc.tooling.tools 8080 largest        # The largest of each kind of them.
-python3 -m scraftcnc.tooling.tools 8080 421-0261       # One of them, by its order number.
+# A GUI started with `--control 8080`:
+python3 -m scraftcnc.tooling.tools 8080
+# No window; prints the bodies it made:
+python3 -m scraftcnc.tooling.tools headless
+# Only the double end countersinks:
+python3 -m scraftcnc.tooling.tools 8080 countersinks
+# The largest of each kind of them:
+python3 -m scraftcnc.tooling.tools 8080 largest
+# One of them, by its order number:
+python3 -m scraftcnc.tooling.tools 8080 421-0261
 ```
 """
 
@@ -423,7 +428,9 @@ class SCPrism:
         Raises:
         * `ValueError`: If `low` is not below `high` on every axis.
         """
-        if not all(low < high for low, high in zip(self.low, self.high)):
+        if not all(
+            low < high for low, high in zip(self.low, self.high, strict=True)
+        ):
             raise ValueError(f"{self.low=} must be below {self.high=}")
 
     # Method `SCPrism.quarter_turned()`:
@@ -969,7 +976,7 @@ def sample_drills(
     bodies: list[str] = []
     keep_out: SCKeepOut = SCKeepOut()
     for index, (drill, color) in enumerate(
-        zip(SAMPLE_DRILLS, SAMPLE_DRILL_COLORS)
+        zip(SAMPLE_DRILLS, SAMPLE_DRILL_COLORS, strict=True)
     ):
         center: float = (index - (len(SAMPLE_DRILLS) - 1) / 2) * DRILL_SPACING
         tip: tuple[float, float, float] = (center, DRILL_ROW_Y, 0.0)
@@ -2977,7 +2984,7 @@ def parallel_set(
     """
     bodies: list[str] = []
     keep_out: SCKeepOut = SCKeepOut()
-    for parallel, x in zip(PARALLELS, parallel_centers()):
+    for parallel, x in zip(PARALLELS, parallel_centers(), strict=True):
         center: Point = (x, PARALLEL_ROW_Y, 0.0)
         bodies.append(parallel.model(solidcraft, center))
         keep_out.add_prism(parallel.prism(center), PARALLEL_MARGIN)
@@ -3569,7 +3576,9 @@ class SCTormach:
         """
         return [
             self.mill_table(table, center_y)
-            for table, center_y in zip(MILL_TABLES, table_centers())
+            for table, center_y in zip(
+                MILL_TABLES, table_centers(), strict=True
+            )
         ]
 
     # Method `SCTormach.mill_table_keep_out()`:
@@ -3584,7 +3593,7 @@ class SCTormach:
         * (`SCKeepOut`): One grown prism per table.
         """
         keep_out: SCKeepOut = SCKeepOut()
-        for table, center_y in zip(MILL_TABLES, table_centers()):
+        for table, center_y in zip(MILL_TABLES, table_centers(), strict=True):
             keep_out.add_prism(table.prism(center_y), margin)
         return keep_out
 

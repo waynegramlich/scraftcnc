@@ -101,7 +101,7 @@ class TestZones(unittest.TestCase):
             PARALLELS[1]: (-3.125, 3.125, -3.125, -2.75),
         }
         for name, box in expected.items():
-            for got, want in zip(boxes[name], box):
+            for got, want in zip(boxes[name], box, strict=True):
                 self.assertAlmostEqual(got, want, places=6)
 
     def test_material_elsewhere(self) -> None:

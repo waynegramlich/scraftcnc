@@ -20,7 +20,8 @@ class TestFiles(unittest.TestCase):
         self.assertEqual(
             tool_models.DOCUMENT.read_text(encoding="utf-8"),
             tool_models.document(),
-            "Tool_Models.md is out of date: python3 -m scraftcnc.tooling.tool_models",
+            "Tool_Models.md is out of date: "
+            "python3 -m scraftcnc.tooling.tool_models",
         )
 
     def test_sketches_are_current(self) -> None:

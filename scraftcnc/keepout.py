@@ -98,10 +98,12 @@ def prism_zone(prism: SCPrism, origin: Point) -> SCRoundedPolygon:
     * (`SCRoundedPolygon`): The zone (inches), going up, sharp cornered.
     """
     x0, y0, z0 = (
-        (low - zero) / MM_PER_INCH for low, zero in zip(prism.low, origin)
+        (low - zero) / MM_PER_INCH
+        for low, zero in zip(prism.low, origin, strict=True)
     )
     x1, y1, z1 = (
-        (high - zero) / MM_PER_INCH for high, zero in zip(prism.high, origin)
+        (high - zero) / MM_PER_INCH
+        for high, zero in zip(prism.high, origin, strict=True)
     )
     return SCRoundedPolygon(
         prism.name,

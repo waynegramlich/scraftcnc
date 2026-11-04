@@ -1,1 +1,3 @@
 # Summary of `T.ml` Merge lcnc
+
+`scraftlinuxcnc` (private until then; everything is MIT) came in with `git subtree add --prefix=scraftcnc/lcnc` (merge `bd7d33b`; history `git log bd7d33b^2`) and was flattened into `scraftcnc/lcnc/`, with relative imports.  Its settings, `RULES/`, `TASKS/` (one title-only item) and `CLAUDE.md` were dropped; its CI workflow is `.github/workflows/probe_linuxcnc.yml` (not yet run).  The installed simulator keeps the old names `~/.cache/scraftlinuxcnc` and `.local/share/scraftlinuxcnc` (renaming means reinstalling; maybe `~/.scraftcnc/` later).  `sim_*` and `probe_batch` (imported by `sim_solidcraft`) live here too.  Archiving the old repository is `I.amgr~2`.  Part of `T.rd~5.1`.

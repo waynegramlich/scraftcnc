@@ -79,14 +79,16 @@ def segment_distance(
     end: tuple[float, float, float],
 ) -> float:
     """Return how far a point is from a straight line segment."""
-    along = [b - a for a, b in zip(start, end)]
+    along = [b - a for a, b in zip(start, end, strict=True)]
     length2 = sum(value * value for value in along)
-    from_start = [p - a for p, a in zip(point, start)]
+    from_start = [p - a for p, a in zip(point, start, strict=True)]
     fraction = 0.0
     if length2 > 0.0:
-        dot = sum(a * b for a, b in zip(along, from_start))
+        dot = sum(a * b for a, b in zip(along, from_start, strict=True))
         fraction = min(1.0, max(0.0, dot / length2))
-    return math.dist(point, [a + fraction * b for a, b in zip(start, along)])
+    return math.dist(
+        point, [a + fraction * b for a, b in zip(start, along, strict=True)]
+    )
 
 
 def path_segments(moves: list[SCMove]) -> list[Segment]:
@@ -109,7 +111,7 @@ def path_segments(moves: list[SCMove]) -> list[Segment]:
             (b[0], b[1], b[2]),
         )
         for move in moves
-        for a, b in zip(move["pts"], move["pts"][1:])
+        for a, b in zip(move["pts"], move["pts"][1:], strict=False)
     ]
     for before, after in itertools.pairwise(moves):
         if before["tool"] != after["tool"]:

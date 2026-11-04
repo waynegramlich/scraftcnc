@@ -36,7 +36,8 @@ Or give one tool, as JSON (`Tool_Models.md` describes them), to add it
 to the design at the origin:
 
 ```
-python3 -m scraftcnc.tooling.cutter_models 8080 '{"kind": "end_mill", "diameter": "1/4 in", ...}'
+python3 -m scraftcnc.tooling.cutter_models 8080 \
+    '{"kind": "end_mill", "diameter": "1/4 in", ...}'
 ```
 """
 

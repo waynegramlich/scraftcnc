@@ -134,3 +134,29 @@ package itself is clean; every error is in a test.
    377  27.9%  scripts.show_demo
  18071  90.5%  TOTAL
 ```
+
+## 2026-11-03: Where things stand (before the user's git commit)
+
+* Done since the last commit: `ruff.toml` has the rules' `extend-select
+  = ["B", "E", "W"]` and its 66 findings are fixed (39 `zip()` calls
+  `strict=True`, `zip(pts, pts[1:])` in `test_lcnc_end_to_end`
+  `strict=False`; the `strict=True` in its `segment_distance()` is
+  unrun, since that suite needs `SCRAFTCNC_LINUXCNC=1`); the coverage
+  script is `scripts/coverage_from_trace.py`; the three tests on old
+  paths are fixed and pass.
+* `show_demo.py` is back at the root (the user: "`./show_demo.py` must
+  just work"); `./tests/test_show_demo.py` runs directly too.  Its
+  watcher is now stopped by `pkill -f "scraftcnc.lcnc.sim_linuxcnc
+  --watch ..."` (the old `sim_linuxcnc.py` pattern no longer matched).
+* The user's first `./show_demo.py` run after the move stopped in
+  state `T` (stopped by the terminal: Control-Z or `&`) while modeling
+  the stack; LinuxCNC, SolidCraft and the part were up.  Not a
+  reorganization bug as far as seen.
+* The one regression the user saw (the first path shown again after
+  the rounding pass) is how `SCPathRack` always worked: `T.npfetc~5.3`.
+* **Nothing closes until the user has run `./show_demo.py` through
+  (the user's rule).**  Then: check the `Summary.md` files (written
+  already) and close `T.rd~5.1` and its eight subtasks.  Not yet run:
+  the LinuxCNC end-to-end suite (`SCRAFTCNC_LINUXCNC=1`), the CI
+  workflow.  `I.amgr~2` (archive the old GitHub repositories) waits
+  for all of it.
