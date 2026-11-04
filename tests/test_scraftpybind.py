@@ -927,12 +927,9 @@ class TestGenerator(unittest.TestCase):
         # Copy what the generator reads and writes (`ruff.toml` too,
         # which sets the line length that `ruff format` uses).
         name: str
-        for name in (
-            "scraftpybind.py",
-            "scraftpybind_commands.json",
-            "ruff.toml",
-        ):
+        for name in ("scraftpybind.py", "scraftpybind_commands.json"):
             shutil.copy(HERE / name, folder / name)
+        shutil.copy(ROOT / "ruff.toml", folder / "ruff.toml")
 
         # Point the generator at the copies, and run it.
         output: io.StringIO = io.StringIO()

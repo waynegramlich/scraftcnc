@@ -102,3 +102,35 @@ package itself is clean; every error is in a test.
 ## 2026-11-03: mypy, chunk 9
 
 174 -> 0.  `tests/test_keepout.py` (87) and `tests/test_setups.py` (87, after chunk 8) are clean: annotations; `SCLine | SCArc` narrowed with `isinstance`; `known()` asserts an axis value is set where the old code would have failed on `None` anyway; layers narrowed to `SCParallelLayer` / `SCMachineViseLayer` with `assert isinstance`; `grid_plates` and `read` imported from `shops`, not through `setups`; SolidCraft replies and the example JSON typed `Any`; `SCSetup([])` quieted with `type: ignore[arg-type]` (deliberately wrong).  `mypy --strict --warn-unreachable` with the rules' error codes: no issues in `scraftcnc/` and `tests/` (55 files).  No package code changed.  `mypy.ini` untouched (#14 waits for the user).
+
+## 2026-11-03: Coverage after the reorganization
+
+`python3 -m trace ... --module unittest discover -s tests -t .`: 519 tests in 23 minutes; 1 failure and 2 errors, all old paths (`import lcnc_panel` in two subprocesses of `test_lcnc_panel`, and pybind's deleted `ruff.toml` in `test_scraftpybind`), fixed afterwards.  Every module covers at least what it did in the baseline; `scraftpybind` and `lcnc_client` gained from the tests that came with them:
+
+```
+   280  56.4%  scraftcnc.demo
+   699  98.7%  scraftcnc.gcode
+   998  99.2%  scraftcnc.geometry
+   124  92.7%  scraftcnc.hmi.lcnc_headless
+   708  83.2%  scraftcnc.hmi.lcnc_panel
+   250  90.0%  scraftcnc.keepout
+   522  54.6%  scraftcnc.lcnc.install_linuxcnc
+   197  87.3%  scraftcnc.lcnc.lcnc_bridge
+    51  96.1%  scraftcnc.lcnc.lcnc_client
+   231  46.8%  scraftcnc.lcnc.probe_batch
+    60  46.7%  scraftcnc.lcnc.serve_linuxcnc
+   146  63.0%  scraftcnc.lcnc.sim_solidcraft
+   108  94.4%  scraftcnc.machine
+   157  96.2%  scraftcnc.model_cache
+   320  86.9%  scraftcnc.plot
+  6278 100.0%  scraftcnc.pybind.scraftpybind
+   495  17.6%  scraftcnc.pybind.scraftpybind_generate
+   448  94.2%  scraftcnc.setups
+  1635  96.9%  scraftcnc.shops
+   503  88.7%  scraftcnc.tooling.cutter_models
+   306  95.1%  scraftcnc.tooling.mount
+  1535  98.6%  scraftcnc.tooling.tool_models
+  1643  97.2%  scraftcnc.tooling.tools
+   377  27.9%  scripts.show_demo
+ 18071  90.5%  TOTAL
+```

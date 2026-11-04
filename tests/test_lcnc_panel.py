@@ -481,7 +481,7 @@ class TestHeadlessProgram(unittest.TestCase):
         }
         code = (
             "import sys; sys.modules['tkinter'] = None; "
-            "import lcnc_panel; "
+            "from scraftcnc.hmi import lcnc_panel; "
             "sys.exit(lcnc_panel.main(sys.argv[1:]))"
         )
         with subprocess.Popen(
@@ -503,7 +503,7 @@ class TestHeadlessProgram(unittest.TestCase):
         """With no `tkinter`, a window can not open, and it says so."""
         code = (
             "import sys; sys.modules['tkinter'] = None; "
-            "import lcnc_panel; "
+            "from scraftcnc.hmi import lcnc_panel; "
             "sys.exit(lcnc_panel.main(['--dry-run']))"
         )
         done = subprocess.run(

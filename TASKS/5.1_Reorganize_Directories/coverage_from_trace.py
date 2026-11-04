@@ -3,8 +3,8 @@ from pathlib import Path
 d = Path(sys.argv[1]); tot_e = tot_h = 0
 for cov in sorted(d.glob("*.cover")):
     name = cov.stem
-    if name.startswith("test_"): continue
-    src = Path(name + ".py")
+    if name.split(".")[-1].startswith("test_"): continue
+    src = Path(name.replace(".", "/") + ".py")
     if not src.exists(): continue
     exe = set(trace._find_executable_linenos(str(src)))
     hit = {i for i, l in enumerate(cov.read_text().splitlines(), 1) if re.match(r"\s*\d+:", l)}
