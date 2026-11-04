@@ -78,8 +78,11 @@ def check_position(lcnc: SCClient, wanted: tuple[float, float, float]) -> None:
     Raises:
     * `RuntimeError`: If it is somewhere else.
     """
+    # LinuxCNC gives all nine axes (X Y Z A B C U V W); X, Y, Z are checked.
     position: list[float] = lcnc.stat("actual_position")["actual_position"]
-    if any(abs(a - b) > NEAR for a, b in zip(position, wanted, strict=True)):
+    if any(
+        abs(a - b) > NEAR for a, b in zip(position[:3], wanted, strict=True)
+    ):
         raise RuntimeError(f"At {position[:3]}, not {wanted}.")
 
 
