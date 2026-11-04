@@ -1,4 +1,4 @@
-# 5.3 New Path for Each Tool Change
+# 5.4 New Path for Each Tool Change
 
 (Draft by Claude, 2026-11-03, from the user's request; the user's to
 revise.)
