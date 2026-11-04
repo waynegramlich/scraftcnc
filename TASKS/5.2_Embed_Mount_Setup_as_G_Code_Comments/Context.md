@@ -124,3 +124,105 @@ first "#12" answer's meaning.  How does "all the information it needs"
 square with `call` naming Python (#4): write every argument out, never
 rely on shop lookups?  Then #7, #9, #13-#22 as first asked.  Nothing
 has been coded.
+
+## 2026-11-04: Seventh answers
+
+Claude's round: #29 (header skeleton), #31 (new: self-contained vs
+`call`), #8, #7, #9.
+
+* #29: The origin moves up the stack as each assembly goes on.  Table:
+  top, upper left corner.  Vise: fixed jaw top (Z), jaw left (X), jaw
+  inner (Y).  Parallels: no change.  Tooling plate: top (Z), left (X),
+  outer (Y).  The operator may move it to the stock's top/left/outer.
+  (Claude: likely replaces #10's `[work_zero]` item + point + offset;
+  asked as #32.)
+* #31: Settled.  The arguments written are those in the hash that
+  names the `.step` file; on a miss it is built.
+* #8: Somehow capture all the parts a sub-assembly needs; maybe a
+  Parts class that keeps track (a thought, #33).
+* #7: Settled.  Anything, as long as the same part shows up after the
+  cache is deleted; a change to the code that makes a part makes old
+  copies of it not matter (source digest in the key).
+* #9: Settled.  Stock is a rectangular prism for now (cylinders, tubes
+  later), from a generic Stock class.
+
+## 2026-11-04: Eighth answers
+
+* #32: Settled for now.  Start with each item placed relative to the
+  origin of the item below it (`origin()` per class), but the operator
+  has the last word: all that matters is that the origin is right for
+  the `.nc`; the file only guesses the operator's intent.
+* #33: Settled, a.  An Assembly class (name not `SCPart`) lists the
+  items in stacking order and is what a program hands the writer; it
+  is populated from TOML.  Change it if it doesn't work out.
+* #34: Agreed (`material`, `size` x y z with units; color and
+  transparency passed in with defaults), but a recommended set of
+  standard materials is needed, which also serves speeds and feeds
+  (#35).
+* #13: Settled, a.  Optional `color` and `transparency` per item,
+  defaults by kind (tooling and stock translucent, part solid).
+* #14: Settled, to try.  Optional `note` per item; the panel steps
+  through the items in stacking order.
+
+## 2026-11-04: Ninth answers
+
+* #35: Settled.  A standard list ships with `scraftcnc`; a shop may
+  define its own materials, and when it does not, the standard list is
+  used.  The list is its own task under `T.ds~2`; 5.2 uses short names
+  only.
+* #36: Settled (messy, as origins are).  On an origin set, the panel
+  shows the list of possible origins; the operator says where the tool
+  is now, and the panel does the rest.
+* #15: Settled.  One module with writer and reader, round-trip test (a
+  nice end-to-end test).  Name `scraftcnc/setup_comments.py` assumed.
+* #16: Settled, a.  Rename `lcnc_panel.py` to `lcnc_hmi.py` first, as
+  its own step.
+* #17: Settled.  No `SCC:` lines: run it anyway, the operator's
+  responsibility; they see only the 3D path, as LinuxCNC's GUI shows.
+
+## 2026-11-04: Tenth answers
+
+* #37: Done.  `T.sm2~5.5` Standard Materials created, Pending, with a
+  draft `Details.md`.  (Found: `T.msaf~2.1` Materials Speeds and Feeds
+  is closed; not read.)
+* #38: Settled.  GUI design: the operator sets the origin and picks
+  it from a list (table corner, vise corner, jaw corner, material
+  corner, ...).
+* #39: Settled.  The coding order: rename, Stock and Assembly
+  classes, `setup_comments.py` with round trip, `demo.py` writes,
+  panel draws, origin pick, stepping with notes.
+* #19-#22: Dropped.
+* #18 (multi-setup) not answered yet.
+
+## 2026-11-04: Eleventh answers; design done
+
+* #18: Settled.  A Mount captures exactly one setup; each remount
+  does all of this again (one `.nc` per setup).
+* #40: Settled, a.  One ordered `[[item]]` list, each with a `kind`.
+* #41: Settled, a.  Each item carries its own keep-outs.  A vertical
+  cylinder keep-out will probably come some day.
+* #42: Figure it out as we go (Claude starts from `demo_stack.json`).
+* #43: Settled.  Done when `./show_demo.py` draws the whole setup
+  (tooling, stock, part, keep-outs) from the `.nc`'s `SCC:` lines
+  alone, the operator picks the origin from a list, the panel steps
+  through the items with their notes, and the round trip test passes.
+
+The user: the design finish line is crossed.  Next, coding, in #39's
+order: 1. rename `lcnc_panel.py` to `lcnc_hmi.py` (headless panel to
+`lcnc_hmi_headless.py`); 2. Stock and Assembly classes; 3.
+`scraftcnc/setup_comments.py` (writer, reader, round trip test); 4.
+`demo.py` writes the `SCC:` lines; 5. the panel reads them and draws
+the setup in SolidCraft; 6. origin pick (#36, #38); 7. stepping with
+notes (#14).
+
+Settled design, in one place: `(SCC: ...)` whole-line comments
+holding TOML (`(`/`)` as backslash-u 0028/0029); `version` from
+`scraftcnc.__version__`; items in stacking order, each with `kind`,
+`name`, `call` (`module:Class.method` or `module:function`), the
+hashed arguments written in full (strings with units allowed),
+`location` relative to the origin of the item below, `orientation`,
+optional `color`, `transparency`, `note`, and its `keep_out` list;
+each class has `origin()`; stock is a generic Stock class (prism,
+`material` short name from `T.sm2~5.5`, `size`); an Assembly class
+lists the items and is handed to the writer; the reader feeds a
+`dict` (TOML or JSON) back to it.  Spindle tools deferred (#12).

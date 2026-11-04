@@ -24,3 +24,9 @@ tool change); SolidCraft's hover translucency is a quirk, documented in
 
 Designing the `.nc` comment format, by question rounds with the user;
 see `T.emsagc~5.2`'s `Context.md`.  Nothing coded yet.
+
+## 2026-11-04: `T.emsagc~5.2` design done
+
+The `.nc` setup comment design is settled (summary at the end of
+`T.emsagc~5.2`'s `Context.md`); coding starts next, in its #39 order.
+`T.sm2~5.5` Standard Materials created, Pending.

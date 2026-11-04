@@ -13,6 +13,7 @@
 @5.2_Embed_Mount_Setup_as_G_Code_Comments/Context.md
 @5.3_Create_More_Tools/Details.md
 @5.4_New_Path_for_Each_Tool_Change/Details.md
+@5.5_Standard_Materials/Details.md
 @../ISSUES/2_Archive_Merged_GitHub_Repositories/Summary.md
 @../ISSUES/3_Main_Part_Goes_Translucent_in_show_demo/Summary.md
 @../ISSUES/1_PathRack_Hidden_Path_Shows_Again/Summary.md
