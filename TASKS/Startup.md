@@ -10,6 +10,7 @@
 @5_Integration/Details.md
 @5_Integration/Context.md
 @5.2_Embed_Mount_Setup_as_G_Code_Comments/Details.md
+@5.2_Embed_Mount_Setup_as_G_Code_Comments/Context.md
 @5.3_Create_More_Tools/Details.md
 @5.4_New_Path_for_Each_Tool_Change/Details.md
 @../ISSUES/2_Archive_Merged_GitHub_Repositories/Summary.md
