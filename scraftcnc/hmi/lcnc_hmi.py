@@ -91,6 +91,8 @@ from typing import Any, Protocol, cast
 
 from .. import shops
 from ..assembly import Assembly, AssemblyItem, millimeters
+from ..geometry import LineSegment, RoundedPolygon
+from ..keepout import assembly_zones
 from ..lcnc.lcnc_client import PORT, BridgeClient, BridgeError, constant
 from ..model_cache import ModelCache
 from ..plot import PathMove, command_moves, read_gcode
@@ -444,6 +446,41 @@ def line_minutes(lines: list[str], rapid_speed: float) -> list[float]:
             )
             minutes[move["line"]] += length / speed
     return minutes
+
+
+# Function `jog_hit()`:
+def jog_hit(
+    zones: list[RoundedPolygon],
+    start: tuple[float, float, float],
+    end: tuple[float, float, float],
+    radius: float,
+) -> str:
+    """Return the keep-out a straight jog would enter, if any.
+
+    The tool is checked as `keepout.py` checks a program's moves: a
+    vertical cylinder of the tool's widest radius reaching up forever,
+    at the move's lowest tip height.  So a jog up (+Z) never enters
+    anything, and one that starts inside a keep-out, other than up,
+    is refused (raise Z first).
+
+    Arguments:
+    * `zones` (`list[RoundedPolygon]`): The keep-outs, work inches.
+    * `start` (`tuple[float, float, float]`): Where the tip is.
+    * `end` (`tuple[float, float, float]`): Where the jog takes it.
+    * `radius` (`float`): The tool's widest radius (0 for none).
+
+    Returns:
+    * (`str`): The keep-out's name, or `""` when the jog is clear.
+    """
+    if end[2] > start[2] and end[:2] == start[:2]:
+        return ""
+    move: LineSegment = LineSegment(start[:2], end[:2])
+    low: float = min(start[2], end[2])
+    zone: RoundedPolygon
+    for zone in zones:
+        if zone.hits(move, low, radius):
+            return zone.name
+    return ""
 
 
 # Function `clock()`:
@@ -1389,6 +1426,13 @@ class HMI:
     * `axis_buttons` (`dict[str, ttk.Button]`): Set X, Set Y, Set Z.
     * `axis_entries` (`dict[str, tk.Entry]`): Their numbers' entries.
     * `axis_texts` (`dict[str, tk.StringVar]`): The numbers typed.
+    * `jog_note` (`str`): Why jogs are not checked, once said.
+    * `jog_refusal` (`str`): Why the last jog was refused (`""` when
+      it was not).
+    * `tool_radii` (`dict[int, float]`): Each tool's widest radius,
+      by its number.
+    * `zones` (`list[RoundedPolygon] | None`): The setup's keep-outs
+      (work inches), `None` without a setup.
     * `override` (`float`): The feed override (the speed slider).
     * `rapid` (`float`): How fast a rapid goes (inches per minute).
     * `spans` (`list[tuple[int, int]]`): The program's tool changes
@@ -1449,6 +1493,10 @@ class HMI:
         self.origin_set: bool = False
         self.operator_paused: bool = False
         self.override: float = 1.0
+        self.zones: list[RoundedPolygon] | None = None
+        self.tool_radii: dict[int, float] = {}
+        self.jog_note: str = ""
+        self.jog_refusal: str = ""
         self.rapid: float = machine.rapid_speed()
         self.sums: list[float] = [0.0]
         self.spans: list[tuple[int, int]] = []
@@ -1791,6 +1839,8 @@ class HMI:
         self.lines_file = ""  # Read it again, even when the same file.
         self.message.configure(text="")
         self.origin_set = False
+        self.zones = None
+        self.jog_note = ""
         self.set_running(False, False)
         self.open_setup(path)
         self.mark_origin_set(self.origin_set)
@@ -1917,6 +1967,19 @@ class HMI:
                 self.message.configure(
                     text="Origin not set: a program is running"
                 )
+
+        # Its keep-outs and its tools' radii, for checking jogs.
+        try:
+            self.zones = assembly_zones(assembly)
+            self.tool_radii = {
+                tool.number: tool.widest_radius()
+                for tool in shops.cnc_machine(
+                    shop, SHOP_MACHINE, self.program_material
+                ).tools
+            }
+        except (ValueError, KeyError) as error:
+            self.zones = None
+            self.message.configure(text=f"Setup keep-outs: {error}")
 
         # Its origins, for Set Origin, then its drawing.
         try:
@@ -2100,7 +2163,44 @@ class HMI:
         * `axis` (`int`): The axis: 0 for X, 1 for Y, 2 for Z.
         * `direction` (`int`): +1 or -1.
         """
-        self.machine.jog(axis, direction, float(self.step.get()))
+        step: float = float(self.step.get())
+        self.jog_refusal = ""
+
+        # Keep-outs mean something only with a setup and its origin.
+        unchecked: str = (
+            "no setup"
+            if self.zones is None
+            else "origin not set"
+            if not self.origin_set
+            else ""
+        )
+        if unchecked:
+            if unchecked != self.jog_note:
+                self.jog_note = unchecked
+                self.message.configure(text=f"Jogs not checked: {unchecked}")
+            self.machine.jog(axis, direction, step)
+            return
+
+        # A jog that would enter a keep-out is refused, not shortened.
+        status: HMIStatus = self.machine.status()
+        start: tuple[float, float, float] = status.position
+        end: list[float] = list(start)
+        end[axis] += direction * step
+        x, y, z = end
+        hit: str = jog_hit(
+            self.zones or [],
+            start,
+            (x, y, z),
+            self.tool_radii.get(status.tool, 0.0),
+        )
+        if hit:
+            self.jog_refusal = (
+                f"Jog refused: it would enter {hit}; choose a smaller "
+                "step and try again"
+            )
+            self.message.configure(text=self.jog_refusal)
+            return
+        self.machine.jog(axis, direction, step)
 
     # Method `HMI.on_home()`:
     def on_home(self) -> None:
@@ -2230,8 +2330,11 @@ class HMI:
             ):
                 if str(widget.cget("state")) == "disabled":
                     return f"error: {label} is greyed out"
+                self.jog_refusal = ""
                 widget.invoke()
-                return "ok"
+                return (
+                    f"error: {self.jog_refusal}" if self.jog_refusal else "ok"
+                )
         return f"error: no button {label}"
 
     # Method `HMI.show()`:

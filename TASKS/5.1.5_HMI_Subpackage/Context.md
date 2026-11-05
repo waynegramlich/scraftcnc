@@ -274,3 +274,23 @@ axis, bad number, No sends nothing, all three enable Start, a new
 open clears, greyed out while running); `test_labels_unique` still
 passes.  Checkers clean; unit suite 626 OK, 13 skipped, 200 s;
 end-to-end all 10 pass, 139 s.
+
+## 2026-11-05: S8
+
+Each jog is checked before it is sent (`HMI.on_jog()`, `jog_hit()`):
+the straight move from the work position to position + step, against
+the setup's keep-outs (`keepout.assembly_zones()`, built once per open
+in `use_setup()`, work inches), with the tool as `keepout.py` checks
+program moves: a vertical cylinder of the spindle tool's widest radius
+(`tool_radii`, from the shop's machine, once per open; 0 for no tool)
+reaching up forever, at the move's lowest tip height.  A hit is
+refused, not shortened: nothing is sent, the message line (and the
+port's `press` answer, `error: ...`) says "Jog refused: it would
+enter <name>; choose a smaller step and try again".  Choice for a tool
+already inside a keep-out: a straight +Z jog is always allowed (the
+cylinder only rises); any other jog is refused (raise Z first).
+Without a setup, or before the origin mark (#39), jogs are sent
+unchecked, and the message line says so once ("Jogs not checked: no
+setup" / "... origin not set").  Tests: new
+`tests/test_hmi_jog_keepouts.py`.  Checkers clean; unit suite 630 OK,
+13 skipped, 207 s; end-to-end all 10 pass, 137 s.
