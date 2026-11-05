@@ -1,7 +1,7 @@
 {
-  "state": "Closed",
+  "state": "Open",
   "created": "2026-11-03T22:46:08Z",
-  "updated": "2026-11-04T01:22:17Z",
+  "updated": "2026-11-05T17:51:03Z",
   "history": [
     {
       "state": "Pending",
@@ -14,6 +14,10 @@
     {
       "state": "Closed",
       "time": "2026-11-04T01:22:17Z"
+    },
+    {
+      "state": "Open",
+      "time": "2026-11-05T17:51:03Z"
     }
   ],
   "tag": "hs"
