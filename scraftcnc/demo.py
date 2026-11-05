@@ -592,7 +592,8 @@ def demo_assembly(material: str = MATERIAL) -> Assembly:
     * `material` (`str`): The material being cut.
 
     Returns:
-    * (`Assembly`): The tooling, the stock and the part.
+    * (`Assembly`): The tooling, the stock and the part, for
+      `MACHINE` in the shop of `SHOP_FILE`.
     """
     # The tooling, bottom first.
     items: list[AssemblyItem] = [
@@ -653,7 +654,7 @@ def demo_assembly(material: str = MATERIAL) -> Assembly:
             note="Cut the plate; G54 zero is its lower left top corner.",
         )
     )
-    return Assembly(items)
+    return Assembly(items, str(read(SHOP_FILE)["name"]), MACHINE)
 
 
 # Function `with_setup()`:

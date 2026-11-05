@@ -409,13 +409,19 @@ class Assembly:
 
     Attributes:
     * `items` (`list[AssemblyItem]`): The items, bottom first.
+    * `shop` (`str`): The name of the shop it was made for (`""`
+      when not known).
+    * `machine` (`str`): The name of the machine in that shop (`""`
+      when not known).
 
     Constructor:
-    * `Assembly(items)`
+    * `Assembly(items, shop, machine)`
     """
 
     # Constructor arguments:
     items: list[AssemblyItem] = field(init=True, default_factory=list)
+    shop: str = field(init=True, default="")
+    machine: str = field(init=True, default="")
 
     # Method `Assembly.__post_init__()`:
     def __post_init__(self) -> None:
@@ -436,9 +442,16 @@ class Assembly:
         """Return the assembly as one ordered `item` list.
 
         Returns:
-        * (`dict[str, Any]`): `{"item": [...]}`, as TOML's `[[item]]`.
+        * (`dict[str, Any]`): `{"item": [...]}`, as TOML's `[[item]]`,
+          with `shop` and `machine` first when they are known.
         """
-        return {"item": [item.to_dict() for item in self.items]}
+        table: dict[str, Any] = {}
+        if self.shop:
+            table["shop"] = self.shop
+        if self.machine:
+            table["machine"] = self.machine
+        table["item"] = [item.to_dict() for item in self.items]
+        return table
 
     # Method `Assembly.from_dict()`:
     @staticmethod
@@ -446,7 +459,8 @@ class Assembly:
         """Return an assembly read from a table (TOML or JSON).
 
         Arguments:
-        * `table` (`dict[str, Any]`): A table with an `item` list.
+        * `table` (`dict[str, Any]`): A table with an `item` list,
+          and `shop` and `machine` names if known.
 
         Returns:
         * (`Assembly`): The assembly.
@@ -460,11 +474,20 @@ class Assembly:
             entries: list[Any] = _list(table["item"])
         except TypeError as error:
             raise ValueError(f"assembly: item {error}") from error
+        names: list[str] = []
+        key: str
+        for key in ("shop", "machine"):
+            name: object = table.get(key, "")
+            if not isinstance(name, str):
+                raise ValueError(f"assembly: {key} must be a string")
+            names.append(name)
         return Assembly(
             [
                 AssemblyItem.from_dict(entry, index)
                 for index, entry in enumerate(entries, start=1)
-            ]
+            ],
+            names[0],
+            names[1],
         )
 
 

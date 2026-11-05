@@ -386,7 +386,11 @@ class TestHeadless(unittest.TestCase):
         self.assertEqual(self.ask("press Reset"), "ok")
         self.assertEqual(self.tick()["buttons"]["Start"], "normal")
         self.assertEqual(
-            [entry for entry in self.machine.log if "open" not in entry],
+            [
+                entry
+                for entry in self.machine.log
+                if not entry.startswith(("open", "tool table"))
+            ],
             ["run 0", "pause", "resume", "stop"],
         )
 
@@ -438,7 +442,10 @@ class TestHeadless(unittest.TestCase):
         self.assertEqual(self.machine.log, [])
         self.ask(f"answer {self.file}")
         self.ask("press Open")
-        self.assertEqual(self.machine.log, [f"open {self.file}"])
+        self.assertEqual(
+            self.machine.log,
+            [f"open {self.file}", f"tool table {lcnc_hmi.MATERIAL}"],
+        )
 
     def test_tools_tab(self) -> None:
         """The Tools tab lists the tools for a material."""
@@ -559,6 +566,32 @@ class TestSetupDrawing(unittest.TestCase):
         self.panel.drawer.wait()
         self.assertEqual(self.view.shown, [])
         self.assertEqual(self.panel.show()["message"], "")
+
+    def test_material_from_setup(self) -> None:
+        """The setup's material picks the tool table and the Tools tab."""
+        assembly = demo_assembly()
+        assembly.items[-1].args["material"] = "brass"
+        self.panel.open(self.program(with_setup(self.gcode, assembly)))
+        self.assertIn("tool table brass", self.machine.log)
+        self.assertEqual(self.panel.material.get(), "brass")
+        self.root.run_one()
+        self.assertIn("brass", self.panel.show()["position"])
+
+    def test_material_fallback(self) -> None:
+        """No setup, or a material the shop lacks: `MATERIAL` is used."""
+        self.panel.open(self.program(self.gcode))
+        self.assertEqual(
+            self.machine.log[-1], f"tool table {lcnc_hmi.MATERIAL}"
+        )
+        assembly = demo_assembly()
+        for item in assembly.items:
+            if "material" in item.args:
+                item.args["material"] = "unobtainium"
+        self.panel.open(self.program(with_setup(self.gcode, assembly)))
+        self.assertEqual(
+            self.machine.log[-1], f"tool table {lcnc_hmi.MATERIAL}"
+        )
+        self.assertEqual(self.panel.material.get(), lcnc_hmi.MATERIAL)
 
     def test_bad_setup(self) -> None:
         """A wrong setup line is reported; the program still opens."""

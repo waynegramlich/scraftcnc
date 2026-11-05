@@ -2,8 +2,10 @@
 
 A setup (`assembly.Assembly`) is written as whole-line RS-274
 comments, `(SCC: ...)`, each holding one line of TOML.  The first one
-is `version = "..."` (`scraftcnc.__version__`), then one `[[item]]`
-table per item, in stacking order.  A `( ... )` comment can not hold
+is `version = "..."` (`scraftcnc.__version__`), then the header: the
+`shop` and the `machine` in it that the program is for (by their
+names; either may be missing, as in files written before them), then
+one `[[item]]` table per item, in stacking order.  A `( ... )` comment can not hold
 a parenthesis, so `(` and `)` in TOML strings are written as the
 escapes `\\u0028` and `\\u0029`.  `write()` makes the lines, and
 `read()` (or `read_file()`) gets the assembly back from a whole
@@ -59,8 +61,13 @@ def write(assembly: Assembly) -> list[str]:
     * (`list[str]`): The `(SCC: ...)` lines, without line ends.
     """
     toml: list[str] = [f"version = {_value(__version__)}"]
+    whole: dict[str, Any] = assembly.to_dict()
+    key: str
+    for key in ("shop", "machine"):
+        if key in whole:
+            toml.extend(_pair(key, whole[key]))
     table: dict[str, Any]
-    for table in assembly.to_dict()["item"]:
+    for table in whole["item"]:
         toml.append("[[item]]")
         toml.extend(_table(table, "item"))
     return [f"({MARKER} {line})" for line in toml]
@@ -129,10 +136,16 @@ def read(lines: Iterable[str]) -> Assembly | None:
             SetupVersionWarning,
             stacklevel=2,
         )
-    unknown: list[str] = sorted(set(table) - {"item"})
+    unknown: list[str] = sorted(set(table) - {"item", "shop", "machine"})
     if unknown and not newer:
         raise ValueError(f"setup comments: unknown keys {unknown}")
-    return Assembly.from_dict({"item": table.get("item", [])})
+    return Assembly.from_dict(
+        {
+            "item": table.get("item", []),
+            "shop": table.get("shop", ""),
+            "machine": table.get("machine", ""),
+        }
+    )
 
 
 # Function `read_file()`:

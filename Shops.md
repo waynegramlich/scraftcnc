@@ -264,14 +264,22 @@ brake = false
 
 The table of a machine, and its T-slots.
 
-| Key            | Value   | Required | Meaning             |
-| -------------- | ------- | -------- | ------------------- |
-| `length`       | length  | yes      | Along X.            |
-| `width`        | length  | yes      | Along Y.            |
-| `t_slots`      | integer | no       | How many T-slots.   |
-| `t_slot_pitch` | length  | no       | Between T-slots.    |
-| `t_slot_width` | length  | no       | At the top.         |
-| `t_slot_depth` | length  | no       | From the table top. |
+| Key            | Value   | Required | Meaning                               |
+| -------------- | ------- | -------- | ------------------------------------- |
+| `length`       | length  | yes      | Along X.                              |
+| `width`        | length  | yes      | Along Y.                              |
+| `t_slots`      | integer | no       | How many T-slots.                     |
+| `t_slot_pitch` | length  | no       | Between T-slots.                      |
+| `t_slot_width` | length  | no       | At the top.                           |
+| `t_slot_depth` | length  | no       | From the table top.                   |
+| `x`            | length  | no       | Where the table sits in the machine:  |
+|                |         |          | the machine X of the point a setup    |
+|                |         |          | places the table by (its location in  |
+|                |         |          | the setup's `(SCC: ...)` comments).   |
+|                |         |          | With `y` and `z`, it gives the work   |
+|                |         |          | origin (G54).                         |
+| `y`            | length  | no       | The same, along Y.                    |
+| `z`            | length  | no       | The same, along Z.                    |
 
 ```toml
 length = "34 in"

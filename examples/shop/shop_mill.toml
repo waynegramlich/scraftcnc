@@ -26,6 +26,10 @@ t_slots = 3
 t_slot_pitch = "2.5 in"
 t_slot_width = "0.625 in"
 t_slot_depth = "0.75 in"
+# Where the table sits in the machine (machine coordinates).
+x = "6 in"
+y = "4.5 in"
+z = "-13.64 in"
 
 [spindle]
 interface = "R8"

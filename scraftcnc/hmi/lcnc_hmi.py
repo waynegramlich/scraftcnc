@@ -16,15 +16,19 @@ drawn; under the tabs, Open and Quit.  The tabs, one for each task:
   .0001 in).
 * Tools: the tools' speeds and feeds, for a material chosen.
 * View: Keep-outs (shows or hides them in SolidCraft).
-  The LinuxCNC calls are kept in
-`HMIMachine`, a client (through `scraftcnc.lcnc.lcnc_client`) of
-`serve_linuxcnc` from `scraftcnc/lcnc/`, which runs LinuxCNC in its
-`lcnc` box, or in WSL on Windows.  So this runs outside the box, and
+
+The LinuxCNC calls are kept in `HMIMachine`, a client (through
+`scraftcnc.lcnc.lcnc_client`) of `serve_linuxcnc` from
+`scraftcnc/lcnc/`, which runs LinuxCNC in its `lcnc` box, or in WSL
+on Windows.  So this runs outside the box, and
 needs only `tkinter`.  Closing it leaves LinuxCNC running, for another
 HMI.  When it starts, the machine is taken out of E-stop, turned on
 and homed if it needs to be (G54 is then set to `ORIGIN`), it is sent
 the shop's tool table, and the INI file's `MAX_FEED_OVERRIDE` limits
-the slider:
+the slider.  Each program opened sends the tool table again (while
+LinuxCNC is idle), for the material its setup comments name (the
+part's, else the stock's), or `MATERIAL` when they name none the shop
+knows; the position line shows the machine and material in use:
 
 ```
 python3 -m scraftcnc.lcnc.serve_linuxcnc &
@@ -192,6 +196,29 @@ def material_names(shop: dict[str, object]) -> list[str]:
     """
     materials: dict[str, Any] = cast(dict[str, Any], shop.get("materials", {}))
     return [str(entry["name"]) for entry in materials.get("materials", [])]
+
+
+# Function `setup_material()`:
+def setup_material(assembly: Assembly, names: list[str]) -> str:
+    """Return the material a setup says is cut, as the shop names it.
+
+    The part's `material` is looked at first, then the stock's (the
+    setup comments carry no shop or machine, `T.hs~5.1.5` S4).
+
+    Arguments:
+    * `assembly` (`Assembly`): The setup.
+    * `names` (`list[str]`): The shop's material names.
+
+    Returns:
+    * (`str`): The material, or `""` when no item names one of the
+      shop's.
+    """
+    item: AssemblyItem
+    for item in reversed(assembly.items):
+        material: object = item.args.get("material")
+        if isinstance(material, str) and material in names:
+            return material
+    return ""
 
 
 # Function `tool_speeds()`:
@@ -437,14 +464,7 @@ class HMIMachine:
             return
 
         # The tool table, from the shop.
-        self.lcnc.call(
-            "tool_table.write",
-            shops.tool_table_text(
-                shops.read(SHOP_FILE), SHOP_MACHINE, MATERIAL
-            ),
-        )
-        self.lcnc.call("command.load_tool_table")
-        self.lcnc.call("command.wait_complete")
+        self.write_tool_table(MATERIAL)
 
         # The origin.  `G20` first: otherwise the numbers may be read
         # as millimeters.
@@ -453,6 +473,35 @@ class HMIMachine:
             self._mode("MODE_MDI")
             self.lcnc.call("command.mdi", f"G20 G10 L2 P1 X{x} Y{y} Z{z}")
             self.lcnc.call("command.wait_complete")
+
+    # Method `HMIMachine.write_tool_table()`:
+    def write_tool_table(self, material: str) -> bool:
+        """Send LinuxCNC the shop's tool table, unless it is running.
+
+        Arguments:
+        * `material` (`str`): The material being cut (the shop's
+          name for it), for the drills.
+
+        Returns:
+        * (`bool`): `True` when the table was sent (always, with no
+          LinuxCNC); `False` when a program is running.
+
+        Raises:
+        * `ValueError`: If the shop can not give a tool table.
+        """
+        text: str = shops.tool_table_text(
+            shops.read(SHOP_FILE), SHOP_MACHINE, material
+        )
+        self.log.append(f"tool table {material}")
+        if self.lcnc is None:
+            return True
+        interp_state: int = self.lcnc.stat("interp_state")["interp_state"]
+        if interp_state != self.constants["INTERP_IDLE"]:
+            return False
+        self.lcnc.call("tool_table.write", text)
+        self.lcnc.call("command.load_tool_table")
+        self.lcnc.call("command.wait_complete")
+        return True
 
     # Method `HMIMachine.max_speed()`:
     def max_speed(self) -> float:
@@ -1091,6 +1140,7 @@ class HMI:
         self.note: str = ""
         self.drawn: Assembly | None = None
         self.drawing: bool = False
+        self.program_material: str = MATERIAL
         root.title("SolidCraft LinuxCNC")
 
         # Above the tabs, on every tab: the work position and the tool,
@@ -1382,30 +1432,20 @@ class HMI:
         self.set_running(False, False)
         self.open_setup(path)
 
-    # Method `HMI.open_setup()`:
-    def open_setup(self, path: str) -> None:
-        """Draw a program's setup (its `SCC:` lines), if it has one.
-
-        A program with no setup is run as is (`T.emsagc~5.2` #17); a
-        wrong setup is reported, and the program is still open.
+    # Method `HMI.use_setup()`:
+    def use_setup(self, assembly: Assembly) -> None:
+        """Take a setup's material, origins, and drawing.
 
         Arguments:
-        * `path` (`str`): The G-code file.
+        * `assembly` (`Assembly`): The program's setup.
         """
-        self.origins = []
-        self.assembly = None
-        self.setup_step = 0
-        self.note = ""
+        # Its material, when the shop knows it.
         try:
-            assembly: Assembly | None = read_file(path)
-            text: str = Path(path).read_text(encoding="utf-8")
-        except (OSError, ValueError) as error:
-            self.message.configure(text=f"Setup not read: {error}")
-            return
-        self.inches = program_inches(text.splitlines())
-        if assembly is None:
-            return
-        self.assembly = assembly
+            names: list[str] = material_names(shops.read(SHOP_FILE))
+        except ValueError as error:
+            self.message.configure(text=f"Shop not read: {error}")
+            names = []
+        self.program_material = setup_material(assembly, names) or MATERIAL
 
         # Its origins, for Set Origin, then its drawing.
         try:
@@ -1417,6 +1457,48 @@ class HMI:
             self.drawer.draw(assembly)
             self.drawing = True
             self.set_running(self.running, self.paused)
+
+    # Method `HMI.load_tools()`:
+    def load_tools(self) -> None:
+        """Send the tool table for the program's material, if idle."""
+        self.material.set(self.program_material)
+        try:
+            if not self.machine.write_tool_table(self.program_material):
+                self.message.configure(
+                    text="Tool table not sent: a program is running"
+                )
+        except (ValueError, RuntimeError, BridgeError) as error:
+            self.message.configure(text=f"Tool table: {error}")
+
+    # Method `HMI.open_setup()`:
+    def open_setup(self, path: str) -> None:
+        """Take a program's setup (its `SCC:` lines), if it has one.
+
+        A program with no setup is run as is (`T.emsagc~5.2` #17); a
+        wrong setup is reported, and the program is still open.  Either
+        way the tool table is sent again, for the setup's material, or
+        `MATERIAL` without one.
+
+        Arguments:
+        * `path` (`str`): The G-code file.
+        """
+        self.origins = []
+        self.assembly = None
+        self.setup_step = 0
+        self.note = ""
+        self.program_material = MATERIAL
+        try:
+            assembly: Assembly | None = read_file(path)
+            text: str = Path(path).read_text(encoding="utf-8")
+        except (OSError, ValueError) as error:
+            self.load_tools()
+            self.message.configure(text=f"Setup not read: {error}")
+            return
+        self.inches = program_inches(text.splitlines())
+        if assembly is not None:
+            self.assembly = assembly
+            self.use_setup(assembly)
+        self.load_tools()
 
     # Method `HMI.on_open()`:
     def on_open(self) -> None:
@@ -1847,7 +1929,8 @@ class HMI:
         # The position, the tool and any message.
         self.position.configure(
             text=f"X {x:9.4f}  Y {y:9.4f}  Z {z:9.4f}  T{status.tool:02d}"
-            f"  start line {self.start}"
+            f"  start line {self.start}  "
+            f"{SHOP_MACHINE}, {self.program_material}"
         )
         if status.messages:
             self.message.configure(text=status.messages[-1])

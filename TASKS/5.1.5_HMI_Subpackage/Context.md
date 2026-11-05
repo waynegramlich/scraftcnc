@@ -149,3 +149,20 @@ add to it.  New tests: `test_tabs` (walks all four tabs) and
 `test_labels_unique`; `test_tools_window` became `test_tools_tab`.  A
 real (withdrawn) Tk window switched through all four tabs fine.
 Checkers are clean.  Unit suite: 605 tests OK, 13 skipped, 199 s.
+
+## 2026-11-05: S4 (partly done; the format lacks shop, machine, origin)
+
+The `(SCC: ...)` comments carry only one of the four: the material
+(the part's `material`, "6061 aluminum", and the stock's short name
+`aluminum_6061`).  They have no shop, no machine (only a table,
+`mikini_1610l`), and no G54 origin in machine coordinates: the setup
+frame is the work frame (`named_origins()`), so the table's place in
+the machine is not known.  Done for the material:
+`setup_material()` takes the part's material, then the stock's, when
+the shop knows the name, else `MATERIAL`.  Each open sends the tool
+table again (`HMIMachine.write_tool_table()`, only while LinuxCNC is
+idle, otherwise a message).  The Tools tab's chooser starts on that
+material, and the position line ends with "Shop mill, <material>".
+Tests: `test_material_from_setup` and `test_material_fallback`.
+Checkers clean; unit suite 607 OK, 13 skipped, 229 s.  The options for
+the missing three go to the user (format not extended).

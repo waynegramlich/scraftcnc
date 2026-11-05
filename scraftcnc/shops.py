@@ -713,6 +713,16 @@ brake = false
                 TableField("t_slot_pitch", "length", "Between T-slots."),
                 TableField("t_slot_width", "length", "At the top."),
                 TableField("t_slot_depth", "length", "From the table top."),
+                TableField(
+                    "x",
+                    "length",
+                    "Where the table sits in the machine: the machine X "
+                    "of the point a setup places the table by (its "
+                    "location in the setup's `(SCC: ...)` comments).  "
+                    "With `y` and `z`, it gives the work origin (G54).",
+                ),
+                TableField("y", "length", "The same, along Y."),
+                TableField("z", "length", "The same, along Z."),
             ),
             False,
             """\
