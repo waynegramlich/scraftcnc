@@ -331,14 +331,17 @@ air = false
 The controller of a machine (e.g. LinuxCNC), and how its G-code is
 written.  LinuxCNC is the baseline.  (To come: every code it accepts,
 its canned cycles, and tool length offsets.)  `tool_change` is a Python
-`str.format()` template, filled in with the tool's `number`.  It has a
-`name` even when it is not a file of its own.
+`str.format()` template, filled in with the tool's `number` and
+`description`; it may hold several lines, each words or a whole-line
+comment, such as a `(MSG, ...)` line and `M0`, so the operator is told
+which tool to put in.  It has a `name` even when it is not a file of its
+own.
 
 | Key              | Value             | Required | Meaning                   |
 | ---------------- | ----------------- | -------- | ------------------------- |
 | `post_processor` | one of `linuxcnc` | yes      | Which dialect of G-code   |
 |                  |                   |          | it reads.                 |
-| `tool_change`    | string            | no       | The words that change the |
+| `tool_change`    | string            | no       | The lines that change the |
 |                  |                   |          | tool.                     |
 
 ```toml

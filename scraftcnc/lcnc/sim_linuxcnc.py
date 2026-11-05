@@ -374,6 +374,11 @@ class Simulator:
                     print(sample.text(), flush=True)
                 _tell(listeners, methodcaller("sample", sample))
 
+                # No one is here to press Start after a pause (`M0`, a
+                # tool change), so it goes on by itself.
+                if self.stat.paused:
+                    self.command.auto(linuxcnc.AUTO_RESUME)
+
                 # Stop when the program is done, and say so.
                 self.report_errors()
                 if self.stat.interp_state == linuxcnc.INTERP_IDLE:

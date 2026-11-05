@@ -774,7 +774,10 @@ air = false
             "G-code is written.  LinuxCNC is the baseline.  (To come: "
             "every code it accepts, its canned cycles, and tool length "
             "offsets.)  `tool_change` is a Python `str.format()` "
-            "template, filled in with the tool's `number`.",
+            "template, filled in with the tool's `number` and "
+            "`description`; it may hold several lines, each words or a "
+            "whole-line comment, such as a `(MSG, ...)` line and `M0`, "
+            "so the operator is told which tool to put in.",
             (
                 TableField(
                     "post_processor",
@@ -786,7 +789,7 @@ air = false
                 TableField(
                     "tool_change",
                     "string",
-                    "The words that change the tool.",
+                    "The lines that change the tool.",
                 ),
             ),
             True,

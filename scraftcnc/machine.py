@@ -9,7 +9,10 @@ Some machines do not rise to a safe height for a tool change on their
 own, so the program always rises to `tool_change_z` first.  The
 `tool_change` template is filled in with Python's `str.format()`, with
 `number` the tool's number (most changers hold fewer than 100 tools,
-so two digits is usual).
+so two digits is usual) and `description` the tool's name.  It may
+hold more than one line, each either words or a whole-line comment,
+such as LinuxCNC's `(MSG, ...)` and an `M0` pause, so the operator is
+told which tool to put in.
 """
 
 from dataclasses import dataclass, field
@@ -136,8 +139,9 @@ class Machine:  # pylint: disable=too-many-instance-attributes
     * `clearance` (`float`): How far above the work rapids down stop.
     * `tool_change_z` (`float`): The Z to rise to before a tool change.
     * `tool_change` (`str`):
-      The words that change the tool, as a `str.format()` template of
-      `number` (e.g. `"T{number:02d}"` or `"T{number:02d} M06"`).
+      The lines that change the tool, as a `str.format()` template of
+      `number` and `description` (e.g. `"T{number:02d}"`, or
+      `"T{number:02d} M06"` after a `(MSG, ...)` line and `M0`).
     * `rapid_speed` (`float`):
       The machine's rapid speed (inches per minute), for estimating
       run times only.
@@ -205,35 +209,52 @@ class Machine:  # pylint: disable=too-many-instance-attributes
         if self.finish_allowance < 0.0:
             raise ValueError(f"{self.finish_allowance=} must not be negative")
 
-        # The tool change words must be letters followed by values.
-        words: list[str] = self.change_words(1)
-        if not words or not all(
-            len(word) > 1 and word[0].isalpha() for word in words
-        ):
-            raise ValueError(f"{self.tool_change=} makes {words}")
+        # Each tool change line is a whole comment, or words that are
+        # letters followed by values.
+        lines: list[str] = self.change_lines(1, "a tool")
+        line: str
+        for line in lines:
+            words: list[str] = line.split()
+            comment: bool = (
+                line.startswith("(")
+                and line.endswith(")")
+                and "(" not in line[1:-1]
+                and ")" not in line[1:-1]
+            )
+            if not comment and not all(
+                len(word) > 1 and word[0].isalpha() for word in words
+            ):
+                raise ValueError(f"{self.tool_change=} makes {line!r}")
+        if not lines:
+            raise ValueError(f"{self.tool_change=} makes no lines")
 
         # Each tool's number must be its own.
         numbers: list[int] = [tool.number for tool in self.tools]
         if len(set(numbers)) != len(numbers):
             raise ValueError(f"tool numbers {numbers} are not all different")
 
-    # Method `Machine.change_words()`:
-    def change_words(self, number: int) -> list[str]:
-        """Return the words that change to a tool.
+    # Method `Machine.change_lines()`:
+    def change_lines(self, number: int, description: str) -> list[str]:
+        """Return the lines that change to a tool.
 
         Arguments:
         * `number` (`int`): The tool's number.
+        * `description` (`str`): What the tool is (its name).
 
         Returns:
-        * (`list[str]`): The words (e.g. `["T02"]`).
+        * (`list[str]`): The lines, blank ones left out (e.g.
+          `["T02"]`).
 
         Raises:
         * `ValueError`: If the template does not fill in.
         """
         try:
-            return self.tool_change.format(number=number).split()
+            text: str = self.tool_change.format(
+                number=number, description=description
+            )
         except (KeyError, IndexError, ValueError) as error:
             raise ValueError(f"{self.tool_change=}: {error}") from error
+        return [line.strip() for line in text.splitlines() if line.strip()]
 
     # Method `Machine.tool()`:
     def tool(self, number: int) -> ToolEntry:

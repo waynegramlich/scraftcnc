@@ -549,7 +549,8 @@ class TestCNCMachine(CopiedShop):
         shop = shops.read(EXAMPLES / "home_shop.toml")
         mill = shops.cnc_machine(shop, "Shop mill", "6061 aluminum")
         self.assertEqual(
-            mill.tool_change, "T{number:02d} M6 G43 H{number:02d}"
+            mill.change_lines(2, "a drill"),
+            ["(MSG, Insert T02: a drill)", "M0", "T02 M6 G43 H02"],
         )
         self.assertEqual(mill.drill_cycle, "G83")
         self.assertAlmostEqual(mill.stepover, 0.9)

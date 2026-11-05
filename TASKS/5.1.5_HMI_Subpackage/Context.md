@@ -204,3 +204,32 @@ Origin for programs without a setup origin.  Tests: `test_origin_gate`,
 enabled right after open.  Checkers clean; unit suite 613 OK, 13
 skipped, 209 s.
 End-to-end (`SCRAFTCNC_LINUXCNC=1`): all 10 tests pass with the origin gate, 138 s.
+
+## 2026-11-05: S5
+
+The controller's `tool_change` may hold several lines, each words or
+a whole-line comment, filled in with `number` and `description` (the
+tool's name): `Machine.change_lines()` (was `change_words()`),
+checked in `Machine.__post_init__()`.  The example LinuxCNC template
+is `(MSG, Insert T{number:02d}: {description})`, `M0`, then
+`T{number:02d} M6 G43 H{number:02d}`; `CNC.change_tool()` already
+rises to `tool_change_z` and stops the spindle (`M5`) first.
+`Shops.md` regenerated.  The HMI's `tool_changes()` starts each change
+at its `MSG` line, so -Tool/+Tool and a run from there prompt first.
+A pause the operator did not ask for (`operator_paused`) is the
+program's: the `MSG` text is on the message line, and a person
+presses Start (Resume); headless, the HMI resumes by itself.
+`sim_linuxcnc.Simulator.follow()` resumes too (no one to press).
+`demo_linuxcnc.py` runs its own program, unchanged.  `keepout.py`,
+`plot.py` and the time estimate read the new lines as they are.  The
+end-to-end demo test now allows the `Insert T..` messages.  Tests:
+`TestToolChangePause` (demo pauses at each change, change starts,
+headless goes on, Pause's pause waits), `test_machine`, `test_shops`.
+Checkers clean; unit suite 616 OK, 13 skipped, 200 s.  End-to-end
+not run yet (time cap).
+End-to-end: the first run failed two tests on messages only (a `MSG`
+text comes with a leading space, and the HMI keeps every message, so
+later tests saw the demo's prompts); the HMI now strips messages, and
+the suite's `messages()` leaves the `Insert T..` prompts out.  Re-run:
+all 10 pass, 139 s, the real `M0` pauses gone on from by the headless
+HMI.

@@ -781,8 +781,8 @@ class CNC:  # pylint: disable=too-many-instance-attributes
 
         The tool rises to the machine's `tool_change_z` first (some
         machines do not), the spindle stops, the machine's tool change
-        words are written, and the spindle starts at the new tool's
-        speed.
+        lines are written (perhaps a message and a pause for the
+        operator), and the spindle starts at the new tool's speed.
 
         Arguments:
         * `number` (`int`): The tool's number.
@@ -798,12 +798,17 @@ class CNC:  # pylint: disable=too-many-instance-attributes
         self.rapid(z=self.machine.tool_change_z)
         if self.tool is not None:
             self.add({"M": 5})
-        change: RS274 = {
-            word[0].upper(): word[1:]
-            for word in self.machine.change_words(number)
-        }
-        change["note"] = tool.name
-        self.add(change)
+        line: str
+        for line in self.machine.change_lines(number, tool.name):
+            if line.startswith("("):
+                self.comment(line[1:-1])
+                continue
+            change: RS274 = {
+                word[0].upper(): word[1:] for word in line.split()
+            }
+            if "T" in change:
+                change["note"] = tool.name
+            self.add(change)
         self.tool = tool
         self.add({"M": 3, "S": tool.rpm})
         return tool

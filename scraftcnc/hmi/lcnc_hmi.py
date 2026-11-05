@@ -142,6 +142,12 @@ SHOWN: int = 6
 # A tool change line (`M6`, outside a comment).
 TOOL_CHANGE: re.Pattern[str] = re.compile(r"\bM0*6\b", re.IGNORECASE)
 
+# A line that leads up to a tool change: the operator's message
+# (`(MSG, ...)`) and the pause (`M0` or `M1`).
+CHANGE_LEAD: re.Pattern[str] = re.compile(
+    r"^\s*(\(MSG,[^()]*\)|M0*[01])\s*$", re.IGNORECASE
+)
+
 # A units word: `G20` (inches) or `G21` (millimeters).
 UNITS: re.Pattern[str] = re.compile(r"\bG(2[01])\b", re.IGNORECASE)
 
@@ -350,7 +356,10 @@ def line_kind(line: str) -> str:
 
 # Function `tool_changes()`:
 def tool_changes(lines: list[str]) -> list[int]:
-    """Return the lines that change the tool.
+    """Return the lines that start each tool change.
+
+    A change starts at its message and pause (`CHANGE_LEAD`) when it
+    has them, so that a run started there tells the operator first.
 
     Arguments:
     * `lines` (`list[str]`): The program's lines.
@@ -358,11 +367,16 @@ def tool_changes(lines: list[str]) -> list[int]:
     Returns:
     * (`list[int]`): Their numbers, counted from 1, in order.
     """
-    return [
-        number
-        for number, line in enumerate(lines, 1)
-        if TOOL_CHANGE.search(COMMENT.sub("", line))
-    ]
+    starts: list[int] = []
+    number: int
+    line: str
+    for number, line in enumerate(lines, 1):
+        if TOOL_CHANGE.search(COMMENT.sub("", line)):
+            start: int = number
+            while start > 1 and CHANGE_LEAD.match(lines[start - 2]):
+                start -= 1
+            starts.append(start)
+    return starts
 
 
 # Class `HMIStatus`:
@@ -802,7 +816,8 @@ class HMIMachine:
         messages: list[str] = []
         error: Any = lcnc.call("error_channel.poll")
         while error:
-            messages.append(str(error[1]))
+            # An `(MSG, ...)` comes with the space after its comma.
+            messages.append(str(error[1]).strip())
             error = lcnc.call("error_channel.poll")
 
         # LinuxCNC's message for a move outside the travel says
@@ -1197,6 +1212,8 @@ class HMI:
     * `next_tool` (`ttk.Label`): Room for the next tool and the time
       left to it (`T.hs~5.1.5` S6).
     * `notebook` (`ttk.Notebook`): The tabs.
+    * `operator_paused` (`bool`): True while paused by Pause (not by
+      the program's own `M0`).
     * `origin_set` (`bool`): True once the open program's origin is
       set (`mark_origin_set()`); Start waits for it.
     * `program_machine` (`str`): The machine the program is for.
@@ -1249,6 +1266,7 @@ class HMI:
         self.program_material: str = MATERIAL
         self.program_machine: str = SHOP_MACHINE
         self.origin_set: bool = False
+        self.operator_paused: bool = False
         root.title("SolidCraft LinuxCNC")
 
         # Above the tabs, on every tab: the work position and the tool,
@@ -1735,6 +1753,7 @@ class HMI:
     def on_run(self) -> None:
         """Run the program, or resume it after a pause."""
         self.message.configure(text="")
+        self.operator_paused = False
         if self.paused:
             self.machine.resume()
         else:
@@ -1744,6 +1763,7 @@ class HMI:
     # Method `HMI.on_pause()`:
     def on_pause(self) -> None:
         """Pause the program; the editable lines may then be run."""
+        self.operator_paused = True
         self.machine.pause()
         self.set_running(True, True)
 
@@ -1776,6 +1796,7 @@ class HMI:
     def on_stop(self) -> None:
         """Stop at once, ready to run again from the program's start."""
         self.message.configure(text="")
+        self.operator_paused = False
         self.machine.stop()
         self.start = 0
         self.set_running(False, False)
@@ -2072,6 +2093,17 @@ class HMI:
             != (self.running, self.paused)
         ):
             self.set_running(status.state != "idle", status.state == "paused")
+
+        # A pause no one asked for is the program's (`M0`, at a tool
+        # change; its `MSG` is on the message line).  A person presses
+        # Start (Resume); with no one there (headless), it goes on.
+        if (
+            status.state == "paused"
+            and not self.operator_paused
+            and tk is lcnc_hmi_headless
+        ):
+            self.machine.resume()
+            self.set_running(True, False)
 
         # Before a run, the lines from the start line on are coming.
         # While paused, the whole program is in the two windows, put

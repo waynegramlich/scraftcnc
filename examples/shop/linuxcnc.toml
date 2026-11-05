@@ -4,4 +4,10 @@ kind = "controller"
 language = "English"
 version = "0.0.1"
 post_processor = "linuxcnc"
-tool_change = "T{number:02d} M6 G43 H{number:02d}"
+# The operator is told which tool to put in, and the program pauses
+# (`M0`) until Start is pressed again.
+tool_change = """
+(MSG, Insert T{number:02d}: {description})
+M0
+T{number:02d} M6 G43 H{number:02d}
+"""

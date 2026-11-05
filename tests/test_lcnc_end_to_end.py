@@ -297,8 +297,17 @@ class TestEndToEnd(unittest.TestCase):
         self.assertTrue(self.shown()["origin_set"])
 
     def messages(self) -> str:
-        """Return every message that LinuxCNC has sent."""
-        return self.ask("messages").removeprefix("messages:").strip()
+        """Return every message LinuxCNC has sent, but tool prompts.
+
+        The tool change prompts (`(MSG, Insert T..: ...)`) are left
+        out: the headless HMI goes on from each one by itself.
+        """
+        text: str = self.ask("messages").removeprefix("messages:")
+        return " | ".join(
+            message.strip()
+            for message in text.split(" | ")
+            if message.strip() and not message.strip().startswith("Insert T")
+        )
 
     def test_start_up(self) -> None:
         """The HMI gets the shop's tools; the origin is well placed."""
@@ -454,6 +463,9 @@ class TestEndToEnd(unittest.TestCase):
             time.sleep(0.05)
         else:
             self.fail(f"Not done: {self.status()}")
+
+        # The only messages are the tool change prompts (`MSG`), each
+        # paused at and gone on from by the headless HMI.
         self.assertEqual(self.messages(), "")
 
         # The tools came in the program's order.
