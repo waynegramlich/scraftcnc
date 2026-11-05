@@ -99,6 +99,28 @@ class TestSetupComments(unittest.TestCase):
         self.assertFalse(any("note" in line for line in lines))
         self.assertEqual(setup_comments.read(lines), assembly)
 
+    def test_header(self) -> None:
+        """The shop and machine are written after the version, and read."""
+        assembly: Assembly = Assembly(
+            [AssemblyItem("part", "plate", "scraftcnc.demo:model", {})],
+            "Home shop",
+            "Shop mill",
+        )
+        lines: list[str] = setup_comments.write(assembly)
+        self.assertEqual(
+            lines[1:3],
+            ['(SCC: shop = "Home shop")', '(SCC: machine = "Shop mill")'],
+        )
+        self.assertEqual(setup_comments.read(lines), assembly)
+
+    def test_no_header(self) -> None:
+        """A file written before the header reads, naming neither."""
+        lines: list[str] = setup_comments.write(_assembly())
+        self.assertFalse(any("machine =" in line for line in lines))
+        read_back = setup_comments.read(lines)
+        assert read_back is not None
+        self.assertEqual((read_back.shop, read_back.machine), ("", ""))
+
     def test_other_lines_skipped(self) -> None:
         """G-code, other comments and indentation are skipped."""
         lines: list[str] = ["%", "(a comment)", "G21 (mm)"]

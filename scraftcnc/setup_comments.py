@@ -5,11 +5,11 @@ comments, `(SCC: ...)`, each holding one line of TOML.  The first one
 is `version = "..."` (`scraftcnc.__version__`), then the header: the
 `shop` and the `machine` in it that the program is for (by their
 names; either may be missing, as in files written before them), then
-one `[[item]]` table per item, in stacking order.  A `( ... )` comment can not hold
-a parenthesis, so `(` and `)` in TOML strings are written as the
-escapes `\\u0028` and `\\u0029`.  `write()` makes the lines, and
-`read()` (or `read_file()`) gets the assembly back from a whole
-program, skipping its other lines.
+one `[[item]]` table per item, in stacking order.  A `( ... )`
+comment can not hold a parenthesis, so `(` and `)` in TOML strings
+are written as the escapes `\\u0028` and `\\u0029`.  `write()` makes
+the lines, and `read()` (or `read_file()`) gets the assembly back
+from a whole program, skipping its other lines.
 """
 
 import math

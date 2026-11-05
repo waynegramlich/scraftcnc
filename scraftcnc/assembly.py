@@ -478,8 +478,11 @@ class Assembly:
         key: str
         for key in ("shop", "machine"):
             name: object = table.get(key, "")
+            # Every problem in a setup is a `ValueError` to its callers.
             if not isinstance(name, str):
-                raise ValueError(f"assembly: {key} must be a string")
+                raise ValueError(  # noqa: TRY004
+                    f"assembly: {key} must be a string"
+                )
             names.append(name)
         return Assembly(
             [

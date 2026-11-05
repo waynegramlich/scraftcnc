@@ -150,19 +150,57 @@ add to it.  New tests: `test_tabs` (walks all four tabs) and
 real (withdrawn) Tk window switched through all four tabs fine.
 Checkers are clean.  Unit suite: 605 tests OK, 13 skipped, 199 s.
 
-## 2026-11-05: S4 (partly done; the format lacks shop, machine, origin)
+## 2026-11-05: S4
 
-The `(SCC: ...)` comments carry only one of the four: the material
-(the part's `material`, "6061 aluminum", and the stock's short name
-`aluminum_6061`).  They have no shop, no machine (only a table,
-`mikini_1610l`), and no G54 origin in machine coordinates: the setup
-frame is the work frame (`named_origins()`), so the table's place in
-the machine is not known.  Done for the material:
-`setup_material()` takes the part's material, then the stock's, when
-the shop knows the name, else `MATERIAL`.  Each open sends the tool
-table again (`HMIMachine.write_tool_table()`, only while LinuxCNC is
-idle, otherwise a message).  The Tools tab's chooser starts on that
-material, and the position line ends with "Shop mill, <material>".
-Tests: `test_material_from_setup` and `test_material_fallback`.
-Checkers clean; unit suite 607 OK, 13 skipped, 229 s.  The options for
-the missing three go to the user (format not extended).
+The user chose option 2, and put the two material names (part
+"6061 aluminum", stock `aluminum_6061`) off until `T.sm2~5.5`.
+* Setup comments have a header after `version`: `shop` and `machine`
+  (names), written from `Assembly.shop`/`.machine` (new fields;
+  `demo_assembly()` fills them from its shop).  Older files without
+  the header still read (both `""`).
+* A shop's `machine_table` may give `x`, `y`, `z`: where the table's
+  reference point sits in machine coordinates.  The example mill has
+  6, 4.5, -13.64 in, which gives today's `ORIGIN` for the demo.
+  `Shops.md` was regenerated.
+* HMI: `setup_origin()` = table place in the machine (shop) minus the
+  setup's bottom item (a `table`) location.  Each open of such a
+  program sets G54 (`HMIMachine.set_work_origin()`, only while idle).
+  Without one, G54 is left as it is (`ORIGIN` from start-up).
+  `setup_material()` picks the material.  The tool table is sent again
+  on each open.  The position line ends with "<machine>, <material>".
+* A program for another machine (or shop): warn, not refuse.  The
+  message line says "Warning: the program is for X, not Shop mill;
+  origin not set".  The program still opens, LinuxCNC's own machine's
+  tool table is used, and G54 is not touched.
+* Tests: header round trip, no header, demo origin equals `ORIGIN`
+  (and in the HMI log), no origin without a table place, machine
+  mismatch warning.  Checkers clean; unit suite 612 OK, 13 skipped,
+  200 s.
+
+## 2026-11-05: S4 follow-up decisions (#38, #39)
+
+#38: a program for another shop or machine is refused (not opened;
+the program open before stays).  #39: no run without an origin set
+for this program: each open clears an "origin set" mark; it is set on
+open from the setup's worked-out origin, or by the operator (Set
+Origin; by hand per axis in S7).  Start is greyed out until then
+("Set the origin first").  `ORIGIN` is no longer set at start-up.
+Jog and MDI still work without an origin.
+
+S4 follow-up (#38, #39).  A program whose setup names another shop or
+machine is refused: `HMI.open()` raises `ValueError` before anything
+is sent (the port answers `error: Not opened: ...`, the message line
+says the same, and the program open before stays).  The origin gate:
+each open clears `origin_set`, and `HMI.mark_origin_set()` is the one
+place it is set (on open from `setup_origin()`, or by Set Origin,
+named or plain; S7 can call it too).  Until then Start is greyed out
+and the message line says "Set the origin first"; Set Origin stays
+pressable even at the origin; jogs, Home and MDI still work.  `show`
+has `origin_set`.  `ORIGIN` is gone from the HMI (start-up sets no
+G54).  The end-to-end suite (not run) sets G54 to (4, 3, -6) in its
+`setUpClass()` through the HMI, and `open_program()` presses Set
+Origin for programs without a setup origin.  Tests: `test_origin_gate`,
+`test_other_machine` (refused, previous program kept), demo Start
+enabled right after open.  Checkers clean; unit suite 613 OK, 13
+skipped, 209 s.
+End-to-end (`SCRAFTCNC_LINUXCNC=1`): all 10 tests pass with the origin gate, 138 s.

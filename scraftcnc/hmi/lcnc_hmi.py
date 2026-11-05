@@ -19,16 +19,19 @@ drawn; under the tabs, Open and Quit.  The tabs, one for each task:
 
 The LinuxCNC calls are kept in `HMIMachine`, a client (through
 `scraftcnc.lcnc.lcnc_client`) of `serve_linuxcnc` from
-`scraftcnc/lcnc/`, which runs LinuxCNC in its `lcnc` box, or in WSL
-on Windows.  So this runs outside the box, and
-needs only `tkinter`.  Closing it leaves LinuxCNC running, for another
-HMI.  When it starts, the machine is taken out of E-stop, turned on
-and homed if it needs to be (G54 is then set to `ORIGIN`), it is sent
-the shop's tool table, and the INI file's `MAX_FEED_OVERRIDE` limits
-the slider.  Each program opened sends the tool table again (while
-LinuxCNC is idle), for the material its setup comments name (the
-part's, else the stock's), or `MATERIAL` when they name none the shop
-knows; the position line shows the machine and material in use:
+`scraftcnc/lcnc/`, which runs LinuxCNC in its `lcnc` box, or in WSL on
+Windows.  So this runs outside the box, and needs only `tkinter`.
+Closing it leaves LinuxCNC running, for another HMI.  When it starts,
+the machine is taken out of E-stop, turned on and homed if it needs to
+be, it is sent the shop's tool table, and the INI file's
+`MAX_FEED_OVERRIDE` limits the slider.  Each program opened sends the
+tool table again (while LinuxCNC is idle), for the material its setup
+comments name (the part's, else the stock's), or `MATERIAL` when they
+name none the shop knows; the position line shows the machine and
+material in use.  A program whose setup names another shop or machine is
+refused.  A program may not start until its origin is set: from its
+setup (the shop's table place less the setup's table location), or by
+the operator with Set Origin:
 
 ```
 python3 -m scraftcnc.lcnc.serve_linuxcnc &
@@ -84,7 +87,7 @@ from pathlib import Path
 from typing import Any, Protocol, cast
 
 from .. import shops
-from ..assembly import Assembly, AssemblyItem
+from ..assembly import Assembly, AssemblyItem, millimeters
 from ..lcnc.lcnc_client import PORT, BridgeClient, BridgeError, constant
 from ..model_cache import ModelCache
 from ..pybind.scraftpybind import PyBind, connect
@@ -110,11 +113,6 @@ PROTOCOL: int = 2
 
 # How long a new LinuxCNC gets to turn on and to home (seconds).
 START_SECONDS: float = 60.0
-
-# The machine coordinates (inches) of the program's zero, on a new
-# LinuxCNC, as `sim_linuxcnc.ORIGIN` (which can not be imported, as it
-# needs the `linuxcnc` module).
-ORIGIN: tuple[float, float, float] = (4.0, 3.0, -6.0)
 
 # The steps a jog button can move (inches), the one chosen at start,
 # and how fast a jog moves (inches per second).
@@ -219,6 +217,87 @@ def setup_material(assembly: Assembly, names: list[str]) -> str:
         if isinstance(material, str) and material in names:
             return material
     return ""
+
+
+# Function `shop_name()`:
+def shop_name() -> str:
+    """Return the name of the HMI's shop (`SHOP_FILE`).
+
+    Returns:
+    * (`str`): Its name, or `""` when it can not be read.
+    """
+    try:
+        return str(shops.read(SHOP_FILE).get("name", ""))
+    except ValueError:
+        return ""
+
+
+# Function `setup_warning()`:
+def setup_warning(assembly: Assembly, shop: str) -> str:
+    """Return why a setup for another shop or machine is refused.
+
+    Arguments:
+    * `assembly` (`Assembly`): The setup.
+    * `shop` (`str`): The name of the HMI's shop.
+
+    Returns:
+    * (`str`): The reason, or `""` when the setup names neither, or
+      this shop and `SHOP_MACHINE`.
+    """
+    if assembly.machine and assembly.machine != SHOP_MACHINE:
+        return (
+            f"Not opened: the program is for {assembly.machine}, "
+            f"not {SHOP_MACHINE}"
+        )
+    if assembly.shop and shop and assembly.shop != shop:
+        return f"Not opened: the program is for {assembly.shop}, not {shop}"
+    return ""
+
+
+# Function `setup_origin()`:
+def setup_origin(
+    assembly: Assembly, shop: dict[str, object], machine: str
+) -> tuple[float, float, float] | None:
+    """Return the work origin (G54) a setup gives on a machine.
+
+    It is where the machine's table sits (its `table`'s `x`, `y` and
+    `z`, in machine coordinates) less where the setup puts the table
+    (its bottom item, which names a `table`), as the setup frame is
+    the work frame.
+
+    Arguments:
+    * `assembly` (`Assembly`): The setup.
+    * `shop` (`dict[str, object]`): The shop, from `shops.read()`.
+    * `machine` (`str`): The machine's name.
+
+    Returns:
+    * (`tuple[float, float, float] | None`): The origin (inches), or
+      `None` when the machine's table has no place or the setup's
+      bottom item is not a table.
+    """
+    # Where the machine's table sits, if the shop says.
+    machines: list[Any] = cast(list[Any], shop.get("machines", []))
+    table: dict[str, Any] = next(
+        (
+            cast(dict[str, Any], entry.get("table", {}))
+            for entry in machines
+            if entry.get("name") == machine
+        ),
+        {},
+    )
+    axes: tuple[str, ...] = ("x", "y", "z")
+    if not assembly.items or not all(axis in table for axis in axes):
+        return None
+    bottom: AssemblyItem = assembly.items[0]
+    if "table" not in bottom.args:
+        return None
+
+    # The table's place, less its place in the setup.
+    x, y, z = (
+        (millimeters(table[axis], f"table {axis}") - at) / 25.4
+        for axis, at in zip(axes, bottom.location, strict=True)
+    )
+    return (x, y, z)
 
 
 # Function `tool_speeds()`:
@@ -446,10 +525,9 @@ class HMIMachine:
     def start(self) -> None:
         """Get LinuxCNC ready, keeping what it has if already running.
 
-        It is turned on and homed if it needs to be, and then has
-        just started, so G54 is set to `ORIGIN`, whatever LinuxCNC kept
-        from its last run or another client set.  `serve_linuxcnc`
-        outlives the HMI, so an HMI opened later keeps the origin.
+        It is turned on and homed if it needs to be.  G54 is left as
+        LinuxCNC has it: each program gets its own origin, from its
+        setup or from the operator (`HMI.mark_origin_set()`).
         The shop's tool table is sent unless a program is running.
 
         Raises:
@@ -458,7 +536,7 @@ class HMIMachine:
         self.log.append("start")
         if self.lcnc is None:
             return
-        started: bool = self._home()
+        self._home()
         interp_state: int = self.lcnc.stat("interp_state")["interp_state"]
         if interp_state != self.constants["INTERP_IDLE"]:
             return
@@ -466,13 +544,30 @@ class HMIMachine:
         # The tool table, from the shop.
         self.write_tool_table(MATERIAL)
 
-        # The origin.  `G20` first: otherwise the numbers may be read
-        # as millimeters.
-        if started:
-            x, y, z = ORIGIN
-            self._mode("MODE_MDI")
-            self.lcnc.call("command.mdi", f"G20 G10 L2 P1 X{x} Y{y} Z{z}")
-            self.lcnc.call("command.wait_complete")
+    # Method `HMIMachine.set_work_origin()`:
+    def set_work_origin(self, origin: tuple[float, float, float]) -> bool:
+        """Set G54 to a point in machine coordinates, unless running.
+
+        Arguments:
+        * `origin` (`tuple[float, float, float]`): The point (inches).
+
+        Returns:
+        * (`bool`): `True` when it was set (always, with no LinuxCNC);
+          `False` when a program is running.
+        """
+        x, y, z = (round(value, 4) for value in origin)
+        self.log.append(f"origin {x} {y} {z}")
+        if self.lcnc is None:
+            return True
+        interp_state: int = self.lcnc.stat("interp_state")["interp_state"]
+        if interp_state != self.constants["INTERP_IDLE"]:
+            return False
+
+        # `G20` first: otherwise the numbers may be read as millimeters.
+        self._mode("MODE_MDI")
+        self.lcnc.call("command.mdi", f"G20 G10 L2 P1 X{x} Y{y} Z{z}")
+        self.lcnc.call("command.wait_complete")
+        return True
 
     # Method `HMIMachine.write_tool_table()`:
     def write_tool_table(self, material: str) -> bool:
@@ -1097,6 +1192,17 @@ class HMI:
     * `start` (`int`): The line Start runs from (counted from 1; 0
       for the program's start), chosen with -Tool and +Tool.
     * `tool_buttons` (`list[ttk.Button]`): -Tool and +Tool.
+    * `material` (`tk.StringVar`): The material the Tools tab shows.
+    * `material_chooser` (`ttk.Combobox`): Chooses that material.
+    * `next_tool` (`ttk.Label`): Room for the next tool and the time
+      left to it (`T.hs~5.1.5` S6).
+    * `notebook` (`ttk.Notebook`): The tabs.
+    * `origin_set` (`bool`): True once the open program's origin is
+      set (`mark_origin_set()`); Start waits for it.
+    * `program_machine` (`str`): The machine the program is for.
+    * `program_material` (`str`): The material it cuts.
+    * `tabs` (`dict[str, ttk.Frame]`): Each tab, by its name.
+    * `tools_table` (`tk.Text`): The tools' speeds and feeds.
     """
 
     # Method `HMI.__init__()`:
@@ -1141,6 +1247,8 @@ class HMI:
         self.drawn: Assembly | None = None
         self.drawing: bool = False
         self.program_material: str = MATERIAL
+        self.program_machine: str = SHOP_MACHINE
+        self.origin_set: bool = False
         root.title("SolidCraft LinuxCNC")
 
         # Above the tabs, on every tab: the work position and the tool,
@@ -1387,7 +1495,7 @@ class HMI:
         self.run_button.configure(
             text="Resume" if paused else "Start",
             state="disabled"
-            if (running and not paused) or self.drawing
+            if (running and not paused) or self.drawing or not self.origin_set
             else "normal",
         )
         self.pause_button.configure(
@@ -1425,12 +1533,50 @@ class HMI:
 
         Arguments:
         * `path` (`str`): The G-code file.
+
+        Raises:
+        * `ValueError`: If its setup is for another shop or machine.
+        * `FileNotFoundError`: If there is no such file.
         """
+        # A program for another shop or machine is refused, and the
+        # one open before stays open.
+        try:
+            assembly: Assembly | None = read_file(path)
+        except (OSError, ValueError):
+            assembly = None  # `open_setup()` reports it.
+        if assembly is not None:
+            refusal: str = setup_warning(assembly, shop_name())
+            if refusal:
+                self.message.configure(text=refusal)
+                raise ValueError(refusal)
+
+        # Open it; it may not run until its origin is set.
         self.machine.open(path)
         self.start = 0
         self.lines_file = ""  # Read it again, even when the same file.
+        self.message.configure(text="")
+        self.origin_set = False
         self.set_running(False, False)
         self.open_setup(path)
+        self.mark_origin_set(self.origin_set)
+
+    # Method `HMI.mark_origin_set()`:
+    def mark_origin_set(self, origin_set: bool = True) -> None:
+        """Mark whether the open program's origin is set.
+
+        The one place the mark is set: Start stays greyed out until it
+        is, and the message line says so.
+
+        Arguments:
+        * `origin_set` (`bool`): True once G54 is set for the program.
+        """
+        self.origin_set = origin_set
+        first: str = "Set the origin first"
+        if not origin_set and not str(self.message.cget("text")):
+            self.message.configure(text=first)
+        elif origin_set and str(self.message.cget("text")) == first:
+            self.message.configure(text="")
+        self.set_running(self.running, self.paused)
 
     # Method `HMI.use_setup()`:
     def use_setup(self, assembly: Assembly) -> None:
@@ -1439,13 +1585,29 @@ class HMI:
         Arguments:
         * `assembly` (`Assembly`): The program's setup.
         """
-        # Its material, when the shop knows it.
+        # The shop, so that its machine and materials can be checked.
         try:
-            names: list[str] = material_names(shops.read(SHOP_FILE))
+            shop: dict[str, object] = shops.read(SHOP_FILE)
         except ValueError as error:
             self.message.configure(text=f"Shop not read: {error}")
-            names = []
-        self.program_material = setup_material(assembly, names) or MATERIAL
+            shop = {}
+        self.program_material = (
+            setup_material(assembly, material_names(shop)) or MATERIAL
+        )
+
+        # Its origin, when the shop places the machine's table (`open()`
+        # has refused a program for another shop or machine).
+        self.program_machine = assembly.machine or SHOP_MACHINE
+        origin: tuple[float, float, float] | None = setup_origin(
+            assembly, shop, SHOP_MACHINE
+        )
+        if origin is not None:
+            if self.machine.set_work_origin(origin):
+                self.origin_set = True
+            else:
+                self.message.configure(
+                    text="Origin not set: a program is running"
+                )
 
         # Its origins, for Set Origin, then its drawing.
         try:
@@ -1487,6 +1649,7 @@ class HMI:
         self.setup_step = 0
         self.note = ""
         self.program_material = MATERIAL
+        self.program_machine = SHOP_MACHINE
         try:
             assembly: Assembly | None = read_file(path)
             text: str = Path(path).read_text(encoding="utf-8")
@@ -1508,7 +1671,10 @@ class HMI:
             filetypes=[("G-code", "*.ngc *.nc *.gcode"), ("All", "*")],
         )
         if path:
-            self.open(path)
+            try:
+                self.open(path)
+            except (ValueError, OSError) as error:
+                self.message.configure(text=str(error))
 
     # Method `HMI.show_tools()`:
     def show_tools(self) -> None:
@@ -1651,6 +1817,8 @@ class HMI:
                 self.machine.set_origin()
             except RuntimeError as error:
                 self.message.configure(text=str(error))
+            else:
+                self.mark_origin_set()
 
     # Method `HMI.on_next_step()`:
     def on_next_step(self) -> None:
@@ -1715,6 +1883,8 @@ class HMI:
                 self.machine.mdi(*lines)
             except RuntimeError as error:
                 self.message.configure(text=str(error))
+            else:
+                self.mark_origin_set()
 
     # Method `HMI.widgets()`:
     def widgets(self, parent: Any = None) -> Iterator[Any]:
@@ -1764,7 +1934,8 @@ class HMI:
           every text window, such as Tools), and `drawing` (True while
           a setup is being drawn in SolidCraft) and `origins` (the
           setup's named origins, work millimeters) and `setup_step`
-          (how many setup items Next Step shows; 0 for all), and
+          (how many setup items Next Step shows; 0 for all),
+          `origin_set` (True once the program's origin is set), and
           `tab` (the name of the tab shown).
         """
         widgets: list[Any] = list(self.widgets())
@@ -1780,6 +1951,7 @@ class HMI:
             "drawing": self.drawer is not None and self.drawer.busy,
             "origins": dict(self.origins),
             "setup_step": self.setup_step,
+            "origin_set": self.origin_set,
             "tab": self.tab(),
             "setup_progress": [
                 int(float(self.progress.cget("value"))),
@@ -1918,19 +2090,24 @@ class HMI:
             )
             self.set_text(self.coming, self.lines[current : current + SHOWN])
 
-        # Set Origin and Home only while stopped, away from the origin.
+        # Home only while stopped, away from the origin; Set Origin
+        # also while this program's origin is not set yet.
         x, y, z = status.position
         away: bool = max(abs(x), abs(y), abs(z)) > AT_ORIGIN
-        for button in (self.origin_button, self.home_button):
-            button.configure(
-                state="normal" if away and not self.running else "disabled"
-            )
+        self.home_button.configure(
+            state="normal" if away and not self.running else "disabled"
+        )
+        self.origin_button.configure(
+            state="normal"
+            if (away or not self.origin_set) and not self.running
+            else "disabled"
+        )
 
         # The position, the tool and any message.
         self.position.configure(
             text=f"X {x:9.4f}  Y {y:9.4f}  Z {z:9.4f}  T{status.tool:02d}"
             f"  start line {self.start}  "
-            f"{SHOP_MACHINE}, {self.program_material}"
+            f"{self.program_machine}, {self.program_material}"
         )
         if status.messages:
             self.message.configure(text=status.messages[-1])
@@ -2026,7 +2203,10 @@ def main(arguments: list[str]) -> int:
     panel.drawer = drawer
     signal.signal(signal.SIGTERM, lambda *_: root.destroy())
     if options.program:
-        panel.open(options.program)
+        try:
+            panel.open(options.program)
+        except (ValueError, OSError) as error:
+            panel.message.configure(text=str(error))
     root.mainloop()
     return 0
 

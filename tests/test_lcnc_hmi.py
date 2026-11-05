@@ -142,7 +142,7 @@ class TestStart(unittest.TestCase):
     """Getting a LinuxCNC ready."""
 
     def test_new_linuxcnc(self) -> None:
-        """A new one is turned on and homed, with the origin and tools."""
+        """A new one is turned on and homed, and gets the tools."""
         machine, lcnc = client_machine()
         lcnc.values["homed"] = [0, 0, 0]
         lcnc.values["task_state"] = 1
@@ -159,9 +159,8 @@ class TestStart(unittest.TestCase):
         machine.start()
         self.assertEqual(lcnc.sent("command.home"), [(-1,)])
         self.assertEqual(len(lcnc.sent("command.state")), 2)
-        self.assertEqual(
-            lcnc.sent("command.mdi"), [("G20 G10 L2 P1 X4.0 Y3.0 Z-6.0",)]
-        )
+        # No origin: each program gets its own (`mark_origin_set()`).
+        self.assertEqual(lcnc.sent("command.mdi"), [])
         table = lcnc.sent("tool_table.write")[0][0]
         self.assertTrue(table.startswith("T"), table)
         self.assertEqual(len(lcnc.sent("command.load_tool_table")), 1)
@@ -367,9 +366,34 @@ class TestHeadless(unittest.TestCase):
         self.assertEqual(self.tick()["coming"].split("\n")[0], "G20")
         self.assertEqual(self.machine.log[0], f"open {self.file}")
 
+    def open_with_origin(self) -> None:
+        """Open the program, and set its origin where the tool is."""
+        self.assertEqual(self.ask(f"open {self.file}"), "ok")
+        self.ask("answer yes")
+        self.assertEqual(self.ask("press Set Origin"), "ok")
+
+    def test_origin_gate(self) -> None:
+        """Start waits for the origin; jogs and MDI do not."""
+        self.ask(f"open {self.file}")
+        shown = self.tick()
+        self.assertFalse(shown["origin_set"])
+        self.assertEqual(shown["buttons"]["Start"], "disabled")
+        self.assertEqual(shown["buttons"]["+X"], "normal")
+        self.assertEqual(shown["message"], "Set the origin first")
+        self.ask("answer yes")
+        self.ask("press Set Origin")
+        shown = self.tick()
+        self.assertTrue(shown["origin_set"])
+        self.assertEqual(shown["buttons"]["Start"], "normal")
+        self.assertEqual(shown["message"], "")
+
+        # Opening it again clears the mark.
+        self.ask(f"open {self.file}")
+        self.assertFalse(self.tick()["origin_set"])
+
     def test_buttons_follow_the_run(self) -> None:
         """Start, Pause and Resume grey out as a person sees them."""
-        self.ask(f"open {self.file}")
+        self.open_with_origin()
         buttons = self.tick()["buttons"]
         self.assertEqual(buttons["Pause"], "disabled")
         self.assertEqual(self.ask("press Pause"), "error: Pause is greyed out")
@@ -389,14 +413,14 @@ class TestHeadless(unittest.TestCase):
             [
                 entry
                 for entry in self.machine.log
-                if not entry.startswith(("open", "tool table"))
+                if not entry.startswith(("open", "tool table", "mdi"))
             ],
             ["run 0", "pause", "resume", "stop"],
         )
 
     def test_tool_buttons(self) -> None:
         """+Tool and -Tool move the start line, and the coming window."""
-        self.ask(f"open {self.file}")
+        self.open_with_origin()
         self.tick()
         self.ask("press +Tool")
         self.ask("press +Tool")
@@ -565,7 +589,7 @@ class TestSetupDrawing(unittest.TestCase):
         assert self.panel.drawer is not None
         self.panel.drawer.wait()
         self.assertEqual(self.view.shown, [])
-        self.assertEqual(self.panel.show()["message"], "")
+        self.assertEqual(self.panel.show()["message"], "Set the origin first")
 
     def test_material_from_setup(self) -> None:
         """The setup's material picks the tool table and the Tools tab."""
@@ -592,6 +616,55 @@ class TestSetupDrawing(unittest.TestCase):
             self.machine.log[-1], f"tool table {lcnc_hmi.MATERIAL}"
         )
         self.assertEqual(self.panel.material.get(), lcnc_hmi.MATERIAL)
+
+    def test_origin_from_setup(self) -> None:
+        """The demo's table and the shop's table place: (4, 3, -6) in."""
+        assembly = demo_assembly()
+        origin = lcnc_hmi.setup_origin(
+            assembly, shops.read(EXAMPLE_SHOP), lcnc_hmi.SHOP_MACHINE
+        )
+        assert origin is not None
+        for got, want in zip(origin, (4.0, 3.0, -6.0), strict=True):
+            self.assertAlmostEqual(got, want, places=9)
+        self.panel.open(self.program(with_setup(self.gcode, assembly)))
+        self.assertIn("origin 4.0 3.0 -6.0", self.machine.log)
+        assert self.panel.drawer is not None
+        self.panel.drawer.wait()
+        self.root.run_one()
+        shown = self.panel.show()
+        self.assertTrue(shown["origin_set"])
+        self.assertEqual(shown["buttons"]["Start"], "normal")
+        self.assertIn("Shop mill, 6061 aluminum", self.tick_position())
+
+    def tick_position(self) -> str:
+        """Run one poll, and return the position line."""
+        self.root.run_one()
+        return str(self.panel.show()["position"])
+
+    def test_no_origin(self) -> None:
+        """Without the table's place, no origin is worked out."""
+        shop = shops.read(EXAMPLE_SHOP)
+        self.assertIsNone(
+            lcnc_hmi.setup_origin(demo_assembly(), shop, "Shop router")
+        )
+        self.assertIsNone(
+            lcnc_hmi.setup_origin(Assembly([]), shop, lcnc_hmi.SHOP_MACHINE)
+        )
+
+    def test_other_machine(self) -> None:
+        """A program for another machine is refused; the last stays."""
+        self.panel.open(self.program(self.gcode))
+        log = list(self.machine.log)
+        assembly = demo_assembly()
+        assembly.machine = "Shop router"
+        other = self.directory / "other.nc"
+        other.write_text(with_setup(self.gcode, assembly), encoding="utf-8")
+        answer = self.panel.handle(f"open {other}")
+        self.assertIn("Not opened: the program is for Shop router", answer)
+        self.assertIn("Not opened", self.panel.show()["message"])
+        self.assertEqual(self.machine.log, log)
+        self.assertEqual(self.machine.file, self.program_path())
+        self.assertIsNone(self.panel.assembly)
 
     def test_bad_setup(self) -> None:
         """A wrong setup line is reported; the program still opens."""

@@ -151,6 +151,37 @@ class TestEndToEnd(unittest.TestCase):
                     raise
                 time.sleep(0.2)
         cls.start_panel()
+        cls.set_work_origin()
+
+    @classmethod
+    def set_work_origin(cls) -> None:
+        """Set G54 to the demo's origin, (4, 3, -6) in, through the HMI.
+
+        The HMI sets no origin when it starts (each program gets its
+        own), and LinuxCNC keeps G54 from its last run.
+        """
+
+        def ask(line: str) -> str:
+            with socket.create_connection(
+                ("127.0.0.1", cls.port), 30.0
+            ) as port:
+                port.sendall(f"{line}\n".encode())
+                return port.makefile().readline().strip()
+
+        ask("type G20 G10 L2 P1 X4 Y3 Z-6")
+        end: float = time.monotonic() + STEP_TIME
+        while json.loads(ask("show"))["buttons"]["Execute"] != "normal":
+            if time.monotonic() > end:
+                raise TimeoutError("Execute never came up.")
+            time.sleep(0.05)
+        if ask("press Execute") != "ok":
+            raise RuntimeError("The origin could not be set.")
+        time.sleep(0.3)
+        while "state=idle" not in ask("status"):
+            if time.monotonic() > end:
+                raise TimeoutError("The origin was never set.")
+            time.sleep(0.05)
+        ask("type ")
 
     @classmethod
     def start_panel(cls) -> None:
@@ -244,7 +275,11 @@ class TestEndToEnd(unittest.TestCase):
         self.wait_idle()
 
     def open_program(self, name: str, text: str) -> None:
-        """Write a program here, and open it in the HMI."""
+        """Write a program here, and open it in the HMI.
+
+        A program with no setup origin has its origin set where the
+        tool is (the work origin, from `setUp()`), as an operator would.
+        """
         file: Path = Path(self.directory.name, name)
         file.write_text(text, encoding="utf-8")
         self.assertEqual(self.ask(f"open {file}"), "ok")
@@ -255,13 +290,18 @@ class TestEndToEnd(unittest.TestCase):
                 == text.split("\n", maxsplit=1)[0]
             ),
         )
+        if not self.shown()["origin_set"]:
+            self.ask("answer yes")
+            self.press("Set Origin")
+            self.wait_idle()
+        self.assertTrue(self.shown()["origin_set"])
 
     def messages(self) -> str:
         """Return every message that LinuxCNC has sent."""
         return self.ask("messages").removeprefix("messages:").strip()
 
     def test_start_up(self) -> None:
-        """The HMI gets the shop's tools, and an origin well placed."""
+        """The HMI gets the shop's tools; the origin is well placed."""
         with lcnc_client.BridgeClient() as lcnc:
             table = lcnc.stat("tool_table")["tool_table"]
             g5x = lcnc.stat("g5x_offset")["g5x_offset"][:3]
