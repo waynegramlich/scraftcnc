@@ -12,8 +12,9 @@ drawn; under the tabs, Open and Quit.  The tabs, one for each task:
   the line Start runs from to the previous or next tool change;
   Start, Pause and Reset) and a speed slider (the feed override).
 * Setup: Next Step (the setup's items, one at a time), Set Origin,
-  Home to the work origin, six jog buttons and the jog step (1 to
-  .0001 in).
+  Home to the work origin, Set X, Set Y and Set Z (the current
+  position on one axis made to read the number typed), six jog
+  buttons and the jog step (1 to .0001 in).
 * Tools: the tools' speeds and feeds, for a material chosen.
 * View: Keep-outs (shows or hides them in SolidCraft).
 
@@ -54,7 +55,8 @@ answers one line: `ping`, `open FILE`, `start` (or `run`), `pause`,
 `reset` (or `stop`), `tool+`, `tool-` (the start line to the next or
 previous tool change), `speed X`, `press LABEL` (presses a button on
 any tab, as a person would; refused when it is greyed out), `tab
-NAME` (shows a tab, as a person clicking it would), `type LINE` (into
+NAME` (shows a tab, as a person clicking it would), `origin AXIS
+NUMBER` (types into Set X, Y or Z's entry), `type LINE` (into
 the MDI line), `show` (all that the window shows, as JSON), `answer
 VALUE` (with `--headless`, the answer to the next question: `yes`, a
 file or a setup origin's name), `status`, `messages` (every message
@@ -137,6 +139,9 @@ POLL_MS: int = 100
 # `MAX_FEED_OVERRIDE`.
 MIN_SPEED: float = 0.01
 MAX_SPEED: float = 10.0
+
+# The axes whose origin can be set one at a time.
+AXES: tuple[str, ...] = ("X", "Y", "Z")
 
 # The rapid speed (inches per minute) when LinuxCNC does not say, as
 # the example shop's mill.
@@ -1379,6 +1384,11 @@ class HMI:
     * `notebook` (`ttk.Notebook`): The tabs.
     * `operator_paused` (`bool`): True while paused by Pause (not by
       the program's own `M0`).
+    * `axes_set` (`set[str]`): The axes whose origin is set since the
+      program was opened.
+    * `axis_buttons` (`dict[str, ttk.Button]`): Set X, Set Y, Set Z.
+    * `axis_entries` (`dict[str, tk.Entry]`): Their numbers' entries.
+    * `axis_texts` (`dict[str, tk.StringVar]`): The numbers typed.
     * `override` (`float`): The feed override (the speed slider).
     * `rapid` (`float`): How fast a rapid goes (inches per minute).
     * `spans` (`list[tuple[int, int]]`): The program's tool changes
@@ -1553,6 +1563,36 @@ class HMI:
         self.origin_button.pack(side="left", padx=1)
         self.home_button.pack(side="left", padx=1)
 
+        # Setup: each axis of the origin set by hand, to a number.
+        axis_line: ttk.Frame = ttk.Frame(setup_tab)
+        axis_line.pack(pady=2)
+        self.axis_texts: dict[str, tk.StringVar] = {}
+        self.axis_entries: dict[str, tk.Entry] = {}
+        self.axis_buttons: dict[str, ttk.Button] = {}
+        self.axes_set: set[str] = set()
+        axis: str
+        for axis in AXES:
+            self.axis_texts[axis] = tk.StringVar()
+            self.axis_entries[axis] = tk.Entry(
+                axis_line,
+                textvariable=self.axis_texts[axis],
+                width=9,
+                font="TkFixedFont",
+                background=BLANK,
+            )
+            self.axis_entries[axis].pack(side="left", padx=(8, 1))
+            self.axis_buttons[axis] = ttk.Button(
+                axis_line,
+                text=f"Set {axis}",
+                width=6,
+                state="disabled",
+                command=functools.partial(self.on_set_axis, axis),
+            )
+            self.axis_buttons[axis].pack(side="left", padx=1)
+            self.axis_texts[axis].trace_add(
+                "write", lambda *_: self.check_axes()
+            )
+
         # Setup: the jog buttons and their step (one chosen at a time).
         jog_line: ttk.Frame = ttk.Frame(setup_tab)
         jog_line.pack(pady=(2, 6))
@@ -1703,6 +1743,7 @@ class HMI:
         for widget in self.jog_buttons:
             widget.configure(state="disabled" if running else "normal")
         self.check_mdi()
+        self.check_axes()
 
     # Method `HMI.check_mdi()`:
     def check_mdi(self) -> None:
@@ -1774,12 +1815,77 @@ class HMI:
         * `origin_set` (`bool`): True once G54 is set for the program.
         """
         self.origin_set = origin_set
+        self.axes_set = set(AXES) if origin_set else set()
         first: str = "Set the origin first"
         if not origin_set and not str(self.message.cget("text")):
             self.message.configure(text=first)
-        elif origin_set and str(self.message.cget("text")) == first:
+        elif origin_set and str(self.message.cget("text")).startswith(
+            (first, "Origin still to set")
+        ):
             self.message.configure(text="")
         self.set_running(self.running, self.paused)
+
+    # Method `HMI.check_axes()`:
+    def check_axes(self) -> None:
+        """Color each axis entry, and grey out its button unless usable.
+
+        A button can be pressed only while stopped, with a number in
+        its entry.
+        """
+        axis: str
+        for axis in AXES:
+            text: str = self.axis_texts[axis].get().strip()
+            number: bool = True
+            try:
+                float(text)
+            except ValueError:
+                number = False
+            self.axis_entries[axis].configure(
+                background=BLANK if not text else GOOD if number else BAD
+            )
+            self.axis_buttons[axis].configure(
+                state="normal" if number and not self.running else "disabled"
+            )
+
+    # Method `HMI.on_set_axis()`:
+    def on_set_axis(self, axis: str) -> None:
+        """Make the current position on one axis read the number typed.
+
+        It asks first (No is the default), as setting the origin on a
+        real machine is a big deal.
+
+        Arguments:
+        * `axis` (`str`): `X`, `Y` or `Z`.
+        """
+        if self.running:
+            return
+        try:
+            value: float = float(self.axis_texts[axis].get())
+        except ValueError:
+            return
+        lines: list[str] = [
+            "G20" if self.inches else "G21",
+            f"G10 L20 P1 {axis}{value:g}",
+        ]
+        if not messagebox.askyesno(
+            f"Set {axis}",
+            f"Make the current {axis} read {value:g}: run {lines[-1]}?",
+            default="no",
+        ):
+            return
+        try:
+            self.machine.mdi(*lines)
+        except RuntimeError as error:
+            self.message.configure(text=str(error))
+            return
+
+        # All three axes set, one by one, make the origin set.
+        self.axes_set.add(axis)
+        if self.axes_set == set(AXES):
+            self.mark_origin_set()
+        else:
+            left: str = " ".join(a for a in AXES if a not in self.axes_set)
+            self.message.configure(text=f"Origin still to set: {left}")
 
     # Method `HMI.use_setup()`:
     def use_setup(self, assembly: Assembly) -> None:
@@ -2142,6 +2248,8 @@ class HMI:
           setup's named origins, work millimeters) and `setup_step`
           (how many setup items Next Step shows; 0 for all),
           `origin_set` (True once the program's origin is set),
+          `axes_set` (the axes set one by one, or all), `axis_entries`
+          (the numbers typed for them),
           `next_tool` (the next tool and the time left until it), and
           `tab` (the name of the tab shown).
         """
@@ -2159,6 +2267,10 @@ class HMI:
             "origins": dict(self.origins),
             "setup_step": self.setup_step,
             "origin_set": self.origin_set,
+            "axes_set": sorted(self.axes_set),
+            "axis_entries": {
+                axis: self.axis_texts[axis].get() for axis in AXES
+            },
             "next_tool": str(self.next_tool.cget("text")),
             "tab": self.tab(),
             "setup_progress": [
@@ -2207,6 +2319,11 @@ class HMI:
                 actions[word]()
             elif word == "press" and rest:
                 return self.press(rest.strip())
+            elif word == "origin" and rest:
+                axis, _, value = rest.strip().partition(" ")
+                if axis.upper() not in AXES:
+                    return f"error: no axis {axis}"
+                self.axis_texts[axis.upper()].set(value.strip())
             elif word == "tab" and rest:
                 self.select_tab(rest.strip())
             elif word == "type":

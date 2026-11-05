@@ -254,3 +254,23 @@ the new `tests/test_hmi_tool_changes.py` (S5's moved there too, as
 `test_lcnc_hmi.py` passed 1000 lines).  Checkers clean; unit suite 621
 OK, 13 skipped, 196 s.  End-to-end not run (time cap).
 End-to-end (`SCRAFTCNC_LINUXCNC=1`): all 10 pass with S6, 141 s.
+
+## 2026-11-05: S7
+
+The Setup tab has, for X, Y and Z, a number entry and a Set X / Set
+Y / Set Z button (`AXES`, `on_set_axis()`): the current position on
+that axis is made to read the number (`G20`/`G21`, then
+`G10 L20 P1 X<n>`), after a question with No as the default.  An
+entry is colored like the MDI line, and its button is greyed out
+unless it holds a number and nothing runs (`check_axes()`, also from
+`set_running()`).  `axes_set` counts the axes set since the program
+was opened; all three call `mark_origin_set()`, which is still the
+one place the mark is set (it also fills or clears `axes_set`, so
+Set Origin counts as all three and a new open clears them).  Until
+then the message line says "Origin still to set: Y Z".  Command
+port: `origin AXIS NUMBER` types into an entry; `show` has `axes_set`
+and `axis_entries`.  Tests: new `tests/test_hmi_origin_axes.py` (one
+axis, bad number, No sends nothing, all three enable Start, a new
+open clears, greyed out while running); `test_labels_unique` still
+passes.  Checkers clean; unit suite 626 OK, 13 skipped, 200 s;
+end-to-end all 10 pass, 139 s.
