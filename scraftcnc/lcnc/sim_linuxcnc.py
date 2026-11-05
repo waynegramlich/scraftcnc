@@ -108,9 +108,11 @@ class Sample:
       coordinates, in the machine's units).
     * `tool` (`int`): The T number of the tool in the spindle (0 for
       none).
+    * `origin` (`Position`): The work origin in machine coordinates
+      (the G5x and G92 offsets), in the machine's units.
 
     Constructor:
-    * `Sample(time, line, position, tool)`
+    * `Sample(time, line, position, tool, origin)`
     """
 
     # Constructor arguments:
@@ -118,6 +120,7 @@ class Sample:
     line: int = field(init=True)
     position: Position = field(init=True)
     tool: int = field(init=True)
+    origin: Position = field(init=True, default=(0.0, 0.0, 0.0))
 
     # Method `Sample.text()`:
     def text(self) -> str:
@@ -333,6 +336,20 @@ class Simulator:
         )
         return (x, y, z)
 
+    # Method `Simulator.work_origin()`:
+    def work_origin(self) -> tuple[float, float, float]:
+        """Return the polled work origin in machine coordinates.
+
+        Returns:
+        * (`tuple[float, float, float]`): X, Y and Z: the G54 (or
+          other G5x) and G92 offsets.
+        """
+        stat = self.stat
+        x, y, z = (
+            stat.g5x_offset[axis] + stat.g92_offset[axis] for axis in range(3)
+        )
+        return (x, y, z)
+
     # Method `Simulator.follow()`:
     def follow(self, out: Path, listeners: Sequence[SampleListener]) -> int:
         """Poll the position until the program ends.
@@ -367,6 +384,7 @@ class Simulator:
                     self.stat.motion_line,
                     self.work_position(),
                     self.stat.tool_in_spindle,
+                    self.work_origin(),
                 )
                 samples_file.write(sample.text() + "\n")
                 samples += 1
@@ -417,6 +435,7 @@ class Simulator:
                 self.stat.motion_line,
                 self.work_position(),
                 self.stat.tool_in_spindle,
+                self.work_origin(),
             )
             samples += 1
             if samples % round(10.0 / POLL) == 0:

@@ -36,6 +36,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Protocol
 
+from ..carousel import Plan, gcode_sequence, plan, spoke_ends
+from ..machine import Machine
 from ..model_cache import ModelCache
 from ..plot import PathMove, command_moves, read_gcode
 from ..pybind.scraftpybind import (
@@ -44,12 +46,20 @@ from ..pybind.scraftpybind import (
     Transport,
     connect,
 )
-from ..shops import loaded_tools, read
+from ..shops import cnc_machine, loaded_tools, read
 from ..tooling.cutter_models import ModeledTool, model_tool
-from .probe_batch import path_steps, send_batch, sketch_steps
+from .probe_batch import (
+    InstallStep,
+    path_steps,
+    send_batch,
+    sketch_steps,
+)
 
 # SolidCraft's coordinates are millimeters.
 MM_PER_INCH: float = 25.4
+
+# The material cut, by default, for the machine's drills (`--material`).
+MATERIAL: str = "6061 aluminum"
 
 # The tools' color in SolidCraft.
 TOOL_COLOR: str = "#e07020"
@@ -75,6 +85,8 @@ class Sample(Protocol):
       none).
     * `position` (`Position`): The tool tip's X, Y and Z (inches,
       program coordinates).
+    * `origin` (`Position`): The work origin in machine coordinates
+      (inches).
     """
 
     # Property `Sample.line`:
@@ -91,6 +103,11 @@ class Sample(Protocol):
     @property
     def position(self) -> Position:
         """The tool tip's X, Y and Z (inches, program coordinates)."""
+
+    # Property `Sample.origin`:
+    @property
+    def origin(self) -> Position:
+        """The work origin in machine coordinates (inches)."""
 
 
 # Class `ToolModel`:
@@ -325,11 +342,174 @@ class PathRack:  # pylint: disable=too-few-public-methods
             self.draw(order[order.index(number) + 1])
 
 
+# Class `CarouselView`:
+# It holds the carousel's whole state (slots, turn, placing and its
+# drawn sketches), which is more than seven attributes.
+class CarouselView:  # pylint: disable=too-many-instance-attributes
+    """A machine's tool carousel in SolidCraft: spokes and their tools.
+
+    The spokes are one 3D sketch of lines from the hub, one per slot,
+    with the slot in use at +X, where a tool goes in or out of the
+    spindle; each slot's tool stands on its tip at its spoke's end.  A
+    tool change turns the spokes (a sketch for each slot at +X, drawn
+    when first needed, only one shown) and moves the tools with them,
+    with no animation.  The hub is in machine coordinates, so the
+    picture is placed again when the work origin changes.
+
+    Attributes:
+    * `front` (`int`): The slot at +X (from 1).
+    * `hub` (`Position`): The hub (machine coordinates, inches).
+    * `length` (`float`): The spokes' length (inches).
+    * `origin` (`Position | None`): The work origin it was placed for,
+      or `None` before the first sample.
+    * `plan` (`Plan`): The program's slot plan.
+    * `rack` (`ToolRack`): The tools, shared with the spindle.
+    * `session` (`Transport`): The transport, for the batches.
+    * `shown` (`str`): The spokes' sketch shown (`""` for none).
+    * `sketches` (`dict[tuple[int, Position], str]`): Each drawn
+      spokes' sketch, by front slot and hub (work inches).
+    * `slots` (`dict[int, int]`): Each slot's tool (T number), by slot.
+    * `solidcraft` (`PyBind`): The SolidCraft session.
+    """
+
+    # Method `CarouselView.__init__()`:
+    def __init__(
+        self,
+        solidcraft: PyBind,
+        session: Transport,
+        machine: Machine,
+        planned: Plan,
+        rack: "ToolRack",
+    ) -> None:
+        """Keep the carousel; nothing is drawn before the first sample.
+
+        Arguments:
+        * `solidcraft` (`PyBind`): The SolidCraft session.
+        * `session` (`Transport`): Its transport, for the batches.
+        * `machine` (`Machine`): The machine, with its carousel.
+        * `planned` (`Plan`): The program's slot plan.
+        * `rack` (`ToolRack`): The tools.
+        """
+        self.solidcraft: PyBind = solidcraft
+        self.session: Transport = session
+        self.hub: Position = machine.carousel_hub
+        self.length: float = machine.spoke_length
+        self.plan: Plan = planned
+        self.rack: ToolRack = rack
+        self.slots: dict[int, int] = dict(planned.load)
+        self.front: int = 1
+        self.origin: Position | None = None
+        self.shown: str = ""
+        self.sketches: dict[tuple[int, Position], str] = {}
+
+    # Method `CarouselView.work_hub()`:
+    def work_hub(self) -> Position:
+        """Return the hub in work coordinates.
+
+        Returns:
+        * (`Position`): The hub less the work origin (inches).
+        """
+        origin: Position = self.origin or (0.0, 0.0, 0.0)
+        x, y, z = (
+            round(hub - at, 6)
+            for hub, at in zip(self.hub, origin, strict=True)
+        )
+        return (x, y, z)
+
+    # Method `CarouselView.draw()`:
+    def draw(self) -> None:
+        """Show the spokes for the slot at +X, and the tools in place.
+
+        The tool in the spindle is left to the rack.
+        """
+        # The spokes, drawn once for each slot at +X and hub.
+        hub: Position = self.work_hub()
+        ends: dict[int, Position] = spoke_ends(
+            hub, self.length, len(self.slots) or 1, self.front
+        )
+        key: tuple[int, Position] = (self.front, hub)
+        if key not in self.sketches:
+            name: str = f"Carousel {len(self.sketches) + 1}"
+            lines: list[InstallStep] = [
+                {
+                    "command": "sketch.line3d",
+                    "params": {
+                        "points": [
+                            [value * MM_PER_INCH for value in hub],
+                            [value * MM_PER_INCH for value in end],
+                        ]
+                    },
+                }
+                for end in ends.values()
+            ]
+            send_batch(self.session, sketch_steps(name, lines, True))
+            self.sketches[key] = name
+        if self.sketches[key] != self.shown:
+            if self.shown:
+                self.solidcraft.browser.visibility(
+                    visible=False, items=[self.shown]
+                )
+            self.shown = self.sketches[key]
+            self.solidcraft.browser.visibility(
+                visible=True, items=[self.shown]
+            )
+
+        # Each slot's tool at its spoke's end, but the one in use.
+        slot: int
+        number: int
+        for slot, number in self.slots.items():
+            if number == self.rack.current or number not in self.rack.tools:
+                continue
+            model: ToolModel = self.rack.tools[number]
+            model.move_to(ends[slot])
+            self.solidcraft.browser.visibility(
+                visible=True, items=model.modeled.items()
+            )
+
+    # Method `CarouselView.sample()`:
+    def sample(self, sample: Sample, changed: bool) -> None:
+        """Follow the work origin and tool changes.
+
+        Arguments:
+        * `sample` (`Sample`): Where the tool is.
+        * `changed` (`bool`): True when the tool in the spindle has
+          just changed (the rack has already shown the new one).
+        """
+        if not changed and sample.origin == self.origin:
+            return
+        self.origin = sample.origin
+        number: int = sample.tool
+        if changed and number:
+            # A tool not in a slot comes in by the swap planned for it.
+            if number not in self.slots.values():
+                for swap in self.plan.swaps:
+                    if (
+                        swap.into == number
+                        and self.slots.get(swap.slot) == swap.out
+                    ):
+                        self.slots[swap.slot] = number
+                        if swap.out in self.rack.tools:
+                            self.solidcraft.browser.visibility(
+                                visible=False,
+                                items=self.rack.tools[
+                                    swap.out
+                                ].modeled.items(),
+                            )
+                        break
+            # The slot in use turns to +X.
+            for slot, held in self.slots.items():
+                if held == number:
+                    self.front = slot
+        self.draw()
+
+
 # Class `SolidCraftDisplay`:
 class SolidCraftDisplay:
     """A `sim_linuxcnc.SampleListener` that shows the run in SolidCraft.
 
     Attributes:
+    * `carousel` (`CarouselView | None`): The machine's tool carousel,
+      or `None` for a machine whose tools are changed by hand.
     * `paths` (`PathRack`): Each tool's path; the one in the spindle
       is shown.
     * `rack` (`ToolRack`): The tools, whose one in the spindle
@@ -342,6 +522,7 @@ class SolidCraftDisplay:
         solidcraft: PyBind,
         tools: dict[int, tuple[str, dict[str, object]]],
         paths: PathRack,
+        carousel: tuple[Transport, Machine, Plan] | None = None,
     ) -> None:
         """Model the tools.
 
@@ -351,9 +532,17 @@ class SolidCraftDisplay:
         * `tools` (`dict[int, tuple[str, dict[str, object]]]`):
           The tools, by T number (from `shops.loaded_tools()`).
         * `paths` (`PathRack`): Each tool's path, drawn.
+        * `carousel` (`tuple[Transport, Machine, Plan] | None`):
+          The session's transport, the machine and the program's slot
+          plan, for a machine with a carousel; else `None`.
         """
         self.rack: ToolRack = ToolRack(solidcraft, tools, ModelCache())
         self.paths: PathRack = paths
+        self.carousel: CarouselView | None = (
+            None
+            if carousel is None
+            else CarouselView(solidcraft, *carousel, self.rack)
+        )
 
     # Method `SolidCraftDisplay.sample()`:
     def sample(self, sample: Sample) -> None:
@@ -367,7 +556,10 @@ class SolidCraftDisplay:
           answering.
         """
         self.paths.show(sample.tool)
+        changed: bool = sample.tool != self.rack.current
         self.rack.move_to(sample.tool, sample.position)
+        if self.carousel is not None:
+            self.carousel.sample(sample, changed)
 
     # Method `SolidCraftDisplay.finish()`:
     def finish(self) -> None:
@@ -387,6 +579,11 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         default="",
         help="a SolidCraft GUI's control port (or `headless`), "
         "where a tool follows",
+    )
+    parser.add_argument(
+        "--material",
+        default=MATERIAL,
+        help="the material cut, for the drills' speeds (default: %(default)s)",
     )
 
 
@@ -434,10 +631,23 @@ def display(
     * `SolidCraftError` or `OSError`: If SolidCraft fails or is not
       there.
     """
+    # A machine with a carousel gets it, planned for the program.
+    shop: dict[str, object] = read(options.shop)
+    machine: Machine = cnc_machine(
+        shop, options.machine, getattr(options, "material", MATERIAL)
+    )
+    sequence: list[int] = gcode_sequence(
+        program.read_text(encoding="utf-8").splitlines()
+    )
     with transport(options.solidcraft) as session:
         solidcraft: PyBind = PyBind(session)
         yield SolidCraftDisplay(
             solidcraft,
-            loaded_tools(read(options.shop), options.machine),
+            loaded_tools(shop, options.machine),
             PathRack(solidcraft, session, program),
+            (
+                (session, machine, plan(sequence, machine.carousel_slots))
+                if machine.carousel_slots > 0 and sequence
+                else None
+            ),
         )

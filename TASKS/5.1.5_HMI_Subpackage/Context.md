@@ -377,3 +377,22 @@ The end-to-end suite's `messages()` also leaves out `Swap tool`
 prompts.  Tests: new `tests/test_carousel.py`, `test_demo_pauses`
 changed.  Checkers clean; unit suite 640 OK, 13 skipped, 194 s;
 end-to-end all 10 pass, 137 s.
+
+## 2026-11-05: S11 (done by Claude directly; no sub-agents)
+
+The carousel is drawn in SolidCraft by `sim_solidcraft.CarouselView`:
+the spokes are a 3D sketch of lines from the hub, one sketch per slot
+at +X (drawn when first needed, only one shown), and each slot's tool
+stands on its tip at its spoke's end.  A change turns the new tool's
+slot to +X; a swap hides the tool taken out.  The hub is in machine
+coordinates; samples now carry the work origin (`Sample.origin`,
+G5x + G92, from `Simulator.work_origin()`), and a new origin places
+everything again.  `carousel.spoke_ends()` does the geometry.
+`display()` builds the machine with `shops.cnc_machine()` (new
+`--material`, default 6061 aluminum) and plans from the program's
+text.  Tests: `tests/test_sim_carousel.py` (7).  Unit suite 647 OK,
+13 skipped, 238 s.  `./show_demo.py --headless`: four spoke sketches
+(`Carousel 1`-`4`, 4 wires each) at work (-7, 1.5, 4) in = hub
+(-3, 4.5, -2) less G54 (4, 3, -6); no errors, 114 s.  Known: a tool
+shown in the carousel shows its holder bands even while the Holders
+toggle hides holders, until the HMI applies the toggle again.

@@ -16,6 +16,7 @@ code of the id's digits (`cutter_models.py`), e.g. "Swap tool 23
 which can not hold parentheses, the colors go in brackets.
 """
 
+import math
 import re
 from dataclasses import dataclass, field
 
@@ -238,3 +239,36 @@ def plan_text(machine: Machine, sequence: list[int]) -> list[str]:
         )
         lines.append(f"  change {swap.change + 1}, slot {swap.slot}: {text}")
     return lines
+
+
+# Function `spoke_ends()`:
+def spoke_ends(
+    hub: tuple[float, float, float], length: float, slots: int, front: int
+) -> dict[int, tuple[float, float, float]]:
+    """Return where each slot's spoke ends, with one slot at +X.
+
+    The slots go around counterclockwise (seen from above) in order,
+    evenly spaced, with `front` on the +X spoke, where a tool is put
+    in or taken out.
+
+    Arguments:
+    * `hub` (`tuple[float, float, float]`): The hub's center.
+    * `length` (`float`): From the hub to each slot.
+    * `slots` (`int`): How many slots (at least 1).
+    * `front` (`int`): The slot at +X (from 1).
+
+    Returns:
+    * (`dict[int, tuple[float, float, float]]`): Each slot's end, by
+      slot (from 1), at the hub's height.
+    """
+    x, y, z = hub
+    ends: dict[int, tuple[float, float, float]] = {}
+    slot: int
+    for slot in range(1, slots + 1):
+        angle: float = 2.0 * math.pi * (slot - front) / slots
+        ends[slot] = (
+            x + length * math.cos(angle),
+            y + length * math.sin(angle),
+            z,
+        )
+    return ends
