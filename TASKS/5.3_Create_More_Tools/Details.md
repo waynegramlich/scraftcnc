@@ -10,6 +10,8 @@ Here is a partial list of more tools to support:
   * Flange Nuts: (e.g. Shars: Page: 330 PN#: 202-4805)
   * Axis Setter: (e.g. Shars: Page: 314 PN#: 303-3104)
   * Edge Finder: (e.g. Shars: Page: 415 PN#: 202-1781)
+  * Center Finder (from `T.hs~5.1.5`)
+  * Z-Axis Tool Setter: (e.g. Shars: Page 414) (from `T.hs~5.1.5`)
   * Countersink: (e.g. Shars: Page: 25 PN#: 415-5457)
   * Single Angle Cutter: (e.g. Shars: Page: 25 PN#: 430-0336)
   * T-slot Cutters: (e.g. Shars: Page 54 PN: 404-1700)

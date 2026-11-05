@@ -1,11 +1,15 @@
 {
-  "state": "Pending",
+  "state": "Open",
   "created": "2026-11-03T21:14:46Z",
-  "updated": "2026-11-03T21:14:46Z",
+  "updated": "2026-11-05T18:37:30Z",
   "history": [
     {
       "state": "Pending",
       "time": "2026-11-03T21:14:46Z"
+    },
+    {
+      "state": "Open",
+      "time": "2026-11-05T18:37:30Z"
     }
   ],
   "tag": "cmt"
