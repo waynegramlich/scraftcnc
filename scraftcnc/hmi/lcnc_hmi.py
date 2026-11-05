@@ -72,6 +72,7 @@ echo "open demo.ngc" | nc -q 1 127.0.0.1 5007
 
 import argparse
 import functools
+import itertools
 import json
 import math
 import queue
@@ -90,6 +91,7 @@ from .. import shops
 from ..assembly import Assembly, AssemblyItem, millimeters
 from ..lcnc.lcnc_client import PORT, BridgeClient, BridgeError, constant
 from ..model_cache import ModelCache
+from ..plot import PathMove, command_moves, read_gcode
 from ..pybind.scraftpybind import PyBind, connect
 from ..setup_comments import read_file
 from ..setup_view import SetupView, named_origins
@@ -135,6 +137,10 @@ POLL_MS: int = 100
 # `MAX_FEED_OVERRIDE`.
 MIN_SPEED: float = 0.01
 MAX_SPEED: float = 10.0
+
+# The rapid speed (inches per minute) when LinuxCNC does not say, as
+# the example shop's mill.
+RAPID_SPEED: float = 60.0
 
 # How many lines the executed and coming windows show.
 SHOWN: int = 6
@@ -356,6 +362,19 @@ def line_kind(line: str) -> str:
 
 # Function `tool_changes()`:
 def tool_changes(lines: list[str]) -> list[int]:
+    """Return the lines that start each tool change (`change_spans()`).
+
+    Arguments:
+    * `lines` (`list[str]`): The program's lines.
+
+    Returns:
+    * (`list[int]`): Their numbers, counted from 1, in order.
+    """
+    return [start for start, _ in change_spans(lines)]
+
+
+# Function `change_spans()`:
+def change_spans(lines: list[str]) -> list[tuple[int, int]]:
     """Return the lines that start each tool change.
 
     A change starts at its message and pause (`CHANGE_LEAD`) when it
@@ -365,9 +384,10 @@ def tool_changes(lines: list[str]) -> list[int]:
     * `lines` (`list[str]`): The program's lines.
 
     Returns:
-    * (`list[int]`): Their numbers, counted from 1, in order.
+    * (`list[tuple[int, int]]`): Each change's first line and its `M6`
+      line, counted from 1, in order.
     """
-    starts: list[int] = []
+    spans: list[tuple[int, int]] = []
     number: int
     line: str
     for number, line in enumerate(lines, 1):
@@ -375,8 +395,136 @@ def tool_changes(lines: list[str]) -> list[int]:
             start: int = number
             while start > 1 and CHANGE_LEAD.match(lines[start - 2]):
                 start -= 1
-            starts.append(start)
-    return starts
+            spans.append((start, number))
+    return spans
+
+
+# Function `line_minutes()`:
+def line_minutes(lines: list[str], rapid_speed: float) -> list[float]:
+    """Return how long each line of a program takes, roughly.
+
+    The moves are read as the tool path viewer reads them
+    (`plot.command_moves()`): rapids at `rapid_speed`, feeds at the `F`
+    in effect, arcs by their length, and a canned drilling cycle as a
+    rapid over each hole and one feed down (its pecks left out).
+    Acceleration is ignored, so a program of many short moves takes
+    longer than this.  Units are as the program's (inches here); a
+    line that can not be read takes no time.
+
+    Arguments:
+    * `lines` (`list[str]`): The program's lines.
+    * `rapid_speed` (`float`): How fast a rapid goes, per minute.
+
+    Returns:
+    * (`list[float]`): Minutes, one per line.
+    """
+    # Read each line by itself, so that one odd line costs nothing.
+    commands: list[dict[str, Any]] = []
+    line: str
+    for line in lines:
+        try:
+            commands.append(cast(dict[str, Any], read_gcode(line)[0]))
+        except (ValueError, IndexError):
+            commands.append({})
+
+    # Add up each move's length over its speed.
+    minutes: list[float] = [0.0] * len(lines)
+    move: PathMove
+    for move in command_moves(cast(Any, commands)):
+        speed: float = rapid_speed if move["g"] == 0 else move["f"]
+        if speed > 0.0:
+            length: float = sum(
+                math.dist(start, end)
+                for start, end in itertools.pairwise(move["pts"])
+            )
+            minutes[move["line"]] += length / speed
+    return minutes
+
+
+# Function `clock()`:
+def clock(minutes: float) -> str:
+    """Return minutes as `M:SS`.
+
+    Arguments:
+    * `minutes` (`float`): The time.
+
+    Returns:
+    * (`str`): E.g. `3:42`.
+    """
+    seconds: int = round(minutes * 60.0)
+    return f"{seconds // 60}:{seconds % 60:02d}"
+
+
+# Function `change_tool_label()`:
+def change_tool_label(lines: list[str], span: tuple[int, int]) -> str:
+    """Return the tool a change puts in, with its description.
+
+    Arguments:
+    * `lines` (`list[str]`): The program's lines.
+    * `span` (`tuple[int, int]`): The change's first and `M6` lines.
+
+    Returns:
+    * (`str`): E.g. `T05 1/8 in 90 deg carbide chamfer mill`, from its
+      `MSG` line, else its `M6` line and comment.
+    """
+    start, change = span
+    message: re.Match[str] | None = re.match(
+        r"^\s*\(MSG,\s*Insert\s+(T\d+):\s*([^()]*)\)", lines[start - 1]
+    )
+    if message is not None:
+        return f"{message.group(1)} {message.group(2).strip()}"
+    tool: re.Match[str] | None = re.search(r"\bT\d+", lines[change - 1])
+    note: re.Match[str] | None = re.search(r"\(([^()]*)\)", lines[change - 1])
+    return " ".join(
+        found.group(index)
+        for found, index in ((tool, 0), (note, 1))
+        if found is not None
+    )
+
+
+# Function `next_tool_text()`:
+def next_tool_text(
+    lines: list[str],
+    sums: list[float],
+    spans: list[tuple[int, int]],
+    line: int,
+    override: float,
+) -> str:
+    """Return the next tool, and the time left until it.
+
+    Arguments:
+    * `lines` (`list[str]`): The program's lines.
+    * `sums` (`list[float]`): Minutes up to each line: `sums[n]` is
+      the time of lines 1 to `n` (so `len(lines) + 1` of them).
+    * `spans` (`list[tuple[int, int]]`): The tool changes
+      (`change_spans()`).
+    * `line` (`int`): The line being run, or run from (from 1).
+    * `override` (`float`): The feed override.
+
+    Returns:
+    * (`str`): E.g. `Next: T05 ... in 3:42`, `Now: T05 ..., cut 3:42`
+      at a change (as at its prompt), or `Last tool: 2:10 to the
+      end`; `""` for no program.
+    """
+    if not lines:
+        return ""
+    line = min(max(line, 1), len(lines))
+    rate: float = max(override, 1e-6)
+    index: int
+    span: tuple[int, int]
+    for index, span in enumerate(spans):
+        start, change = span
+        end: int = (
+            spans[index + 1][0] if index + 1 < len(spans) else len(lines) + 1
+        )
+        if start <= line <= change:
+            cut: float = (sums[end - 1] - sums[change]) / rate
+            return f"Now: {change_tool_label(lines, span)}, cut {clock(cut)}"
+        if start > line:
+            left: float = (sums[start - 1] - sums[line - 1]) / rate
+            return f"Next: {change_tool_label(lines, span)} in {clock(left)}"
+    left = (sums[len(lines)] - sums[line - 1]) / rate
+    return f"Last tool: {clock(left)} to the end"
 
 
 # Class `HMIStatus`:
@@ -611,6 +759,23 @@ class HMIMachine:
         self.lcnc.call("command.load_tool_table")
         self.lcnc.call("command.wait_complete")
         return True
+
+    # Method `HMIMachine.rapid_speed()`:
+    def rapid_speed(self) -> float:
+        """Return how fast a rapid goes, from the INI file.
+
+        Returns:
+        * (`float`): Its `[TRAJ] MAX_LINEAR_VELOCITY` (or
+          `MAX_VELOCITY`), per minute, or `RAPID_SPEED`.
+        """
+        if self.lcnc is None:
+            return RAPID_SPEED
+        key: str
+        for key in ("MAX_LINEAR_VELOCITY", "MAX_VELOCITY"):
+            found: str | None = self.lcnc.call("ini.find", "TRAJ", key)
+            if found:
+                return float(found) * 60.0
+        return RAPID_SPEED
 
     # Method `HMIMachine.max_speed()`:
     def max_speed(self) -> float:
@@ -1214,6 +1379,12 @@ class HMI:
     * `notebook` (`ttk.Notebook`): The tabs.
     * `operator_paused` (`bool`): True while paused by Pause (not by
       the program's own `M0`).
+    * `override` (`float`): The feed override (the speed slider).
+    * `rapid` (`float`): How fast a rapid goes (inches per minute).
+    * `spans` (`list[tuple[int, int]]`): The program's tool changes
+      (`change_spans()`).
+    * `sums` (`list[float]`): Minutes up to each line of the program
+      (`time_program()`).
     * `origin_set` (`bool`): True once the open program's origin is
       set (`mark_origin_set()`); Start waits for it.
     * `program_machine` (`str`): The machine the program is for.
@@ -1267,6 +1438,10 @@ class HMI:
         self.program_machine: str = SHOP_MACHINE
         self.origin_set: bool = False
         self.operator_paused: bool = False
+        self.override: float = 1.0
+        self.rapid: float = machine.rapid_speed()
+        self.sums: list[float] = [0.0]
+        self.spans: list[tuple[int, int]] = []
         root.title("SolidCraft LinuxCNC")
 
         # Above the tabs, on every tab: the work position and the tool,
@@ -1478,6 +1653,7 @@ class HMI:
           slider's range.
         """
         speed = min(max(speed, MIN_SPEED), self.top_speed)
+        self.override = speed
         self.speed.set(math.log10(speed))
         self.speed_text.set(f"{speed:.2g}x")
         self.machine.set_speed(speed)
@@ -1577,6 +1753,15 @@ class HMI:
         self.set_running(False, False)
         self.open_setup(path)
         self.mark_origin_set(self.origin_set)
+
+    # Method `HMI.time_program()`:
+    def time_program(self) -> None:
+        """Time the program's lines, once per program read."""
+        self.spans = change_spans(self.lines)
+        self.sums = [0.0]
+        minutes: float
+        for minutes in line_minutes(self.lines, self.rapid):
+            self.sums.append(self.sums[-1] + minutes)
 
     # Method `HMI.mark_origin_set()`:
     def mark_origin_set(self, origin_set: bool = True) -> None:
@@ -1956,7 +2141,8 @@ class HMI:
           a setup is being drawn in SolidCraft) and `origins` (the
           setup's named origins, work millimeters) and `setup_step`
           (how many setup items Next Step shows; 0 for all),
-          `origin_set` (True once the program's origin is set), and
+          `origin_set` (True once the program's origin is set),
+          `next_tool` (the next tool and the time left until it), and
           `tab` (the name of the tab shown).
         """
         widgets: list[Any] = list(self.widgets())
@@ -1973,6 +2159,7 @@ class HMI:
             "origins": dict(self.origins),
             "setup_step": self.setup_step,
             "origin_set": self.origin_set,
+            "next_tool": str(self.next_tool.cget("text")),
             "tab": self.tab(),
             "setup_progress": [
                 int(float(self.progress.cget("value"))),
@@ -2086,6 +2273,7 @@ class HMI:
         if status.file != self.lines_file:
             self.lines_file = status.file
             self.lines = self.machine.program_lines(status.file)
+            self.time_program()
         # The buttons follow LinuxCNC's state (a program may end, or be
         # stopped, without the HMI).
         if status.state and (
@@ -2133,6 +2321,18 @@ class HMI:
             state="normal"
             if (away or not self.origin_set) and not self.running
             else "disabled"
+        )
+
+        # The next tool, and the time left until it (cheap: the line
+        # times are added up once per program).
+        self.next_tool.configure(
+            text=next_tool_text(
+                self.lines,
+                self.sums,
+                self.spans,
+                status.line if self.running else self.start,
+                self.override,
+            )
         )
 
         # The position, the tool and any message.

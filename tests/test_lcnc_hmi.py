@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, cast
 from unittest import mock
 
-from scraftcnc import demo, shops
+from scraftcnc import shops
 from scraftcnc.assembly import Assembly
 from scraftcnc.demo import demo_assembly, with_setup
 from scraftcnc.hmi import lcnc_hmi, lcnc_hmi_headless
@@ -114,56 +114,6 @@ def client_machine() -> tuple[lcnc_hmi.HMIMachine, FakeClient]:
         "STATE_ON": STATE_ON,
     }
     return machine, lcnc
-
-
-class TestToolChangePause(unittest.TestCase):
-    """The pause at a tool change (`T.hs~5.1.5` S5)."""
-
-    def test_demo_pauses(self) -> None:
-        """The demo tells the operator, and pauses, at each change."""
-        use_shop(shops.read(EXAMPLE_SHOP))
-        lines = demo.cut_demo()[0].gcode().splitlines()
-        changes = [
-            number
-            for number, line in enumerate(lines)
-            if lcnc_hmi.TOOL_CHANGE.search(line)
-        ]
-        self.assertGreater(len(changes), 1)
-        for number in changes:
-            tool = lines[number].split()[0]
-            self.assertEqual(lines[number - 1], "M0")
-            self.assertTrue(
-                lines[number - 2].startswith(f"(MSG, Insert {tool}: ")
-            )
-
-        # -Tool and +Tool land on each change's message.
-        starts = lcnc_hmi.tool_changes(lines)
-        self.assertEqual(starts, [number - 1 for number in changes])
-
-    def test_starts(self) -> None:
-        """A change without a message starts at its `M6`."""
-        lines = ["G20", "(MSG, Insert T01: a)", "M0", "T01 M6", "T02 M6"]
-        self.assertEqual(lcnc_hmi.tool_changes(lines), [2, 5])
-
-    def test_headless_goes_on(self) -> None:
-        """Headless, the program's own pause goes on; Pause's does not."""
-        lcnc_hmi.use_headless()
-        machine, lcnc = client_machine()
-        root: Any = lcnc_hmi_headless.Tk()
-        panel = lcnc_hmi.HMI(cast(Any, root), machine, 10.0, None)
-        lcnc.interp_state = RUNNING
-        lcnc.values["paused"] = True
-        lcnc.errors = [[13, "Insert T04: a drill"]]
-        panel.running = True
-        root.run_one()
-        self.assertIn("Insert T04: a drill", panel.show()["message"])
-        self.assertEqual(len(lcnc.sent("command.auto")), 1)
-
-        # A pause from Pause waits for a person.
-        panel.on_pause()
-        sent = len(lcnc.sent("command.auto"))
-        root.run_one()
-        self.assertEqual(len(lcnc.sent("command.auto")), sent)
 
 
 class TestConnecting(unittest.TestCase):

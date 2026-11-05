@@ -233,3 +233,24 @@ later tests saw the demo's prompts); the HMI now strips messages, and
 the suite's `messages()` leaves the `Insert T..` prompts out.  Re-run:
 all 10 pass, 139 s, the real `M0` pauses gone on from by the headless
 HMI.
+
+## 2026-11-05: S6
+
+The Run tab's `next_tool` label shows "Next: T05 <description> in
+M:SS", "Now: T05 <description>, cut M:SS" (from a change's `MSG` line
+to its `M6`, as when paused at its prompt), or "Last tool: M:SS to the
+end".  `line_minutes()` times each line once per program
+(`HMI.time_program()`, kept as running sums, so a poll only
+subtracts): it reuses `plot.read_gcode()` (line by line, an odd line
+costs nothing) and `plot.command_moves()`; rapids at the INI's
+`[TRAJ] MAX_LINEAR_VELOCITY` (or `MAX_VELOCITY`) x 60
+(`HMIMachine.rapid_speed()`, `RAPID_SPEED` = 60 in/min without
+LinuxCNC), feeds at `F`, arcs by length, drill cycles without pecks;
+acceleration ignored.  Time left is divided by the feed override.
+`change_spans()` gives each change's first and `M6` lines
+(`tool_changes()` uses it).  `show` has `next_tool`.  Demo: lines add
+up to 11.49 min, the demo's own estimate 11.83 min (pecks).  Tests in
+the new `tests/test_hmi_tool_changes.py` (S5's moved there too, as
+`test_lcnc_hmi.py` passed 1000 lines).  Checkers clean; unit suite 621
+OK, 13 skipped, 196 s.  End-to-end not run (time cap).
+End-to-end (`SCRAFTCNC_LINUXCNC=1`): all 10 pass with S6, 141 s.
