@@ -38,7 +38,7 @@ from .pybind.scraftpybind import (
     SCPyBind,
     connect,
 )
-from .shops import ANGLE, LENGTH, grid_plates, measure, read
+from .shops import ANGLE, LENGTH, measure, read
 from .tooling.cutter_models import MM_PER_INCH
 from .tooling.mount import (
     SCLayer,
@@ -48,12 +48,9 @@ from .tooling.mount import (
     SCTableLayer,
     _inches,
 )
+from .tooling.registry import key as name_key_of
+from .tooling.shop_registries import use_shop
 from .tooling.tools import (
-    GRID_PLATE,
-    KURT_D688,
-    MIKINI_1610L,
-    MILL_TABLES,
-    PARALLELS,
     TABLE_MARGIN,
     VISE_MARGIN,
     Point,
@@ -78,30 +75,11 @@ RAW_OPACITY: float = 0.35
 # How far apart two lengths may be and still be the same (millimeters).
 TOLERANCE: float = 1.0e-6
 
-# What the JSON can name.
-TABLES: dict[str, SCMillTable] = {
-    table.name: table for table in (*MILL_TABLES, MIKINI_1610L)
-}
-MACHINE_VISES: dict[str, SCMachineVise] = {KURT_D688.name: KURT_D688}
-PARALLEL_TYPES: dict[str, SCParallel] = {
-    parallel.name: parallel for parallel in PARALLELS
-}
-
-
-# The shop whose tooling the JSON can name, beyond what `tools.py` has.
+# The shop whose tooling the JSON can name, chosen by `main()`
+# (`use_shop()`).
 SHOP: Path = (
     Path(__file__).resolve().parents[1] / "examples/shop/home_shop.toml"
 )
-
-
-# The grid plates the JSON can name: `tools.GRID_PLATE` and the shop's.
-PARTS: dict[str, SCGridPlate] = {
-    GRID_PLATE.name: GRID_PLATE,
-    **{
-        name: SCGridPlate.from_shop(plate)
-        for name, plate in grid_plates(read(SHOP)).items()
-    },
-}
 
 
 # Class `SCPlacement`:
@@ -114,7 +92,7 @@ class SCPlacement:
     * `y` (`float`): The Y of its center (millimeters).
     * `z` (`float`): The Z of its bottom (millimeters).
     * `turns` (`int`):
-      How many quarter turns clockwise it is turned, from 0 to 3.
+      Quarter turns about +Z, right handed (+X to +Y), from 0 to 3.
 
     Constructor:
     * `SCPlacement(x, y, z, turns)`
@@ -184,7 +162,7 @@ class SCPlacement:
             solidcraft.solid.move(
                 bodies=bodies,
                 axis=(0, 0, 1),
-                angle=f"{-90 * self.turns} deg",
+                angle=f"{90 * self.turns} deg",
             )
         if self.x != 0.0 or self.y != 0.0:
             solidcraft.solid.move(
@@ -456,7 +434,7 @@ class _SCReader:
 
     # Method `_SCReader.turns()`:
     def turns(self, entry: Any, path: str) -> int:
-        """Return an orientation as quarter turns clockwise.
+        """Return an orientation as quarter turns counterclockwise.
 
         Arguments:
         * `entry` (`Any`): The orientation, from the JSON.
@@ -475,7 +453,7 @@ class _SCReader:
         if degrees % 90.0 != 0.0:
             self.problem(path, f"{entry!r} is not a whole quarter turn")
             return 0
-        return round(-degrees / 90.0) % 4
+        return round(degrees / 90.0) % 4
 
     # Method `_SCReader.tool()`:
     def tool(self, entry: Any, path: str) -> SCPlacedTool | None:
@@ -497,14 +475,18 @@ class _SCReader:
         placement: SCPlacement = self.placement(item, path)
         name: str = self.text(item["type"], f"{path}.type")
         layer: SCLayer | None = None
-        if kind == "mill_table" and name in TABLES:
-            layer = SCTableLayer(TABLES[name])
-        elif kind == "parallel" and name in PARALLEL_TYPES:
-            layer = SCParallelLayer(PARALLEL_TYPES[name])
-        elif kind == "machine_vise" and name in MACHINE_VISES:
-            layer = self.vise(MACHINE_VISES[name], item["opening"], path)
-        elif kind == "grid_plate" and name in PARTS:
-            layer = PARTS[name]
+        name_key: str = name_key_of(name)
+        if kind == "mill_table" and name_key in SCMillTable.REGISTRY.items:
+            layer = SCTableLayer(SCMillTable.named(name))
+        elif kind == "parallel" and name_key in SCParallel.REGISTRY.items:
+            layer = SCParallelLayer(SCParallel.named(name))
+        elif (
+            kind == "machine_vise" and name_key in SCMachineVise.REGISTRY.items
+        ):
+            vise: SCMachineVise = SCMachineVise.named(name)
+            layer = self.vise(vise, item["opening"], path)
+        elif kind == "grid_plate" and name_key in SCGridPlate.REGISTRY.items:
+            layer = SCGridPlate.named(name)
         elif kind not in (
             "mill_table",
             "parallel",
@@ -556,10 +538,10 @@ class _SCReader:
         )
         placement: SCPlacement = self.placement(item, path)
         name: str = self.text(item["type"], f"{path}.type")
-        if name not in PARTS:
+        if name_key_of(name) not in SCGridPlate.REGISTRY.items:
             self.problem(f"{path}.type", f"{name!r} is not a known part")
             return None
-        return SCPlacedWork(PARTS[name], placement)
+        return SCPlacedWork(SCGridPlate.named(name), placement)
 
     # Method `_SCReader.material()`:
     def material(self, entry: Any, path: str) -> SCPlacedWork | None:
@@ -757,6 +739,9 @@ class SCSetup:
     # Method `SCSetup.__init__()`:
     def __init__(self, setup_json: dict[str, Any]) -> None:
         """Read a setup.
+
+        The setup names the tooling of the shop in use, which the
+        program chooses once, at its start (`use_shop()`).
 
         Arguments:
         * `setup_json` (`dict[str, Any]`): The setup, as parsed JSON.
@@ -972,7 +957,7 @@ class SCSetup:
                 (part.solid.name, part.placement) for part in material.parts
             )
         for name, place in items:
-            degrees: int = (180 - 90 * place.turns) % 360 - 180
+            degrees: int = (180 + 90 * place.turns) % 360 - 180
             lines.append(
                 f"  Z {_inches(place.z):>10}  X {_inches(place.x):>10}  "
                 f"Y {_inches(place.y):>10}  {degrees:>4} deg  {name}"
@@ -987,6 +972,7 @@ def main() -> None:
     arguments: list[str] = sys.argv[1:]
     target: str = arguments.pop() if arguments else "8080"
     path: Path = Path(arguments[0]) if arguments else EXAMPLE
+    use_shop(read(SHOP))
     setup: SCSetup = SCSetup(json.loads(path.read_text(encoding="utf-8")))
     with connect(target) as transport:
         solidcraft: SCPyBind = SCPyBind(transport)

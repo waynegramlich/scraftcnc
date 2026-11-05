@@ -2,12 +2,12 @@
 """Bring up the whole chain, for showing it off, in one command.
 
 On Linux, this starts LinuxCNC's simulator (`serve_linuxcnc`, from
-`scraftcnc/lcnc/`, in its `lcnc` box), a SolidCraft window with the
-demonstration's plate in it, standing on the table, vise, parallels and
-grid plate of `examples/setup/demo_stack.json`, the watcher that
-moves the tool in SolidCraft (`sim_linuxcnc --watch`, in the box),
-and last the panel (`lcnc_panel.py`), stopped, with the demonstration's
-program open:
+`scraftcnc/lcnc/`, in its `lcnc` box), a SolidCraft window, the
+watcher that moves the tool in SolidCraft (`sim_linuxcnc --watch`, in
+the box), and last the panel (`lcnc_hmi.py`), stopped, with the
+demonstration's program open.  The panel draws the program's setup
+(table, vise, parallels, grid plate, stock and the plate) in
+SolidCraft from its `(SCC: ...)` lines alone:
 
 ```
 ./show_demo.py
@@ -26,6 +26,9 @@ the next start does not ask about them.  Only this show's SolidCraft's
 files are removed; their names hold its process ID.
 """
 
+# The show, GUI and headless, and its report, are one script.
+# pylint: disable=too-many-lines
+
 import argparse
 import getpass
 import json
@@ -36,9 +39,11 @@ import socket
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import FrameType
+from typing import Any, cast
 
 # Run as `./show_demo.py` (from any directory): the repository root
 # goes on the path, so that the `scraftcnc` package can be imported.
@@ -46,9 +51,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from scraftcnc.lcnc.lcnc_client import PORT as LINUXCNC_PORT
 from scraftcnc.lcnc.lcnc_client import SCBridgeError, SCClient
-from scraftcnc.model_cache import SCModelCache
-from scraftcnc.pybind.scraftpybind import SCPyBind, SCSolidCraftError, connect
-from scraftcnc.setups import SCSetup
+from scraftcnc.pybind.scraftpybind import SCPyBind, connect
 
 # Where everything is.
 PROJECT: Path = Path(__file__).resolve().parent
@@ -56,7 +59,6 @@ SERVER_PROJECT: Path = PROJECT
 SOLIDCRAFT_BESIDE: Path = (
     PROJECT.parent / "solidcraft" / "solidcraft-linux-x86_64.AppImage"
 )
-STACK: Path = PROJECT / "examples" / "setup" / "demo_stack.json"
 WORK: Path = Path.home() / ".cache" / "scraftcnc" / "show"
 SOLIDCRAFT_DATA: Path = Path.home() / ".local" / "share" / "solidcraft"
 
@@ -78,6 +80,11 @@ CLOSE_SECONDS: float = 15.0
 
 # How often to look at what is running (seconds).
 POLL: float = 0.25
+
+# How long a headless run may show no change (seconds): while it cuts,
+# and while the setup is drawn (tooling not in the cache is built).
+STALL_SECONDS: float = 60.0
+DRAW_SECONDS: float = 400.0
 
 # How much of a log to show after a failure (lines).
 LOG_LINES: int = 15
@@ -213,9 +220,174 @@ def recovery_files(recovery: Path, pid: int) -> list[Path]:
     ]
 
 
+# A bounding box: the low corner, then the high one (millimeters).
+Box = tuple[tuple[float, float, float], tuple[float, float, float]]
+
+
+# Function `wire_box()`:
+def wire_box(sketch: dict[str, Any]) -> Box | None:
+    """Return the bounding box of a sketch's wires (from `sketch.inspect`).
+
+    Each straight wire's ends bound it; an arc's ends do not quite,
+    which is close enough for a report.
+
+    Arguments:
+    * `sketch` (`dict[str, Any]`): The sketch, as inspected.
+
+    Returns:
+    * (`Box | None`): The box, or `None` with no wires.
+    """
+    points: list[list[float]] = [
+        point
+        for wire in sketch.get("wires", [])
+        for point in (wire["start"], wire["end"])
+    ]
+    if not points:
+        return None
+    low: tuple[float, float, float] = (
+        min(point[0] for point in points),
+        min(point[1] for point in points),
+        min(point[2] for point in points),
+    )
+    high: tuple[float, float, float] = (
+        max(point[0] for point in points),
+        max(point[1] for point in points),
+        max(point[2] for point in points),
+    )
+    return low, high
+
+
+# Function `edge_box()`:
+def edge_box(edges: list[dict[str, Any]]) -> Box | None:
+    """Return the bounding box of a body's edges (from `model.edges`).
+
+    `document.inspect`'s `bbox` is in the body's own component frame,
+    so a body inserted from a STEP file with a placement matrix shows
+    unplaced there; `model.edges` gives world points.  Each edge's
+    ends and middle bound it (an arc's not quite).
+
+    Arguments:
+    * `edges` (`list[dict[str, Any]]`): The edges.
+
+    Returns:
+    * (`Box | None`): The box, or `None` with no edges.
+    """
+    return wire_box(
+        {
+            "wires": [
+                {"start": edge["start"], "end": edge[key]}
+                for edge in edges
+                for key in ("mid", "end")
+            ]
+        }
+    )
+
+
+# Function `box_text()`:
+def box_text(box: Box | None) -> str:
+    """Return a bounding box as text, in millimeters.
+
+    Arguments:
+    * `box` (`Box | None`): The box, or `None`.
+
+    Returns:
+    * (`str`): `[x y z] .. [x y z]`, or `empty`.
+    """
+    if box is None:
+        return "empty"
+    low: str = " ".join(f"{value:.2f}" for value in box[0])
+    high: str = " ".join(f"{value:.2f}" for value in box[1])
+    return f"[{low}] .. [{high}]"
+
+
+# Function `union()`:
+def union(boxes: list[Box]) -> Box | None:
+    """Return the box around several boxes.
+
+    Arguments:
+    * `boxes` (`list[Box]`): The boxes.
+
+    Returns:
+    * (`Box | None`): The box around them, or `None` with none.
+    """
+    if not boxes:
+        return None
+    low: tuple[float, float, float] = (
+        min(box[0][0] for box in boxes),
+        min(box[0][1] for box in boxes),
+        min(box[0][2] for box in boxes),
+    )
+    high: tuple[float, float, float] = (
+        max(box[1][0] for box in boxes),
+        max(box[1][1] for box in boxes),
+        max(box[1][2] for box in boxes),
+    )
+    return low, high
+
+
+# Function `session_report()`:
+def session_report(
+    bodies: list[dict[str, Any]], sketches: list[dict[str, Any]]
+) -> list[str]:
+    """Return the report of what a session holds.
+
+    Every body with its bounding box, every sketch with its wires and
+    their bounding box, then how the tool path (the watcher's sketches
+    named `T.. path`) lines up with the plate in X and Y.
+
+    Arguments:
+    * `bodies` (`list[dict[str, Any]]`): `document.inspect`'s bodies.
+    * `sketches` (`list[dict[str, Any]]`): Each sketch, from
+      `sketch.inspect`.
+
+    Returns:
+    * (`list[str]`): The lines.
+    """
+    lines: list[str] = [f"{len(bodies)} bodies:"]
+    plate: Box | None = None
+    body: dict[str, Any]
+    for body in bodies:
+        bbox: dict[str, list[float]] = body["bbox"]
+        box: Box = (
+            (bbox["min"][0], bbox["min"][1], bbox["min"][2]),
+            (bbox["max"][0], bbox["max"][1], bbox["max"][2]),
+        )
+        if body["name"] == "Plate":
+            plate = box
+        lines.append(f"  {body['name']}: {box_text(box)}")
+
+    # The sketches, and the tool path's box.
+    lines.append(f"{len(sketches)} sketches:")
+    path: list[Box] = []
+    sketch: dict[str, Any]
+    for sketch in sketches:
+        found: Box | None = wire_box(sketch)
+        wires: int = len(sketch.get("wires", []))
+        lines.append(f"  {sketch['name']}: {wires} wires, {box_text(found)}")
+        if found is not None and str(sketch["name"]).endswith(" path"):
+            path.append(found)
+
+    # How the path's middle sits from the plate's middle (#78).
+    whole: Box | None = union(path)
+    lines.append(f"Plate: {box_text(plate)}")
+    lines.append(f"Tool path: {box_text(whole)}")
+    if plate is not None and whole is not None:
+        offset: list[float] = [
+            (whole[0][axis] + whole[1][axis] - plate[0][axis] - plate[1][axis])
+            / 2.0
+            for axis in range(2)
+        ]
+        lines.append(
+            f"Path middle - plate middle: X {offset[0]:.2f} mm, "
+            f"Y {offset[1]:.2f} mm"
+        )
+    return lines
+
+
 # Class `SCShow`:
+# One method per step of the show, GUI and headless, so many of them.
 @dataclass(slots=True)
-class SCShow:
+class SCShow:  # pylint: disable=too-many-public-methods
     """The programs of one show, and what it takes to close them.
 
     Attributes:
@@ -419,58 +591,31 @@ class SCShow:
                 raise SCShowFailed(f"SolidCraft never wrote {token}.")
             time.sleep(POLL)
 
-    # Method `SCShow.model_part()`:
-    def model_part(self) -> None:
-        """Write the program, and model the plate in SolidCraft.
+    # Method `SCShow.write_program()`:
+    def write_program(self) -> None:
+        """Write the program, with its setup as `(SCC: ...)` lines.
 
         Raises:
         * `SCShowFailed`: If it fails.
         """
-        say("Modeling the plate in SolidCraft.")
-        self.logs["model"] = WORK / "model.log"
+        say("Writing the program.")
+        self.logs["program"] = WORK / "program.log"
         with (
             self.program.open("wb") as program,
-            self.logs["model"].open("wb") as log,
+            self.logs["program"].open("wb") as log,
         ):
             done = subprocess.run(
-                [sys.executable, "-m", "scraftcnc.demo",
-                 "--no-path", "--opaque", str(self.options.solidcraft_port)],
+                [sys.executable, "-m", "scraftcnc.demo"],
                 cwd=PROJECT,
                 stdin=subprocess.DEVNULL,
                 stdout=program,
                 stderr=log,
                 check=False,
-            )  # fmt: skip
+            )
         if done.returncode != 0:
             raise SCShowFailed(
-                f"Modeling the plate failed.\n{self.log_end('model')}"
+                f"Writing the program failed.\n{self.log_end('program')}"
             )
-
-    # Method `SCShow.model_stack()`:
-    def model_stack(self) -> None:
-        """Model what the plate stands on, in the plate's coordinates.
-
-        It comes after the plate, so that the plate's pocket can not cut
-        anything else, and the view is set again to take it all in.
-
-        Raises:
-        * `SCShowFailed`: If it fails.
-        """
-        say("Modeling the table, vise, parallels and grid plate.")
-        try:
-            setup: SCSetup = SCSetup(
-                json.loads(STACK.read_text(encoding="utf-8"))
-            )
-            with connect(str(self.options.solidcraft_port)) as transport:
-                solidcraft: SCPyBind = SCPyBind(transport)
-
-                # The plate leaves the design in inches.
-                setup.model(solidcraft, SCModelCache(), "in")
-                solidcraft.view.apply(view="iso")
-        except (OSError, ValueError, SCSolidCraftError) as error:
-            raise SCShowFailed(
-                f"Modeling the stack failed: {error}"
-            ) from error
 
     # Method `SCShow.start_watcher()`:
     def start_watcher(self) -> None:
@@ -502,6 +647,8 @@ class SCShow:
     def start_panel(self) -> None:
         """Start the panel, stopped, with the program open.
 
+        The panel draws the program's setup in SolidCraft.
+
         Raises:
         * `SCShowFailed`: If it does not come up.
         """
@@ -509,8 +656,11 @@ class SCShow:
         say("Starting the panel.")
         self.start(
             "panel",
-            [sys.executable, "-m", "scraftcnc.hmi.lcnc_panel",
-             "--port", str(port), str(self.program)],
+            [sys.executable, "-m", "scraftcnc.hmi.lcnc_hmi",
+             "--port", str(port),
+             "--solidcraft", str(self.options.solidcraft_port),
+             *(["--headless"] if self.options.headless else []),
+             str(self.program)],
         )  # fmt: skip
         self.wait_for_port("panel", port)
         with socket.create_connection(("127.0.0.1", port), 5.0) as panel:
@@ -534,7 +684,8 @@ class SCShow:
                 "the panel": self.options.panel_port,
             }
         )
-        find_solidcraft(self.options.solidcraft)
+        if not self.options.headless:
+            find_solidcraft(self.options.solidcraft)
         WORK.mkdir(parents=True, exist_ok=True)
         self.start_box()
         self.update_linuxcnc()
@@ -546,11 +697,204 @@ class SCShow:
             SERVER_PROJECT,
         )  # fmt: skip
         self.wait_for_port("linuxcnc", LINUXCNC_PORT)
-        self.start_solidcraft()
-        self.model_part()
-        self.model_stack()
+        if self.options.headless:
+            self.start_headless_solidcraft()
+        else:
+            self.start_solidcraft()
+        self.write_program()
         self.start_watcher()
         self.start_panel()
+
+    # Method `SCShow.start_headless_solidcraft()`:
+    def start_headless_solidcraft(self) -> None:
+        """Serve a headless SolidCraft session on the control port.
+
+        Raises:
+        * `SCShowFailed`: If it does not come up.
+        """
+        port: int = self.options.solidcraft_port
+        say("Starting a headless SolidCraft.")
+        self.start(
+            "solidcraft_headless",
+            [sys.executable, "-u", "-m", "scraftcnc.pybind.headless_server",
+             str(port)],
+        )  # fmt: skip
+        self.wait_for_port("solidcraft_headless", port)
+
+    # Method `SCShow.ask()`:
+    def ask(self, line: str) -> str:
+        """Send one line to the panel's port, and return its answer.
+
+        Arguments:
+        * `line` (`str`): The command.
+
+        Returns:
+        * (`str`): The answer.
+        """
+        address: tuple[str, int] = ("127.0.0.1", self.options.panel_port)
+        with socket.create_connection(address, 30.0) as panel:
+            panel.sendall(f"{line}\n".encode())
+            return panel.makefile().readline().strip()
+
+    # Method `SCShow.watch()`:
+    def watch(
+        self,
+        what: str,
+        done: Callable[[dict[str, str]], bool],
+        stall: float = STALL_SECONDS,
+    ) -> None:
+        """Poll the panel until something is done, printing messages.
+
+        Arguments:
+        * `what` (`str`): What is waited for, for the messages.
+        * `done` (`Callable[[dict[str, str]], bool]`): Given the
+          panel's status words and its `message` and `drawing`,
+          whether it is done.
+        * `stall` (`float`): How long nothing may change (seconds).
+
+        Raises:
+        * `SCShowFailed`: If nothing changes for `stall` seconds.
+        """
+        message: str = ""
+        last: str = ""
+        moved: float = time.monotonic()
+        while True:
+            for name in self.running:
+                self.check_alive(name)
+            shown: dict[str, Any] = json.loads(self.ask("show"))
+            words: dict[str, str] = dict(
+                word.split("=", 1)
+                for word in self.ask("status").split()
+                if "=" in word
+            )
+            words["message"] = str(shown["message"])
+            words["drawing"] = str(shown["drawing"])
+            if words["message"] and words["message"] != message:
+                say(f"Panel: {words['message']}")
+            message = words["message"]
+            if done(words):
+                return
+            now: str = json.dumps(words, sort_keys=True)
+            if now != last:
+                last, moved = now, time.monotonic()
+            elif time.monotonic() - moved > stall:
+                raise SCShowFailed(f"Stalled waiting for {what}: {now}")
+            time.sleep(POLL)
+
+    # Method `SCShow.report()`:
+    def report(self) -> None:
+        """Print every body and sketch in the headless session."""
+        with connect(str(self.options.solidcraft_port)) as transport:
+            solidcraft: SCPyBind = SCPyBind(transport)
+            document: Any = solidcraft.document.inspect(measure=True)
+
+            # World boxes, from each body's edges (see `edge_box()`).
+            body: dict[str, Any]
+            for body in document["bodies"]:
+                edges: Any = solidcraft.model.edges(body=body["name"])
+                box: Box | None = edge_box(edges["edges"])
+                if box is not None:
+                    body["bbox"] = {"min": box[0], "max": box[1]}
+            sketches: list[dict[str, Any]] = [
+                cast(dict[str, Any], solidcraft.sketch.inspect(sketch=key))
+                for key in (sketch["id"] for sketch in document["sketches"])
+            ]
+        line: str
+        for line in session_report(document["bodies"], sketches):
+            say(line)
+
+    # Method `SCShow.step_through()`:
+    def step_through(self) -> None:
+        """Press Next Step through every setup item, and once more.
+
+        Raises:
+        * `SCShowFailed`: If the panel refuses, or it stalls.
+        """
+        count: int = -1
+        while count != 0:
+            answer: str = self.ask("press Next Step")
+            if answer != "ok":
+                raise SCShowFailed(f"Next Step: {answer}")
+            time.sleep(0.5)
+            self.watch(
+                "a step", lambda words: words["drawing"] == "False", 120.0
+            )
+            shown: dict[str, Any] = json.loads(self.ask("show"))
+            count = int(shown["setup_step"])
+            say(f"Step shown: {shown['message']}")
+
+    # Method `SCShow.set_origin()`:
+    def set_origin(self, name: str) -> None:
+        """Press Set Origin, pick a named origin, and say what it did.
+
+        Arguments:
+        * `name` (`str`): The origin the tool tip is taken to be at.
+
+        Raises:
+        * `SCShowFailed`: If the panel refuses, or it stalls.
+        """
+        # Move the tool tip there first, as an operator would jog it.
+        shown: dict[str, Any] = json.loads(self.ask("show"))
+        if name not in shown["origins"]:
+            raise SCShowFailed(f"No origin {name!r}: {shown['origins']}")
+        x, y, z = shown["origins"][name]
+        move: str
+        for move in (f"G21 G0 X{x:.3f} Y{y:.3f}", f"G0 Z{z:.3f}"):
+            self.ask(f"type {move}")
+            self.ask("press Execute")
+            self.watch(move, lambda words: words.get("state") == "idle")
+        say(f"Before Set Origin: {self.ask('status')}")
+        self.ask(f"answer {name}")
+        self.ask("answer yes")
+        answer: str = self.ask("press Set Origin")
+        if answer != "ok":
+            raise SCShowFailed(f"Set Origin: {answer}")
+        self.watch("Set Origin", lambda words: words.get("state") == "idle")
+        mdi: list[str] = [
+            line
+            for line in self.ask("log").removeprefix("log: ").split(" | ")
+            if "G10" in line
+        ]
+        say(f"Set Origin ran: {mdi[-1] if mdi else 'nothing'}")
+        say(f"After Set Origin: {self.ask('status')}")
+
+    # Method `SCShow.drive()`:
+    def drive(self) -> None:
+        """Run the demo through the panel's port, then press Quit.
+
+        Raises:
+        * `SCShowFailed`: If it stalls, or a program stops.
+        """
+        begun: float = time.monotonic()
+        say("Waiting for the setup to be drawn.")
+        time.sleep(1.0)
+        self.watch(
+            "the setup",
+            lambda words: words["drawing"] == "False",
+            DRAW_SECONDS,
+        )
+        say(f"Setup drawn after {time.monotonic() - begun:.0f} s.")
+        if self.options.steps:
+            self.step_through()
+        if self.options.keep_outs:
+            say(f"Keep-outs: {self.ask('press Keep-outs')}")
+            time.sleep(0.5)
+            self.watch(
+                "keep-outs", lambda words: words["drawing"] == "False", 120.0
+            )
+            say(f"Panel: {json.loads(self.ask('show'))['message']}")
+        if self.options.origin:
+            self.set_origin(self.options.origin)
+        say("Pressing Start.")
+        self.ask("press Start")
+        self.watch("the run", lambda words: words.get("state") != "idle")
+        self.watch("the end", lambda words: words.get("state") == "idle")
+        say(f"Program ended after {time.monotonic() - begun:.0f} s.")
+        self.report()
+        say("Pressing Quit.")
+        self.ask("press Quit")
+        self.running["panel"].wait(timeout=CLOSE_SECONDS)
+        say(f"Total {time.monotonic() - begun:.0f} s.")
 
     # Method `SCShow.wait_until_closed()`:
     def wait_until_closed(self) -> None:
@@ -652,6 +996,7 @@ class SCShow:
         self.close_watcher()
         self.close_linuxcnc()
         self.close_one("solidcraft")
+        self.close_one("solidcraft_headless")
         self.remove_leftovers()
         say("Closed.")
 
@@ -697,12 +1042,36 @@ def main() -> int:
         default=SPEED,
         help="the panel's speed to start with (default: %(default)s)",
     )
+    parser.add_argument(
+        "--headless",
+        action="store_true",
+        help="no windows: run the demo through the panel's port, and report",
+    )
+    parser.add_argument(
+        "--origin",
+        default="",
+        help="with --headless: the setup origin to pick at Set Origin "
+        "before Start (e.g. 'stock: top left outer')",
+    )
+    parser.add_argument(
+        "--steps",
+        action="store_true",
+        help="with --headless: press Next Step through the setup first",
+    )
+    parser.add_argument(
+        "--keep-outs",
+        action="store_true",
+        help="with --headless: show the setup's keep-outs",
+    )
     show: SCShow = SCShow(parser.parse_args())
     signal.signal(signal.SIGTERM, interrupted)
     status: int = 0
     try:
         show.bring_up()
-        show.wait_until_closed()
+        if show.options.headless:
+            show.drive()
+        else:
+            show.wait_until_closed()
     except SCShowFailed as error:
         print(f"show_demo.py: {error}", file=sys.stderr)
         status = 1

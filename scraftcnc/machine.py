@@ -56,7 +56,9 @@ class SCTool:  # pylint: disable=too-many-instance-attributes
       For a drill, how deep each peck goes (0 for one pass).
     * `angle` (`float`):
       For a chamfer bit or double angle cutter, its included angle
-      (degrees; 90 makes 45 degree bevels).
+      (degrees; 90 makes 45 degree bevels); for a drill, its point
+      angle (0 when not known), so that a hole through the part is
+      drilled deep enough for the full diameter.
     * `radius` (`float`):
       For a corner rounding bit, the radius it rounds edges to.
     * `widest` (`float`):

@@ -1,6 +1,6 @@
 """The whole path, end to end, with no display.
 
-G-code from `demo.py`, through a `lcnc_panel.py --headless`
+G-code from `demo.py`, through a `lcnc_hmi.py --headless`
 pressed through its command port, to `serve_linuxcnc` and a real LinuxCNC
 simulator.  This takes about two minutes and needs LinuxCNC installed
 (`install_linuxcnc` from `scraftcnc/lcnc/`) with nothing on its port, so
@@ -157,7 +157,7 @@ class TestEndToEnd(unittest.TestCase):
         """Start a panel, and wait until it answers."""
         cls.port = free_port()
         cls.panel = subprocess.Popen(
-            [sys.executable, "-m", "scraftcnc.hmi.lcnc_panel", "--headless",
+            [sys.executable, "-m", "scraftcnc.hmi.lcnc_hmi", "--headless",
              "--port", str(cls.port)],
             cwd=HERE,
         )  # fmt: skip

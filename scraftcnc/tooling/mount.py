@@ -25,6 +25,7 @@ from typing import Protocol
 
 from ..model_cache import SCCacheable
 from ..pybind.scraftpybind import SCPyBind, connect
+from ..shops import LENGTH, measure
 from .cutter_models import MM_PER_INCH
 from .tools import (
     ALUMINUM_COLOR,
@@ -49,6 +50,7 @@ from .tools import (
     SCViseBlock,
     _mm,
     box_prism,
+    left_corner,
     tooling_shape,
 )
 
@@ -140,6 +142,23 @@ class SCTableLayer:
         """Return the table's name."""
         return self.table.name
 
+    # Method `SCTableLayer.named()`:
+    @classmethod
+    def named(cls, table: str) -> "SCTableLayer":
+        """Return the layer of a table, by key or name.
+
+        Arguments:
+        * `table` (`str`):
+          The table's key (e.g. `mikini_1610l`) or name.
+
+        Returns:
+        * (`SCTableLayer`): The layer.
+
+        Raises:
+        * `KeyError`: If there is no such table.
+        """
+        return cls(SCMillTable.named(table))
+
     # Method `SCTableLayer.seat()`:
     def seat(self) -> Point:
         """Return the middle of the table's top.
@@ -148,6 +167,27 @@ class SCTableLayer:
         * (`Point`): It, from the center of the table's bottom (mm).
         """
         return (0.0, 0.0, self.table.thickness)
+
+    # Method `SCTableLayer.origin()`:
+    def origin(self, turns: int = 0) -> Point:
+        """Return the point handed up to the next item.
+
+        It is the top, upper left corner: the smallest X, and of those
+        the largest Y (away from the operator), once the table is turned.
+
+        Arguments:
+        * `turns` (`int`): The table's quarter turns, counterclockwise.
+
+        Returns:
+        * (`Point`): From the center of its bottom, turned (millimeters).
+        """
+        x: float = self.table.length / 2.0
+        y: float = self.table.width / 2.0
+        top: float = self.table.thickness
+        corners: list[Point] = [
+            (sx * x, sy * y, top) for sx in (-1, 1) for sy in (-1, 1)
+        ]
+        return left_corner(corners, turns, upper=True)
 
     # Method `SCTableLayer.model()`:
     def model(self, solidcraft: SCPyBind, center: Point) -> list[str]:
@@ -236,6 +276,41 @@ class SCMachineViseLayer:
         """Return the vise's name."""
         return self.vise.name
 
+    # Method `SCMachineViseLayer.named()`:
+    @classmethod
+    def named(cls, vise: str, opening: str | float) -> "SCMachineViseLayer":
+        """Return the layer of a vise, by key or name, set to an opening.
+
+        It is never `turned`: an item's quarter turns turn it (as
+        `setups.py` does).
+
+        Arguments:
+        * `vise` (`str`):
+          The vise's key (e.g. `kurt_d688`) or name.
+        * `opening` (`str | float`):
+          The gap between its jaw plates, with a unit (`"5-1/2 in"`),
+          or millimeters.
+
+        Returns:
+        * (`SCMachineViseLayer`): The layer.
+
+        Raises:
+        * `KeyError`: If there is no such vise.
+        * `ValueError`: If the opening is not a length the vise opens to.
+        """
+        found: SCMachineVise = SCMachineVise.named(vise)
+        gap: float = (
+            float(opening)
+            if isinstance(opening, (int, float))
+            else measure(opening, LENGTH) * MM_PER_INCH
+        )
+        if not 0.0 <= gap <= found.max_opening:
+            raise ValueError(
+                f"{opening!r} is not an opening a {found.name} has "
+                f"(0 to {found.max_opening} mm)"
+            )
+        return cls(found, gap)
+
     # Method `SCMachineViseLayer.seat()`:
     def seat(self) -> Point:
         """Return the middle of the gap, on top of the rails.
@@ -246,6 +321,31 @@ class SCMachineViseLayer:
         gap: float = self.vise.gap_center(self.opening)
         height: float = self.vise.bed_top()
         return (0.0, -gap, height) if self.turned else (gap, 0.0, height)
+
+    # Method `SCMachineViseLayer.origin()`:
+    def origin(self, turns: int = 0) -> Point:
+        """Return the point handed up to the next item.
+
+        It is the fixed jaw's top (Z), left (X), inner (Y) corner: on the
+        face of its jaw plate, at the fixed jaw's left end once the vise
+        is turned (of two ends equally far left, the outer one).  The
+        fixed jaw stands on the rails, as `model()` builds it, so its
+        top is the bed's top plus the jaw's height (111.125 mm for a
+        Kurt D688; #55).  A `turned` vise is turned 3 more quarter turns,
+        as `model()` turns it.
+
+        Arguments:
+        * `turns` (`int`): The vise's quarter turns, counterclockwise.
+
+        Returns:
+        * (`Point`): From the center of its base's bottom, turned (mm).
+        """
+        vise: SCMachineVise = self.vise
+        face: float = vise.gap_center(self.opening) - self.opening / 2.0
+        half: float = vise.fixed_jaw.width / 2.0
+        top: float = vise.bed_top() + vise.fixed_jaw.height
+        ends: list[Point] = [(face, -half, top), (face, half, top)]
+        return left_corner(ends, turns + (3 if self.turned else 0))
 
     # Method `SCMachineViseLayer.model()`:
     def model(self, solidcraft: SCPyBind, center: Point) -> list[str]:
@@ -297,7 +397,8 @@ class SCMachineViseLayer:
         )
         if self.turned:
             keep_out.prisms = [
-                prism.quarter_turned(center[0], center[1])
+                # The vise is turned clockwise: three quarter turns.
+                prism.quarter_turned(center[0], center[1], 3)
                 for prism in keep_out.prisms
             ]
         return keep_out
@@ -324,9 +425,43 @@ class SCParallelLayer:
         """Return the parallel's name."""
         return self.parallel.name
 
+    # Method `SCParallelLayer.named()`:
+    @classmethod
+    def named(cls, parallel: str) -> "SCParallelLayer":
+        """Return the layer of a parallel, by key or name.
+
+        Arguments:
+        * `parallel` (`str`):
+          The parallel's key (e.g. `parallel_1_1_2_in_a`) or name.
+
+        Returns:
+        * (`SCParallelLayer`): The layer.
+
+        Raises:
+        * `KeyError`: If there is no such parallel.
+        """
+        return cls(SCParallel.named(parallel))
+
     # Method `SCParallelLayer.seat()`:
     def seat(self) -> Point:
         """Return the middle of the parallel's top edge.
+
+        Returns:
+        * (`Point`): It, from the center of its bottom edge (mm).
+        """
+        return (0.0, 0.0, self.parallel.height)
+
+    # Method `SCParallelLayer.origin()`:
+    def origin(self, _turns: int = 0) -> Point:
+        """Return the middle of the parallel's top edge.
+
+        Parallels do not change the origin (#29): the items above them
+        are placed from the origin of the item below the parallels (the
+        vise's), so a stack does not chain through this point.  It is
+        given only so that every layer has an `origin()`.
+
+        Arguments:
+        * `_turns` (`int`): Quarter turns; a middle does not move.
 
         Returns:
         * (`Point`): It, from the center of its bottom edge (mm).

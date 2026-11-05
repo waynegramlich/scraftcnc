@@ -49,7 +49,9 @@ def machine(**changes: object) -> SCMachine:
         "tools": (
             SCTool(1, "End mill", "end mill", 0.25, 1200, 12.0, 6.0),
             SCTool(2, "Drill", "drill", 0.234375, 1200, 4.0, 4.0, 0.05),
-            SCTool(3, "Small drill", "drill", 0.125, 1200, 4.0, 4.0, 0.05),
+            SCTool(
+                3, "Small drill", "drill", 0.125, 1200, 4.0, 4.0, 0.05, 90.0
+            ),
             SCTool(5, "V-bit", "chamfer", 0.02, 1200, 12.0, 4.0, angle=90.0),
             SCTool(
                 6,
@@ -290,8 +292,8 @@ class TestSCCNC(unittest.TestCase):
         ]
         self.assertAlmostEqual(min(depths), -0.5 + allowance)
 
-        # The finish goes down once, through, starting on the rougher's
-        # path, in the slot it cut.
+        # The finish goes down once, through, its lead-in starting a
+        # tool's diameter off its path (full-size leads, #86a).
         start = len(cnc.commands)
         finish: SCRoundedPolygon = cnc.profile(
             plate, -0.5, 0.25, through=True, stage="finish"
@@ -306,12 +308,12 @@ class TestSCCNC(unittest.TestCase):
         entry: tuple[float, float] = cnc.profile_entry(
             plate, cnc.cutter, stage="finish"
         )
-        self.assertLess(
+        self.assertAlmostEqual(
             min(
                 distance_to(entry, segment)
-                for segment in SCLoop.from_poly(rough).segments
+                for segment in SCLoop.from_poly(finish).segments
             ),
-            1e-9,
+            cnc.cutter.diameter,
         )
 
     # Method `TestSCCNC.test_pocket_stages()`:
@@ -621,9 +623,9 @@ class TestRemap(unittest.TestCase):
         command = {"G": 2, "X": 1.0, "Y": 2.0, "Z": -0.5, "I": 3.0, "J": 4.0}
         expected = {
             0: (1.0, 2.0, 3.0, 4.0),
-            1: (2.0, -1.0, 4.0, -3.0),
+            3: (2.0, -1.0, 4.0, -3.0),
             2: (-1.0, -2.0, -3.0, -4.0),
-            3: (-2.0, 1.0, -4.0, 3.0),
+            1: (-2.0, 1.0, -4.0, 3.0),
         }
         for turns, (x, y, i, j) in expected.items():
             cnc = SCCNC("Test", machine())
@@ -639,7 +641,7 @@ class TestRemap(unittest.TestCase):
         """`X` and `Y` move, `I`, `J` and `Z` do not, after turning."""
         cnc = SCCNC("Test", machine())
         cnc.commands = [{"G": 3, "X": 1.0, "Y": 2.0, "I": 3.0, "J": 4.0}]
-        cnc.remap(1, 10.0, 20.0)
+        cnc.remap(3, 10.0, 20.0)
         self.assertEqual(
             cnc.commands,
             [{"G": 3, "X": 12.0, "Y": 19.0, "I": 4.0, "J": -3.0}],
@@ -650,7 +652,7 @@ class TestRemap(unittest.TestCase):
         """A word left out stays left out on the axis it turned to."""
         cnc = SCCNC("Test", machine())
         cnc.commands = [{"G": 1, "X": 1.0, "F": 5.0}, {"G": 1, "Y": 1.0}]
-        cnc.remap(1)
+        cnc.remap(3)
         self.assertEqual(
             cnc.commands,
             [{"G": 1, "Y": -1.0, "F": 5.0}, {"G": 1, "X": 1.0}],
@@ -661,7 +663,7 @@ class TestRemap(unittest.TestCase):
         """Comments, tool changes and a cycle's words are not touched."""
         cnc = milling()
         before = [dict(command) for command in cnc.commands]
-        cnc.remap(1)
+        cnc.remap(3)
         self.assertEqual(cnc.commands, before)
         cnc = SCCNC("Test", machine())
         cnc.commands = [{"G": 83, "Z": -1.0, "R": 0.05, "Q": 0.1, "F": 4.0}]
@@ -882,6 +884,9 @@ class TestEdges(unittest.TestCase):
         cnc: SCCNC = milling()
         self.assertAlmostEqual(cnc.below(-0.5), -0.55)
         self.assertEqual(cnc.below(-0.5, through=False), -0.5)
+
+        # A thin part still gets at least 1 mm (10% would be 0.002 in).
+        self.assertAlmostEqual(cnc.below(-0.02), -0.02 - 1.0 / 25.4)
         cnc.profile(square(1.0, 0.25), -0.5, 0.25, through=True)
         self.assertIn("(Profile Square outside to Z-0.55)", cnc.gcode())
         depths: list[str] = [
@@ -893,6 +898,12 @@ class TestEdges(unittest.TestCase):
         cnc.change_tool(2)
         cnc.drill([(0.0, 0.0)], -0.5, through=True)
         self.assertIn(" Z-0.55 R", cnc.gcode())
+
+        # A pointed drill goes its point's length deeper as well (a
+        # 90 degree point on a 1/8 in drill is 1/16 in long).
+        cnc.change_tool(3)
+        cnc.drill([(0.0, 0.0)], -0.5, through=True)
+        self.assertIn(" Z-0.6125 R", cnc.gcode())
 
     # Method `TestEdges.test_bevel()`:
     def test_bevel(self) -> None:

@@ -7,11 +7,18 @@ import unittest
 from collections.abc import Iterator
 
 from scraftcnc import keepout, setups
-from scraftcnc.demo import MACHINE, MATERIAL, SHOP_FILE, cut_demo
+from scraftcnc.demo import (
+    MACHINE,
+    MATERIAL,
+    SHOP_FILE,
+    cut_demo,
+    demo_assembly,
+)
 from scraftcnc.gcode import SCCNC
 from scraftcnc.geometry import SLOP, SCArc, SCLine, SCRoundedPolygon
 from scraftcnc.machine import SCMachine, SCTool
 from scraftcnc.shops import cnc_machine, read
+from scraftcnc.tooling.shop_registries import use_shop
 
 JAWS = ("Kurt D688 fixed jaw", "Kurt D688 movable jaw")
 PARALLELS = ("Parallel 1-1/2 in A", "Parallel 1-1/2 in B")
@@ -25,6 +32,11 @@ TOPS = {
     PARALLELS[0]: -0.375,
     PARALLELS[1]: -0.375,
 }
+
+
+def setUpModule() -> None:
+    """Use the example shop, as programs do at their start."""
+    use_shop(read(SHOP_FILE))
 
 
 def setup_zones() -> list[SCRoundedPolygon]:
@@ -574,6 +586,34 @@ class TestPrograms(unittest.TestCase):
             if line in bad and "Z" in command and command.get("G") == 1
         ]
         self.assertLess(max(shallow), -0.14)
+
+
+class TestAssemblyZones(unittest.TestCase):
+    """The `.nc` setup's own keep-outs agree with `demo_stack.json`'s."""
+
+    def test_same_violations(self) -> None:
+        """The demo program breaks the same zones, as often, in both."""
+        stack = setups.SCSetup(
+            json.loads(setups.EXAMPLE.with_name("demo_stack.json").read_text())
+        )
+        # The tooling is where `demo_stack.json` puts it; the plate is
+        # now centered on the grid plate (#80), at the G-code's zero.
+        moved: SCCNC = cut_demo()[0]
+        old = keepout.check_program(
+            moved,
+            [
+                keepout.prism_zone(p, (0, 0, 0))
+                for p in stack.keep_out().prisms
+            ],
+        )
+        plate: SCCNC = cut_demo()[0]
+        new = keepout.check_program(
+            plate, keepout.assembly_zones(demo_assembly())
+        )
+        self.assertEqual(len(new), len(old))
+        self.assertEqual(
+            [found.line for found in new], [found.line for found in old]
+        )
 
 
 class TestReport(unittest.TestCase):

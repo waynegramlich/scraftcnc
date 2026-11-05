@@ -10,7 +10,10 @@ from unittest import mock
 
 from scraftcnc.geometry import SCCorner, SCHole, SCRoundedPolygon
 from scraftcnc.pybind.scraftpybind import SCHeadlessTransport, SCPyBind
+from scraftcnc.shops import read
 from scraftcnc.tooling import mount, tools
+from scraftcnc.tooling.cutter_models import EXAMPLE_SHOP
+from scraftcnc.tooling.shop_registries import use_shop
 
 # An extracted `solidcraft-cli` (as the demo uses) for the live test.
 HERE: Path = Path(__file__).resolve().parent.parent
@@ -40,6 +43,12 @@ SMALL_PLATE = tools.SCGridPlate(
     tap_diameter=tools.GRID_PLATE.tap_diameter,
     close_diameter=tools.GRID_PLATE.close_diameter,
 )
+
+
+# Function `setUpModule()`:
+def setUpModule() -> None:
+    """Fill the name registries from the example shop."""
+    use_shop(read(EXAMPLE_SHOP))
 
 
 def work(
@@ -173,9 +182,9 @@ class TestGarage(unittest.TestCase):
             dataclasses.replace(table, slot_spacing=2.5 * INCH)
 
     def test_turned_prism(self) -> None:
-        """A quarter turn sends +X to -Y, about the axis given."""
+        """Three quarter turns send +X to -Y, about the axis given."""
         prism = tools.SCPrism("P", (10.0, -1.0, 0.0), (20.0, 1.0, 5.0))
-        turned = prism.quarter_turned(10.0, 0.0)
+        turned = prism.quarter_turned(10.0, 0.0, 3)
         self.assertEqual(turned.low, (9.0, -10.0, 0.0))
         self.assertEqual(turned.high, (11.0, 0.0, 5.0))
 
@@ -465,6 +474,87 @@ class TestModel(unittest.TestCase):
             + 10.0**2 * 5.0
         )
         self.assertAlmostEqual(volume / expected, 1.0, 2)
+
+
+class TestNamedLayers(unittest.TestCase):
+    """Each layer's `named()` takes keys and unit strings."""
+
+    def test_named(self) -> None:
+        """`named()` gives the layer built from the objects."""
+        self.assertEqual(
+            mount.SCTableLayer.named("mikini_1610l"),
+            mount.SCTableLayer(tools.MIKINI_1610L),
+        )
+        self.assertEqual(
+            mount.SCMachineViseLayer.named("kurt_d688", "5-1/2 in"),
+            mount.SCMachineViseLayer(tools.KURT_D688, 139.7),
+        )
+        self.assertEqual(
+            mount.SCMachineViseLayer.named("Kurt D688", 100.0).opening, 100.0
+        )
+        parallel: tools.SCParallel = tools.SCParallel.named(
+            "parallel_1_1_2_in_a"
+        )
+        self.assertEqual(
+            mount.SCParallelLayer.named("Parallel 1-1/2 in A"),
+            mount.SCParallelLayer(parallel),
+        )
+
+    def test_bad_opening(self) -> None:
+        """An opening past the vise's most is a `ValueError`."""
+        with self.assertRaisesRegex(ValueError, "Kurt D688"):
+            mount.SCMachineViseLayer.named("kurt_d688", "20 in")
+        with self.assertRaises(KeyError):
+            mount.SCTableLayer.named("no_such_table")
+
+
+class TestOrigins(unittest.TestCase):
+    """Each layer's `origin()`, against the demo's setup (step 4e)."""
+
+    def assert_point(self, actual: tools.Point, expected: tools.Point) -> None:
+        """Check that two points agree to 1e-6 mm."""
+        for got, want in zip(actual, expected, strict=True):
+            self.assertAlmostEqual(got, want, places=6)
+
+    def test_quarter_turn(self) -> None:
+        """One turn sends +X to +Y; four turns change nothing."""
+        self.assert_point(tools.quarter_turn((1.0, 2.0, 3.0), 1), (-2, 1, 3))
+        self.assert_point(tools.quarter_turn((1.0, 2.0, 3.0), 3), (2, -1, 3))
+        self.assert_point(tools.quarter_turn((1.0, 2.0, 3.0), 4), (1, 2, 3))
+
+    def test_table(self) -> None:
+        """The table's top, upper left corner."""
+        table: mount.SCTableLayer = mount.SCTableLayer(tools.MIKINI_1610L)
+        self.assert_point(table.origin(), (-381.0, 133.35, 63.5))
+        self.assert_point(table.origin(1), (-133.35, 381.0, 63.5))
+
+    def test_vise(self) -> None:
+        """The fixed jaw's top, left, inner corner."""
+        vise: mount.SCMachineViseLayer = mount.SCMachineViseLayer.named(
+            "kurt_d688", "5-1/2 in"
+        )
+        self.assert_point(vise.origin(), (-156.21, -76.2, 111.125))
+
+        # Turned 3 (`demo_stack.json`'s -90 deg): the fixed jaw is +Y.
+        self.assert_point(vise.origin(3), (-76.2, 156.21, 111.125))
+        turned: mount.SCMachineViseLayer = dataclasses.replace(
+            vise, turned=True
+        )
+        self.assert_point(turned.origin(), vise.origin(3))
+
+    def test_parallel(self) -> None:
+        """A parallel gives the middle of its top edge, at any turn."""
+        layer: mount.SCParallelLayer = mount.SCParallelLayer.named(
+            "parallel_1_1_2_in_a"
+        )
+        self.assert_point(layer.origin(), (0.0, 0.0, 38.1))
+        self.assert_point(layer.origin(1), (0.0, 0.0, 38.1))
+
+    def test_grid_plate(self) -> None:
+        """The plate's top, left, outer corner, turned."""
+        plate: tools.SCGridPlate = tools.GRID_PLATE
+        self.assert_point(plate.origin(), (-69.85, -133.35, 12.7))
+        self.assert_point(plate.origin(1), (-133.35, -69.85, 12.7))
 
 
 if __name__ == "__main__":

@@ -9,13 +9,22 @@ from typing import cast
 
 from scraftcnc import shops
 from scraftcnc.pybind.scraftpybind import SCHeadlessTransport, SCPyBind
+from scraftcnc.shops import read
 from scraftcnc.tooling import cutter_models
+from scraftcnc.tooling.cutter_models import EXAMPLE_SHOP
+from scraftcnc.tooling.shop_registries import use_shop
 
 # The example shop, and an extracted `solidcraft-cli` (as the demo
 # uses) for the live test.
 HERE: Path = Path(__file__).resolve().parent.parent
 SHOP: Path = HERE / "examples/shop/home_shop.toml"
 CLI: Path = HERE / "solidcraft/squashfs-root/usr/bin/solidcraft-cli"
+
+
+# Function `setUpModule()`:
+def setUpModule() -> None:
+    """Fill the name registries from the example shop."""
+    use_shop(read(EXAMPLE_SHOP))
 
 
 def example_tools() -> dict[int, tuple[str, dict[str, object]]]:

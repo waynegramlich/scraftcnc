@@ -77,6 +77,11 @@ STAGE_WORDS: dict[Stage, str] = {
     "finish": "Finish p",
 }
 
+# A cut through the part goes at least this far below it (1 mm, in
+# inches), whatever the machine's `through_overcut`, so that a thin
+# part is cut free instead of bulging out (see `SCCNC.below()`).
+MIN_THROUGH_OVERCUT: float = 1.0 / 25.4
+
 # A chamfer bit's tip runs this far off the wall (beyond its own
 # radius), so that it does not rub the wall below the bevel.
 CHAMFER_CLEAR: float = 0.005
@@ -597,7 +602,7 @@ def _uncut_reach(
 def _turned_pair(
     one: float | None, two: float | None, turns: int
 ) -> tuple[float | None, float | None]:
-    """Return two words of an axis pair, turned clockwise (+X to -Y).
+    """Return two words of an axis pair, turned counterclockwise.
 
     Arguments:
     * `one` (`float | None`): The first word (`X` or `I`), if there.
@@ -611,9 +616,9 @@ def _turned_pair(
     minus_two: float | None = None if two is None else -two
     return (
         (one, two),
-        (two, minus_one),
-        (minus_one, minus_two),
         (minus_two, one),
+        (minus_one, minus_two),
+        (two, minus_one),
     )[turns]
 
 
@@ -623,7 +628,7 @@ def _remapped(command: RS274, turns: int, dx: float, dy: float) -> RS274:
 
     Arguments:
     * `command` (`RS274`): The command.
-    * `turns` (`int`): How many quarter turns clockwise.
+    * `turns` (`int`): How many quarter turns counterclockwise.
     * `dx` (`float`): How far to move it along X, once turned.
     * `dy` (`float`): How far to move it along Y, once turned.
 
@@ -1000,7 +1005,9 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         * `bottom` (`float`): How deep they go.
         * `through` (`bool`):
           True when `bottom` is the bottom of the part, so the holes go
-          the machine's `through_overcut` deeper (see `below()`).
+          the machine's `through_overcut` deeper (see `below()`), plus
+          the length of the drill's point (from its `angle`), so that
+          the full diameter goes through.
 
         Raises:
         * `ValueError`:
@@ -1011,6 +1018,10 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         if tool.kind != "drill":
             raise ValueError(f"tool {tool.number} is not a drill")
         bottom = self.below(bottom, through)
+        if through and 0.0 < tool.angle < 180.0:
+            bottom -= (
+                tool.diameter / 2.0 / math.tan(math.radians(tool.angle / 2.0))
+            )
         if not points:
             return
         cycle: str = self.machine.drill_cycle
@@ -1091,8 +1102,9 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         """Return how deep to cut to reach a bottom.
 
         A cut through the part goes the machine's `through_overcut`
-        (a fraction of the part's thickness) deeper, so that the metal
-        is cut cleanly instead of stretching and bulging out.
+        (a fraction of the part's thickness) deeper, but at least
+        `MIN_THROUGH_OVERCUT` (1 mm), so that the metal is cut cleanly
+        instead of stretching and bulging out.
 
         Arguments:
         * `bottom` (`float`): The bottom (of the part, when `through`).
@@ -1108,7 +1120,8 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
             raise ValueError(f"{bottom=} must be below {self.z_top=}")
         if not through:
             return bottom
-        return bottom - self.machine.through_overcut * (self.z_top - bottom)
+        overcut: float = self.machine.through_overcut * (self.z_top - bottom)
+        return bottom - max(overcut, MIN_THROUGH_OVERCUT)
 
     # Method `SCCNC.chamfer()`:
     def chamfer(
@@ -1222,16 +1235,13 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         * (`tuple[float, float]`):
           How far the tool's center is off the outline (its radius,
           plus `finish_allowance` when roughing), and the radius of its
-          leads.  A finishing pass's leads start where the rougher's
-          center went (`finish_allowance` off the path), in the slot
-          it cut.
+          leads: the tool's radius at every stage (#86a, 2026-11-04;
+          finishing leads were `finish_allowance / 2`, too small to
+          see), halved where they do not fit (`_fitted_path()`).
         """
         radius: float = tool.diameter / 2.0
-        allowance: float = self.machine.finish_allowance
         if stage == "rough":
-            return radius + allowance, radius
-        if stage == "finish" and allowance > 0.0:
-            return radius, allowance / 2.0
+            return radius + self.machine.finish_allowance, radius
         return radius, radius
 
     # Method `SCCNC._depths()`:
@@ -1748,7 +1758,7 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
 
         Arguments:
         * `turns` (`int`):
-          How many quarter turns clockwise (+X to -Y), from 0 to 3.
+          Quarter turns counterclockwise (+X to +Y), from 0 to 3.
         * `dx` (`float`): How far to move it along X, once turned.
         * `dy` (`float`): How far to move it along Y, once turned.
 

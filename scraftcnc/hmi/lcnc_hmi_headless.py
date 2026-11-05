@@ -1,6 +1,6 @@
-"""The parts of `tkinter` that `lcnc_panel.py` uses, with no display.
+"""The parts of `tkinter` that `lcnc_hmi.py` uses, with no display.
 
-`lcnc_panel.py --headless` builds its window from these, in place of
+`lcnc_hmi.py --headless` builds its window from these, in place of
 `tkinter`, `ttk`, `filedialog` and `messagebox`, so the same code runs
 as with a real window, and tests can press its buttons through its
 command port.  Each widget keeps its options and its contents, and
@@ -51,6 +51,23 @@ def askyesno(title: str, message: str, **_options: Any) -> bool:
     * (`bool`): True when the answer waiting is `yes`.
     """
     return _next_answer(f"{title}: {message}") == "yes"
+
+
+# Function `askchoice()`:
+def askchoice(title: str, message: str, choices: list[str]) -> str:
+    """Stand in for the panel's list window: pick one of the choices.
+
+    Arguments:
+    * `title` (`str`): The window's title.
+    * `message` (`str`): The question.
+    * `choices` (`list[str]`): What may be picked.
+
+    Returns:
+    * (`str`): The answer waiting, when it is one of the choices,
+      else `""` (as Cancel).
+    """
+    answer: str = _next_answer(f"{title}: {message}")
+    return answer if answer in choices else ""
 
 
 # Function `showerror()`:
@@ -227,6 +244,13 @@ class Label(Widget):
     """Stands in for `ttk.Label`."""
 
     kind = "TLabel"
+
+
+# Class `Progressbar`:
+class Progressbar(Widget):
+    """Stands in for `ttk.Progressbar`."""
+
+    kind = "TProgressbar"
 
 
 # Class `Scale`:

@@ -114,8 +114,8 @@ Each step below needs a little more than the one before it.
    ```
 
    It starts LinuxCNC, SolidCraft with the plate in it (on the table,
-   vise, parallels and grid plate of `examples/setup/demo_stack.json`),
-   and the panel, stopped.  Press Start in the panel, and the tool cuts
+   vise, parallels and grid plate drawn by the panel from the program's
+   `(SCC: ...)` setup comments), and the panel, stopped.  Press Start in the panel, and the tool cuts
    the plate in SolidCraft.  The panel's Quit button closes everything.
 
    Keep the mouse pointer out of SolidCraft's window while it runs:
@@ -123,6 +123,11 @@ Each step below needs a little more than the one before it.
    resting over the plate or the vise makes them flicker translucent.
    SolidCraft also opens a series of panels while it builds everything;
    leave them be.
+
+   `./show_demo.py --headless` runs the same thing with no windows
+   (a headless SolidCraft session, the panel without `tkinter`),
+   presses Start itself, and prints what was built, with bounding
+   boxes.
 
 ## The Files
 
@@ -166,7 +171,7 @@ The code is the package `scraftcnc/`:
 * `lcnc/`: LinuxCNC's simulator (`install_linuxcnc.py`), the bridge
   and server that drive it, and the simulations that show it in
   SolidCraft.
-* `hmi/`: the operator's panel (`lcnc_panel.py`) and its headless
+* `hmi/`: the operator's panel (`lcnc_hmi.py`) and its headless
   version.
 
 Beside it, `tests/` holds the tests and `show_demo.py` the

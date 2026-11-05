@@ -9,7 +9,10 @@ from pathlib import Path
 from typing import Any
 
 from scraftcnc.pybind.scraftpybind import JSON, SCHeadlessTransport, SCPyBind
+from scraftcnc.shops import read
 from scraftcnc.tooling import tools
+from scraftcnc.tooling.cutter_models import EXAMPLE_SHOP
+from scraftcnc.tooling.shop_registries import use_shop
 
 # An extracted `solidcraft-cli` (as the demo uses) for the live test.
 HERE: Path = Path(__file__).resolve().parent.parent
@@ -18,6 +21,12 @@ CLI: Path = HERE / "solidcraft/squashfs-root/usr/bin/solidcraft-cli"
 # Where the live test puts the vise's jaws (millimeters).
 VISE_OPENING: float = 50.0
 VISE_LIFT: float = 100.0
+
+
+# Function `setUpModule()`:
+def setUpModule() -> None:
+    """Fill the name registries from the example shop."""
+    use_shop(read(EXAMPLE_SHOP))
 
 
 class TestMillTables(unittest.TestCase):

@@ -55,7 +55,7 @@ import sys
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import cast
+from typing import ClassVar, cast
 
 from ..model_cache import (
     SCCacheable,
@@ -75,6 +75,8 @@ from ..shops import (
     measure,
     read,
 )
+from .registry import SCRegistry
+from .registry import key as registry_key
 
 # A profile: `(r, z)` points, in inches.
 Profile = list[tuple[float, float]]
@@ -697,6 +699,78 @@ def unique_id_digits(tools: Sequence[tuple[str, dict[str, object]]]) -> int:
     return max((len(str(tool["unique_id"])) for _, tool in tools), default=1)
 
 
+# Class `SCCutter`:
+@dataclass(frozen=True, slots=True)
+class SCCutter:
+    """One tool of the shop's tools files, by name.
+
+    Attributes:
+    * `kind` (`str`): The list it is in (e.g. `end_mills`).
+    * `tool` (`dict[str, object]`): Its description, from
+      `shops.read()`.
+    * `REGISTRY` (`SCRegistry[SCCutter]`): Every cutter of the
+      example shop, by key (class attribute).
+
+    Constructor:
+    * `SCCutter(kind, tool)`
+    """
+
+    REGISTRY: ClassVar["SCRegistry[SCCutter]"]
+
+    # Constructor arguments:
+    kind: str = field(init=True)
+    tool: dict[str, object] = field(init=True)
+
+    # Method `SCCutter.named()`:
+    @classmethod
+    def named(cls, name: str) -> "SCCutter":
+        """Return the cutter with a key or name.
+
+        Arguments:
+        * `name` (`str`):
+          Its key (`registry.key()` of its name) or its name.
+
+        Returns:
+        * (`SCCutter`): The cutter.
+
+        Raises:
+        * `KeyError`: If there is none, listing the known keys.
+        """
+        return cls.REGISTRY.named(name)
+
+    # Method `SCCutter.name()`:
+    @property
+    def name(self) -> str:
+        """Return its name in the tools files."""
+        return str(self.tool["name"])
+
+    # Method `SCCutter.key()`:
+    @property
+    def key(self) -> str:
+        """Return its key in `REGISTRY` (e.g. `1_4_in_2_flute_...`)."""
+        return registry_key(self.name)
+
+
+# Function `register_cutters()`:
+def register_cutters(
+    shop: dict[str, object], cutters: SCRegistry[SCCutter]
+) -> None:
+    """Add every tool of a shop to a cutter registry.
+
+    Arguments:
+    * `shop` (`dict[str, object]`): The shop, from `shops.read()`.
+    * `cutters` (`SCRegistry[SCCutter]`): The registry to fill.
+
+    Raises:
+    * `ValueError`: If two different tools have the same key.
+    """
+    kind: str
+    tool: dict[str, object]
+    for kind, tool in shop_tools(shop):
+        cutter: SCCutter = SCCutter(kind, tool)
+        cutters.add(cutter.name, cutter)
+
+
 # Function `holder_bands()`:
 def holder_bands(
     tool: dict[str, object], digits: int
@@ -1110,6 +1184,11 @@ def model_shop_tools(
                 (x, 0.0, length * (1 - HOLDER_GRIP)),
                 cache,
             )
+
+
+# The cutters of the shop in use, by key (`registry.key()` of each
+# name), filled by `shop_registries.use_shop()`.
+SCCutter.REGISTRY = SCRegistry("cutter")
 
 
 # Function `main()`:

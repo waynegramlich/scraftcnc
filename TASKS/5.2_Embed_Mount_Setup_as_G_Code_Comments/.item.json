@@ -1,7 +1,7 @@
 {
-  "state": "Open",
+  "state": "Closed",
   "created": "2026-11-04T03:27:56Z",
-  "updated": "2026-11-04T03:32:42Z",
+  "updated": "2026-11-05T05:53:51Z",
   "history": [
     {
       "state": "Pending",
@@ -10,6 +10,10 @@
     {
       "state": "Open",
       "time": "2026-11-04T03:32:42Z"
+    },
+    {
+      "state": "Closed",
+      "time": "2026-11-05T05:53:51Z"
     }
   ],
   "tag": "emsagc"

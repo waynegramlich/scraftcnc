@@ -1,11 +1,13 @@
-"""Tests of `lcnc_panel.py` that need no LinuxCNC or window."""
+"""Tests of `lcnc_hmi.py` that need no LinuxCNC or window."""
 
 import json
 import os
+import signal
 import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -13,8 +15,12 @@ from typing import Any, cast
 from unittest import mock
 
 from scraftcnc import shops
-from scraftcnc.hmi import lcnc_headless, lcnc_panel
+from scraftcnc.assembly import SCAssembly
+from scraftcnc.demo import demo_assembly, with_setup
+from scraftcnc.hmi import lcnc_hmi, lcnc_hmi_headless
 from scraftcnc.lcnc.lcnc_client import SCBridgeError
+from scraftcnc.setups import SHOP as EXAMPLE_SHOP
+from scraftcnc.tooling.shop_registries import use_shop
 
 # The constants that `FakeClient` answers with.
 IDLE = 1
@@ -27,26 +33,24 @@ class TestToolSpeeds(unittest.TestCase):
     """The tools' speeds and feeds, as the Tools window lists them."""
 
     def setUp(self) -> None:
-        self.shop = shops.read(lcnc_panel.SHOP_FILE)
+        self.shop = shops.read(lcnc_hmi.SHOP_FILE)
 
     def test_materials(self) -> None:
         """The chooser lists the shop's materials."""
-        names = lcnc_panel.material_names(self.shop)
+        names = lcnc_hmi.material_names(self.shop)
         self.assertIn("6061 aluminum", names)
         self.assertIn("hdpe", names)
 
     def test_table(self) -> None:
         """One line per loaded tool."""
-        text = lcnc_panel.tool_speeds(
-            self.shop, lcnc_panel.SHOP_MACHINE, "steel"
-        )
+        text = lcnc_hmi.tool_speeds(self.shop, lcnc_hmi.SHOP_MACHINE, "steel")
         self.assertIn("cutting steel", text)
         self.assertIn("1630   6.5     6.5  15/64 in HSS jobber drill", text)
 
     def test_problem(self) -> None:
         """A problem is shown in place of the table."""
-        text = lcnc_panel.tool_speeds(
-            self.shop, lcnc_panel.SHOP_MACHINE, "unobtainium"
+        text = lcnc_hmi.tool_speeds(
+            self.shop, lcnc_hmi.SHOP_MACHINE, "unobtainium"
         )
         self.assertIn('"unobtainium" is not one of', text)
 
@@ -99,9 +103,9 @@ class FakeClient:
         return [call[1:] for call in self.calls if call[0] == name]
 
 
-def client_machine() -> tuple[lcnc_panel.SCPanelMachine, FakeClient]:
+def client_machine() -> tuple[lcnc_hmi.SCPanelMachine, FakeClient]:
     """Return a machine connected to a `FakeClient`."""
-    machine = lcnc_panel.SCPanelMachine(True)
+    machine = lcnc_hmi.SCPanelMachine(True)
     lcnc = FakeClient()
     machine.lcnc = cast(Any, lcnc)
     machine.constants = {
@@ -121,17 +125,17 @@ class TestConnecting(unittest.TestCase):
             unused.bind(("127.0.0.1", 0))
             port = unused.getsockname()[1]
         with self.assertRaisesRegex(RuntimeError, "serve_linuxcnc"):
-            lcnc_panel.SCPanelMachine(False, port)
+            lcnc_hmi.SCPanelMachine(False, port)
 
     def test_old_server(self) -> None:
         """A server of an older protocol says what to do."""
         client = mock.MagicMock()
         client.call.return_value = {"protocol": 1}
         with (
-            mock.patch.object(lcnc_panel, "SCClient", return_value=client),
+            mock.patch.object(lcnc_hmi, "SCClient", return_value=client),
             self.assertRaisesRegex(RuntimeError, "install_linuxcnc"),
         ):
-            lcnc_panel.SCPanelMachine(False)
+            lcnc_hmi.SCPanelMachine(False)
 
 
 class TestStart(unittest.TestCase):
@@ -323,7 +327,7 @@ class TestMessages(unittest.TestCase):
 
         # The port shows them, and something when there are none.
         panel = mock.MagicMock(machine=machine)
-        handle = lcnc_panel.SCPanel.handle
+        handle = lcnc_hmi.SCPanel.handle
         self.assertEqual(handle(panel, "messages"), "messages: first")
         machine.messages = []
         self.assertEqual(handle(panel, "messages"), "messages: ")
@@ -333,12 +337,12 @@ class TestHeadless(unittest.TestCase):
     """The whole panel, with no display, pressed through its port's words."""
 
     def setUp(self) -> None:
-        lcnc_panel.use_headless()
-        lcnc_headless.ANSWERS.clear()
-        lcnc_headless.ASKED.clear()
-        self.machine = lcnc_panel.SCPanelMachine(True)
-        self.root: Any = lcnc_headless.Tk()
-        self.panel = lcnc_panel.SCPanel(
+        lcnc_hmi.use_headless()
+        lcnc_hmi_headless.ANSWERS.clear()
+        lcnc_hmi_headless.ASKED.clear()
+        self.machine = lcnc_hmi.SCPanelMachine(True)
+        self.root: Any = lcnc_hmi_headless.Tk()
+        self.panel = lcnc_hmi.SCPanel(
             cast(Any, self.root), self.machine, 10.0, None
         )
         # pylint: disable-next=consider-using-with
@@ -401,10 +405,10 @@ class TestHeadless(unittest.TestCase):
     def test_mdi_line(self) -> None:
         """The MDI line is colored, and only good lines can run."""
         self.ask("type not a line")
-        self.assertEqual(self.panel.show()["mdi_color"], lcnc_panel.BAD)
+        self.assertEqual(self.panel.show()["mdi_color"], lcnc_hmi.BAD)
         self.assertIn("greyed out", self.ask("press Execute"))
         self.ask("type G0 X1")
-        self.assertEqual(self.panel.show()["mdi_color"], lcnc_panel.GOOD)
+        self.assertEqual(self.panel.show()["mdi_color"], lcnc_hmi.GOOD)
         self.assertEqual(self.ask("press Execute"), "ok")
         self.assertEqual(self.machine.log[-1], "mdi G0 X1")
 
@@ -418,12 +422,12 @@ class TestHeadless(unittest.TestCase):
     def test_set_origin_asks(self) -> None:
         """Set Origin does nothing unless the answer is yes."""
         self.machine.status = mock.MagicMock(  # type: ignore[method-assign]
-            return_value=lcnc_panel.SCStatus("", 0, (1.0, 0.0, 0.0), 0, [], "")
+            return_value=lcnc_hmi.SCStatus("", 0, (1.0, 0.0, 0.0), 0, [], "")
         )
         self.tick()
         self.assertEqual(self.ask("press Set Origin"), "ok")
         self.assertNotIn("mdi G10 L20 P1 X0 Y0 Z0", self.machine.log)
-        self.assertIn("Set Origin", lcnc_headless.ASKED[0])
+        self.assertIn("Set Origin", lcnc_hmi_headless.ASKED[0])
         self.ask("answer yes")
         self.ask("press Set Origin")
         self.assertIn("mdi G10 L20 P1 X0 Y0 Z0", self.machine.log)
@@ -468,6 +472,290 @@ class TestHeadless(unittest.TestCase):
         self.assertTrue(self.root.due)
 
 
+# A stand-in, which needs only `show()`.
+class FakeView:  # pylint: disable=too-few-public-methods
+    """Stands in for `SCSetupView`: records each assembly shown."""
+
+    def __init__(self, fail: bool = False) -> None:
+        self.fail: bool = fail
+        self.keep_outs: bool = False
+        self.progress: tuple[int, int] = (0, 0)
+        self.keep_out_shows: list[bool] = []
+        self.shown: list[SCAssembly] = []
+
+    def show(self, assembly: SCAssembly) -> None:
+        """Record an assembly, or fail."""
+        if self.fail:
+            raise ValueError("no such vise")
+        self.shown.append(assembly)
+        self.keep_out_shows.append(self.keep_outs)
+
+
+class TestSetupDrawing(unittest.TestCase):
+    """Opening a program hands its `SCC:` setup to the drawer."""
+
+    def setUp(self) -> None:
+        use_shop(shops.read(EXAMPLE_SHOP))
+        lcnc_hmi.use_headless()
+        self.machine = lcnc_hmi.SCPanelMachine(True)
+        self.root: Any = lcnc_hmi_headless.Tk()
+        self.panel = lcnc_hmi.SCPanel(
+            cast(Any, self.root), self.machine, 10.0, None
+        )
+        self.view = FakeView()
+        self.panel.drawer = lcnc_hmi.SCSetupDrawer(self.view)
+        # pylint: disable-next=consider-using-with
+        scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(scratch.cleanup)
+        self.directory = Path(scratch.name)
+        self.gcode = "G20\nG0 X1\nM2\n"
+
+    def program(self, text: str) -> str:
+        """Write a program, and return its path."""
+        path = self.directory / "part.nc"
+        path.write_text(text, encoding="utf-8")
+        return str(path)
+
+    def test_setup_drawn(self) -> None:
+        """A program with setup lines has its assembly drawn."""
+        assembly = demo_assembly()
+        self.panel.open(self.program(with_setup(self.gcode, assembly)))
+        assert self.panel.drawer is not None
+        self.panel.drawer.wait()
+        self.assertEqual(len(self.view.shown), 1)
+        names = [item.name for item in self.view.shown[0].items]
+        self.assertEqual(names, [item.name for item in assembly.items])
+        self.assertEqual(self.machine.file, self.program_path())
+
+    def program_path(self) -> str:
+        """Return the program's path, as opened."""
+        return str(self.directory / "part.nc")
+
+    def test_no_setup(self) -> None:
+        """A program with no setup lines opens, and nothing is drawn."""
+        self.panel.open(self.program(self.gcode))
+        assert self.panel.drawer is not None
+        self.panel.drawer.wait()
+        self.assertEqual(self.view.shown, [])
+        self.assertEqual(self.panel.show()["message"], "")
+
+    def test_bad_setup(self) -> None:
+        """A wrong setup line is reported; the program still opens."""
+        self.panel.open(self.program("(SCC: [[item]\n" + self.gcode))
+        self.assertIn("Setup not read", self.panel.show()["message"])
+        self.assertEqual(self.view.shown, [])
+        self.assertEqual(self.machine.file, self.program_path())
+
+    def test_next_step(self) -> None:
+        """Next Step shows one more item, with its note, then all."""
+        assembly = demo_assembly()
+        count = len(assembly.items)
+        self.panel.open(self.program(with_setup(self.gcode, assembly)))
+        assert self.panel.drawer is not None
+        self.panel.drawer.wait()
+        messages: list[str] = []
+        step: int
+        for step in range(1, count + 2):
+            self.assertEqual(self.ask("press Next Step"), "ok")
+            self.panel.drawer.wait()
+            messages.append(self.panel.show()["message"])
+            self.assertEqual(len(self.view.shown[-1].items), min(step, count))
+        self.assertEqual(messages[0], "Step 1/7, mill table: Clean the table.")
+        self.assertTrue(messages[count - 1].startswith("Step 7/7, demo"))
+        self.assertEqual(messages[-1], "Setup: all 7 items.")
+        self.assertTrue(all(item.note for item in assembly.items))
+
+    def test_step_error(self) -> None:
+        """A step's drawing error comes after its note."""
+        self.panel.open(self.program(with_setup(self.gcode, demo_assembly())))
+        assert self.panel.drawer is not None
+        self.panel.drawer.wait()
+        self.panel.drawer.view = FakeView(fail=True)
+        self.ask("press Next Step")
+        self.panel.drawer.wait()
+        self.panel.poll()
+        self.assertEqual(
+            self.panel.show()["message"],
+            "Step 1/7, mill table: Clean the table. "
+            "(Setup not drawn: no such vise)",
+        )
+
+    def test_keep_outs(self) -> None:
+        """Keep-outs toggles, redrawing the setup with them or not."""
+        self.panel.open(self.program(with_setup(self.gcode, demo_assembly())))
+        assert self.panel.drawer is not None
+        for _ in range(2):
+            self.panel.drawer.wait()
+            self.assertEqual(self.ask("press Keep-outs"), "ok")
+        self.panel.drawer.wait()
+        self.assertEqual(self.view.keep_out_shows, [False, True, False])
+        self.assertEqual(self.panel.show()["message"], "Keep-outs off.")
+
+    def test_start_waits(self) -> None:
+        """Start is greyed out while the setup draws; the bar shows it."""
+        gate = threading.Event()
+        started = threading.Event()
+        shown = self.view.show
+
+        def slow(assembly: SCAssembly) -> None:
+            self.view.progress = (1, 7)
+            started.set()
+            gate.wait(5.0)
+            shown(assembly)
+            self.view.progress = (7, 7)
+
+        self.view.show = slow  # type: ignore[method-assign]
+        self.panel.open(self.program(with_setup(self.gcode, demo_assembly())))
+        self.assertTrue(started.wait(5.0))
+        self.panel.poll()
+        self.assertEqual(self.panel.show()["buttons"]["Start"], "disabled")
+        self.assertEqual(self.panel.show()["setup_progress"], [1, 7])
+        gate.set()
+        assert self.panel.drawer is not None
+        self.panel.drawer.wait()
+        self.panel.poll()
+        self.assertEqual(self.panel.show()["buttons"]["Start"], "normal")
+        self.assertEqual(self.panel.show()["setup_progress"], [7, 7])
+
+    def test_no_steps(self) -> None:
+        """Next Step without a setup says so."""
+        self.panel.open(self.program(self.gcode))
+        self.ask("press Next Step")
+        self.assertEqual(
+            self.panel.show()["message"], "This program has no setup."
+        )
+
+    def ask(self, line: str) -> str:
+        """Send one line, as the command port would."""
+        return self.panel.handle(line)
+
+    def test_draw_error(self) -> None:
+        """An error while drawing comes to the message line on a poll."""
+        assert self.panel.drawer is not None
+        self.panel.drawer.view = FakeView(fail=True)
+        self.panel.open(self.program(with_setup(self.gcode, demo_assembly())))
+        self.panel.drawer.wait()
+        self.panel.poll()
+        self.assertIn("no such vise", self.panel.show()["message"])
+
+    def test_newest_drawn(self) -> None:
+        """Setups handed in while drawing: only the newest is drawn."""
+        gate = threading.Event()
+        started = threading.Event()
+        view = FakeView()
+        shown = view.show
+
+        def slow(assembly: SCAssembly) -> None:
+            started.set()
+            gate.wait(5.0)
+            shown(assembly)
+
+        drawer = lcnc_hmi.SCSetupDrawer(cast(Any, mock.Mock(show=slow)))
+        first, second, third = SCAssembly(), SCAssembly(), SCAssembly()
+        drawer.draw(first)
+        self.assertTrue(started.wait(5.0))
+        drawer.draw(second)
+        drawer.draw(third)
+        gate.set()
+        drawer.wait()
+        self.assertEqual(len(view.shown), 2)
+        self.assertIs(view.shown[0], first)
+        self.assertIs(view.shown[1], third)
+
+
+class TestSetOrigin(unittest.TestCase):
+    """Set Origin with a setup: pick an origin, confirm, set G54."""
+
+    def setUp(self) -> None:
+        use_shop(shops.read(EXAMPLE_SHOP))
+        lcnc_hmi.use_headless()
+        lcnc_hmi_headless.ANSWERS.clear()
+        self.machine = lcnc_hmi.SCPanelMachine(True)
+        self.panel = lcnc_hmi.SCPanel(
+            cast(Any, lcnc_hmi_headless.Tk()), self.machine, 10.0, None
+        )
+        # pylint: disable-next=consider-using-with
+        scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(scratch.cleanup)
+        self.path = Path(scratch.name, "part.nc")
+
+    def open(self, setup: bool) -> None:
+        """Open a program in inches, with or without the demo setup."""
+        gcode = "G20\nG0 X1\nM2\n"
+        if setup:
+            gcode = with_setup(gcode, demo_assembly())
+        self.path.write_text(gcode, encoding="utf-8")
+        self.panel.open(str(self.path))
+
+    def test_pick(self) -> None:
+        """Picking the stock's corner sets G54 to read it, in inches."""
+        self.open(True)
+        self.assertTrue(self.panel.inches)
+        lcnc_hmi_headless.ANSWERS.extend(["stock: top left outer", "yes"])
+        self.panel.on_set_origin()
+        self.assertEqual(
+            self.machine.log[-2:],
+            ["mdi G20", "mdi G10 L20 P1 X-0.2500 Y-0.2500 Z0.0000"],
+        )
+
+    def test_cancel(self) -> None:
+        """No pick, or No at the question, sets nothing."""
+        self.open(True)
+        lcnc_hmi_headless.ANSWERS.extend(["", "stock: top left outer", "no"])
+        before = list(self.machine.log)
+        self.panel.on_set_origin()
+        self.panel.on_set_origin()
+        self.assertEqual(self.machine.log, before)
+
+    def test_no_setup(self) -> None:
+        """Without a setup, Set Origin zeroes the position, as before."""
+        self.open(False)
+        self.assertEqual(self.panel.origins, [])
+        lcnc_hmi_headless.ANSWERS.append("yes")
+        self.panel.on_set_origin()
+        self.assertEqual(self.machine.log[-1], "mdi G10 L20 P1 X0 Y0 Z0")
+
+    def test_lines(self) -> None:
+        """The units word and `G10 L20 P1`, in the program's units."""
+        self.assertEqual(
+            lcnc_hmi.origin_lines((25.4, -12.7, 0.0), True),
+            ["G20", "G10 L20 P1 X1.0000 Y-0.5000 Z0.0000"],
+        )
+        self.assertEqual(
+            lcnc_hmi.origin_lines((1.0, 2.0, -3.0), False),
+            ["G21", "G10 L20 P1 X1.000 Y2.000 Z-3.000"],
+        )
+        self.assertTrue(lcnc_hmi.program_inches(["(G21)", "G20 G90"]))
+        self.assertFalse(lcnc_hmi.program_inches(["G0 X1"]))
+
+
+class TestMainSolidCraft(unittest.TestCase):
+    """`--solidcraft` makes the drawer; without it there is none."""
+
+    def run_main(self, *extra: str) -> mock.MagicMock:
+        """Run `main()` headless, with SolidCraft faked."""
+        handler = signal.getsignal(signal.SIGTERM)
+        self.addCleanup(signal.signal, signal.SIGTERM, handler)
+        with (
+            mock.patch.object(lcnc_hmi_headless.Tk, "mainloop"),
+            mock.patch.object(lcnc_hmi, "connect"),
+            mock.patch.object(lcnc_hmi, "SCPyBind"),
+            mock.patch.object(lcnc_hmi, "SCModelCache"),
+            mock.patch.object(lcnc_hmi, "SCSetupView") as view,
+        ):
+            code = lcnc_hmi.main(["--headless", "--dry-run", *extra])
+        self.assertEqual(code, 0)
+        return view
+
+    def test_no_solidcraft(self) -> None:
+        """No `--solidcraft`: no view is made."""
+        self.assertFalse(self.run_main().called)
+
+    def test_solidcraft(self) -> None:
+        """`--solidcraft PORT`: one view, made at the start."""
+        self.assertEqual(self.run_main("--solidcraft", "8080").call_count, 1)
+
+
 class TestHeadlessProgram(unittest.TestCase):
     """The program itself, with no display and no `tkinter`."""
 
@@ -481,8 +769,8 @@ class TestHeadlessProgram(unittest.TestCase):
         }
         code = (
             "import sys; sys.modules['tkinter'] = None; "
-            "from scraftcnc.hmi import lcnc_panel; "
-            "sys.exit(lcnc_panel.main(sys.argv[1:]))"
+            "from scraftcnc.hmi import lcnc_hmi; "
+            "sys.exit(lcnc_hmi.main(sys.argv[1:]))"
         )
         with subprocess.Popen(
             [sys.executable, "-c", code, "--headless", "--dry-run",
@@ -503,8 +791,8 @@ class TestHeadlessProgram(unittest.TestCase):
         """With no `tkinter`, a window can not open, and it says so."""
         code = (
             "import sys; sys.modules['tkinter'] = None; "
-            "from scraftcnc.hmi import lcnc_panel; "
-            "sys.exit(lcnc_panel.main(['--dry-run']))"
+            "from scraftcnc.hmi import lcnc_hmi; "
+            "sys.exit(lcnc_hmi.main(['--dry-run']))"
         )
         done = subprocess.run(
             [sys.executable, "-c", code],

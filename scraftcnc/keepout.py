@@ -27,19 +27,23 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Literal, TypeAlias
 
+from .assembly import SCAssembly, resolve
 from .demo import (
     END_MILL,
     MACHINE,
     MATERIAL,
     SHOP_FILE,
     cut_demo,
+    demo_assembly,
 )
 from .gcode import RS274, SCCNC
 from .geometry import SCArc, SCCorner, SCLine, SCRoundedPolygon, SCSegment
 from .machine import SCMachine, SCTool
+from .setup_view import SCPlaced, keep_out_prisms, place
 from .setups import EXAMPLE, SCPlacedWork, SCSetup
 from .shops import cnc_machine, read
 from .tooling.cutter_models import MM_PER_INCH
+from .tooling.shop_registries import use_shop
 from .tooling.tools import GRID_PLATE, Point, SCCylinder, SCPrism
 
 # What a violation can be.
@@ -161,6 +165,33 @@ def work_zones(
     return [prism_zone(prism, origin) for prism in regions.prisms] + [
         cylinder_zone(cylinder, origin) for cylinder in regions.cylinders
     ]
+
+
+# Function `assembly_zones()`:
+def assembly_zones(assembly: SCAssembly) -> list[SCRoundedPolygon]:
+    """Return the zones of an assembly's own keep-outs (`.nc` setups).
+
+    The setup frame is the work frame, so no origin is moved.
+
+    Arguments:
+    * `assembly` (`SCAssembly`): The setup, as written to the `.nc`.
+
+    Returns:
+    * (`list[SCRoundedPolygon]`): The zones, as roots.
+    """
+    zones: list[SCRoundedPolygon] = []
+    here: SCPlaced
+    for here in place(assembly):
+        if not here.item.keep_out:
+            continue
+        origin: Point = resolve(here.item).origin(0)
+        low: Point
+        high: Point
+        for low, high in keep_out_prisms(here, origin):
+            zones.append(
+                prism_zone(SCPrism(here.item.name, low, high), (0, 0, 0))
+            )
+    return zones
 
 
 # Function `_word()`:
@@ -467,7 +498,7 @@ def grid_plate_program(turns: int, machine: SCMachine) -> SCCNC:
     drills the holes and profiles the outline directly.
 
     Arguments:
-    * `turns` (`int`): The quarter turns clockwise of the part.
+    * `turns` (`int`): The part's quarter turns counterclockwise.
     * `machine` (`SCMachine`): The machine, with `HOLE_DRILL` loaded.
 
     Returns:
@@ -523,11 +554,19 @@ def main() -> int:
     Returns:
     * (`int`): The exit status.
     """
+    # The example shop is the one in use.
+    use_shop(read(SHOP_FILE))
+
     # The demonstration plate's corner is at the origin, so it is moved.
     demo: SCSetup = SCSetup(json.loads(DEMO_SETUP.read_text(encoding="utf-8")))
     cnc: SCCNC = cut_demo()[0]
     cnc.remap(0, -2.0, -1.5)
     print(report(cnc, check_program(cnc, work_zones(demo, demo.materials[0]))))
+
+    # The same program against the `.nc` setup's own keep-outs.
+    plate: SCCNC = cut_demo()[0]
+    plate.name = "Demo plate, setup keep-outs"
+    print(report(plate, check_program(plate, assembly_zones(demo_assembly()))))
 
     # The grid plate is placed turned.
     setup: SCSetup = SCSetup(json.loads(EXAMPLE.read_text(encoding="utf-8")))

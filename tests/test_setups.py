@@ -1,36 +1,31 @@
 """Tests for `setups`: setups read from JSON."""
 
 import copy
-import dataclasses
 import json
 import shutil
 import unittest
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
-from unittest import mock
 
 from scraftcnc import setups
 from scraftcnc.pybind.scraftpybind import SCHeadlessTransport, SCPyBind
 from scraftcnc.shops import grid_plates, read
 from scraftcnc.tooling import tools
 from scraftcnc.tooling.mount import SCMachineViseLayer, SCParallelLayer
+from scraftcnc.tooling.shop_registries import use_shop
+from tests.flat_plate import FLAT_PLATE, use_flat_plate
 
 # An extracted `solidcraft-cli` (as the demo uses) for the live test.
 HERE: Path = Path(__file__).resolve().parent.parent
 CLI: Path = HERE / "solidcraft/squashfs-root/usr/bin/solidcraft-cli"
 INCH = 25.4
 
-# `GRID_PLATE` without its chamfers, which take minutes to model: the
-# same shape for every check here.
-FLAT_PLATE = dataclasses.replace(tools.GRID_PLATE, chamfer_depth=0.0)
-
 
 def setUpModule() -> None:
     """Have setups name the unchamfered plate."""
-    patcher = mock.patch.dict(setups.PARTS, {"Grid plate": FLAT_PLATE})
-    patcher.start()
-    unittest.addModuleCleanup(patcher.stop)
+    use_shop(read(setups.SHOP))
+    use_flat_plate()
 
 
 def example() -> Any:

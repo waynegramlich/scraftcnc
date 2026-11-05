@@ -4,16 +4,14 @@
 @2.5_Tool_Models/Details.md
 @2.5.1_Create_tools_from_Shop.md/Details.md
 @2.5.2_Document_Tool_Models/Details.md
-@3.3.1_Headless_LinuxCNC_Panel/Details.md
 @3.4_Minimal_LinuxCNC_Control_Panel/Details.md
 @4_Implementing_Keepout_Zones/Details.md
 @5_Integration/Details.md
 @5_Integration/Context.md
-@5.2_Embed_Mount_Setup_as_G_Code_Comments/Details.md
-@5.2_Embed_Mount_Setup_as_G_Code_Comments/Context.md
 @5.3_Create_More_Tools/Details.md
 @5.4_New_Path_for_Each_Tool_Change/Details.md
 @5.5_Standard_Materials/Details.md
+@5.6_Import_a_Project_from_a_Different_Shop/Details.md
 @../ISSUES/2_Archive_Merged_GitHub_Repositories/Summary.md
 @../ISSUES/3_Main_Part_Goes_Translucent_in_show_demo/Summary.md
 @../ISSUES/1_PathRack_Hidden_Path_Shows_Again/Summary.md

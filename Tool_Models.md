@@ -965,6 +965,18 @@ Attributes:
 * `hex_length` (`float`): The hexagon's size along X.
 
 ```python
+SCMachineVise.named(name: str) -> 'SCMachineVise'
+```
+
+Return the machine vise with a key or name.
+
+```python
+SCMachineVise.key() -> str
+```
+
+Return its key in `REGISTRY` (e.g. `kurt_d688`).
+
+```python
 SCMachineVise.bed_top() -> float
 ```
 
@@ -1376,6 +1388,18 @@ Attributes:
   Optional.  The diameter of its holes; 0 for no holes.
 
 ```python
+SCParallel.named(name: str) -> 'SCParallel'
+```
+
+Return the parallel with a key or name.
+
+```python
+SCParallel.key() -> str
+```
+
+Return its key in `REGISTRY` (e.g. `kurt_d688`).
+
+```python
 SCParallel.has_holes() -> bool
 ```
 
@@ -1437,6 +1461,13 @@ use the cache.
 
 The sketches are of `tools.GRID_PLATE`.  Its tap drill tooling
 holes are filled, and its close fit ones open.
+
+Chamfering the grid's holes is currently very slow to compute
+(about 4-1/2 minutes for `tools.GRID_PLATE`'s 200, against
+seconds without them), and is done again whenever the cache
+key changes.  Turning it off is recommended:
+`SCGridPlate.named(name, chamfer=False)` (in a setup's
+`args`, `chamfer = false`), as the demonstration does.
 
 Top:
 
@@ -1600,6 +1631,18 @@ Attributes:
   Optional.  The diameter of the close fit tooling holes.
 
 ```python
+SCGridPlate.named(name: str, chamfer: bool = True) -> 'SCGridPlate'
+```
+
+Return the grid plate with a key or name.
+
+```python
+SCGridPlate.key() -> str
+```
+
+Return its key in `REGISTRY` (e.g. `kurt_d688`).
+
+```python
 SCGridPlate.from_shop(plate: dict[str, object]) -> 'SCGridPlate'
 ```
 
@@ -1634,6 +1677,12 @@ SCGridPlate.seat() -> Point
 ```
 
 Return the middle of the plate's top.
+
+```python
+SCGridPlate.origin(turns: int = 0) -> Point
+```
+
+Return the point handed up to the next item.
 
 ```python
 SCGridPlate.outline(center: tuple[float, float]) -> SCRoundedPolygon

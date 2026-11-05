@@ -30,7 +30,7 @@ distrobox enter lcnc -- python3 -m scraftcnc.lcnc.sim_linuxcnc demo.ngc \
 ```
 
 With `--watch`, it sends LinuxCNC nothing and only follows what
-another program runs (`lcnc_panel.py`, say), until Ctrl-C; the program
+another program runs (`lcnc_hmi.py`, say), until Ctrl-C; the program
 whose paths are drawn is the one named, or else the one the panel has
 open:
 
@@ -387,7 +387,7 @@ class SCSimulator:
         """Poll the position for ever, while something else drives.
 
         Nothing is sent to LinuxCNC: the program is opened, started,
-        paused and stopped by its display (`lcnc_panel.py`), and this
+        paused and stopped by its display (`lcnc_hmi.py`), and this
         only hands each poll to the listeners, on the same fixed
         schedule as `follow()`, until Ctrl-C or a listener fails.
 
@@ -586,7 +586,7 @@ def main() -> int:
     parser.add_argument(
         "--watch",
         action="store_true",
-        help="only follow what LinuxCNC's display (lcnc_panel.py) runs: "
+        help="only follow what LinuxCNC's display (lcnc_hmi.py) runs: "
         "no homing, tools, origin or start",
     )
     sim_solidcraft.add_arguments(parser)

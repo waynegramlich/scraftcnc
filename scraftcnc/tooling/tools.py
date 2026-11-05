@@ -35,9 +35,10 @@ python3 -m scraftcnc.tooling.tools 8080 421-0261
 import itertools
 import math
 import sys
-from dataclasses import asdict, dataclass, field
+from collections.abc import Sequence
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, ClassVar, cast
 
 from ..geometry import SCCorner, SCHole, SCRoundedPolygon
 from ..model_cache import SCCacheable, source_digest
@@ -51,6 +52,8 @@ from .cutter_models import (
     flute_runs,
     flute_steps,
 )
+from .registry import SCRegistry
+from .registry import key as registry_key
 
 # A point: `(x, y, z)`, in millimeters.
 Point = tuple[float, float, float]
@@ -212,6 +215,9 @@ class SCMillTable:
       pocket_length, pocket_width)`
     """
 
+    # The mill tables by key (`registry.key()` of `name`), set below.
+    REGISTRY: ClassVar["SCRegistry[SCMillTable]"]
+
     # Constructor arguments:
     name: str = field(init=True)
     length: float = field(init=True)
@@ -226,6 +232,29 @@ class SCMillTable:
     slot_depth: float = field(init=True)
     pocket_length: float = field(init=True)
     pocket_width: float = field(init=True)
+
+    # Method `SCMillTable.named()`:
+    @classmethod
+    def named(cls, name: str) -> "SCMillTable":
+        """Return the mill table with a key or name.
+
+        Arguments:
+        * `name` (`str`):
+          Its key (`registry.key()` of its name) or its name.
+
+        Returns:
+        * (`SCMillTable`): The mill table.
+
+        Raises:
+        * `KeyError`: If there is none, listing the known keys.
+        """
+        return cls.REGISTRY.named(name)
+
+    # Method `SCMillTable.key()`:
+    @property
+    def key(self) -> str:
+        """Return its key in `REGISTRY` (e.g. `kurt_d688`)."""
+        return registry_key(self.name)
 
     # Method `SCMillTable.__post_init__()`:
     def __post_init__(self) -> None:
@@ -434,21 +463,28 @@ class SCPrism:
             raise ValueError(f"{self.low=} must be below {self.high=}")
 
     # Method `SCPrism.quarter_turned()`:
-    def quarter_turned(self, x: float, y: float) -> "SCPrism":
-        """Return the prism turned clockwise, seen from above: +X to -Y.
+    def quarter_turned(self, x: float, y: float, turns: int = 1) -> "SCPrism":
+        """Return the prism turned about a vertical axis.
+
+        Turns follow the right hand rule about +Z (counterclockwise,
+        seen from above): one turn sends +X to +Y.
 
         Arguments:
         * `x` (`float`): The X of the vertical axis (millimeters).
         * `y` (`float`): The Y of the vertical axis (millimeters).
+        * `turns` (`int`): How many quarter turns (any integer).
 
         Returns:
         * (`SCPrism`): The turned prism, with the same name.
         """
-        return SCPrism(
-            self.name,
-            (x + self.low[1] - y, y - self.high[0] + x, self.low[2]),
-            (x + self.high[1] - y, y - self.low[0] + x, self.high[2]),
-        )
+        prism: SCPrism = self
+        for _ in range(turns % 4):
+            prism = SCPrism(
+                self.name,
+                (x + y - prism.high[1], y - x + prism.low[0], prism.low[2]),
+                (x + y - prism.low[1], y - x + prism.high[0], prism.high[2]),
+            )
+        return prism
 
     # Method `SCPrism.grown()`:
     def grown(self, margin: float) -> "SCPrism":
@@ -467,6 +503,47 @@ class SCPrism:
             (x0 - margin, y0 - margin, z0 - margin),
             (x1 + margin, y1 + margin, z1 + margin),
         )
+
+
+# Function `quarter_turn()`:
+def quarter_turn(point: Point, turns: int) -> Point:
+    """Turn a point about the Z axis, counterclockwise.
+
+    Arguments:
+    * `point` (`Point`): The point (millimeters).
+    * `turns` (`int`):
+      Quarter turns, counterclockwise (the right hand rule about +Z):
+      one turn sends +X to +Y.
+
+    Returns:
+    * (`Point`): The turned point.
+    """
+    x, y, z = point
+    for _ in range(turns % 4):
+        x, y = -y, x
+    return (x, y, z)
+
+
+# Function `left_corner()`:
+def left_corner(
+    points: Sequence[Point], turns: int, *, upper: bool = False
+) -> Point:
+    """Return the left corner of some points, once turned.
+
+    The left corner has the smallest X; of those, the smallest Y (the
+    outer one, toward the operator), or the largest Y when `upper`.
+
+    Arguments:
+    * `points` (`Sequence[Point]`): The points (millimeters).
+    * `turns` (`int`): Quarter turns about Z, counterclockwise.
+    * `upper` (`bool`): True to take the largest Y, not the smallest.
+
+    Returns:
+    * (`Point`): The corner, turned.
+    """
+    turned: list[Point] = [quarter_turn(point, turns) for point in points]
+    sign: float = -1.0 if upper else 1.0
+    return min(turned, key=lambda point: (round(point[0], 6), sign * point[1]))
 
 
 # Function `box_prism()`:
@@ -1845,6 +1922,9 @@ class SCMachineVise:
       hex_size, hex_length)`
     """
 
+    # The machine vises by key (`registry.key()` of `name`), set below.
+    REGISTRY: ClassVar["SCRegistry[SCMachineVise]"]
+
     # Constructor arguments:
     name: str = field(init=True)
     base: SCViseBlock = field(init=True)
@@ -1865,6 +1945,29 @@ class SCMachineVise:
     lead_screw_hole_diameter: float = field(init=True)
     hex_size: float = field(init=True)
     hex_length: float = field(init=True)
+
+    # Method `SCMachineVise.named()`:
+    @classmethod
+    def named(cls, name: str) -> "SCMachineVise":
+        """Return the machine vise with a key or name.
+
+        Arguments:
+        * `name` (`str`):
+          Its key (`registry.key()` of its name) or its name.
+
+        Returns:
+        * (`SCMachineVise`): The machine vise.
+
+        Raises:
+        * `KeyError`: If there is none, listing the known keys.
+        """
+        return cls.REGISTRY.named(name)
+
+    # Method `SCMachineVise.key()`:
+    @property
+    def key(self) -> str:
+        """Return its key in `REGISTRY` (e.g. `kurt_d688`)."""
+        return registry_key(self.name)
 
     # Method `SCMachineVise.__post_init__()`:
     def __post_init__(self) -> None:
@@ -2787,6 +2890,9 @@ class SCParallel:
       hole_diameter)`
     """
 
+    # The parallels by key (`registry.key()` of `name`), set below.
+    REGISTRY: ClassVar["SCRegistry[SCParallel]"]
+
     # Constructor arguments:
     name: str = field(init=True)
     height: float = field(init=True)
@@ -2794,6 +2900,29 @@ class SCParallel:
     length: float = field(init=True)
     hole_spacing: float = field(init=True, default=0.0)
     hole_diameter: float = field(init=True, default=0.0)
+
+    # Method `SCParallel.named()`:
+    @classmethod
+    def named(cls, name: str) -> "SCParallel":
+        """Return the parallel with a key or name.
+
+        Arguments:
+        * `name` (`str`):
+          Its key (`registry.key()` of its name) or its name.
+
+        Returns:
+        * (`SCParallel`): The parallel.
+
+        Raises:
+        * `KeyError`: If there is none, listing the known keys.
+        """
+        return cls.REGISTRY.named(name)
+
+    # Method `SCParallel.key()`:
+    @property
+    def key(self) -> str:
+        """Return its key in `REGISTRY` (e.g. `kurt_d688`)."""
+        return registry_key(self.name)
 
     # Method `SCParallel.__post_init__()`:
     def __post_init__(self) -> None:
@@ -3137,6 +3266,9 @@ class SCGridPlate:
       tooling_rows, tooling_pitch, tap_diameter, close_diameter)`
     """
 
+    # The grid plates by key (`registry.key()` of `name`), set below.
+    REGISTRY: ClassVar["SCRegistry[SCGridPlate]"]
+
     # Constructor arguments:
     name: str = field(init=True)
     length: float = field(init=True)
@@ -3152,6 +3284,37 @@ class SCGridPlate:
     tooling_pitch: float = field(init=True, default=0.0)
     tap_diameter: float = field(init=True, default=0.0)
     close_diameter: float = field(init=True, default=0.0)
+
+    # Method `SCGridPlate.named()`:
+    @classmethod
+    def named(cls, name: str, chamfer: bool = True) -> "SCGridPlate":
+        """Return the grid plate with a key or name.
+
+        Chamfering the grid's holes takes a lot of computing (above), so
+        `chamfer=False` gives the same plate without them, which models
+        in seconds; the demonstration's setup uses it.
+
+        Arguments:
+        * `name` (`str`):
+          Its key (`registry.key()` of its name) or its name.
+        * `chamfer` (`bool`):
+          Optional.  Whether its holes are chamfered (default `True`, as
+          the shop describes it).
+
+        Returns:
+        * (`SCGridPlate`): The grid plate.
+
+        Raises:
+        * `KeyError`: If there is none, listing the known keys.
+        """
+        plate: SCGridPlate = cls.REGISTRY.named(name)
+        return plate if chamfer else replace(plate, chamfer_depth=0.0)
+
+    # Method `SCGridPlate.key()`:
+    @property
+    def key(self) -> str:
+        """Return its key in `REGISTRY` (e.g. `kurt_d688`)."""
+        return registry_key(self.name)
 
     # Method `SCGridPlate.__post_init__()`:
     def __post_init__(self) -> None:
@@ -3373,6 +3536,26 @@ class SCGridPlate:
         """
         return (0.0, 0.0, self.height)
 
+    # Method `SCGridPlate.origin()`:
+    def origin(self, turns: int = 0) -> Point:
+        """Return the point handed up to the next item.
+
+        It is the top, left (smallest X), outer (smallest Y, toward the
+        operator) corner, once the plate is turned.
+
+        Arguments:
+        * `turns` (`int`): The plate's quarter turns, counterclockwise.
+
+        Returns:
+        * (`Point`): From the center of its bottom, turned (millimeters).
+        """
+        x: float = self.length / 2.0
+        y: float = self.width / 2.0
+        corners: list[Point] = [
+            (sx * x, sy * y, self.height) for sx in (-1, 1) for sy in (-1, 1)
+        ]
+        return left_corner(corners, turns)
+
     # Method `SCGridPlate.outline()`:
     def outline(self, center: tuple[float, float]) -> SCRoundedPolygon:
         """Return the plate's outline and holes, as seen from above.
@@ -3550,6 +3733,14 @@ def table_centers() -> list[float]:
         centers.append(edge + table.width / 2.0)
         edge += table.width + TABLE_GAP
     return centers
+
+
+# The registries of the tooling above, by key (`registry.key()`),
+# filled from the shop in use by `shop_registries.use_shop()`.
+SCMillTable.REGISTRY = SCRegistry("mill table")
+SCMachineVise.REGISTRY = SCRegistry("machine vise")
+SCParallel.REGISTRY = SCRegistry("parallel")
+SCGridPlate.REGISTRY = SCRegistry("grid plate")
 
 
 # Class `SCTormach`:

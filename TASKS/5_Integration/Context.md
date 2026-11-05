@@ -30,3 +30,12 @@ see `T.emsagc~5.2`'s `Context.md`.  Nothing coded yet.
 The `.nc` setup comment design is settled (summary at the end of
 `T.emsagc~5.2`'s `Context.md`); coding starts next, in its #39 order.
 `T.sm2~5.5` Standard Materials created, Pending.
+
+## 2026-11-04: `T.emsagc~5.2` closed
+
+The `.nc` setup comments work end to end: the panel draws the mount
+from them, picks the origin from a list, steps through the items, and
+toggles keep-outs; `./show_demo.py --headless` (`T.hlp~3.3.1`, closed)
+lets Claude run everything with no window.  Its summary lists what is
+left open.  Next candidates: `T.npfetc~5.4` (a path per tool change),
+spacers under the part (through cuts), `T.sm2~5.5`.

@@ -21,16 +21,17 @@ the slider:
 
 ```
 python3 -m scraftcnc.lcnc.serve_linuxcnc &
-python3 -m scraftcnc.hmi.lcnc_panel demo.ngc
+python3 -m scraftcnc.hmi.lcnc_hmi demo.ngc
 # The window alone:
-python3 -m scraftcnc.hmi.lcnc_panel --dry-run demo.ngc
+python3 -m scraftcnc.hmi.lcnc_hmi --dry-run demo.ngc
 # No window, for tests:
-python3 -m scraftcnc.hmi.lcnc_panel --headless --port 5007
+python3 -m scraftcnc.hmi.lcnc_hmi --headless --port 5007
 ```
 
-With `--headless`, the panel is built from `lcnc_headless.py` in place
-of `tkinter`, so it needs no display and no `tkinter`, and otherwise
-runs the same code, with its buttons pressed through the command port.
+With `--headless`, the panel is built from `lcnc_hmi_headless.py` in
+place of `tkinter`, so it needs no display and no `tkinter`, and
+otherwise runs the same code, with its buttons pressed through the
+command port.
 
 A program is opened from the command line, with Open, or through the
 command port
@@ -40,9 +41,10 @@ answers one line: `ping`, `open FILE`, `start` (or `run`), `pause`,
 previous tool change), `speed X`, `press LABEL` (presses a button,
 as a person would; refused when it is greyed out), `type LINE` (into
 the MDI line), `show` (all that the window shows, as JSON), `answer
-VALUE` (with `--headless`, the answer to the next question: `yes` or a
-file), `status`, `messages` (every message
-LinuxCNC has sent, as `messages: A | B`) or `quit`:
+VALUE` (with `--headless`, the answer to the next question: `yes`, a
+file or a setup origin's name), `status`, `messages` (every message
+LinuxCNC has sent, as `messages: A | B`), `log` (every command sent,
+as `log: A | B`) or `quit`:
 
 ```
 echo "open demo.ngc" | nc -q 1 127.0.0.1 5007
@@ -57,19 +59,28 @@ import argparse
 import functools
 import json
 import math
+import queue
 import re
 import signal
 import socket
 import sys
+import threading
 import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Protocol, cast
 
 from .. import shops
+from ..assembly import SCAssembly, SCItem
 from ..lcnc.lcnc_client import PORT, SCBridgeError, SCClient, constant
-from . import lcnc_headless
+from ..model_cache import SCModelCache
+from ..pybind.scraftpybind import SCPyBind, connect
+from ..setup_comments import read_file
+from ..setup_view import SCSetupView, named_origins
+from ..tooling.shop_registries import use_shop
+from ..tooling.tools import Point
+from . import lcnc_hmi_headless
 
 # A computer with no `tkinter` can still run `--headless`.
 try:
@@ -77,10 +88,10 @@ try:
     from tkinter import filedialog, messagebox, ttk
 except ImportError:
     # pylint: disable=reimported,ungrouped-imports
-    from . import lcnc_headless as filedialog  # type: ignore[no-redef]
-    from . import lcnc_headless as messagebox  # type: ignore[no-redef]
-    from . import lcnc_headless as tk  # type: ignore[no-redef]
-    from . import lcnc_headless as ttk  # type: ignore[no-redef]
+    from . import lcnc_hmi_headless as filedialog  # type: ignore[no-redef]
+    from . import lcnc_hmi_headless as messagebox  # type: ignore[no-redef]
+    from . import lcnc_hmi_headless as tk  # type: ignore[no-redef]
+    from . import lcnc_hmi_headless as ttk  # type: ignore[no-redef]
 
 # The protocol of `serve_linuxcnc` that this needs, at least.
 PROTOCOL: int = 2
@@ -121,6 +132,9 @@ SHOWN: int = 6
 # A tool change line (`M6`, outside a comment).
 TOOL_CHANGE: re.Pattern[str] = re.compile(r"\bM0*6\b", re.IGNORECASE)
 
+# A units word: `G20` (inches) or `G21` (millimeters).
+UNITS: re.Pattern[str] = re.compile(r"\bG(2[01])\b", re.IGNORECASE)
+
 # Comments: in parentheses, or from `;` to the end of the line.
 COMMENT: re.Pattern[str] = re.compile(r"\([^)]*\)|;.*")
 
@@ -148,11 +162,11 @@ BAD: str = "#f8d0d0"
 
 # Function `use_headless()`:
 def use_headless() -> None:
-    """Build every window from now on with `lcnc_headless`."""
+    """Build every window from now on with `lcnc_hmi_headless`."""
     # The window code stays the same, by using the same names.
     # pylint: disable-next=global-statement
     global tk, ttk, filedialog, messagebox
-    tk = ttk = filedialog = messagebox = lcnc_headless
+    tk = ttk = filedialog = messagebox = lcnc_hmi_headless
 
 
 # Function `material_names()`:
@@ -767,6 +781,209 @@ class SCCommandPort:  # pylint: disable=too-few-public-methods
                     pass
 
 
+# Function `program_inches()`:
+def program_inches(lines: list[str]) -> bool:
+    """Return whether a program works in inches (its first `G20`/`G21`).
+
+    Arguments:
+    * `lines` (`list[str]`): The program.
+
+    Returns:
+    * (`bool`): True for `G20` first, False for `G21` or neither.
+    """
+    line: str
+    for line in lines:
+        found: re.Match[str] | None = UNITS.search(COMMENT.sub("", line))
+        if found is not None:
+            return found.group(1) == "20"
+    return False
+
+
+# Function `origin_lines()`:
+def origin_lines(point: Point, inches: bool) -> list[str]:
+    """Return the MDI lines that make the tool tip read a point.
+
+    Arguments:
+    * `point` (`Point`): Where the tool tip is, in work coordinates
+      (millimeters).
+    * `inches` (`bool`): True for a program in inches.
+
+    Returns:
+    * (`list[str]`): The units word, then `G10 L20 P1` for G54.
+    """
+    scale: float = 1.0 / 25.4 if inches else 1.0
+    places: int = 4 if inches else 3
+    x, y, z = (round(value * scale, places) + 0.0 for value in point)
+    return [
+        "G20" if inches else "G21",
+        f"G10 L20 P1 X{x:.{places}f} Y{y:.{places}f} Z{z:.{places}f}",
+    ]
+
+
+# Function `ask_choice()`:
+def ask_choice(
+    root: tk.Tk, title: str, message: str, choices: list[str]
+) -> str:
+    """Ask the operator to pick one of a list, in a window of its own.
+
+    Arguments:
+    * `root` (`tk.Tk`): The panel's window.
+    * `title` (`str`): The window's title.
+    * `message` (`str`): The question.
+    * `choices` (`list[str]`): What may be picked.
+
+    Returns:
+    * (`str`): The choice, or `""` for Cancel.
+    """
+    if tk is lcnc_hmi_headless:
+        return lcnc_hmi_headless.askchoice(title, message, choices)
+
+    # A small window: the question, the list, OK and Cancel.
+    window: tk.Toplevel = tk.Toplevel(root)
+    window.title(title)
+    ttk.Label(window, text=message).pack(padx=8, pady=4)
+    chosen: tk.StringVar = tk.StringVar(value="")
+    picker: ttk.Combobox = ttk.Combobox(
+        window, values=choices, state="readonly", width=40
+    )
+    picker.pack(padx=8, pady=4)
+    buttons: ttk.Frame = ttk.Frame(window)
+    buttons.pack(pady=4)
+
+    def done() -> None:
+        """Keep the choice, and close the window."""
+        chosen.set(picker.get())
+        window.destroy()
+
+    ttk.Button(buttons, text="OK", command=done).pack(side="left")
+    ttk.Button(buttons, text="Cancel", command=window.destroy).pack(
+        side="left"
+    )
+    window.transient(root)
+    window.grab_set()
+    root.wait_window(window)
+    return chosen.get()
+
+
+# Class `SCView`:
+class SCView(Protocol):  # pylint: disable=too-few-public-methods
+    """What shows an assembly (`setup_view.SCSetupView`, or a fake).
+
+    Attributes:
+    * `keep_outs` (`bool`): True to show the items' keep-outs too.
+    * `progress` (`tuple[int, int]`): Changes done, of how many.
+    """
+
+    keep_outs: bool
+    progress: tuple[int, int]
+
+    # Method `SCView.show()`:
+    def show(self, assembly: SCAssembly) -> None:
+        """Show an assembly.
+
+        Arguments:
+        * `assembly` (`SCAssembly`): The items, bottom first.
+        """
+
+
+# Class `SCSetupDrawer`:
+@dataclass(slots=True)
+class SCSetupDrawer:
+    """Draws setups one at a time, on a thread, the newest first.
+
+    A setup handed in while another is drawn waits; a newer one
+    replaces it, so only the newest is drawn next.  Tk is not thread
+    safe, so errors wait in `errors` for the panel's poll.
+
+    Attributes:
+    * `view` (`SCView`): What draws an assembly; kept for the whole
+      run, so a new setup changes only what differs (`T.emsagc~5.2`
+      #68).
+    * `busy` (`bool`): True while the thread is drawing.
+    * `keep_outs` (`bool`): Whether the next drawing shows keep-outs.
+    * `errors` (`queue.SimpleQueue[str]`): Messages for the panel.
+    * `lock` (`threading.Lock`): Guards `busy`, `pending`, `thread`.
+    * `pending` (`SCAssembly | None`): The next setup to draw.
+    * `thread` (`threading.Thread | None`): The drawing thread.
+
+    Constructor:
+    * `SCSetupDrawer(view)`
+    """
+
+    # Constructor arguments:
+    view: SCView = field(init=True)
+
+    # Remaining attributes (alphabetized):
+    busy: bool = field(init=False, default=False)
+    keep_outs: bool = field(init=False, default=False)
+    errors: "queue.SimpleQueue[str]" = field(
+        init=False, default_factory=queue.SimpleQueue
+    )
+    lock: threading.Lock = field(init=False, default_factory=threading.Lock)
+    pending: SCAssembly | None = field(init=False, default=None)
+    thread: threading.Thread | None = field(init=False, default=None)
+
+    # Method `SCSetupDrawer.draw()`:
+    def draw(self, assembly: SCAssembly) -> None:
+        """Draw a setup when the thread is free, dropping older ones.
+
+        Arguments:
+        * `assembly` (`SCAssembly`): The setup to draw.
+        """
+        with self.lock:
+            self.pending = assembly
+            if not self.busy:
+                self.busy = True
+                self.thread = threading.Thread(
+                    target=self.work, name="setup drawer", daemon=True
+                )
+                self.thread.start()
+
+    # Method `SCSetupDrawer.work()`:
+    def work(self) -> None:
+        """Draw the pending setups until there are none (the thread)."""
+        while True:
+            # Take the newest setup, or stop when there is none.
+            assembly: SCAssembly | None
+            with self.lock:
+                assembly = self.pending
+                self.pending = None
+                if assembly is None:
+                    self.busy = False
+                    return
+
+            # Draw it; any error goes to the panel.
+            try:
+                self.view.keep_outs = self.keep_outs
+                self.view.show(assembly)
+            # pylint: disable-next=broad-exception-caught
+            except Exception as error:  # noqa: BLE001
+                self.errors.put(f"Setup not drawn: {error}")
+
+    # Method `SCSetupDrawer.wait()`:
+    def wait(self) -> None:
+        """Wait until every setup handed in is drawn (for tests)."""
+        while True:
+            thread: threading.Thread | None
+            with self.lock:
+                thread = self.thread if self.busy else None
+            if thread is None:
+                return
+            thread.join()
+
+    # Method `SCSetupDrawer.message()`:
+    def message(self) -> str:
+        """Return the newest error message, or "" when there is none.
+
+        Returns:
+        * (`str`): The message.
+        """
+        text: str = ""
+        while not self.errors.empty():
+            text = self.errors.get()
+        return text
+
+
 # Class `SCPanel`:
 # pylint: disable-next=too-many-instance-attributes,too-many-public-methods
 class SCPanel:
@@ -774,6 +991,22 @@ class SCPanel:
 
     Attributes:
     * `coming` (`tk.Text`): The G-code coming next (read only).
+    * `inches` (`bool`): True when the open program is in inches.
+    * `assembly` (`SCAssembly | None`): The open program's setup.
+    * `next_step_button` (`ttk.Button`): Shows the setup's next item.
+    * `note` (`str`): The setup step shown, kept ahead of any error.
+    * `drawing` (`bool`): True while a setup is drawn (Start is
+      greyed out).
+    * `progress` (`ttk.Progressbar`): How much of the setup is drawn.
+    * `drawn` (`SCAssembly | None`): The setup (or the steps of it)
+      last handed to `drawer`.
+    * `keep_outs_button` (`ttk.Button`): Shows or hides keep-outs.
+    * `setup_step` (`int`): How many of the setup's items Next Step
+      has shown (0: the whole setup).
+    * `origins` (`list[tuple[str, Point]]`): The open program's
+      setup's named origins (work millimeters), or none.
+    * `drawer` (`SCSetupDrawer | None`): What draws an opened
+      program's setup in SolidCraft, or `None` to draw nothing.
     * `execute_button` (`ttk.Button`): Runs the MDI line.
     * `executed` (`tk.Text`): The G-code already run (read only).
     * `home_button` (`ttk.Button`): Rapids to the work origin.
@@ -839,6 +1072,14 @@ class SCPanel:
         self.lines: list[str] = []
         self.lines_file: str = ""
         self.scrolling: bool = False
+        self.drawer: SCSetupDrawer | None = None
+        self.origins: list[tuple[str, Point]] = []
+        self.inches: bool = False
+        self.assembly: SCAssembly | None = None
+        self.setup_step: int = 0
+        self.note: str = ""
+        self.drawn: SCAssembly | None = None
+        self.drawing: bool = False
         root.title("SolidCraft LinuxCNC")
 
         # The G-code run and coming, and below them (above the jog
@@ -863,11 +1104,23 @@ class SCPanel:
         self.position.grid(row=2, column=0, padx=4, sticky="w")
         self.message: ttk.Label = ttk.Label(root, foreground="red")
         self.message.grid(row=3, column=0, padx=4, sticky="w")
+        self.progress: ttk.Progressbar = ttk.Progressbar(
+            root, length=120, maximum=1, value=0
+        )
+        self.progress.grid(row=3, column=0, padx=4, sticky="e")
 
         # The jog line: Set Origin, Home, the jog buttons and their
         # step (one chosen at a time).
         jog_line: ttk.Frame = ttk.Frame(root)
         jog_line.grid(row=5, column=0, pady=(6, 2))
+        self.next_step_button: ttk.Button = ttk.Button(
+            jog_line, text="Next Step", command=self.on_next_step
+        )
+        self.next_step_button.pack(side="left", padx=1)
+        self.keep_outs_button: ttk.Button = ttk.Button(
+            jog_line, text="Keep-outs", command=self.on_keep_outs
+        )
+        self.keep_outs_button.pack(side="left", padx=(1, 12))
         self.origin_button: ttk.Button = ttk.Button(
             jog_line, text="Set Origin", command=self.on_set_origin
         )
@@ -1033,7 +1286,9 @@ class SCPanel:
             button.configure(state="disabled" if running else "normal")
         self.run_button.configure(
             text="Resume" if paused else "Start",
-            state="disabled" if running and not paused else "normal",
+            state="disabled"
+            if (running and not paused) or self.drawing
+            else "normal",
         )
         self.pause_button.configure(
             state="normal" if running and not paused else "disabled"
@@ -1075,6 +1330,43 @@ class SCPanel:
         self.start = 0
         self.lines_file = ""  # Read it again, even when the same file.
         self.set_running(False, False)
+        self.open_setup(path)
+
+    # Method `SCPanel.open_setup()`:
+    def open_setup(self, path: str) -> None:
+        """Draw a program's setup (its `SCC:` lines), if it has one.
+
+        A program with no setup is run as is (`T.emsagc~5.2` #17); a
+        wrong setup is reported, and the program is still open.
+
+        Arguments:
+        * `path` (`str`): The G-code file.
+        """
+        self.origins = []
+        self.assembly = None
+        self.setup_step = 0
+        self.note = ""
+        try:
+            assembly: SCAssembly | None = read_file(path)
+            text: str = Path(path).read_text(encoding="utf-8")
+        except (OSError, ValueError) as error:
+            self.message.configure(text=f"Setup not read: {error}")
+            return
+        self.inches = program_inches(text.splitlines())
+        if assembly is None:
+            return
+        self.assembly = assembly
+
+        # Its origins, for Set Origin, then its drawing.
+        try:
+            self.origins = named_origins(assembly)
+        except ValueError as error:
+            self.message.configure(text=f"Setup origins: {error}")
+        if self.drawer is not None:
+            self.drawn = assembly
+            self.drawer.draw(assembly)
+            self.drawing = True
+            self.set_running(self.running, self.paused)
 
     # Method `SCPanel.on_open()`:
     def on_open(self) -> None:
@@ -1192,7 +1484,14 @@ class SCPanel:
 
     # Method `SCPanel.on_set_origin()`:
     def on_set_origin(self) -> None:
-        """Make the current position zero, after asking (No first)."""
+        """Make the current position zero, after asking (No first).
+
+        With a setup, the operator first picks which of its origins the
+        tool tip is at, and the position is made to read that point.
+        """
+        if self.origins:
+            self.set_named_origin()
+            return
         if messagebox.askyesno(
             "Set Origin",
             "Make the current position the program's zero?",
@@ -1200,6 +1499,70 @@ class SCPanel:
         ):
             try:
                 self.machine.set_origin()
+            except RuntimeError as error:
+                self.message.configure(text=str(error))
+
+    # Method `SCPanel.on_next_step()`:
+    def on_next_step(self) -> None:
+        """Show the setup's next item, with its note (`T.emsagc~5.2` #14).
+
+        Step N draws items 1 to N only, so each step adds one item;
+        the step after the last shows the whole setup again.
+        """
+        if self.assembly is None:
+            self.message.configure(text="This program has no setup.")
+            return
+        items: list[SCItem] = self.assembly.items
+        self.setup_step += 1
+        shown: SCAssembly
+        if self.setup_step > len(items):
+            self.setup_step = 0
+            shown = self.assembly
+            text: str = f"Setup: all {len(items)} items."
+        else:
+            item: SCItem = items[self.setup_step - 1]
+            shown = SCAssembly(items[: self.setup_step])
+            text = (
+                f"Step {self.setup_step}/{len(items)}, "
+                f"{item.name.replace('_', ' ')}: {item.note}"
+            )
+        self.note = text
+        self.message.configure(text=text)
+        if self.drawer is not None:
+            self.drawn = shown
+            self.drawer.draw(shown)
+
+    # Method `SCPanel.on_keep_outs()`:
+    def on_keep_outs(self) -> None:
+        """Show the setup's keep-outs, or hide them again."""
+        if self.drawer is None:
+            self.message.configure(text="No SolidCraft to show them in.")
+            return
+        self.drawer.keep_outs = not self.drawer.keep_outs
+        self.message.configure(
+            text=f"Keep-outs {'on' if self.drawer.keep_outs else 'off'}."
+        )
+        if self.drawn is not None:
+            self.drawer.draw(self.drawn)
+
+    # Method `SCPanel.set_named_origin()`:
+    def set_named_origin(self) -> None:
+        """Pick the origin the tool tip is at, confirm, and set G54."""
+        names: list[str] = [name for name, _ in self.origins]
+        picked: str = ask_choice(
+            self.root, "Set Origin", "Where is the tool tip now?", names
+        )
+        if not picked:
+            return
+        point: Point = dict(self.origins)[picked]
+        lines: list[str] = origin_lines(point, self.inches)
+        if messagebox.askyesno(
+            "Set Origin",
+            f"The tool tip is at {picked}: run {lines[-1]}?",
+            default="no",
+        ):
+            try:
+                self.machine.mdi(*lines)
             except RuntimeError as error:
                 self.message.configure(text=str(error))
 
@@ -1248,7 +1611,10 @@ class SCPanel:
           windows), `position`, `message`, `mdi` and `mdi_color` (the
           MDI line), `step` and `speed` (those shown), `buttons` (each
           button's state, by its text) and `texts` (the contents of
-          every text window, such as Tools).
+          every text window, such as Tools), and `drawing` (True while
+          a setup is being drawn in SolidCraft) and `origins` (the
+          setup's named origins, work millimeters) and `setup_step`
+          (how many setup items Next Step shows; 0 for all).
         """
         widgets: list[Any] = list(self.widgets())
         return {
@@ -1260,6 +1626,13 @@ class SCPanel:
             "mdi_color": str(self.mdi_entry.cget("background")),
             "step": self.step.get(),
             "speed": self.speed_text.get(),
+            "drawing": self.drawer is not None and self.drawer.busy,
+            "origins": dict(self.origins),
+            "setup_step": self.setup_step,
+            "setup_progress": [
+                int(float(self.progress.cget("value"))),
+                int(float(self.progress.cget("maximum"))),
+            ],
             "buttons": {
                 str(widget.cget("text")): str(widget.cget("state") or "normal")
                 for widget in widgets
@@ -1305,8 +1678,8 @@ class SCPanel:
                 self.mdi.set(rest)
             elif word == "show":
                 return json.dumps(self.show())
-            elif word == "answer" and tk is lcnc_headless:
-                lcnc_headless.ANSWERS.append(rest.strip())
+            elif word == "answer" and tk is lcnc_hmi_headless:
+                lcnc_hmi_headless.ANSWERS.append(rest.strip())
             elif word == "open" and rest:
                 self.open(rest.strip())
             elif word == "speed" and rest:
@@ -1321,6 +1694,8 @@ class SCPanel:
                 )
             elif word == "messages":
                 return f"messages: {' | '.join(self.machine.messages)}"
+            elif word == "log":
+                return f"log: {' | '.join(self.machine.log)}"
             else:
                 return f"error: unknown command {line!r}"
         except (ValueError, OSError, SCBridgeError) as error:
@@ -1328,8 +1703,26 @@ class SCPanel:
         return "ok"
 
     # Method `SCPanel.poll()`:
-    def poll(self) -> None:
+    # One pass over everything the window shows, so many branches.
+    def poll(self) -> None:  # pylint: disable=too-many-branches
         """Show the machine's state, answer the port, then poll again."""
+        # While a setup is drawn, Start waits, and the bar shows how far.
+        if self.drawer is not None:
+            done, total = self.drawer.view.progress
+            self.progress.configure(maximum=max(total, 1), value=done)
+            if self.drawer.busy != self.drawing:
+                self.drawing = self.drawer.busy
+                self.set_running(self.running, self.paused)
+
+        # A setup that could not be drawn (from the drawing thread).
+        if self.drawer is not None:
+            problem: str = self.drawer.message()
+            if problem:
+                # A step's note stays first, the error after it.
+                self.message.configure(
+                    text=f"{self.note} ({problem})" if self.note else problem
+                )
+
         # A LinuxCNC that has gone is reported, while the port still
         # answers, and the window stays up to be read.
         try:
@@ -1419,6 +1812,17 @@ def main(arguments: list[str]) -> int:
         "--dry-run", action="store_true", help="use no LinuxCNC"
     )
     parser.add_argument(
+        "--solidcraft",
+        type=int,
+        help="a SolidCraft control port, to draw each program's setup",
+    )
+    parser.add_argument(
+        "--shop",
+        type=Path,
+        default=SHOP_FILE,
+        help="the shop's file (default: %(default)s)",
+    )
+    parser.add_argument(
         "--headless",
         action="store_true",
         help="use no display or tkinter, for tests through --port",
@@ -1426,8 +1830,8 @@ def main(arguments: list[str]) -> int:
     options: argparse.Namespace = parser.parse_args(arguments)
     if options.headless:
         use_headless()
-    elif tk is lcnc_headless:
-        print("lcnc_panel.py: tkinter is not installed.", file=sys.stderr)
+    elif tk is lcnc_hmi_headless:
+        print("lcnc_hmi.py: tkinter is not installed.", file=sys.stderr)
         return 1
 
     # The machine, on and homed, and the command port.
@@ -1438,10 +1842,27 @@ def main(arguments: list[str]) -> int:
         machine.start()
         top_speed: float = machine.max_speed()
     except (OSError, RuntimeError, ValueError, SCBridgeError) as error:
-        print(f"lcnc_panel.py: {error}", file=sys.stderr)
+        print(f"lcnc_hmi.py: {error}", file=sys.stderr)
         return 1
     port: SCCommandPort | None = (
         SCCommandPort(options.port) if options.port else None
+    )
+
+    # The shop that names the tooling (`T.emsagc~5.2` #63), and the
+    # SolidCraft the setups are drawn in, if any.
+    try:
+        use_shop(shops.read(options.shop))
+    except shops.SCShopError as error:
+        print(f"lcnc_hmi.py: {error}", file=sys.stderr)
+        return 1
+    drawer: SCSetupDrawer | None = (
+        SCSetupDrawer(
+            SCSetupView(
+                SCPyBind(connect(str(options.solidcraft))), SCModelCache()
+            )
+        )
+        if options.solidcraft
+        else None
     )
 
     # The window.  A `SIGTERM` closes it as its close button does.  An
@@ -1450,6 +1871,7 @@ def main(arguments: list[str]) -> int:
     root: tk.Tk = tk.Tk()
     panel: SCPanel = SCPanel(root, machine, top_speed, port)
     panel.set_speed(1.0)
+    panel.drawer = drawer
     signal.signal(signal.SIGTERM, lambda *_: root.destroy())
     if options.program:
         panel.open(options.program)

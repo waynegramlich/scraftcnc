@@ -20,6 +20,7 @@ python3 -m scraftcnc.demo headless > demo.ngc
 ```
 """
 
+import dataclasses
 import shutil
 import sys
 from collections.abc import Sequence
@@ -27,6 +28,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
+from . import setup_comments
+from .assembly import (
+    SCAssembly,
+    SCItem,
+    keep_out_boxes,
+    millimeters,
+    resolve,
+)
 from .gcode import SCCNC, Stage
 from .geometry import SCCorner, SCRoundedPolygon, point_at
 from .machine import SCMachine, SCTool
@@ -39,6 +48,7 @@ from .pybind.scraftpybind import (
     connect,
 )
 from .shops import cnc_machine, read
+from .tooling.shop_registries import use_shop
 
 # A `solidcraft-cli` extracted from SolidCraft's AppImage, for
 # headless sessions when none is on the `PATH` (if it is there; it is
@@ -213,7 +223,7 @@ def demo_islands() -> list[SCRoundedPolygon]:
 
 # Function `model()`:
 # Its options and the steps of one SolidCraft session make many locals.
-def model(  # pylint: disable=too-many-locals
+def model(
     where: str,
     part: SCPart,
     cnc: SCCNC,
@@ -252,6 +262,33 @@ def model(  # pylint: disable=too-many-locals
     ):
         transport = SCHeadlessTransport(cli=str(SOLIDCRAFT_CLI))
 
+    # Build the plate, draw the tool path, and let it show through.
+    with transport:
+        solidcraft: SCPyBind = SCPyBind(transport)
+        solidcraft.document.units(units="in")
+        profiles: int = _build(solidcraft, part)
+        if path:
+            sketch_path(solidcraft, cnc, MM_PER_INCH)
+        solidcraft.appearance.assign(
+            bodies=[part.outlines[0].name],
+            color="#9fb4c8",
+            opacity=1.0 if opaque else 0.35,
+        )
+        solidcraft.view.apply(view="iso")
+    return profiles
+
+
+# Function `_build()`:
+def _build(solidcraft: SCPyBind, part: SCPart) -> int:
+    """Build a plate in a session: extrude it, cut its pocket, finish it.
+
+    Arguments:
+    * `solidcraft` (`SCPyBind`): The session.
+    * `part` (`SCPart`): The plate's shape.
+
+    Returns:
+    * (`int`): The number of closed profiles the sketches made.
+    """
     # Sketch the outlines on the plate's bottom (whose origin is given
     # in millimeters), and extrude only the plate's own profile, so
     # that the holes stay holes.
@@ -260,46 +297,140 @@ def model(  # pylint: disable=too-many-locals
     depth: float
     top, thickness, depth = part.sizes
     outlines: list[SCRoundedPolygon] = part.outlines
-    with transport:
-        solidcraft: SCPyBind = SCPyBind(transport)
-        solidcraft.document.units(units="in")
-        curves: list[str] = _sketch(
-            solidcraft, outlines, (top - thickness) * MM_PER_INCH
-        )
-        finished: JSON = solidcraft.sketch.finish()
-        solidcraft.solid.extrude(
-            distance=f"{thickness} in",
-            profiles=[{"curves": curves}],
-            body_name=outlines[0].name,
-        )
+    curves: list[str] = _sketch(
+        solidcraft, outlines, (top - thickness) * MM_PER_INCH
+    )
+    finished: JSON = solidcraft.sketch.finish()
+    solidcraft.solid.extrude(
+        distance=f"{thickness} in",
+        profiles=[{"curves": curves}],
+        body_name=outlines[0].name,
+    )
 
-        # Cut the pocket down from the top, around its islands.
-        curves = _sketch(solidcraft, part.pocket, top * MM_PER_INCH)
-        cut: JSON = solidcraft.sketch.finish()
-        solidcraft.solid.extrude(
-            distance=f"{depth} in",
-            direction="negative",
-            operation="cut",
-            profiles=[{"curves": curves}],
-        )
+    # Cut the pocket down from the top, around its islands.
+    curves = _sketch(solidcraft, part.pocket, top * MM_PER_INCH)
+    cut: JSON = solidcraft.sketch.finish()
+    solidcraft.solid.extrude(
+        distance=f"{depth} in",
+        direction="negative",
+        operation="cut",
+        profiles=[{"curves": curves}],
+    )
 
-        # Bevel and round over the top edges.
-        _edges(solidcraft, part.edges, top * MM_PER_INCH)
-
-        # Draw the tool path, and let it show through the plate.
-        if path:
-            sketch_path(solidcraft, cnc, MM_PER_INCH)
-        solidcraft.appearance.assign(
-            bodies=[outlines[0].name],
-            color="#9fb4c8",
-            opacity=1.0 if opaque else 0.35,
-        )
-        solidcraft.view.apply(view="iso")
+    # Bevel and round over the top edges.
+    _edges(solidcraft, part.edges, top * MM_PER_INCH, outlines[0].name)
     assert isinstance(finished, dict) and isinstance(cut, dict)
     profiles: JSON = finished["profiles"]
     pockets: JSON = cut["profiles"]
     assert isinstance(profiles, int) and isinstance(pockets, int)
     return profiles + pockets
+
+
+# Function `demo_shape()`:
+def demo_shape(top: float, thickness: float, rounding: float) -> SCPart:
+    """Return the demonstration plate's shape.
+
+    Arguments:
+    * `top` (`float`): The Z of the plate's top (inches).
+    * `thickness` (`float`): The plate's thickness (inches).
+    * `rounding` (`float`):
+      The radius the hole's top edge is rounded over by (inches).
+
+    Returns:
+    * (`SCPart`): The plate, its hole, its pocket and islands, and how
+      their top edges are finished.
+    """
+    plate: SCRoundedPolygon = demo_plate()
+    hole: SCRoundedPolygon = demo_hole()
+    pocket: SCRoundedPolygon = demo_pocket()
+    islands: list[SCRoundedPolygon] = demo_islands()
+    return SCPart(
+        [plate, hole],
+        [pocket, *islands],
+        (top, thickness, 0.25),
+        [
+            (pocket, "chamfer", BEVEL),
+            *((island, "chamfer", BEVEL) for island in islands),
+            (plate, "chamfer", BEVEL),
+            (hole, "fillet", rounding),
+        ],
+    )
+
+
+# Class `SCDemoPart`:
+@dataclass(slots=True, frozen=True)
+class SCDemoPart:
+    """The demonstration plate as a setup's part item (`demo_part()`).
+
+    Making one touches no SolidCraft session; `model()` builds it.
+
+    Attributes:
+    * `material` (`str`): The material it is cut from (a shop name).
+    * `thickness` (`float`): Its thickness (mm).
+
+    Constructor:
+    * `SCDemoPart(material, thickness)`
+    """
+
+    # Constructor arguments:
+    material: str = field(init=True)
+    thickness: float = field(init=True)
+
+    # Method `SCDemoPart.model()`:
+    def model(
+        self, solidcraft: SCPyBind, point: tuple[float, float, float]
+    ) -> list[str]:
+        """Build the plate in a session, centered over a point.
+
+        Arguments:
+        * `solidcraft` (`SCPyBind`): The session.
+        * `point` (`tuple[float, float, float]`):
+          Where the middle of the plate's bottom goes (mm).
+
+        Returns:
+        * (`list[str]`): The names of its bodies (one).
+        """
+        # The hole's round over is the shop's corner rounding bit.
+        machine: SCMachine = cnc_machine(
+            read(SHOP_FILE), MACHINE, self.material
+        )
+        rounding: float = machine.named(ROUNDING_BIT).radius
+        thickness: float = self.thickness / MM_PER_INCH
+        part: SCPart = demo_shape(
+            point[2] / MM_PER_INCH + thickness, thickness, rounding
+        )
+        _build(solidcraft, part)
+
+        # The outline runs from (0, 0) to (4, 3) inches: move its
+        # middle onto the point.
+        name: str = part.outlines[0].name
+        solidcraft.solid.move(
+            bodies=[name],
+            translate=(
+                point[0] - 2.0 * MM_PER_INCH,
+                point[1] - 1.5 * MM_PER_INCH,
+                0.0,
+            ),
+        )
+        return [name]
+
+
+# Function `demo_part()`:
+def demo_part(material: str, thickness: str | float) -> SCDemoPart:
+    """Return the demonstration plate, for a setup's part item.
+
+    Arguments:
+    * `material` (`str`): The material it is cut from (a shop name).
+    * `thickness` (`str | float`): Its thickness, with a unit.
+
+    Returns:
+    * (`SCDemoPart`): The plate, not yet built.
+
+    Raises:
+    * `TypeError`: If the thickness has no unit.
+    * `ValueError`: If the thickness can not be read.
+    """
+    return SCDemoPart(material, millimeters(thickness, "part thickness"))
 
 
 # Function `_edges()`:
@@ -309,6 +440,7 @@ def _edges(
         tuple[SCRoundedPolygon, Literal["chamfer", "fillet"], float]
     ],
     z: float,
+    body: str,
 ) -> None:
     """Bevel or round over the top edges of outlines on the plate.
 
@@ -321,6 +453,9 @@ def _edges(
       "fillet"], float]]`):
       The outlines, how to finish each, and the size (inches).
     * `z` (`float`): The Z of the plate's top (mm).
+    * `body` (`str`): The plate's body, so that only its edges are
+      picked (a tool path drawn in the session can pass through the
+      same points).
     """
     poly: SCRoundedPolygon
     kind: Literal["chamfer", "fillet"]
@@ -335,9 +470,13 @@ def _edges(
             for segment in poly.segments
         ]
         if kind == "chamfer":
-            solidcraft.solid.chamfer(edges=points, distance=f"{size} in")
+            solidcraft.solid.chamfer(
+                edges=points, distance=f"{size} in", body=body
+            )
         else:
-            solidcraft.solid.fillet(edges=points, radius=f"{size} in")
+            solidcraft.solid.fillet(
+                edges=points, radius=f"{size} in", body=body
+            )
 
 
 # Function `_sketch()`:
@@ -369,6 +508,178 @@ def _sketch(
     return curves
 
 
+# The tooling of `examples/setup/demo_stack.json`, bottom first: name,
+# call, args, X, Y, Z, quarter turns and a note.  X, Y and Z place the
+# center of the item's bottom, measured from the origin handed up by
+# the item below, in the setup frame, not turned (#32); the table's
+# are absolute.  The stock is centered on the grid plate (#80) and the
+# work zero is the plate's lower left top corner, as the G-code has it
+# (`T.hlp~3.3.1` #78).  Quarter turns match `demo_stack.json`'s degrees
+# (counterclockwise: -90 deg is 3).  The vise's origin is its fixed
+# jaw's top as modeled, on the rails (111.125 mm above the vise's
+# bottom, #55).  These are only written into the
+# `.nc` comments; the models are still drawn from `demo_stack.json`'s
+# absolute positions.
+# Each `call` is a `named()` class method, so `args` hold keys.
+_TOOLING: tuple[
+    tuple[str, str, dict[str, str | bool], str, str, str, int, str], ...
+] = (
+    (
+        "mill table",
+        "scraftcnc.tooling.mount:SCTableLayer.named",
+        {"table": "mikini_1610l"},
+        "2 in",
+        "1-1/2 in",
+        "-7.64 in",
+        0,
+        "Clean the table.",
+    ),
+    (
+        "vise",
+        "scraftcnc.tooling.mount:SCMachineViseLayer.named",
+        {"vise": "kurt_d688", "opening": "5-1/2 in"},
+        "15 in",
+        "-8.65 in",
+        "0 in",
+        3,
+        "Set the vise on the table, turned 90 degrees, and square it.",
+    ),
+    (
+        "parallel A",
+        "scraftcnc.tooling.mount:SCParallelLayer.named",
+        {"parallel": "parallel_1_1_2_in_a"},
+        "3 in",
+        "-0.0625 in",
+        "-1.735 in",
+        3,
+        "Set a 1-1/2 in parallel against the fixed jaw.",
+    ),
+    (
+        "parallel B",
+        "scraftcnc.tooling.mount:SCParallelLayer.named",
+        {"parallel": "parallel_1_1_2_in_b"},
+        "3 in",
+        "-5.4375 in",
+        "-1.735 in",
+        3,
+        "Set the other parallel against the moving jaw.",
+    ),
+    (
+        "grid plate",
+        "scraftcnc.tooling.tools:SCGridPlate.named",
+        {"name": "grid_plate", "chamfer": False},
+        "3 in",
+        "-2.75 in",
+        "-0.235 in",
+        1,
+        "Clamp the grid plate in the vise, on the parallels.",
+    ),
+)
+
+# The stock the plate is cut from (its outline is 4 x 3 inches).
+STOCK_SIZE: tuple[str, str, str] = ("4-1/2 in", "3-1/2 in", "1/2 in")
+
+
+# Function `demo_assembly()`:
+def demo_assembly(material: str = MATERIAL) -> SCAssembly:
+    """Return the demonstration's setup, from `demo_stack.json`.
+
+    Each location is the center of the item's bottom, measured from
+    the origin handed up by the item below, in the setup frame, not
+    turned (#32); the table's is absolute.  The vise's origin is its
+    fixed jaw's top as modeled (111.125 mm above the vise's bottom,
+    #55).  There are no keep-outs yet.
+
+    Arguments:
+    * `material` (`str`): The material being cut.
+
+    Returns:
+    * (`SCAssembly`): The tooling, the stock and the part.
+    """
+    # The tooling, bottom first.
+    items: list[SCItem] = [
+        SCItem(
+            kind="tooling",
+            name=name,
+            call=call,
+            args=dict(args),
+            location=(
+                millimeters(x, f"{name} x"),
+                millimeters(y, f"{name} y"),
+                millimeters(z, f"{name} z"),
+            ),
+            orientation=turns,
+            note=note,
+        )
+        for name, call, args, x, y, z, turns, note in _TOOLING
+    ]
+
+    # Each tooling item carries its own keep-outs (#41a, #47).
+    items = [
+        dataclasses.replace(item, keep_out=keep_out_boxes(resolve(item)))
+        for item in items
+    ]
+
+    # The stock centered on the grid plate (#80), and the part cut
+    # from it.  The part
+    # is assumed centered in the stock in X and Y, as thick as it, so
+    # from the stock's top, left, outer corner (`SCStock.origin()`)
+    # its bottom's center is half the stock's size in X and Y, and
+    # the stock's thickness down.
+    short: str = "_".join(reversed(material.lower().split()))
+    items.append(
+        SCItem(
+            kind="stock",
+            name="stock",
+            call="scraftcnc.assembly:SCStock",
+            args={"material": short, "size": list(STOCK_SIZE)},
+            location=(
+                millimeters("5.25 in", "stock x"),
+                millimeters("2.75 in", "stock y"),
+                0.0,
+            ),
+            note="Set the stock on the grid plate and clamp it.",
+        )
+    )
+    items.append(
+        SCItem(
+            kind="part",
+            name="demo plate",
+            call="scraftcnc.demo:demo_part",
+            args={"material": material, "thickness": "1/2 in"},
+            location=(
+                millimeters("2-1/4 in", "part x"),
+                millimeters("1-3/4 in", "part y"),
+                -millimeters("1/2 in", "part z"),
+            ),
+            note="Cut the plate; G54 zero is its lower left top corner.",
+        )
+    )
+    return SCAssembly(items)
+
+
+# Function `with_setup()`:
+def with_setup(gcode: str, assembly: SCAssembly) -> str:
+    """Return a program with its setup comments after its header.
+
+    They go after any leading `%` and comment lines, before the first
+    command.
+
+    Arguments:
+    * `gcode` (`str`): The program.
+    * `assembly` (`SCAssembly`): Its setup.
+
+    Returns:
+    * (`str`): The program with the `(SCC: ...)` lines in it.
+    """
+    lines: list[str] = gcode.splitlines(keepends=True)
+    at: int = 0
+    while at < len(lines) and lines[at].lstrip()[:1] in ("%", "("):
+        at += 1
+    setup: list[str] = [line + "\n" for line in setup_comments.write(assembly)]
+    return "".join(lines[:at] + setup + lines[at:])
+
+
 # Function `cut_demo()`:
 def cut_demo(material: str = MATERIAL) -> tuple[SCCNC, SCTool]:
     """Cut the demonstration plate on the example shop's mill.
@@ -388,7 +699,11 @@ def cut_demo(material: str = MATERIAL) -> tuple[SCCNC, SCTool]:
     hole: SCRoundedPolygon = demo_hole()
     pocket: SCRoundedPolygon = demo_pocket()
     islands: list[SCRoundedPolygon] = demo_islands()
-    machine: SCMachine = cnc_machine(read(SHOP_FILE), MACHINE, material)
+
+    # The example shop is the one in use: its tooling is what is named.
+    shop: dict[str, object] = read(SHOP_FILE)
+    use_shop(shop)
+    machine: SCMachine = cnc_machine(shop, MACHINE, material)
     end_mill: SCTool = machine.named(END_MILL)
     rougher: SCTool | None = machine.rougher_for(end_mill)
     first: SCTool = end_mill if rougher is None else rougher
@@ -489,7 +804,7 @@ def main() -> int:
     cnc: SCCNC
     rounding: SCTool
     cnc, rounding = cut_demo(material)
-    print(cnc.gcode(), end="")
+    print(with_setup(cnc.gcode(), demo_assembly(material)), end="")
     print(f"About {cnc.minutes:.1f} minutes", file=sys.stderr)
 
     # Plot it, if asked to, with the plate's outlines at its top and
@@ -513,17 +828,7 @@ def main() -> int:
 
     # Model it, if asked to.
     if arguments:
-        part: SCPart = SCPart(
-            [plate, hole],
-            [pocket, *islands],
-            (cnc.z_top, 0.5, 0.25),
-            [
-                (pocket, "chamfer", BEVEL),
-                *((island, "chamfer", BEVEL) for island in islands),
-                (plate, "chamfer", BEVEL),
-                (hole, "fillet", rounding.radius),
-            ],
-        )
+        part: SCPart = demo_shape(cnc.z_top, 0.5, rounding.radius)
         # A SolidCraft that is not there is reported in one line.
         try:
             profiles: int = model(

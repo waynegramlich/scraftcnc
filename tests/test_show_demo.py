@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """Tests of `show_demo.py` that start nothing."""
 
+import json
 import os
 import socket
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
 from unittest import mock
 
 # Run as `./tests/test_show_demo.py` too: the repository root goes on
@@ -14,6 +16,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import show_demo
+from scraftcnc.pybind import headless_server
 
 
 class TestLeftovers(unittest.TestCase):
@@ -97,6 +100,109 @@ class TestChecks(unittest.TestCase):
             self.assertRaisesRegex(show_demo.SCShowFailed, "No SolidCraft"),
         ):
             show_demo.find_solidcraft("")
+
+
+class TestReport(unittest.TestCase):
+    """The session report, from inspected bodies and sketches."""
+
+    def test_report(self) -> None:
+        """Bodies, sketches, and the path's offset from the plate."""
+        bodies: list[dict[str, Any]] = [
+            {"name": "Plate", "bbox": {"min": [0, 0, -5], "max": [10, 20, 0]}},
+            {"name": "Vise", "bbox": {"min": [-1, -1, -9], "max": [1, 1, -5]}},
+        ]
+        sketches: list[dict[str, Any]] = [
+            {"name": "stock_1", "wires": [
+                {"start": [-50, -50, 0], "end": [50, 50, 0]}]},
+            {"name": "T01 path", "wires": [
+                {"start": [1, 2, 3], "end": [11, 22, -1]},
+                {"start": [11, 22, -1], "end": [3, 4, 5]}]},
+            {"name": "empty", "wires": []},
+        ]  # fmt: skip
+        lines = show_demo.session_report(bodies, sketches)
+        self.assertEqual(lines[0], "2 bodies:")
+        self.assertIn(
+            "  Plate: [0.00 0.00 -5.00] .. [10.00 20.00 0.00]", lines
+        )
+        self.assertIn("3 sketches:", lines)
+        self.assertIn(
+            "  T01 path: 2 wires, [1.00 2.00 -1.00] .. [11.00 22.00 5.00]",
+            lines,
+        )
+        self.assertIn("  empty: 0 wires, empty", lines)
+        self.assertEqual(
+            lines[-1], "Path middle - plate middle: X 1.00 mm, Y 2.00 mm"
+        )
+
+    def test_edge_box(self) -> None:
+        """A body's box comes from its edges' world points.
+
+        `document.inspect` gives boxes in a component's own frame,
+        which showed placed tooling at the origin (`T.hlp~3.3.1`).
+        """
+        edges: list[dict[str, Any]] = [
+            {"start": [100, 200, 300], "mid": [110, 205, 300],
+             "end": [120, 210, 300]},
+            {"start": [120, 210, 300], "mid": [120, 210, 310],
+             "end": [120, 210, 320]},
+        ]  # fmt: skip
+        self.assertEqual(
+            show_demo.edge_box(edges),
+            ((100, 200, 300), (120, 210, 320)),
+        )
+        self.assertIsNone(show_demo.edge_box([]))
+
+    def test_no_plate(self) -> None:
+        """With no plate there is no offset line."""
+        lines = show_demo.session_report([], [])
+        self.assertEqual(lines[-1], "Tool path: empty")
+
+
+class TestHeadlessServer(unittest.TestCase):
+    """The headless server's token and request handling."""
+
+    def setUp(self) -> None:
+        self.server = headless_server.SCHeadlessServer(0, ())
+        self.calls: list[tuple[str, object]] = []
+
+        def request(method: str, params: object) -> object:
+            """Record a request, and answer it."""
+            self.calls.append((method, params))
+            return {"done": method}
+
+        self.server.transport = mock.Mock(request=request)
+
+    def test_token(self) -> None:
+        """A wrong token is refused; the right one trusts the line."""
+        reply, trusted = self.server.answer(
+            json.dumps({"id": 1, "method": "m", "token": "no"}), False
+        )
+        self.assertFalse(trusted)
+        self.assertEqual(json.loads(reply)["error"], "wrong token")
+        reply, trusted = self.server.answer(
+            json.dumps(
+                {"id": 2, "method": "engine.execute", "params": {"a": 1},
+                 "token": self.server.token}
+            ),
+            False,
+        )  # fmt: skip
+        self.assertTrue(trusted)
+        self.assertEqual(
+            json.loads(reply), {"id": 2, "ok": True, "result": {
+                "done": "engine.execute"}}
+        )  # fmt: skip
+        self.assertEqual(self.calls, [("engine.execute", {"a": 1})])
+
+    def test_error(self) -> None:
+        """A failing request answers `ok: false` with the error."""
+        self.server.transport = mock.Mock(
+            request=mock.Mock(side_effect=ConnectionError("gone"))
+        )
+        reply, trusted = self.server.answer(
+            json.dumps({"id": 3, "method": "x"}), True
+        )
+        self.assertTrue(trusted)
+        self.assertEqual(json.loads(reply)["error"], "gone")
 
 
 if __name__ == "__main__":

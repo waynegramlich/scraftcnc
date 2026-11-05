@@ -1,6 +1,8 @@
 """Tests for `model_cache`: hashes, the files, and models in SolidCraft."""
 
+import contextlib
 import dataclasses
+import io
 import json
 import os
 import shutil
@@ -12,9 +14,12 @@ from typing import Any
 from unittest import mock
 
 from scraftcnc import model_cache, setups
+from scraftcnc.assembly import SCItem
 from scraftcnc.pybind.scraftpybind import JSON, SCHeadlessTransport, SCPyBind
 from scraftcnc.shops import read
 from scraftcnc.tooling import cutter_models, mount, tools
+from scraftcnc.tooling.shop_registries import use_shop
+from tests.flat_plate import use_flat_plate
 
 HERE: Path = Path(__file__).resolve().parent.parent
 CLI: Path = HERE / "solidcraft/squashfs-root/usr/bin/solidcraft-cli"
@@ -29,16 +34,10 @@ def session(directory: Path) -> SCHeadlessTransport:
     )
 
 
-# `GRID_PLATE` without its chamfers, which take minutes to model: the
-# same shape for every check here.
-FLAT_PLATE = dataclasses.replace(tools.GRID_PLATE, chamfer_depth=0.0)
-
-
 def setUpModule() -> None:
     """Have setups name the unchamfered plate."""
-    patcher = mock.patch.dict(setups.PARTS, {"Grid plate": FLAT_PLATE})
-    patcher.start()
-    unittest.addModuleCleanup(patcher.stop)
+    use_shop(read(setups.SHOP))
+    use_flat_plate()
 
 
 def reply(value: JSON) -> Any:
@@ -93,16 +92,77 @@ class TestHash(unittest.TestCase):
             self.assertNotEqual(first, model_cache.source_digest([path]))
 
 
+class TestItemKey(unittest.TestCase):
+    """The key of an assembly item: its `call`, `args` and code."""
+
+    @staticmethod
+    def item(**args: Any) -> SCItem:
+        """Return a tooling item calling the vise layer with `args`."""
+        return SCItem(
+            "tooling",
+            "vise",
+            "scraftcnc.tooling.mount:SCMachineViseLayer.named",
+            dict(args),
+        )
+
+    def test_same(self) -> None:
+        """The same call and args give the same key, wherever it goes."""
+        first = self.item(vise="kurt_d688", opening="5-1/2 in")
+        second = dataclasses.replace(
+            self.item(opening="5-1/2 in", vise="kurt_d688"),
+            name="other",
+            location=(1.0, 2.0, 3.0),
+            orientation=1,
+        )
+        self.assertEqual(
+            model_cache.item_key(first), model_cache.item_key(second)
+        )
+
+    def test_args_differ(self) -> None:
+        """Different args give different keys."""
+        self.assertNotEqual(
+            model_cache.item_key(self.item(vise="kurt_d688", opening="5 in")),
+            model_cache.item_key(self.item(vise="kurt_d688", opening="4 in")),
+        )
+
+    def test_code_differs(self) -> None:
+        """A change in the source digest changes the key."""
+        item = self.item(vise="kurt_d688", opening="5 in")
+        first = model_cache.item_key(item)
+        with mock.patch.object(
+            model_cache, "source_digest", return_value="changed"
+        ):
+            self.assertNotEqual(first, model_cache.item_key(item))
+
+    def test_sources(self) -> None:
+        """The name dictionaries and the reader are digested."""
+        names = {path.name for path in model_cache.ITEM_SOURCES}
+        self.assertLessEqual(
+            {"setups.py", "registry.py", "assembly.py"}, names
+        )
+        self.assertTrue(all(p.exists() for p in model_cache.ITEM_SOURCES))
+
+    def test_keyed_by_item(self) -> None:
+        """A model keyed by its item is filed under the item's key."""
+        item = self.item(vise="kurt_d688", opening="5 in")
+        model = model_cache.SCCacheable("Vise", {"old": 1}, lambda _s: [])
+        keyed = model_cache.keyed_by_item(model, item)
+        path = model_cache.SCModelCache(Path("/cache")).path(keyed)
+        self.assertEqual(
+            path, Path(f"/cache/Vise__{model_cache.item_key(item)}.step")
+        )
+
+
 class TestMatrix(unittest.TestCase):
     """Where a model is placed."""
 
     def test_turns(self) -> None:
-        """Quarter turns are clockwise, seen from above, offset included."""
+        """Quarter turns are counterclockwise, offset included."""
         for turns, want in (
             (0, (11.0, 20.0)),
-            (1, (10.0, 19.0)),
+            (3, (10.0, 19.0)),
             (2, (9.0, 20.0)),
-            (3, (10.0, 21.0)),
+            (1, (10.0, 21.0)),
             (4, (11.0, 20.0)),
         ):
             matrix = model_cache.placement_matrix(
@@ -136,6 +196,59 @@ class TestSweep(unittest.TestCase):
             self.assertFalse(old.exists())
             self.assertTrue(young.exists())
             self.assertFalse(late.exists())
+
+
+class TestHeadlessFallback(unittest.TestCase):
+    """A failed headless build warns, and is built in the session."""
+
+    def create(self, program: str | None, error: Exception) -> str:
+        """Create a model with the headless build failing.
+
+        Arguments:
+        * `program` (`str | None`):
+          What `shutil.which()` finds for the headless program.
+        * `error` (`Exception`): What the headless session raises.
+
+        Returns:
+        * (`str`): What was printed on `stderr`.
+        """
+        model = model_cache.SCCacheable("Pin", {"pin": 2}, lambda _s: [])
+        solidcraft: Any = mock.MagicMock()
+        before = mock.Mock()
+        stderr = io.StringIO()
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            mock.patch("shutil.which", return_value=program),
+            mock.patch.object(
+                model_cache, "SCHeadlessTransport", side_effect=error
+            ),
+            mock.patch.object(
+                model_cache, "export_model", return_value=["Pin"]
+            ) as export,
+            contextlib.redirect_stderr(stderr),
+        ):
+            cache = model_cache.SCModelCache(Path(directory))
+            path = cache.path(model)
+            cache.create(solidcraft, model, path, before)
+
+        # The fallback still builds it in the design's session.
+        before.assert_called_once_with()
+        export.assert_called_once_with(solidcraft, model, path)
+        solidcraft.solid.remove.assert_called_once_with(bodies=["Pin"])
+        return stderr.getvalue()
+
+    def test_failed_warns(self) -> None:
+        """With the program there, a failure is one line on `stderr`."""
+        printed = self.create("/bin/solidcraft-cli", OSError("timed out"))
+        self.assertEqual(
+            printed,
+            "model_cache: headless build of Pin failed (timed out); "
+            "building in this session\n",
+        )
+
+    def test_absent_quiet(self) -> None:
+        """With no program on the `PATH`, the fallback is quiet."""
+        self.assertEqual(self.create(None, OSError("unused")), "")
 
 
 class TestLive(unittest.TestCase):

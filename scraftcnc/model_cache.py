@@ -36,9 +36,9 @@ import shutil
 import sys
 import time
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from .pybind.scraftpybind import (
     JSON,
@@ -46,6 +46,9 @@ from .pybind.scraftpybind import (
     SCPyBind,
     SCSolidCraftError,
 )
+
+if TYPE_CHECKING:
+    from .assembly import SCItem
 
 # Where the files go.
 CACHE_DIRECTORY: Path = Path.home() / ".scraftcnc" / "tool_cache"
@@ -58,6 +61,19 @@ HEADLESS_CLI: str = "solidcraft-cli"
 
 # How many hex digits of the hash go in a file name.
 HASH_DIGITS: int = 16
+
+# The code that builds an assembly's items from their `call` and
+# `args`, name dictionaries included: a change to any of it changes
+# every item's key, so old files no longer match.
+_PACKAGE: Path = Path(__file__).resolve().parent
+ITEM_SOURCES: tuple[Path, ...] = (
+    _PACKAGE / "assembly.py",
+    _PACKAGE / "geometry.py",
+    _PACKAGE / "setups.py",
+    _PACKAGE / "tooling" / "mount.py",
+    _PACKAGE / "tooling" / "registry.py",
+    _PACKAGE / "tooling" / "tools.py",
+)
 
 # A placement, for `file.insert_step`: rows of rotation and translation
 # (millimeters).
@@ -93,6 +109,58 @@ def source_digest(paths: Sequence[Path]) -> str:
     for path in paths:
         digest.update(path.read_bytes())
     return digest.hexdigest()
+
+
+# Function `item_shape()`:
+def item_shape(item: "SCItem") -> JSON:
+    """Return the tree an assembly item's models are hashed from.
+
+    It is the item's `call` and `args`, as the setup comments write
+    them, and the digest of `ITEM_SOURCES`, so where the item goes, its
+    color and its note are no part of it.
+
+    Arguments:
+    * `item` (`SCItem`): The item.
+
+    Returns:
+    * (`JSON`): The tree.
+    """
+    return {
+        "args": cast(JSON, item.args),
+        "call": item.call,
+        "code": source_digest(ITEM_SOURCES),
+    }
+
+
+# Function `item_key()`:
+def item_key(item: "SCItem") -> str:
+    """Return the hash an assembly item's models are cached under.
+
+    Arguments:
+    * `item` (`SCItem`): The item.
+
+    Returns:
+    * (`str`): `HASH_DIGITS` hex digits, from `item_shape()`.
+    """
+    return shape_hash(item_shape(item))
+
+
+# Function `keyed_by_item()`:
+def keyed_by_item(model: "SCCacheable", item: "SCItem") -> "SCCacheable":
+    """Return a model of an item, cached by the item's key.
+
+    The model's own tree is replaced by `item_shape()`.  A model made
+    in sections (a vise's fixed and movable parts) keeps them apart by
+    their names, which start their file names.
+
+    Arguments:
+    * `model` (`SCCacheable`): A model built from `resolve(item)`.
+    * `item` (`SCItem`): The item.
+
+    Returns:
+    * (`SCCacheable`): The model, with the item's tree.
+    """
+    return replace(model, shape=item_shape(item))
 
 
 # Function `safe_name()`:
@@ -319,7 +387,9 @@ class SCModelCache:
         Returns:
         * (`bool`):
           True if the file was made.  False if `HEADLESS_CLI` is not on
-          the `PATH`, or failed, which is said, as a window can do it.
+          the `PATH` (quietly, as that is expected), or if it failed
+          (with a one-line warning on `stderr`), so that the design's
+          own session builds it.
         """
         program: str | None = shutil.which(HEADLESS_CLI)
         if program is None:
@@ -330,7 +400,12 @@ class SCModelCache:
             ) as transport:
                 export_model(SCPyBind(transport), model, path)
         except (OSError, SCSolidCraftError) as error:
-            print(f"Building {model.name} headless: {error}", file=sys.stderr)
+            # Warn: the CLI is there, so building here is not expected.
+            print(
+                f"model_cache: headless build of {model.name} failed "
+                f"({error}); building in this session",
+                file=sys.stderr,
+            )
             return False
         return True
 
@@ -428,7 +503,8 @@ def placement_matrix(
     """Return the matrix for a model turned and moved.
 
     Arguments:
-    * `turns` (`int`): How many quarter turns clockwise, about Z.
+    * `turns` (`int`): Quarter turns counterclockwise about Z
+      (right hand rule: +X to +Y).
     * `location` (`tuple[float, float, float]`):
       Where its owner's origin goes (millimeters).
     * `offset` (`tuple[float, float, float]`):
@@ -437,7 +513,7 @@ def placement_matrix(
     Returns:
     * (`Matrix`): The matrix, with exact quarter turns.
     """
-    xx, xy = ((1.0, 0.0), (0.0, 1.0), (-1.0, 0.0), (0.0, -1.0))[turns % 4]
+    xx, xy = ((1.0, 0.0), (0.0, -1.0), (-1.0, 0.0), (0.0, 1.0))[turns % 4]
     return [
         [xx, xy, 0.0, location[0] + xx * offset[0] + xy * offset[1]],
         [-xy, xx, 0.0, location[1] - xy * offset[0] + xx * offset[1]],
