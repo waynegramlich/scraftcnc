@@ -339,3 +339,18 @@ the drawer again on each tool change while holders are hidden.  Tests
 (run by name only, by the user's wish): `test_origin_and_holders`,
 `test_hidden`, `test_keep_outs`, `test_labels_unique`, `test_tabs`, all
 pass; checkers clean.  Not run in SolidCraft.
+
+## 2026-11-05: Carousel decisions (#45-#48)
+
+The machine definition says whether there is a carousel: number of
+slots (none or 0 = manual), the hub's location and the spoke length.
+Shown in SolidCraft as N spoke lines with each slot's tool at its
+spoke's end; a change rotates the spokes and moves the tools, no
+animation.  A tool is loaded/unloaded at the +X spoke.  More tools
+than slots: the message names both tools by unique id and holder
+colors, e.g. "Swap tool 23 (red/orange) with tool 43 (yellow/orange)".
+Slots (Claude's choice, #47): prescan the program, fill the slots in
+first-use order; when a tool must come in, swap out the one whose next
+use is furthest away (or never).  Split: S10 = machine definition,
+the plan and the messages; S11 = the carousel drawn in SolidCraft;
+S12 = MDI move check (was S11, #42).
