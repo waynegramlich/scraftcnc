@@ -267,6 +267,75 @@ class Combobox(Widget):
     kind = "TCombobox"
 
 
+# Class `Notebook`:
+class Notebook(Widget):
+    """Stands in for `ttk.Notebook`: tabs, one of them shown.
+
+    Attributes:
+    * `shown` (`Widget | None`): The tab shown (the first one added,
+      until another is selected).
+    * `tabs` (`list[Widget]`): The tabs, in order.
+    * `texts` (`dict[int, str]`): Each tab's text, by its `id()`.
+    """
+
+    kind = "TNotebook"
+
+    # Method `Notebook.__init__()`:
+    def __init__(self, parent: Widget | None = None, **options: Any) -> None:
+        """Make a notebook with no tabs.
+
+        Arguments:
+        * `parent` (`Widget | None`): What it is inside, if anything.
+        * `options` (`Any`): Its options.
+        """
+        super().__init__(parent, **options)
+        self.shown: Widget | None = None
+        self.tabs: list[Widget] = []
+        self.texts: dict[int, str] = {}
+
+    # Method `Notebook.add()`:
+    def add(self, child: Widget, text: str = "") -> None:
+        """Add a tab.
+
+        Arguments:
+        * `child` (`Widget`): The tab (made inside the notebook).
+        * `text` (`str`): Its text.
+        """
+        self.tabs.append(child)
+        self.texts[id(child)] = text
+        if self.shown is None:
+            self.shown = child
+
+    # Method `Notebook.select()`:
+    def select(self, child: Widget | None = None) -> Widget | None:
+        """Show a tab, or return the one shown.
+
+        Arguments:
+        * `child` (`Widget | None`): The tab to show; `None` to ask.
+
+        Returns:
+        * (`Widget | None`): The tab shown.
+        """
+        if child is not None:
+            self.shown = child
+        return self.shown
+
+    # Method `Notebook.index()`:
+    def index(self, child: "Widget | str") -> int:
+        """Return a tab's position.
+
+        Arguments:
+        * `child` (`Widget | str`): The tab, or `"current"` for the
+          one shown.
+
+        Returns:
+        * (`int`): Its position, from 0.
+        """
+        if isinstance(child, str):
+            child = self.shown if self.shown is not None else Widget()
+        return self.tabs.index(child)
+
+
 # Class `Toplevel`:
 class Toplevel(Widget):
     """Stands in for `tkinter.Toplevel`."""

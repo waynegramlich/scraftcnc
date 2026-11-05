@@ -440,11 +440,32 @@ class TestHeadless(unittest.TestCase):
         self.ask("press Open")
         self.assertEqual(self.machine.log, [f"open {self.file}"])
 
-    def test_tools_window(self) -> None:
-        """Tools opens a window that lists the tools for a material."""
-        self.ask("press Tools")
+    def test_tools_tab(self) -> None:
+        """The Tools tab lists the tools for a material."""
+        self.ask("tab Tools")
         texts = self.panel.show()["texts"]
         self.assertIn("cutting 6061 aluminum", texts[-1])
+
+    def test_tabs(self) -> None:
+        """Each tab can be shown, and `show` says which one is."""
+        self.assertEqual(self.panel.show()["tab"], "Run")
+        for name in lcnc_hmi.TABS:
+            self.assertEqual(self.ask(f"tab {name}"), "ok")
+            self.assertEqual(self.panel.show()["tab"], name)
+        self.assertIn("error: no tab Nope", self.ask("tab Nope"))
+
+        # A button on another tab is still pressed by its label.
+        self.ask("tab View")
+        self.assertEqual(self.ask("press Home"), "ok")
+
+    def test_labels_unique(self) -> None:
+        """No two buttons, on any tab, have the same label."""
+        labels: list[str] = [
+            str(widget.cget("text"))
+            for widget in self.panel.widgets()
+            if widget.winfo_class() in lcnc_hmi.BUTTONS
+        ]
+        self.assertEqual(len(labels), len(set(labels)))
 
     def test_speed(self) -> None:
         """The speed stays in the slider's range, and is shown."""

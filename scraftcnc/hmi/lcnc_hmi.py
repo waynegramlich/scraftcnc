@@ -2,14 +2,21 @@
 """A minimal LinuxCNC HMI, in place of AXIS (`T.mlcp~3.4`).
 
 A small `tkinter` window that drives the LinuxCNC back end through its
-Python API: the G-code already run, one line of G-code to run as MDI
-(Execute, while stopped; green when it reads as RS-274, red when
-not), the G-code coming next, a jog line (Set Origin, Home to the
-work origin, six jog buttons and the jog step: 1 to .0001 in), a run
-line (-Tool and +Tool, which move the line Start runs from to the
-previous or next tool change; Start, Pause and Reset), a speed slider
-(the feed override) with Open, and the work
-position and tool in the spindle.  The LinuxCNC calls are kept in
+Python API.  On top, on every tab, are the work position and the tool
+in the spindle, LinuxCNC's last message, and how much of the setup is
+drawn; under the tabs, Open and Quit.  The tabs, one for each task:
+
+* Run: the G-code already run, the G-code coming next, one line of
+  G-code to run as MDI (Execute, while stopped; green when it reads
+  as RS-274, red when not), a run line (-Tool and +Tool, which move
+  the line Start runs from to the previous or next tool change;
+  Start, Pause and Reset) and a speed slider (the feed override).
+* Setup: Next Step (the setup's items, one at a time), Set Origin,
+  Home to the work origin, six jog buttons and the jog step (1 to
+  .0001 in).
+* Tools: the tools' speeds and feeds, for a material chosen.
+* View: Keep-outs (shows or hides them in SolidCraft).
+  The LinuxCNC calls are kept in
 `HMIMachine`, a client (through `scraftcnc.lcnc.lcnc_client`) of
 `serve_linuxcnc` from `scraftcnc/lcnc/`, which runs LinuxCNC in its
 `lcnc` box, or in WSL on Windows.  So this runs outside the box, and
@@ -38,8 +45,9 @@ command port
 (`--port PORT`, on 127.0.0.1), which takes one line per connection and
 answers one line: `ping`, `open FILE`, `start` (or `run`), `pause`,
 `reset` (or `stop`), `tool+`, `tool-` (the start line to the next or
-previous tool change), `speed X`, `press LABEL` (presses a button,
-as a person would; refused when it is greyed out), `type LINE` (into
+previous tool change), `speed X`, `press LABEL` (presses a button on
+any tab, as a person would; refused when it is greyed out), `tab
+NAME` (shows a tab, as a person clicking it would), `type LINE` (into
 the MDI line), `show` (all that the window shows, as JSON), `answer
 VALUE` (with `--headless`, the answer to the next question: `yes`, a
 file or a setup origin's name), `status`, `messages` (every message
@@ -153,6 +161,9 @@ MATERIAL: str = "6061 aluminum"
 
 # The classes of the widgets that `press` can press.
 BUTTONS: tuple[str, ...] = ("TButton", "Radiobutton")
+
+# The HMI's tabs, one for each task, in their order.
+TABS: tuple[str, ...] = ("Run", "Setup", "Tools", "View")
 
 # The MDI line's backgrounds: empty, RS-274, and not.
 BLANK: str = "white"
@@ -1082,12 +1093,35 @@ class HMI:
         self.drawing: bool = False
         root.title("SolidCraft LinuxCNC")
 
-        # The G-code run and coming, and below them (above the jog
-        # line) the MDI line and Execute.
-        self.executed: tk.Text = self.scrolled_text(root, 0)
-        self.coming: tk.Text = self.scrolled_text(root, 1)
-        mdi: ttk.Frame = ttk.Frame(root)
-        mdi.grid(row=4, column=0, padx=4, pady=2, sticky="ew")
+        # Above the tabs, on every tab: the work position and the tool,
+        # LinuxCNC's messages, and how much of the setup is drawn.
+        self.position: ttk.Label = ttk.Label(root, font="TkFixedFont")
+        self.position.grid(row=0, column=0, padx=4, sticky="w")
+        self.message: ttk.Label = ttk.Label(root, foreground="red")
+        self.message.grid(row=1, column=0, padx=4, sticky="w")
+        self.progress: ttk.Progressbar = ttk.Progressbar(
+            root, length=120, maximum=1, value=0
+        )
+        self.progress.grid(row=1, column=0, padx=4, sticky="e")
+
+        # The tabs, one for each task, in the order of `TABS`.
+        self.notebook: ttk.Notebook = ttk.Notebook(root)
+        self.notebook.grid(row=2, column=0, padx=4, pady=2, sticky="nsew")
+        self.tabs: dict[str, ttk.Frame] = {}
+        for name in TABS:
+            self.tabs[name] = ttk.Frame(self.notebook)
+            self.notebook.add(self.tabs[name], text=name)
+        self.notebook.bind(
+            "<<NotebookTabChanged>>", lambda _event: self.on_tab_changed()
+        )
+        run_tab: ttk.Frame = self.tabs["Run"]
+
+        # Run: the G-code run and coming, and below them the MDI line
+        # and Execute.
+        self.executed: tk.Text = self.scrolled_text(run_tab)
+        self.coming: tk.Text = self.scrolled_text(run_tab)
+        mdi: ttk.Frame = ttk.Frame(run_tab)
+        mdi.pack(fill="x", padx=4, pady=2)
         self.mdi: tk.StringVar = tk.StringVar()
         self.mdi_entry: tk.Entry = tk.Entry(
             mdi, textvariable=self.mdi, font="TkFixedFont", background=BLANK
@@ -1099,36 +1133,78 @@ class HMI:
         self.execute_button.pack(side="left", padx=(4, 0))
         self.mdi.trace_add("write", lambda *_: self.check_mdi())
 
-        # The work position and the tool, and LinuxCNC's messages.
-        self.position: ttk.Label = ttk.Label(root, font="TkFixedFont")
-        self.position.grid(row=2, column=0, padx=4, sticky="w")
-        self.message: ttk.Label = ttk.Label(root, foreground="red")
-        self.message.grid(row=3, column=0, padx=4, sticky="w")
-        self.progress: ttk.Progressbar = ttk.Progressbar(
-            root, length=120, maximum=1, value=0
+        # Run: the run line, -Tool and +Tool, Start, Pause and Reset.
+        buttons: ttk.Frame = ttk.Frame(run_tab)
+        buttons.pack(pady=(6, 2))
+        self.tool_buttons: list[ttk.Button] = [
+            ttk.Button(
+                buttons,
+                text=label,
+                width=6,
+                command=functools.partial(self.on_tool, step),
+            )
+            for label, step in (("-Tool", -1), ("+Tool", +1))
+        ]
+        self.run_button: ttk.Button = ttk.Button(
+            buttons, text="Start", width=7, command=self.on_run
         )
-        self.progress.grid(row=3, column=0, padx=4, sticky="e")
+        self.pause_button: ttk.Button = ttk.Button(
+            buttons,
+            text="Pause",
+            width=6,
+            command=self.on_pause,
+            state="disabled",
+        )
+        reset: ttk.Button = ttk.Button(
+            buttons, text="Reset", width=6, command=self.on_stop
+        )
+        for index, button in enumerate(
+            (*self.tool_buttons, self.run_button, self.pause_button, reset)
+        ):
+            button.pack(side="left", padx=(12 if index in (0, 2) else 1, 1))
 
-        # The jog line: Set Origin, Home, the jog buttons and their
-        # step (one chosen at a time).
-        jog_line: ttk.Frame = ttk.Frame(root)
-        jog_line.grid(row=5, column=0, pady=(6, 2))
+        # Run: the speed slider (logarithmic), and room for the next
+        # tool and the time left (`T.hs~5.1.5` S6).
+        self.speed: tk.DoubleVar = tk.DoubleVar(value=0.0)
+        self.speed_text: tk.StringVar = tk.StringVar(value="1x")
+        self.top_speed: float = min(max_speed, MAX_SPEED)
+        slider: ttk.Frame = ttk.Frame(run_tab)
+        slider.pack(fill="x", pady=4)
+        ttk.Label(slider, text="speed").pack(side="left", padx=4)
+        ttk.Scale(
+            slider,
+            from_=math.log10(MIN_SPEED),
+            to=math.log10(self.top_speed),
+            orient="horizontal",
+            variable=self.speed,
+            command=lambda _value: self.set_speed(10 ** self.speed.get()),
+        ).pack(side="left", fill="x", expand=True, padx=4)
+        ttk.Label(slider, textvariable=self.speed_text, width=6).pack(
+            side="left"
+        )
+        self.next_tool: ttk.Label = ttk.Label(run_tab, text="")
+        self.next_tool.pack(anchor="w", padx=4)
+
+        # Setup: Next Step, Set Origin and Home.
+        setup_tab: ttk.Frame = self.tabs["Setup"]
+        setup_line: ttk.Frame = ttk.Frame(setup_tab)
+        setup_line.pack(pady=(6, 2))
         self.next_step_button: ttk.Button = ttk.Button(
-            jog_line, text="Next Step", command=self.on_next_step
+            setup_line, text="Next Step", command=self.on_next_step
         )
-        self.next_step_button.pack(side="left", padx=1)
-        self.keep_outs_button: ttk.Button = ttk.Button(
-            jog_line, text="Keep-outs", command=self.on_keep_outs
-        )
-        self.keep_outs_button.pack(side="left", padx=(1, 12))
+        self.next_step_button.pack(side="left", padx=(1, 12))
         self.origin_button: ttk.Button = ttk.Button(
-            jog_line, text="Set Origin", command=self.on_set_origin
+            setup_line, text="Set Origin", command=self.on_set_origin
         )
         self.home_button: ttk.Button = ttk.Button(
-            jog_line, text="Home", width=5, command=self.on_home
+            setup_line, text="Home", width=5, command=self.on_home
         )
         self.origin_button.pack(side="left", padx=1)
-        self.home_button.pack(side="left", padx=(1, 12))
+        self.home_button.pack(side="left", padx=1)
+
+        # Setup: the jog buttons and their step (one chosen at a time).
+        jog_line: ttk.Frame = ttk.Frame(setup_tab)
+        jog_line.pack(pady=(2, 6))
         jogs: tuple[tuple[str, int, int], ...] = (
             ("-X", 0, -1),
             ("+X", 0, +1),
@@ -1160,82 +1236,56 @@ class HMI:
             )
             for step in JOG_STEPS
         ]
-        for index, button in enumerate(self.jog_buttons):
-            button.pack(side="left", padx=(12 if index == 6 else 1, 1))
+        for index, jog in enumerate(self.jog_buttons):
+            jog.pack(side="left", padx=(12 if index == 6 else 1, 1))
 
-        # The run line: -Tool and +Tool, Start, Pause and Reset.
-        buttons: ttk.Frame = ttk.Frame(root)
-        buttons.grid(row=6, column=0, pady=(2, 6))
-        self.tool_buttons: list[ttk.Button] = [
-            ttk.Button(
-                buttons,
-                text=label,
-                width=6,
-                command=functools.partial(self.on_tool, step),
-            )
-            for label, step in (("-Tool", -1), ("+Tool", +1))
-        ]
-        self.run_button: ttk.Button = ttk.Button(
-            buttons, text="Start", width=7, command=self.on_run
+        # Tools: a material, and the tools' speeds and feeds for it
+        # (filled each time the tab is shown).
+        tools_tab: ttk.Frame = self.tabs["Tools"]
+        self.material: tk.StringVar = tk.StringVar(value=MATERIAL)
+        self.material_chooser: ttk.Combobox = ttk.Combobox(
+            tools_tab, textvariable=self.material, state="readonly", width=30
         )
-        self.pause_button: ttk.Button = ttk.Button(
-            buttons,
-            text="Pause",
-            width=6,
-            command=self.on_pause,
-            state="disabled",
+        self.material_chooser.pack(anchor="w", padx=4, pady=4)
+        self.material_chooser.bind(
+            "<<ComboboxSelected>>", lambda _event: self.show_tools()
         )
-        reset: ttk.Button = ttk.Button(
-            buttons, text="Reset", width=6, command=self.on_stop
+        self.tools_table: tk.Text = tk.Text(
+            tools_tab, width=72, height=12, font="TkFixedFont"
         )
-        for index, button in enumerate(
-            (*self.tool_buttons, self.run_button, self.pause_button, reset)
-        ):
-            button.pack(side="left", padx=(12 if index in (0, 2) else 1, 1))
+        self.tools_table.pack(fill="both", expand=True, padx=4, pady=(0, 4))
 
-        # The speed slider (logarithmic), with Open at its right.
-        self.speed: tk.DoubleVar = tk.DoubleVar(value=0.0)
-        self.speed_text: tk.StringVar = tk.StringVar(value="1x")
-        self.top_speed: float = min(max_speed, MAX_SPEED)
-        slider: ttk.Frame = ttk.Frame(root)
-        slider.grid(row=7, column=0, pady=4, sticky="ew")
-        ttk.Label(slider, text="speed").pack(side="left", padx=4)
-        ttk.Scale(
-            slider,
-            from_=math.log10(MIN_SPEED),
-            to=math.log10(self.top_speed),
-            orient="horizontal",
-            variable=self.speed,
-            command=lambda _value: self.set_speed(10 ** self.speed.get()),
-        ).pack(side="left", fill="x", expand=True, padx=4)
-        ttk.Label(slider, textvariable=self.speed_text, width=6).pack(
-            side="left"
+        # View: what SolidCraft shows.
+        self.keep_outs_button: ttk.Button = ttk.Button(
+            self.tabs["View"], text="Keep-outs", command=self.on_keep_outs
         )
-        ttk.Button(slider, text="Open", command=self.on_open).pack(
-            side="left", padx=(12, 1)
-        )
-        ttk.Button(slider, text="Tools", command=self.on_tools).pack(
+        self.keep_outs_button.pack(anchor="w", padx=4, pady=6)
+
+        # Under the tabs, for every task: Open and Quit.
+        bottom: ttk.Frame = ttk.Frame(root)
+        bottom.grid(row=3, column=0, pady=4, sticky="e")
+        ttk.Button(bottom, text="Open", command=self.on_open).pack(
             side="left", padx=1
         )
-        ttk.Button(slider, text="Quit", command=root.destroy).pack(
-            side="left", padx=(12, 1)
+        ttk.Button(bottom, text="Quit", command=root.destroy).pack(
+            side="left", padx=(12, 4)
         )
         root.after(POLL_MS, self.poll)
 
     # Method `HMI.scrolled_text()`:
     @staticmethod
-    def scrolled_text(root: tk.Tk, row: int) -> tk.Text:
+    def scrolled_text(parent: ttk.Frame) -> tk.Text:
         """Make a read only text window with a scroll bar.
 
         Arguments:
-        * `root` (`tk.Tk`): The window to put it in.
-        * `row` (`int`): Its row in `root`'s grid.
+        * `parent` (`ttk.Frame`): The tab to put it in, under what
+          is there already.
 
         Returns:
         * (`tk.Text`): The text window.
         """
-        frame: ttk.Frame = ttk.Frame(root)
-        frame.grid(row=row, column=0, padx=4, pady=2, sticky="ew")
+        frame: ttk.Frame = ttk.Frame(parent)
+        frame.pack(fill="x", padx=4, pady=2)
         text: tk.Text = tk.Text(frame, height=SHOWN, width=50)
         scroll: ttk.Scrollbar = ttk.Scrollbar(frame, command=text.yview)
         text.configure(yscrollcommand=scroll.set, state="disabled")
@@ -1378,42 +1428,60 @@ class HMI:
         if path:
             self.open(path)
 
-    # Method `HMI.on_tools()`:
-    def on_tools(self) -> None:
-        """Show the tools' speeds and feeds for a material chosen."""
+    # Method `HMI.show_tools()`:
+    def show_tools(self) -> None:
+        """Fill the Tools tab: the tools' speeds and feeds."""
         # The shop is read again each time, so edits to it show.
+        text: str
         try:
             shop: dict[str, object] = shops.read(SHOP_FILE)
         except ValueError as error:
-            messagebox.showerror("Tools", str(error))
-            return
-        window: tk.Toplevel = tk.Toplevel(self.root)
-        window.title(f"Tools: {SHOP_MACHINE}")
-        material: tk.StringVar = tk.StringVar(value=MATERIAL)
-        chooser: ttk.Combobox = ttk.Combobox(
-            window,
-            textvariable=material,
-            values=material_names(shop),
-            state="readonly",
-            width=30,
-        )
-        chooser.pack(anchor="w", padx=4, pady=4)
-        table: tk.Text = tk.Text(
-            window, width=72, height=12, font="TkFixedFont"
-        )
-        table.pack(fill="both", expand=True, padx=4, pady=(0, 4))
+            text = f"The shop could not be read:\n{error}"
+        else:
+            self.material_chooser.configure(values=material_names(shop))
+            text = tool_speeds(shop, SHOP_MACHINE, self.material.get())
+        self.tools_table.configure(state="normal")
+        self.tools_table.delete("1.0", "end")
+        self.tools_table.insert("1.0", text)
+        self.tools_table.configure(state="disabled")
 
-        # Fill the table now, and again when another material is chosen.
-        def show(_event: object = None) -> None:
-            table.configure(state="normal")
-            table.delete("1.0", "end")
-            table.insert(
-                "1.0", tool_speeds(shop, SHOP_MACHINE, material.get())
-            )
-            table.configure(state="disabled")
+    # Method `HMI.tab()`:
+    def tab(self) -> str:
+        """Return the name of the tab shown.
 
-        chooser.bind("<<ComboboxSelected>>", show)
-        show()
+        Returns:
+        * (`str`): One of `TABS`.
+        """
+        # `typeshed` leaves `Notebook.index()` untyped.
+        current: int = self.notebook.index(  # type: ignore[no-untyped-call]
+            "current"
+        )
+        return TABS[current]
+
+    # Method `HMI.select_tab()`:
+    def select_tab(self, name: str) -> None:
+        """Show a tab, as a person clicking it would.
+
+        Arguments:
+        * `name` (`str`): One of `TABS`.
+
+        Raises:
+        * `ValueError`: When there is no such tab.
+        """
+        if name not in self.tabs:
+            raise ValueError(f"no tab {name} (tabs: {', '.join(TABS)})")
+        # `typeshed` leaves `Notebook.select()` untyped.
+        self.notebook.select(  # type: ignore[no-untyped-call]
+            self.tabs[name]
+        )
+        if tk is lcnc_hmi_headless:
+            self.on_tab_changed()
+
+    # Method `HMI.on_tab_changed()`:
+    def on_tab_changed(self) -> None:
+        """Bring the tab just shown up to date."""
+        if self.tab() == "Tools":
+            self.show_tools()
 
     # Method `HMI.on_run()`:
     def on_run(self) -> None:
@@ -1614,7 +1682,8 @@ class HMI:
           every text window, such as Tools), and `drawing` (True while
           a setup is being drawn in SolidCraft) and `origins` (the
           setup's named origins, work millimeters) and `setup_step`
-          (how many setup items Next Step shows; 0 for all).
+          (how many setup items Next Step shows; 0 for all), and
+          `tab` (the name of the tab shown).
         """
         widgets: list[Any] = list(self.widgets())
         return {
@@ -1629,6 +1698,7 @@ class HMI:
             "drawing": self.drawer is not None and self.drawer.busy,
             "origins": dict(self.origins),
             "setup_step": self.setup_step,
+            "tab": self.tab(),
             "setup_progress": [
                 int(float(self.progress.cget("value"))),
                 int(float(self.progress.cget("maximum"))),
@@ -1646,8 +1716,9 @@ class HMI:
         }
 
     # Method `HMI.handle()`:
-    # A flat list of commands reads best, so it has many returns.
-    # pylint: disable-next=too-many-return-statements
+    # A flat list of commands reads best, so it has many returns and
+    # branches.
+    # pylint: disable-next=too-many-return-statements,too-many-branches
     def handle(self, line: str) -> str:
         """Answer one command from the command port.
 
@@ -1674,6 +1745,8 @@ class HMI:
                 actions[word]()
             elif word == "press" and rest:
                 return self.press(rest.strip())
+            elif word == "tab" and rest:
+                self.select_tab(rest.strip())
             elif word == "type":
                 self.mdi.set(rest)
             elif word == "show":

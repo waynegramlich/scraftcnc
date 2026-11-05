@@ -135,3 +135,17 @@ skipped, 193 s, with one failure, `TestFiles.test_document_is_current`:
 the top level `Tool_Models.md` (written from the code) still had the
 `SC` names, and was rewritten from `tool_models.document()`;
 `test_tool_models` then passes.
+
+## 2026-11-05: S3
+
+The HMI has tabs (`ttk.Notebook`; `TABS` = Run, Setup, Tools, View).
+The position, message and progress lines sit above them, and Open and
+Quit below.  The Tools popup is now the Tools tab, filled each time
+the tab is shown, and the Tools button is gone.  The headless HMI has
+a `Notebook` stand-in.  On the command port, `tab NAME` shows a tab,
+`show` has a new `tab` key, and `press` still finds a button on any
+tab.  The HMI has no protocol number of its own, and the changes only
+add to it.  New tests: `test_tabs` (walks all four tabs) and
+`test_labels_unique`; `test_tools_window` became `test_tools_tab`.  A
+real (withdrawn) Tk window switched through all four tabs fine.
+Checkers are clean.  Unit suite: 605 tests OK, 13 skipped, 199 s.
