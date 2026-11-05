@@ -396,3 +396,19 @@ text.  Tests: `tests/test_sim_carousel.py` (7).  Unit suite 647 OK,
 (-3, 4.5, -2) less G54 (4, 3, -6); no errors, 114 s.  Known: a tool
 shown in the carousel shows its holder bands even while the Holders
 toggle hides holders, until the HMI applies the toggle again.
+
+## 2026-11-05: S12 (done by Claude directly)
+
+Typed MDI lines are checked against the keep-outs before they run
+(`HMI.mdi_refusal()`, called by `on_execute()`): `mdi_segments()`
+reads the line with the viewer's reader (`plot.read_gcode()`) after a
+move to the tip's place, in `G90`, and each piece (arcs in short
+pieces) goes through `jog_hit()`.  A hit is refused ("MDI refused: it
+would enter ..."), as is any `G91` move while keep-outs are checked.
+Units follow LinuxCNC's mode (`HMIMachine.modes()`, from `gcodes`)
+unless the line has `G20`/`G21`.  Without a setup or origin, lines run
+unchecked, said once.  Refusals reach the port through `jog_refusal`.
+Tests: `tests/test_hmi_mdi_keepouts.py` (6).  Unit suite 653 OK, 13
+skipped, 228 s; end-to-end 10 OK, 138 s.  Open: #49 (holders of tools
+in the carousel ignore the Holders toggle; the follower process does
+not know the HMI's toggles).  All steps S1-S12 are done.

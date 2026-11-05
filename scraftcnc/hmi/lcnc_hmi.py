@@ -8,7 +8,8 @@ drawn; under the tabs, Open and Quit.  The tabs, one for each task:
 
 * Run: the G-code already run, the G-code coming next, one line of
   G-code to run as MDI (Execute, while stopped; green when it reads
-  as RS-274, red when not), a run line (-Tool and +Tool, which move
+  as RS-274, red when not; refused, as a jog is, when it would
+  enter a keep-out, or moves in `G91`), a run line (-Tool and +Tool, which move
   the line Start runs from to the previous or next tool change;
   Start, Pause and Reset) and a speed slider (the feed override).
 * Setup: Next Step (the setup's items, one at a time), Set Origin,
@@ -170,6 +171,11 @@ UNITS: re.Pattern[str] = re.compile(r"\bG(2[01])\b", re.IGNORECASE)
 
 # Comments: in parentheses, or from `;` to the end of the line.
 COMMENT: re.Pattern[str] = re.compile(r"\([^)]*\)|;.*")
+
+# The words of a typed line that set the distance mode or the units.
+INCREMENTAL: re.Pattern[str] = re.compile(r"\bG0*91(?![.\d])", re.IGNORECASE)
+METRIC: re.Pattern[str] = re.compile(r"\bG0*21(?![.\d])", re.IGNORECASE)
+INCH: re.Pattern[str] = re.compile(r"\bG0*20(?![.\d])", re.IGNORECASE)
 
 # A line of RS-274 words, simply: letters, each followed by a number.
 WORDS: re.Pattern[str] = re.compile(
@@ -494,6 +500,53 @@ def jog_hit(
         if zone.hits(move, low, radius):
             return zone.name
     return ""
+
+
+# Function `mdi_segments()`:
+def mdi_segments(
+    line: str, start: tuple[float, float, float], metric: bool
+) -> list[tuple[tuple[float, float, float], tuple[float, float, float]]]:
+    """Return the straight pieces a typed (MDI) line moves the tip by.
+
+    The line is read by the tool path viewer's reader
+    (`plot.read_gcode()`), after a move to where the tip is, in
+    absolute (`G90`) mode; arcs come back as short straight pieces.
+
+    Arguments:
+    * `line` (`str`): The typed line.
+    * `start` (`tuple[float, float, float]`): Where the tip is (work
+      inches).
+    * `metric` (`bool`): True when the line's numbers are millimeters.
+
+    Returns:
+    * (`list[tuple[tuple[float, float, float], tuple[float, float,
+      float]]]`): Each piece's start and end (work inches); none for a
+      line that does not move.
+
+    Raises:
+    * `ValueError`: If the line can not be read.
+    """
+    scale: float = 25.4 if metric else 1.0
+    x, y, z = (value * scale for value in start)
+    text: str = (
+        f"{'G21' if metric else 'G20'} G90\n"
+        f"G0 X{x:.6f} Y{y:.6f} Z{z:.6f}\n{line}"
+    )
+    try:
+        moves: list[PathMove] = command_moves(read_gcode(text))
+    except (KeyError, IndexError) as error:
+        raise ValueError(str(error)) from error
+    pieces: list[
+        tuple[tuple[float, float, float], tuple[float, float, float]]
+    ] = []
+    move: PathMove
+    for move in moves:
+        points: list[tuple[float, float, float]] = [
+            (point[0] / scale, point[1] / scale, point[2] / scale)
+            for point in move["pts"]
+        ]
+        pieces += itertools.pairwise(points)
+    return pieces
 
 
 # Function `clock()`:
@@ -1076,6 +1129,19 @@ class HMIMachine:
             lcnc.call("command.mdi", self.mdi_lines.pop(0))
         return True
 
+    # Method `HMIMachine.modes()`:
+    def modes(self) -> tuple[bool, bool]:
+        """Return LinuxCNC's distance mode and units, as now set.
+
+        Returns:
+        * (`tuple[bool, bool]`): True when incremental (`G91`), and
+          True when metric (`G21`); both False without LinuxCNC.
+        """
+        if self.lcnc is None:
+            return (False, False)
+        gcodes: list[int] = list(self.lcnc.stat("gcodes")["gcodes"])
+        return (910 in gcodes, 210 in gcodes)
+
     # Method `HMIMachine.status()`:
     def status(self) -> HMIStatus:
         """Poll LinuxCNC, and start the next MDI line when it is time.
@@ -1451,8 +1517,8 @@ class HMI:
     * `axis_texts` (`dict[str, tk.StringVar]`): The numbers typed.
     * `jog_note` (`str`): Why jogs are not checked, once said.
     * `last_tool` (`int`): The tool in the spindle at the last poll.
-    * `jog_refusal` (`str`): Why the last jog was refused (`""` when
-      it was not).
+    * `jog_refusal` (`str`): Why the last jog or MDI line was refused
+      (`""` when it was not).
     * `tool_radii` (`dict[int, float]`): Each tool's widest radius,
       by its number.
     * `zones` (`list[RoundedPolygon] | None`): The setup's keep-outs
@@ -2185,11 +2251,74 @@ class HMI:
 
     # Method `HMI.on_execute()`:
     def on_execute(self) -> None:
-        """Run the MDI line."""
+        """Run the MDI line, unless it would enter a keep-out."""
+        line: str = self.mdi.get().strip()
+        self.jog_refusal = self.mdi_refusal(line)
+        if self.jog_refusal:
+            self.message.configure(text=self.jog_refusal)
+            return
         try:
-            self.machine.mdi(self.mdi.get().strip())
+            self.machine.mdi(line)
         except RuntimeError as error:
             self.message.configure(text=str(error))
+
+    # Method `HMI.mdi_refusal()`:
+    def mdi_refusal(self, line: str) -> str:
+        """Return why a typed line must not run, as for a jog.
+
+        Its moves are checked against the keep-outs as a jog is (S12,
+        `T.hs~5.1.5` #42).  Incremental (`G91`) moves are refused while
+        keep-outs are checked, as they are not followed here; without
+        a setup or an origin nothing is checked, which is said once.
+
+        Arguments:
+        * `line` (`str`): The typed line.
+
+        Returns:
+        * (`str`): Why it is refused, or `""` to run it.
+        """
+        # Keep-outs mean something only with a setup and its origin.
+        unchecked: str = (
+            "no setup"
+            if self.zones is None
+            else "origin not set"
+            if not self.origin_set
+            else ""
+        )
+        if unchecked:
+            if unchecked != self.jog_note:
+                self.jog_note = unchecked
+                self.message.configure(text=f"MDI not checked: {unchecked}")
+            return ""
+
+        # The distance mode and units: LinuxCNC's, unless the line sets
+        # them.
+        words: str = COMMENT.sub("", line)
+        incremental, metric = self.machine.modes()
+        if incremental or INCREMENTAL.search(words):
+            return (
+                "MDI refused: G91 moves are not checked against the "
+                "keep-outs; use G90"
+            )
+        if METRIC.search(words):
+            metric = True
+        elif INCH.search(words):
+            metric = False
+
+        # Each piece of the move, checked as a jog is.
+        status: HMIStatus = self.machine.status()
+        try:
+            pieces: list[
+                tuple[tuple[float, float, float], tuple[float, float, float]]
+            ] = mdi_segments(line, status.position, metric)
+        except ValueError as error:
+            return f"MDI refused: it can not be checked ({error})"
+        radius: float = self.tool_radii.get(status.tool, 0.0)
+        for start, end in pieces:
+            hit: str = jog_hit(self.zones or [], start, end, radius)
+            if hit:
+                return f"MDI refused: it would enter {hit}"
+        return ""
 
     # Method `HMI.on_stop()`:
     def on_stop(self) -> None:
