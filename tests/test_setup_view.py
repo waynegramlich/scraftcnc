@@ -243,9 +243,11 @@ class _Namespace:  # pylint: disable=too-few-public-methods
 
 
 # A stand-in for a SolidCraft session.
-class _Session:  # pylint: disable=too-few-public-methods
+# One attribute per SolidCraft namespace used, so many attributes.
+# pylint: disable-next=too-few-public-methods,too-many-instance-attributes
+class _Session:
     """Has `solid`, `sketch`, `appearance`, `document`, `timeline`
-    and `view`, recording calls."""
+    and `view`, recording calls; `browser`'s go to `shown` alone."""
 
     def __init__(self) -> None:
         self.calls: list[tuple[str, Any]] = []
@@ -255,6 +257,8 @@ class _Session:  # pylint: disable=too-few-public-methods
         self.document: _Namespace = _Namespace("document", self.calls)
         self.timeline: _Namespace = _Namespace("timeline", self.calls)
         self.view: _Namespace = _Namespace("view", self.calls)
+        self.shown: list[tuple[str, Any]] = []
+        self.browser: _Namespace = _Namespace("browser", self.shown)
 
     def names(self) -> list[str]:
         """Return the commands called, and forget them."""
@@ -451,6 +455,55 @@ class TestSetupView(unittest.TestCase):
         self.view.show(assembly)
         self.assertEqual(self.view.counts, (0, 5, 1))
         self.assertEqual(self.session.names(), ["timeline.delete"])
+
+    def test_hidden(self) -> None:
+        """Hidden kinds are hidden after each show, and shown again."""
+        items: list[AssemblyItem] = self.assembly().items
+        items[0] = replace(items[0], keep_out=((0, 0, 0, 1, 2, 3),))
+        assembly: Assembly = Assembly(items)
+        self.view.keep_outs = True
+        self.view.hidden = {"keep_out"}
+        self.view.show(assembly)
+        visible = {
+            str(args["items"][0]).split("_", maxsplit=1)[0]: args["visible"]
+            for _, args in self.session.shown
+        }
+        self.assertEqual(visible, {"keep": False, "stock": True})
+        self.session.shown.clear()
+        self.view.hidden = set()
+        self.view.apply_hidden()
+        self.assertTrue(all(args["visible"] for _, args in self.session.shown))
+
+    def test_origin_and_holders(self) -> None:
+        """The origin by its folder, holders by their bands' names."""
+        bodies = [{"name": "Holder 3021 band 1"}, {"name": "vise"}]
+        self.session.document = cast(
+            Any,
+            type(
+                "_Document",
+                (),
+                {"inspect": staticmethod(lambda: {"bodies": bodies})},
+            )(),
+        )
+        self.view.hidden = {"origin", "holder"}
+        self.view.apply_hidden()
+        self.assertEqual(
+            [args for _, args in self.session.shown],
+            [
+                {"visible": False, "folder": "origin"},
+                {"visible": False, "items": ["Holder 3021 band 1"]},
+            ],
+        )
+
+        # Shown again once each; then nothing more is sent.
+        self.session.shown.clear()
+        self.view.hidden = set()
+        self.view.apply_hidden()
+        self.assertEqual(len(self.session.shown), 2)
+        self.assertTrue(all(args["visible"] for _, args in self.session.shown))
+        self.session.shown.clear()
+        self.view.apply_hidden()
+        self.assertEqual(self.session.shown, [])
 
     def test_keep_out_prisms(self) -> None:
         """A box from the origin, turned once and placed."""

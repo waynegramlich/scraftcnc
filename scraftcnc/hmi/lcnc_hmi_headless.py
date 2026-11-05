@@ -144,6 +144,7 @@ class StringVar:
 
 
 DoubleVar = StringVar
+BooleanVar = StringVar
 
 
 # Class `Widget`:
@@ -369,6 +370,24 @@ class Radiobutton(Button):
         if self.cget("state") != "disabled":
             self.options["variable"].set(self.options["value"])
             Button.invoke(self)
+
+
+# Class `Checkbutton`:
+class Checkbutton(Button):
+    """Stands in for `ttk.Checkbutton`."""
+
+    kind = "TCheckbutton"
+
+    # Method `Checkbutton.invoke()`:
+    def invoke(self) -> None:
+        """Press it: its variable flips, then its command runs."""
+        if self.cget("state") != "disabled":
+            variable: Any = self.options.get("variable")
+            if variable is not None:
+                variable.set(not variable.get())
+            command: Any = self.options.get("command")
+            if command is not None:
+                command()
 
 
 # Class `Scrollbar`:

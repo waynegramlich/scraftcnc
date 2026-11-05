@@ -294,3 +294,48 @@ unchecked, and the message line says so once ("Jogs not checked: no
 setup" / "... origin not set").  Tests: new
 `tests/test_hmi_jog_keepouts.py`.  Checkers clean; unit suite 630 OK,
 13 skipped, 207 s; end-to-end all 10 pass, 137 s.
+
+## 2026-11-05: After S8 (#41, #42)
+
+#41: agreed, inside a keep-out only +Z jogs.  #42: checking typed MDI
+moves against the keep-outs becomes a new step, S11, after S10.
+
+## 2026-11-05: S9
+
+The View tab has check buttons (`TOGGLES`): Keep-outs (off at first)
+and Stock outline (on).  They change only visibility:
+`SetupView.hidden` (kinds of `HIDEABLE`, the first word of a display
+key) is applied after every `show()` by `apply_hidden()`, one
+`browser.visibility(visible=, items=[...])` per kind, by sketch name
+(`keep_out_N`, `stock_N`).  The keep-outs are now always drawn
+(`SetupDrawer` sets `view.keep_outs = True`), hidden unless toggled
+on, so the old Keep-outs redraw is gone; a toggle hands the same
+setup to the drawer, which changes nothing but the visibility, and a
+later drawing (Next Step, a new open) keeps the choices.  `press
+LABEL` presses a check button (headless `Checkbutton`, `BooleanVar`);
+`show` has `toggles`.  Left out: flute lines (a sketch per tool, `ModeledTool.sketch`, drawn
+by `sim_solidcraft.py`; the user's decision).  (Corrected: an earlier
+note here said the holder was part of the tool's body; it is not, see
+below.)  Tests: `test_hidden` (`test_setup_view.py`, with a `browser` namespace
+in its fake session), `test_keep_outs` (HMI).  Checkers clean; unit
+suite 631 OK, 13 skipped, 203 s.  `./show_demo.py --headless` not run
+(time cap).
+Checked in a real headless SolidCraft (`./show_demo.py --headless`,
+109 s, closed cleanly), probing the HMI port and SolidCraft's
+`document.inspect` (sketches have `visible`): the five `keep_out_N`
+sketches start hidden and `stock_3` shown; `press Keep-outs` shows
+them, a second press hides them; `press Stock outline` hides the
+stock; no SolidCraft errors.  Nothing needed fixing.
+
+Two more View toggles (both shown at first): Origin, SolidCraft's own
+origin by `browser.visibility(visible=, folder="origin")` (the setup is
+drawn in the work frame, so it sits at the program's zero), sent only
+on a change; Holders, the holder bands' bodies (`model_holder()` makes
+each band a body `Holder <unique_id> band <n>`), found by name in
+`document.inspect()` (`setup_view.HOLDER_BAND`) and hidden again on
+every `show()` while hidden, since `sim_solidcraft.py` draws a tool
+when it is changed to; the HMI's `follow_tool()` hands the setup to
+the drawer again on each tool change while holders are hidden.  Tests
+(run by name only, by the user's wish): `test_origin_and_holders`,
+`test_hidden`, `test_keep_outs`, `test_labels_unique`, `test_tabs`, all
+pass; checkers clean.  Not run in SolidCraft.

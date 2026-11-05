@@ -13,6 +13,7 @@ the parallels (the vise's, #29).
 the next assembly changes only the items that differ (#68).
 """
 
+import re
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -40,6 +41,14 @@ OPACITY: dict[str, float] = {"tooling": 0.35, "stock": 0.35, "part": 1.0}
 # What tells one shown item from another: its cache key, where it is,
 # how it looks, and which copy of the same it is.
 DisplayKey = tuple[str, str, float, float, float, int, str, float, int]
+
+# What can be hidden, by the first word of its display key: each
+# item's keep-outs (their own sketches) and the stock (its outline).
+HIDEABLE: tuple[str, ...] = ("keep_out", "stock")
+
+# A tool holder's band, as `cutter_models.model_holder()` names it
+# (drawn by `sim_solidcraft.py`, in the same SolidCraft session).
+HOLDER_BAND: re.Pattern[str] = re.compile(r"^Holder .+ band \d+$")
 
 # How many places a position is rounded to in a display key (mm).
 PLACES: int = 6
@@ -348,6 +357,12 @@ class SetupView:  # pylint: disable=too-many-instance-attributes
     * `cache` (`ModelCache | None`):
       Where models are kept between runs, or `None` to build them.
     * `resolver` (`Resolver`): What builds an item's object.
+    * `hidden` (`set[str]`): What is hidden (of `HIDEABLE`, and
+      `origin` and `holder`), by `browser.visibility`, after each
+      `show()`.
+    * `holders_shown` (`bool`): Whether the holders were last shown.
+    * `origin_shown` (`bool`): Whether SolidCraft's origin was last
+      shown.
     * `keep_outs` (`bool`): True to draw the items' keep-outs too.
     * `viewed` (`bool`): True once the operator's view is set.
     * `progress` (`tuple[int, int]`): How many of the last `show()`'s
@@ -368,6 +383,9 @@ class SetupView:  # pylint: disable=too-many-instance-attributes
 
     # Remaining attributes (alphabetized):
     counts: tuple[int, int, int] = field(init=False, default=(0, 0, 0))
+    hidden: set[str] = field(init=False, default_factory=set)
+    holders_shown: bool = field(init=False, default=True)
+    origin_shown: bool = field(init=False, default=True)
     keep_outs: bool = field(init=False, default=False)
     progress: tuple[int, int] = field(init=False, default=(0, 0))
     viewed: bool = field(init=False, default=False)
@@ -434,8 +452,56 @@ class SetupView:  # pylint: disable=too-many-instance-attributes
         )
         if not self.viewed and self.shown:
             self.operator_view(placed)
+        self.apply_hidden()
         if failed:
             raise RuntimeError(f"not taken out: {'; '.join(failed)}")
+
+    # Method `SetupView.apply_hidden()`:
+    def apply_hidden(self) -> None:
+        """Show or hide each `HIDEABLE` kind, as `hidden` says.
+
+        Only the visibility changes; nothing is drawn again.
+        """
+        names: dict[str, list[str]] = {kind: [] for kind in HIDEABLE}
+        key: DisplayKey
+        shown: ShownItem
+        for key, shown in self.shown.items():
+            if key[0] in names:
+                names[key[0]] += [*shown.bodies, *shown.sketches]
+        kind: str
+        for kind in HIDEABLE:
+            if names[kind]:
+                self.solidcraft.browser.visibility(
+                    visible=kind not in self.hidden,
+                    items=cast(JSON, names[kind]),
+                )
+
+        # SolidCraft's own origin: the setup is drawn in the work
+        # frame, so it sits at the program's zero.  Sent on a change.
+        origin: bool = "origin" not in self.hidden
+        if origin != self.origin_shown:
+            self.solidcraft.browser.visibility(visible=origin, folder="origin")
+            self.origin_shown = origin
+
+        # The tools' holders, by their bands' names; while hidden, each
+        # show hides them again, since a tool may have been drawn since.
+        holders: bool = "holder" not in self.hidden
+        if not holders or not self.holders_shown:
+            inspected: Any = self.solidcraft.document.inspect()
+            bands: list[str] = [
+                str(body["name"])
+                for body in (
+                    inspected.get("bodies", [])
+                    if isinstance(inspected, dict)
+                    else []
+                )
+                if HOLDER_BAND.match(str(body.get("name", "")))
+            ]
+            if bands:
+                self.solidcraft.browser.visibility(
+                    visible=holders, items=cast(JSON, bands)
+                )
+            self.holders_shown = holders
 
     # Method `SetupView.operator_view()`:
     def operator_view(self, placed: list[PlacedItem]) -> None:

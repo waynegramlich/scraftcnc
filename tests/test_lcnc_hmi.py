@@ -531,6 +531,7 @@ class FakeView:  # pylint: disable=too-few-public-methods
     def __init__(self, fail: bool = False) -> None:
         self.fail: bool = fail
         self.keep_outs: bool = False
+        self.hidden: set[str] = set()
         self.progress: tuple[int, int] = (0, 0)
         self.keep_out_shows: list[bool] = []
         self.shown: list[Assembly] = []
@@ -540,7 +541,7 @@ class FakeView:  # pylint: disable=too-few-public-methods
         if self.fail:
             raise ValueError("no such vise")
         self.shown.append(assembly)
-        self.keep_out_shows.append(self.keep_outs)
+        self.keep_out_shows.append("keep_out" not in self.hidden)
 
 
 class TestSetupDrawing(unittest.TestCase):
@@ -708,7 +709,7 @@ class TestSetupDrawing(unittest.TestCase):
         )
 
     def test_keep_outs(self) -> None:
-        """Keep-outs toggles, redrawing the setup with them or not."""
+        """The View toggles show or hide; a later drawing keeps them."""
         self.panel.open(self.program(with_setup(self.gcode, demo_assembly())))
         assert self.panel.drawer is not None
         for _ in range(2):
@@ -716,7 +717,37 @@ class TestSetupDrawing(unittest.TestCase):
             self.assertEqual(self.ask("press Keep-outs"), "ok")
         self.panel.drawer.wait()
         self.assertEqual(self.view.keep_out_shows, [False, True, False])
-        self.assertEqual(self.panel.show()["message"], "Keep-outs off.")
+        self.assertEqual(
+            self.panel.show()["toggles"],
+            {
+                "Keep-outs": False,
+                "Stock outline": True,
+                "Origin": True,
+                "Holders": True,
+            },
+        )
+
+        # The stock outline hidden stays hidden through Next Step.
+        self.assertEqual(self.ask("press Stock outline"), "ok")
+        self.panel.drawer.wait()
+        self.ask("press Next Step")
+        self.panel.drawer.wait()
+        self.assertEqual(self.view.hidden, {"keep_out", "stock"})
+
+        # Hidden holders: a tool change draws again, to hide the new one.
+        self.ask("press Origin")
+        self.ask("press Holders")
+        self.panel.drawer.wait()
+        drawings = len(self.view.shown)
+        self.panel.follow_tool(4)
+        self.panel.drawer.wait()
+        self.assertEqual(len(self.view.shown), drawings + 1)
+        self.assertEqual(
+            self.view.hidden, {"keep_out", "stock", "origin", "holder"}
+        )
+        self.panel.follow_tool(4)
+        self.panel.drawer.wait()
+        self.assertEqual(len(self.view.shown), drawings + 1)
 
     def test_start_waits(self) -> None:
         """Start is greyed out while the setup draws; the bar shows it."""

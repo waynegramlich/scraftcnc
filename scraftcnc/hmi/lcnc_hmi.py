@@ -16,7 +16,9 @@ drawn; under the tabs, Open and Quit.  The tabs, one for each task:
   position on one axis made to read the number typed), six jog
   buttons and the jog step (1 to .0001 in).
 * Tools: the tools' speeds and feeds, for a material chosen.
-* View: Keep-outs (shows or hides them in SolidCraft).
+* View: toggles that show or hide, in SolidCraft, the keep-outs, the
+  stock outline, SolidCraft's origin and the tools' holders
+  (`TOGGLES`).
 
 The LinuxCNC calls are kept in `HMIMachine`, a client (through
 `scraftcnc.lcnc.lcnc_client`) of `serve_linuxcnc` from
@@ -181,7 +183,16 @@ SHOP_MACHINE: str = "Shop mill"
 MATERIAL: str = "6061 aluminum"
 
 # The classes of the widgets that `press` can press.
-BUTTONS: tuple[str, ...] = ("TButton", "Radiobutton")
+BUTTONS: tuple[str, ...] = ("TButton", "Radiobutton", "TCheckbutton")
+
+# The View tab's toggles: each label, and what it shows (of
+# `setup_view.HIDEABLE`), and whether it starts shown.
+TOGGLES: tuple[tuple[str, str, bool], ...] = (
+    ("Keep-outs", "keep_out", False),
+    ("Stock outline", "stock", True),
+    ("Origin", "origin", True),
+    ("Holders", "holder", True),
+)
 
 # The HMI's tabs, one for each task, in their order.
 TABS: tuple[str, ...] = ("Run", "Setup", "Tools", "View")
@@ -1247,10 +1258,12 @@ class View(Protocol):  # pylint: disable=too-few-public-methods
     """What shows an assembly (`setup_view.SetupView`, or a fake).
 
     Attributes:
+    * `hidden` (`set[str]`): What to hide (`setup_view.HIDEABLE`).
     * `keep_outs` (`bool`): True to show the items' keep-outs too.
     * `progress` (`tuple[int, int]`): Changes done, of how many.
     """
 
+    hidden: set[str]
     keep_outs: bool
     progress: tuple[int, int]
 
@@ -1277,7 +1290,8 @@ class SetupDrawer:
       run, so a new setup changes only what differs (`T.emsagc~5.2`
       #68).
     * `busy` (`bool`): True while the thread is drawing.
-    * `keep_outs` (`bool`): Whether the next drawing shows keep-outs.
+    * `hidden` (`set[str]`): What the next drawing hides (it draws
+      the keep-outs always, so they can be shown without a redraw).
     * `errors` (`queue.SimpleQueue[str]`): Messages for the HMI.
     * `lock` (`threading.Lock`): Guards `busy`, `pending`, `thread`.
     * `pending` (`Assembly | None`): The next setup to draw.
@@ -1292,7 +1306,12 @@ class SetupDrawer:
 
     # Remaining attributes (alphabetized):
     busy: bool = field(init=False, default=False)
-    keep_outs: bool = field(init=False, default=False)
+    hidden: set[str] = field(
+        init=False,
+        default_factory=lambda: {
+            kind for _, kind, shown in TOGGLES if not shown
+        },
+    )
     errors: "queue.SimpleQueue[str]" = field(
         init=False, default_factory=queue.SimpleQueue
     )
@@ -1331,7 +1350,8 @@ class SetupDrawer:
 
             # Draw it; any error goes to the HMI.
             try:
-                self.view.keep_outs = self.keep_outs
+                self.view.keep_outs = True
+                self.view.hidden = set(self.hidden)
                 self.view.show(assembly)
             # pylint: disable-next=broad-exception-caught
             except Exception as error:  # noqa: BLE001
@@ -1377,7 +1397,8 @@ class HMI:
     * `progress` (`ttk.Progressbar`): How much of the setup is drawn.
     * `drawn` (`Assembly | None`): The setup (or the steps of it)
       last handed to `drawer`.
-    * `keep_outs_button` (`ttk.Button`): Shows or hides keep-outs.
+    * `toggles` (`dict[str, tk.BooleanVar]`): The View tab's check
+      buttons' states, by label (`TOGGLES`).
     * `setup_step` (`int`): How many of the setup's items Next Step
       has shown (0: the whole setup).
     * `origins` (`list[tuple[str, Point]]`): The open program's
@@ -1427,6 +1448,7 @@ class HMI:
     * `axis_entries` (`dict[str, tk.Entry]`): Their numbers' entries.
     * `axis_texts` (`dict[str, tk.StringVar]`): The numbers typed.
     * `jog_note` (`str`): Why jogs are not checked, once said.
+    * `last_tool` (`int`): The tool in the spindle at the last poll.
     * `jog_refusal` (`str`): Why the last jog was refused (`""` when
       it was not).
     * `tool_radii` (`dict[int, float]`): Each tool's widest radius,
@@ -1496,6 +1518,7 @@ class HMI:
         self.zones: list[RoundedPolygon] | None = None
         self.tool_radii: dict[int, float] = {}
         self.jog_note: str = ""
+        self.last_tool: int = 0
         self.jog_refusal: str = ""
         self.rapid: float = machine.rapid_speed()
         self.sums: list[float] = [0.0]
@@ -1695,10 +1718,17 @@ class HMI:
         self.tools_table.pack(fill="both", expand=True, padx=4, pady=(0, 4))
 
         # View: what SolidCraft shows.
-        self.keep_outs_button: ttk.Button = ttk.Button(
-            self.tabs["View"], text="Keep-outs", command=self.on_keep_outs
-        )
-        self.keep_outs_button.pack(anchor="w", padx=4, pady=6)
+        self.toggles: dict[str, tk.BooleanVar] = {}
+        label: str
+        shown: bool
+        for label, _, shown in TOGGLES:
+            self.toggles[label] = tk.BooleanVar(value=shown)
+            ttk.Checkbutton(
+                self.tabs["View"],
+                text=label,
+                variable=self.toggles[label],
+                command=self.on_toggle,
+            ).pack(anchor="w", padx=4, pady=2)
 
         # Under the tabs, for every task: Open and Quit.
         bottom: ttk.Frame = ttk.Frame(root)
@@ -2262,16 +2292,22 @@ class HMI:
             self.drawn = shown
             self.drawer.draw(shown)
 
-    # Method `HMI.on_keep_outs()`:
-    def on_keep_outs(self) -> None:
-        """Show the setup's keep-outs, or hide them again."""
+    # Method `HMI.on_toggle()`:
+    def on_toggle(self) -> None:
+        """Show or hide what the View tab's toggles say.
+
+        Only visibility changes (`SetupView.apply_hidden()`); the
+        setup is not drawn again, as nothing in it differs.  A drawing
+        made later (Next Step, a new open) keeps the same choices.
+        """
         if self.drawer is None:
             self.message.configure(text="No SolidCraft to show them in.")
             return
-        self.drawer.keep_outs = not self.drawer.keep_outs
-        self.message.configure(
-            text=f"Keep-outs {'on' if self.drawer.keep_outs else 'off'}."
-        )
+        self.drawer.hidden = {
+            kind
+            for label, kind, _ in TOGGLES
+            if not bool(self.toggles[label].get())
+        }
         if self.drawn is not None:
             self.drawer.draw(self.drawn)
 
@@ -2351,7 +2387,8 @@ class HMI:
           setup's named origins, work millimeters) and `setup_step`
           (how many setup items Next Step shows; 0 for all),
           `origin_set` (True once the program's origin is set),
-          `axes_set` (the axes set one by one, or all), `axis_entries`
+          `toggles` (each View toggle, True when shown), `axes_set`
+          (the axes set one by one, or all), `axis_entries`
           (the numbers typed for them),
           `next_tool` (the next tool and the time left until it), and
           `tab` (the name of the tab shown).
@@ -2370,6 +2407,10 @@ class HMI:
             "origins": dict(self.origins),
             "setup_step": self.setup_step,
             "origin_set": self.origin_set,
+            "toggles": {
+                label: bool(self.toggles[label].get())
+                for label, _, _ in TOGGLES
+            },
             "axes_set": sorted(self.axes_set),
             "axis_entries": {
                 axis: self.axis_texts[axis].get() for axis in AXES
@@ -2457,6 +2498,27 @@ class HMI:
             return f"error: {error}"
         return "ok"
 
+    # Method `HMI.follow_tool()`:
+    def follow_tool(self, tool: int) -> None:
+        """Hide a newly drawn tool's holder, when holders are hidden.
+
+        `sim_solidcraft.py` draws a tool when it is changed to, so on
+        a change the setup goes to the drawer again, which changes
+        nothing but the visibility (`SetupView.apply_hidden()`).
+
+        Arguments:
+        * `tool` (`int`): The tool in the spindle now.
+        """
+        if tool == self.last_tool:
+            return
+        self.last_tool = tool
+        if (
+            self.drawer is not None
+            and self.drawn is not None
+            and "holder" in self.drawer.hidden
+        ):
+            self.drawer.draw(self.drawn)
+
     # Method `HMI.poll()`:
     # One pass over everything the window shows, so many branches.
     def poll(self) -> None:  # pylint: disable=too-many-branches
@@ -2542,6 +2604,9 @@ class HMI:
             if (away or not self.origin_set) and not self.running
             else "disabled"
         )
+
+        # A tool drawn since (a tool change) follows the Holders toggle.
+        self.follow_tool(status.tool)
 
         # The next tool, and the time left until it (cheap: the line
         # times are added up once per program).
