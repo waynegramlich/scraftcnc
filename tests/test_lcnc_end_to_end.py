@@ -299,14 +299,16 @@ class TestEndToEnd(unittest.TestCase):
     def messages(self) -> str:
         """Return every message LinuxCNC has sent, but tool prompts.
 
-        The tool change prompts (`(MSG, Insert T..: ...)`) are left
-        out: the headless HMI goes on from each one by itself.
+        The tool change prompts (`(MSG, Insert T..: ...)`, and a
+        carousel's `(MSG, Swap tool ...)`) are left out: the headless
+        HMI goes on from each one by itself.
         """
         text: str = self.ask("messages").removeprefix("messages:")
         return " | ".join(
             message.strip()
             for message in text.split(" | ")
-            if message.strip() and not message.strip().startswith("Insert T")
+            if message.strip()
+            and not message.strip().startswith(("Insert T", "Swap tool"))
         )
 
     def test_start_up(self) -> None:

@@ -354,3 +354,26 @@ first-use order; when a tool must come in, swap out the one whose next
 use is furthest away (or never).  Split: S10 = machine definition,
 the plan and the messages; S11 = the carousel drawn in SolidCraft;
 S12 = MDI move check (was S11, #42).
+
+## 2026-11-05: S10
+
+A machine may have a `carousel` (`shops.py` kind `carousel`: `slots`,
+hub `x`/`y`/`z`, `spoke_length`; `Shops.md` regenerated), kept in
+`Machine.carousel_slots`, `carousel_hub`, `spoke_length`, with
+`id_digits` (the shop's longest `unique_id`) and `ToolEntry.unique_id`.
+The example mill has 4 slots.  New `scraftcnc/carousel.py`: `plan()`
+fills the slots in first-use order, then swaps out the tool next used
+furthest away (never first; ties to the lowest slot);
+`gcode_sequence()` prescans G-code text; `colors()`, `tool_text()`,
+`swap_message()` ("Swap tool 5 (black/green) with tool 8
+(black/gray)"); `plan_text()` for the HMI.  `CNC` keeps `changes`; on
+a carousel machine `change_tool()` leaves out the template's prompt
+lines, and `finish()` puts `(MSG, Swap ...)` + `M0` before each change
+that needs a swap (colors in brackets, as a comment can not hold
+parentheses; checked by `comment()`).  Manual machines keep S5's
+prompt at every change.  The demo (tools 4, 8, 1, 5, 6, 1) now has one
+swap, before T06.  The HMI's Tools tab lists the load and the swaps.
+The end-to-end suite's `messages()` also leaves out `Swap tool`
+prompts.  Tests: new `tests/test_carousel.py`, `test_demo_pauses`
+changed.  Checkers clean; unit suite 640 OK, 13 skipped, 194 s;
+end-to-end all 10 pass, 137 s.

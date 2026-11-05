@@ -67,10 +67,12 @@ class ToolEntry:  # pylint: disable=too-many-instance-attributes
     * `widest` (`float`):
       Its widest cutting diameter (inches), when wider than `diameter`
       (0 when it is not).
+    * `unique_id` (`int`): Its number among all of the shop's tools
+      (its holder's color bands; 0 when not known).
 
     Constructor:
     * `ToolEntry(number, name, kind, diameter, rpm, feed, plunge, peck,
-      angle, radius, widest)`
+      angle, radius, widest, unique_id)`
     """
 
     # Constructor arguments:
@@ -85,6 +87,7 @@ class ToolEntry:  # pylint: disable=too-many-instance-attributes
     angle: float = field(init=True, default=0.0)
     radius: float = field(init=True, default=0.0)
     widest: float = field(init=True, default=0.0)
+    unique_id: int = field(init=True, default=0)
 
     # Method `ToolEntry.__post_init__()`:
     def __post_init__(self) -> None:
@@ -159,11 +162,19 @@ class Machine:  # pylint: disable=too-many-instance-attributes
     * `finish_allowance` (`float`):
       How much a roughing end mill leaves on walls and floors for the
       end mill that finishes them.
+    * `carousel_slots` (`int`): How many slots its tool carousel has
+      (0 for none: every change is by hand).
+    * `carousel_hub` (`tuple[float, float, float]`): Where the
+      carousel's hub is (machine coordinates, inches).
+    * `spoke_length` (`float`): From the hub to each slot (inches).
+    * `id_digits` (`int`): How many digits the shop's longest tool
+      `unique_id` has (its holders' color bands).
 
     Constructor:
     * `Machine(name, z_safe, clearance, tool_change_z, tool_change,
       rapid_speed, drill_cycle, through_overcut, stepover, ramp_angle,
-      tools, finish_allowance)`
+      tools, finish_allowance, carousel_slots, carousel_hub,
+      spoke_length, id_digits)`
     """
 
     # Constructor arguments:
@@ -179,6 +190,12 @@ class Machine:  # pylint: disable=too-many-instance-attributes
     ramp_angle: float = field(init=True)
     tools: tuple[ToolEntry, ...] = field(init=True)
     finish_allowance: float = field(init=True, default=0.05)
+    carousel_slots: int = field(init=True, default=0)
+    carousel_hub: tuple[float, float, float] = field(
+        init=True, default=(0.0, 0.0, 0.0)
+    )
+    spoke_length: float = field(init=True, default=0.0)
+    id_digits: int = field(init=True, default=1)
 
     # Method `Machine.__post_init__()`:
     def __post_init__(self) -> None:

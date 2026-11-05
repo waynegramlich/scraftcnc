@@ -647,6 +647,12 @@ address = "700 All American Way, Sunnyvale, CA 94086"
                     "How it is run.",
                     of="preferences",
                 ),
+                TableField(
+                    "carousel",
+                    "table",
+                    "Its tool changer's carousel, if it has one.",
+                    of="carousel",
+                ),
             ),
             True,
             """\
@@ -666,6 +672,35 @@ max_rpm = "5000 rpm"
 letter = "X"
 travel = "18 in"
 max_feed = "110 in/min"
+""",
+        ),
+        TableKind(
+            "carousel",
+            "A machine's tool carousel: its slots, on spokes from a hub.  "
+            "A tool is put in or taken out at the +X spoke.  A program "
+            "with more tools than slots stops to swap them "
+            "(`carousel.py`).",
+            (
+                TableField(
+                    "slots",
+                    "integer",
+                    "How many tools it holds (0: every change by hand).",
+                    True,
+                ),
+                TableField("x", "length", "The hub's machine X."),
+                TableField("y", "length", "The hub's machine Y."),
+                TableField("z", "length", "The hub's machine Z."),
+                TableField(
+                    "spoke_length", "length", "From the hub to a slot."
+                ),
+            ),
+            False,
+            """\
+slots = 4
+x = "-3 in"
+y = "4.5 in"
+z = "-2 in"
+spoke_length = "2.5 in"
 """,
         ),
         TableKind(
@@ -2923,6 +2958,9 @@ def cnc_machine(
     controller: dict[str, object] = cast(
         dict[str, object], machine["controller"]
     )
+    carousel: dict[str, object] = cast(
+        dict[str, object], machine.get("carousel", {})
+    )
 
     # The loaded tools, with drill speeds and feeds for the material.
     tools: list[ToolEntry] = []
@@ -2956,7 +2994,42 @@ def cnc_machine(
         ramp_angle=measure(preferences["ramp_angle"], ANGLE),
         finish_allowance=measure(preferences["finish_allowance"], LENGTH),
         tools=tuple(tools),
+        carousel_slots=int(cast(int, carousel.get("slots", 0))),
+        carousel_hub=(
+            measure(carousel.get("x", "0 in"), LENGTH),
+            measure(carousel.get("y", "0 in"), LENGTH),
+            measure(carousel.get("z", "0 in"), LENGTH),
+        ),
+        spoke_length=measure(carousel.get("spoke_length", "0 in"), LENGTH),
+        id_digits=_id_digits(shop),
     )
+
+
+# Function `_id_digits()`:
+def _id_digits(shop: dict[str, object]) -> int:
+    """Return how many digits a shop's longest tool `unique_id` has.
+
+    Arguments:
+    * `shop` (`dict[str, object]`): The shop, from `read()`.
+
+    Returns:
+    * (`int`): The number of digits (at least 1), as
+      `cutter_models.unique_id_digits()` counts for the holders.
+    """
+    digits: int = 1
+    tools_file: object
+    for tools_file in cast(list[object], shop.get("tools", [])):
+        if not isinstance(tools_file, dict):
+            continue
+        entries: object
+        for entries in tools_file.values():
+            if not isinstance(entries, list):
+                continue
+            entry: object
+            for entry in entries:
+                if isinstance(entry, dict) and "unique_id" in entry:
+                    digits = max(digits, len(str(entry["unique_id"])))
+    return digits
 
 
 # The tool materials with speeds and feeds worked out from
@@ -3308,6 +3381,7 @@ def _cnc_tool(
         ),
         radius=measure(tool.get("radius", "0 in"), LENGTH),
         widest=_widest(tool),
+        unique_id=int(cast(int, tool.get("unique_id", 0))),
     )
 
 

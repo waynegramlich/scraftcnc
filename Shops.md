@@ -214,6 +214,9 @@ is not a file of its own.
 | `controller`  | `controller`           | yes      | The controller.         |
 | `tool_table`  | `tool_table`           | no       | The tools loaded.       |
 | `preferences` | `preferences`          | no       | How it is run.          |
+| `carousel`    | `carousel`             | no       | Its tool changer's      |
+|               |                        |          | carousel, if it has     |
+|               |                        |          | one.                    |
 
 ```toml
 name = "Shop mill"
@@ -232,6 +235,29 @@ max_rpm = "5000 rpm"
 letter = "X"
 travel = "18 in"
 max_feed = "110 in/min"
+```
+
+## `carousel`
+
+A machine's tool carousel: its slots, on spokes from a hub.  A tool is
+put in or taken out at the +X spoke.  A program with more tools than
+slots stops to swap them (`carousel.py`).
+
+| Key            | Value   | Required | Meaning                               |
+| -------------- | ------- | -------- | ------------------------------------- |
+| `slots`        | integer | yes      | How many tools it holds (0: every     |
+|                |         |          | change by hand).                      |
+| `x`            | length  | no       | The hub's machine X.                  |
+| `y`            | length  | no       | The hub's machine Y.                  |
+| `z`            | length  | no       | The hub's machine Z.                  |
+| `spoke_length` | length  | no       | From the hub to a slot.               |
+
+```toml
+slots = 4
+x = "-3 in"
+y = "4.5 in"
+z = "-2 in"
+spoke_length = "2.5 in"
 ```
 
 ## `axis`

@@ -24,6 +24,7 @@ from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from typing import Literal, TypeAlias
 
+from .carousel import Plan, Swap, plan, swap_message
 from .geometry import (
     EPSILON,
     JOIN,
@@ -683,6 +684,8 @@ class CNC:  # pylint: disable=too-many-instance-attributes
       machine's.
     * `job_clearance` (`float | None`):
       This job's `clearance`, or `None` for the machine's.
+    * `changes` (`list[tuple[int, int]]`): Each tool change's command
+      (its index in `commands`) and T number, for the carousel plan.
     * `commands` (`list[RS274]`): The program so far.
     * `minutes` (`float`):
       The time the moves so far take, at the machine's rapid speed and
@@ -704,6 +707,7 @@ class CNC:  # pylint: disable=too-many-instance-attributes
     job_clearance: float | None = field(init=True, default=None)
 
     # Program state (alphabetized):
+    changes: list[tuple[int, int]] = field(init=False, default_factory=list)
     commands: list[RS274] = field(init=False, default_factory=list)
     minutes: float = field(init=False, default=0.0)
     position: tuple[float | None, float | None, float | None] = field(
@@ -798,8 +802,14 @@ class CNC:  # pylint: disable=too-many-instance-attributes
         self.rapid(z=self.machine.tool_change_z)
         if self.tool is not None:
             self.add({"M": 5})
+        # A machine with a carousel stops only for a swap (`finish()`
+        # puts those in), so the template's prompt lines are left out.
+        carousel: bool = self.machine.carousel_slots > 0
         line: str
         for line in self.machine.change_lines(number, tool.name):
+            prompt: bool = line.startswith("(") or line.upper() in ("M0", "M1")
+            if carousel and prompt:
+                continue
             if line.startswith("("):
                 self.comment(line[1:-1])
                 continue
@@ -808,6 +818,7 @@ class CNC:  # pylint: disable=too-many-instance-attributes
             }
             if "T" in change:
                 change["note"] = tool.name
+                self.changes.append((len(self.commands), number))
             self.add(change)
         self.tool = tool
         self.add({"M": 3, "S": tool.rpm})
@@ -1738,10 +1749,33 @@ class CNC:  # pylint: disable=too-many-instance-attributes
 
     # Method `CNC.finish()`:
     def finish(self) -> None:
-        """End the program: rise to `z_safe`, stop the spindle, `M2`."""
+        """End the program: rise to `z_safe`, stop the spindle, `M2`.
+
+        On a machine with a carousel, the swaps its plan needs are put
+        in before their changes (`carousel.plan()`).
+        """
         self.rapid(z=self.z_safe)
         self.add({"M": 5})
         self.add({"M": 2})
+        if self.machine.carousel_slots > 0 and self.changes:
+            swaps: Plan = plan(
+                [number for _, number in self.changes],
+                self.machine.carousel_slots,
+            )
+            digits: int = self.machine.id_digits
+            swap: Swap
+            for swap in reversed(swaps.swaps):
+                at: int = self.changes[swap.change][0]
+                text: str = swap_message(
+                    self.machine.tool(swap.out).unique_id,
+                    self.machine.tool(swap.into).unique_id,
+                    digits,
+                )
+                # A comment can not hold parentheses: the colors go in
+                # brackets.
+                text = text.replace("(", "[").replace(")", "]")
+                self.comment(f"MSG, {text}")  # Checked, then moved.
+                self.commands[at:at] = [self.commands.pop(), {"M": "0"}]
 
     # Method `CNC.remap()`:
     def remap(self, turns: int = 0, dx: float = 0.0, dy: float = 0.0) -> None:

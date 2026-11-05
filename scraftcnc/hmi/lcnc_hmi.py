@@ -93,9 +93,11 @@ from typing import Any, Protocol, cast
 
 from .. import shops
 from ..assembly import Assembly, AssemblyItem, millimeters
+from ..carousel import gcode_sequence, plan_text
 from ..geometry import LineSegment, RoundedPolygon
 from ..keepout import assembly_zones
 from ..lcnc.lcnc_client import PORT, BridgeClient, BridgeError, constant
+from ..machine import Machine
 from ..model_cache import ModelCache
 from ..plot import PathMove, command_moves, read_gcode
 from ..pybind.scraftpybind import PyBind, connect
@@ -2090,6 +2092,19 @@ class HMI:
         else:
             self.material_chooser.configure(values=material_names(shop))
             text = tool_speeds(shop, SHOP_MACHINE, self.material.get())
+
+            # The carousel's slots and swaps for the program open.
+            try:
+                machine: Machine = shops.cnc_machine(
+                    shop, SHOP_MACHINE, self.material.get()
+                )
+                loads: list[str] = plan_text(
+                    machine, gcode_sequence(self.lines)
+                )
+            except (ValueError, KeyError) as error:
+                loads = [f"Carousel: {error}"]
+            if loads:
+                text = "\n".join([*loads, "", text])
         self.tools_table.configure(state="normal")
         self.tools_table.delete("1.0", "end")
         self.tools_table.insert("1.0", text)

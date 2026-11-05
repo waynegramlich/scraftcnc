@@ -31,6 +31,15 @@ x = "6 in"
 y = "4.5 in"
 z = "-13.64 in"
 
+# A small carousel: fewer slots than the demonstration's tools, so it
+# stops once to swap a tool.
+[carousel]
+slots = 4
+x = "-3 in"
+y = "4.5 in"
+z = "-2 in"
+spoke_length = "2.5 in"
+
 [spindle]
 interface = "R8"
 min_rpm = "100 rpm"

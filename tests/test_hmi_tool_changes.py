@@ -17,7 +17,7 @@ class TestToolChangePause(unittest.TestCase):
     """The pause at a tool change (`T.hs~5.1.5` S5)."""
 
     def test_demo_pauses(self) -> None:
-        """The demo tells the operator, and pauses, at each change."""
+        """The demo's carousel machine pauses only at its one swap."""
         use_shop(shops.read(EXAMPLE_SHOP))
         lines = demo.cut_demo()[0].gcode().splitlines()
         changes = [
@@ -26,16 +26,23 @@ class TestToolChangePause(unittest.TestCase):
             if lcnc_hmi.TOOL_CHANGE.search(line)
         ]
         self.assertGreater(len(changes), 1)
-        for number in changes:
-            tool = lines[number].split()[0]
-            self.assertEqual(lines[number - 1], "M0")
-            self.assertTrue(
-                lines[number - 2].startswith(f"(MSG, Insert {tool}: ")
-            )
+        paused = [number for number in changes if lines[number - 1] == "M0"]
+        self.assertEqual(len(paused), 1)
+        self.assertEqual(
+            lines[paused[0] - 2],
+            "(MSG, Swap tool 5 [black/green] with tool 8 [black/gray])",
+        )
+        self.assertEqual(sum(line == "M0" for line in lines), 1)
 
-        # -Tool and +Tool land on each change's message.
+        # -Tool and +Tool land on the swap's message, else on the `M6`.
         starts = lcnc_hmi.tool_changes(lines)
-        self.assertEqual(starts, [number - 1 for number in changes])
+        self.assertEqual(
+            starts,
+            [
+                number - 1 if number in paused else number + 1
+                for number in changes
+            ],
+        )
 
     def test_starts(self) -> None:
         """A change without a message starts at its `M6`."""
