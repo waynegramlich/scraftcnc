@@ -14,9 +14,9 @@ from scraftcnc.demo import (
     cut_demo,
     demo_assembly,
 )
-from scraftcnc.gcode import SCCNC
-from scraftcnc.geometry import SLOP, SCArc, SCLine, SCRoundedPolygon
-from scraftcnc.machine import SCMachine, SCTool
+from scraftcnc.gcode import CNC
+from scraftcnc.geometry import SLOP, ArcSegment, LineSegment, RoundedPolygon
+from scraftcnc.machine import Machine, ToolEntry
 from scraftcnc.shops import cnc_machine, read
 from scraftcnc.tooling.shop_registries import use_shop
 
@@ -39,17 +39,17 @@ def setUpModule() -> None:
     use_shop(read(SHOP_FILE))
 
 
-def setup_zones() -> list[SCRoundedPolygon]:
+def setup_zones() -> list[RoundedPolygon]:
     """Return the example setup's zones."""
-    setup = setups.SCSetup(
+    setup = setups.Setup(
         json.loads(setups.EXAMPLE.read_text(encoding="utf-8"))
     )
     return keepout.work_zones(setup, setup.materials[0])
 
 
-def machine(tools: tuple[SCTool, ...] = ()) -> SCMachine:
+def machine(tools: tuple[ToolEntry, ...] = ()) -> Machine:
     """Return a small machine, whose T1 is a 1/4 in end mill."""
-    return SCMachine(
+    return Machine(
         name="Test mill",
         z_safe=1.0,
         clearance=0.05,
@@ -61,16 +61,16 @@ def machine(tools: tuple[SCTool, ...] = ()) -> SCMachine:
         stepover=0.9,
         ramp_angle=3.0,
         tools=(
-            SCTool(1, "End mill", "end mill", 0.25, 1200, 12.0, 6.0),
-            SCTool(2, "Drill", "drill", 0.25, 1200, 4.0, 4.0, 0.05),
+            ToolEntry(1, "End mill", "end mill", 0.25, 1200, 12.0, 6.0),
+            ToolEntry(2, "Drill", "drill", 0.25, 1200, 4.0, 4.0, 0.05),
             *tools,
         ),
     )
 
 
-def program(number: int = 1, tools: tuple[SCTool, ...] = ()) -> SCCNC:
+def program(number: int = 1, tools: tuple[ToolEntry, ...] = ()) -> CNC:
     """Return a program with a tool in the spindle, at `z_safe`."""
-    cnc = SCCNC("Test", machine(tools))
+    cnc = CNC("Test", machine(tools))
     cnc.change_tool(number)
     cnc.rapid(z=1.0)
     return cnc
@@ -122,7 +122,7 @@ class TestZones(unittest.TestCase):
         data["materials"][0]["location"] = ["1 in", "0 in"]
         data["materials"][0]["height"] = "4.5 in"
         data["materials"][0]["parts"] = []
-        setup = setups.SCSetup(data)
+        setup = setups.Setup(data)
         zones = keepout.work_zones(setup, setup.materials[0])
         table = next(zone for zone in zones if zone.name == "Mikini 1610L")
         self.assertAlmostEqual(table.box[1], 14.125, places=6)
@@ -132,7 +132,7 @@ class TestZones(unittest.TestCase):
 class TestCrashes(unittest.TestCase):
     """A deliberate crash into each zone, for each kind of move."""
 
-    def hits(self, cnc: SCCNC, name: str) -> bool:
+    def hits(self, cnc: CNC, name: str) -> bool:
         """Return whether a program's last line enters a zone."""
         last = len(cnc.commands)
         return any(
@@ -143,7 +143,7 @@ class TestCrashes(unittest.TestCase):
         )
 
     def sides(
-        self, zone: SCRoundedPolygon
+        self, zone: RoundedPolygon
     ) -> Iterator[tuple[tuple[float, float], tuple[float, float]]]:
         """Yield the middle of each side of a zone, with its way out."""
         low_x, high_x, low_y, high_y = zone.box
@@ -156,11 +156,11 @@ class TestCrashes(unittest.TestCase):
 
     def line_to(
         self,
-        zone: SCRoundedPolygon,
+        zone: RoundedPolygon,
         edge: tuple[float, float],
         out: tuple[float, float],
         gap: float,
-    ) -> SCCNC:
+    ) -> CNC:
         """Return a program going straight at a side, stopping `gap` off."""
         z = zone.z_end - 0.01
         cnc = program()
@@ -173,11 +173,11 @@ class TestCrashes(unittest.TestCase):
 
     def arc_past(
         self,
-        zone: SCRoundedPolygon,
+        zone: RoundedPolygon,
         edge: tuple[float, float],
         out: tuple[float, float],
         gap: float,
-    ) -> SCCNC:
+    ) -> CNC:
         """Return a program whose half circle comes `gap` off a side."""
         z = zone.z_end - 0.01
         radius = 1.0
@@ -191,7 +191,7 @@ class TestCrashes(unittest.TestCase):
         cnc = program()
         cnc.rapid(*start)
         cnc.rapid(z=z)
-        cnc.arc(SCArc(start, end, center, radius, math.pi))
+        cnc.arc(ArcSegment(start, end, center, radius, math.pi))
         return cnc
 
     def test_vertical(self) -> None:
@@ -257,7 +257,8 @@ class TestCrashes(unittest.TestCase):
         cnc.rapid(z=0.0)
         center = (0.0, 2.25)
         cnc.arc(
-            SCArc((0.0, 2.0), (0.0, 2.0), center, 0.25, 2.0 * math.pi), -0.2
+            ArcSegment((0.0, 2.0), (0.0, 2.0), center, 0.25, 2.0 * math.pi),
+            -0.2,
         )
         self.assertFalse(self.hits(cnc, JAWS[0]))
         cnc = program()
@@ -265,7 +266,8 @@ class TestCrashes(unittest.TestCase):
         cnc.rapid(z=0.0)
         center = (0.0, 2.5)
         cnc.arc(
-            SCArc((0.0, 2.0), (0.0, 2.0), center, 0.5, 2.0 * math.pi), -0.2
+            ArcSegment((0.0, 2.0), (0.0, 2.0), center, 0.5, 2.0 * math.pi),
+            -0.2,
         )
         self.assertTrue(self.hits(cnc, JAWS[0]))
 
@@ -284,8 +286,10 @@ class TestCrashes(unittest.TestCase):
 
     def test_widest_radius(self) -> None:
         """A chamfer bit is checked at its widest, not at its tip."""
-        narrow = SCTool(5, "Tip", "chamfer", 0.02, 1200, 12.0, 4.0, angle=90.0)
-        wide = SCTool(
+        narrow = ToolEntry(
+            5, "Tip", "chamfer", 0.02, 1200, 12.0, 4.0, angle=90.0
+        )
+        wide = ToolEntry(
             5, "Wide", "chamfer", 0.02, 1200, 12.0, 4.0, angle=90.0, widest=0.5
         )
         results = []
@@ -332,9 +336,9 @@ class TestBruteForce(unittest.TestCase):
                 start[1] + generator.uniform(-6, 6),
             )
             z = generator.uniform(-6.0, 0.5)
-            move: SCLine | SCArc
+            move: LineSegment | ArcSegment
             if generator.random() < 0.5:
-                move = SCLine(start, end)
+                move = LineSegment(start, end)
                 points = [
                     (
                         start[0] + (end[0] - start[0]) * index / 500,
@@ -353,7 +357,7 @@ class TestBruteForce(unittest.TestCase):
                     chord[1] / 2.0 + chord[0] / length * along,
                 )
                 arc = keepout.arc_segments(start, end, offset, code)[0]
-                assert isinstance(arc, SCArc)
+                assert isinstance(arc, ArcSegment)
                 move = arc
                 center = arc.center
                 first = math.atan2(start[1] - center[1], start[0] - center[0])
@@ -391,7 +395,7 @@ class TestBruteForce(unittest.TestCase):
 class TestRapids(unittest.TestCase):
     """Rapids belong at `z_safe`."""
 
-    def kinds(self, cnc: SCCNC) -> list[str]:
+    def kinds(self, cnc: CNC) -> list[str]:
         """Return the texts of a program's rapid violations."""
         return [
             found.text
@@ -437,7 +441,7 @@ class TestRapids(unittest.TestCase):
 class TestUnchecked(unittest.TestCase):
     """What the checker does not understand is reported, never passed."""
 
-    def text(self, cnc: SCCNC) -> list[int]:
+    def text(self, cnc: CNC) -> list[int]:
         """Return a program's `unchecked` lines."""
         return [
             found.line
@@ -474,14 +478,14 @@ class TestUnchecked(unittest.TestCase):
 
     def test_no_tool(self) -> None:
         """A cut with no tool known is reported."""
-        cnc = SCCNC("Test", machine())
+        cnc = CNC("Test", machine())
         cnc.add({"G": 0, "X": 1.0, "Y": 1.0})
         cnc.add({"G": 1, "Z": -0.5, "F": 5.0})
         self.assertEqual(self.text(cnc), [len(cnc.commands)])
 
     def test_not_known_low(self) -> None:
         """A move below `z_safe` from an unknown place is reported."""
-        cnc = SCCNC("Test", machine())
+        cnc = CNC("Test", machine())
         cnc.commands.clear()
         cnc.add({"G": 0, "Z": 0.0})
         self.assertEqual(self.text(cnc), [1])
@@ -492,7 +496,7 @@ class TestPrograms(unittest.TestCase):
 
     def test_demo_is_clear(self) -> None:
         """The demonstration plate stays out of every zone."""
-        setup = setups.SCSetup(
+        setup = setups.Setup(
             json.loads(keepout.DEMO_SETUP.read_text(encoding="utf-8"))
         )
         cnc = cut_demo()[0]
@@ -504,7 +508,7 @@ class TestPrograms(unittest.TestCase):
 
     def test_grid_plate_fails_as_predicted(self) -> None:
         """The grid plate's long edges, and nothing else, enter zones."""
-        setup = setups.SCSetup(
+        setup = setups.Setup(
             json.loads(setups.EXAMPLE.read_text(encoding="utf-8"))
         )
         material = setup.materials[0]
@@ -593,12 +597,12 @@ class TestAssemblyZones(unittest.TestCase):
 
     def test_same_violations(self) -> None:
         """The demo program breaks the same zones, as often, in both."""
-        stack = setups.SCSetup(
+        stack = setups.Setup(
             json.loads(setups.EXAMPLE.with_name("demo_stack.json").read_text())
         )
         # The tooling is where `demo_stack.json` puts it; the plate is
         # now centered on the grid plate (#80), at the G-code's zero.
-        moved: SCCNC = cut_demo()[0]
+        moved: CNC = cut_demo()[0]
         old = keepout.check_program(
             moved,
             [
@@ -606,7 +610,7 @@ class TestAssemblyZones(unittest.TestCase):
                 for p in stack.keep_out().prisms
             ],
         )
-        plate: SCCNC = cut_demo()[0]
+        plate: CNC = cut_demo()[0]
         new = keepout.check_program(
             plate, keepout.assembly_zones(demo_assembly())
         )

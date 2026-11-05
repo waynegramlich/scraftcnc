@@ -7,33 +7,33 @@ from collections.abc import Sequence
 
 from scraftcnc.demo import demo_islands, demo_pocket
 from scraftcnc.gcode import (
-    SCCNC,
-    SCRing,
+    CNC,
+    Ring,
     _number,
     cut_order,
     plan_pocket,
 )
 from scraftcnc.geometry import (
-    SCArc,
-    SCCorner,
-    SCLoop,
-    SCRoundedPolygon,
-    SCSegment,
+    ArcSegment,
+    Corner,
+    Loop,
+    RoundedPolygon,
+    XYSegment,
     distance_to,
 )
-from scraftcnc.machine import SCMachine, SCTool
+from scraftcnc.machine import Machine, ToolEntry
 from tests.test_geometry import dumbbell, square
 
 
 # Function `machine()`:
-def machine(**changes: object) -> SCMachine:
+def machine(**changes: object) -> Machine:
     """Return a test machine: end mill 1, drills 2 and 3, bits 5 and 6.
 
     Arguments:
     * `changes` (`object`): Preferences to change from the defaults.
 
     Returns:
-    * (`SCMachine`): The machine.
+    * (`Machine`): The machine.
     """
     settings: dict[str, object] = {
         "name": "Test mill",
@@ -47,13 +47,15 @@ def machine(**changes: object) -> SCMachine:
         "stepover": 0.9,
         "ramp_angle": 3.0,
         "tools": (
-            SCTool(1, "End mill", "end mill", 0.25, 1200, 12.0, 6.0),
-            SCTool(2, "Drill", "drill", 0.234375, 1200, 4.0, 4.0, 0.05),
-            SCTool(
+            ToolEntry(1, "End mill", "end mill", 0.25, 1200, 12.0, 6.0),
+            ToolEntry(2, "Drill", "drill", 0.234375, 1200, 4.0, 4.0, 0.05),
+            ToolEntry(
                 3, "Small drill", "drill", 0.125, 1200, 4.0, 4.0, 0.05, 90.0
             ),
-            SCTool(5, "V-bit", "chamfer", 0.02, 1200, 12.0, 4.0, angle=90.0),
-            SCTool(
+            ToolEntry(
+                5, "V-bit", "chamfer", 0.02, 1200, 12.0, 4.0, angle=90.0
+            ),
+            ToolEntry(
                 6,
                 "Rounder",
                 "corner round",
@@ -66,11 +68,11 @@ def machine(**changes: object) -> SCMachine:
         ),
     }
     settings.update(changes)
-    return SCMachine(**settings)  # type: ignore[arg-type]
+    return Machine(**settings)  # type: ignore[arg-type]
 
 
 # Function `milling()`:
-def milling(z_top: float = 0.0, **changes: object) -> SCCNC:
+def milling(z_top: float = 0.0, **changes: object) -> CNC:
     """Return a program on the test machine, with the end mill in.
 
     Arguments:
@@ -78,18 +80,18 @@ def milling(z_top: float = 0.0, **changes: object) -> SCCNC:
     * `changes` (`object`): Machine preferences to change.
 
     Returns:
-    * (`SCCNC`): The program, after its tool change.
+    * (`CNC`): The program, after its tool change.
     """
-    cnc: SCCNC = SCCNC("Test", machine(**changes), z_top)
+    cnc: CNC = CNC("Test", machine(**changes), z_top)
     cnc.change_tool(1)
     return cnc
 
 
-# Class `TestSCCNC`:
-class TestSCCNC(unittest.TestCase):
-    """The G-code that `SCCNC` writes."""
+# Class `TestCNC`:
+class TestCNC(unittest.TestCase):
+    """The G-code that `CNC` writes."""
 
-    # Method `TestSCCNC.test_number()`:
+    # Method `TestCNC.test_number()`:
     def test_number(self) -> None:
         """Numbers lose their trailing zeros, and `-0` is `0`."""
         self.assertEqual(_number(12.5), "12.5")
@@ -97,10 +99,10 @@ class TestSCCNC(unittest.TestCase):
         self.assertEqual(_number(-0.00001), "0")
         self.assertEqual(_number(1.23456), "1.2346")
 
-    # Method `TestSCCNC.test_start()`:
+    # Method `TestCNC.test_start()`:
     def test_start(self) -> None:
         """Start in inches at `z_safe`, then change to a tool."""
-        cnc: SCCNC = milling()
+        cnc: CNC = milling()
         self.assertEqual(
             cnc.gcode(),
             "(Test)\nG20\nG90\nG17\nG94\nG0 Z1\n"
@@ -115,33 +117,33 @@ class TestSCCNC(unittest.TestCase):
             cnc.gcode().splitlines()[10:],
             ["(Tool 2: Drill)", "M5", "T02 (Drill)", "M3 S1200"],
         )
-        other: SCCNC = SCCNC("Test", machine(tool_change="T{number:02d} M06"))
+        other: CNC = CNC("Test", machine(tool_change="T{number:02d} M06"))
         other.change_tool(3)
         self.assertIn("T03 M06 (Small drill)\n", other.gcode())
         with self.assertRaises(KeyError):
             other.change_tool(9)
 
-    # Method `TestSCCNC.test_settings()`:
+    # Method `TestCNC.test_settings()`:
     def test_settings(self) -> None:
         """Material too high for `z_safe`, and cutting with no tool."""
         with self.assertRaises(ValueError):
-            SCCNC("Test", machine(), 1.0)
+            CNC("Test", machine(), 1.0)
         with self.assertRaises(ValueError):
-            SCCNC("Test", machine()).linear(z=-1.0)
+            CNC("Test", machine()).linear(z=-1.0)
 
-    # Method `TestSCCNC.test_job_heights()`:
+    # Method `TestCNC.test_job_heights()`:
     def test_job_heights(self) -> None:
         """A job's `z_safe` and `clearance` win over the machine's."""
-        cnc: SCCNC = SCCNC("Test", machine(), 1.0, 3.0, 0.1)
+        cnc: CNC = CNC("Test", machine(), 1.0, 3.0, 0.1)
         self.assertEqual((cnc.z_safe, cnc.clearance), (3.0, 0.1))
         self.assertEqual(cnc.commands[-1], {"G": 0, "Z": 3.0})
-        plain: SCCNC = SCCNC("Test", machine())
+        plain: CNC = CNC("Test", machine())
         self.assertEqual(plain.z_safe, machine().z_safe)
 
-    # Method `TestSCCNC.test_moves()`:
+    # Method `TestCNC.test_moves()`:
     def test_moves(self) -> None:
         """Unchanged axes and feeds, and still moves, are left out."""
-        cnc: SCCNC = milling()
+        cnc: CNC = milling()
         cnc.rapid(x=1.0, y=2.0, z=1.0)
         cnc.rapid(x=1.0)
         cnc.linear(z=-1.0)
@@ -156,47 +158,53 @@ class TestSCCNC(unittest.TestCase):
         # 60 per minute (the first move has no known start).
         self.assertAlmostEqual(cnc.minutes, 4.0 / 12.0 + 2.0 / 60.0)
 
-    # Method `TestSCCNC.test_circle_arcs()`:
+    # Method `TestCNC.test_circle_arcs()`:
     def test_circle_arcs(self) -> None:
         """An arc back to where it started still gets written."""
-        cnc: SCCNC = milling()
+        cnc: CNC = milling()
         cnc.rapid(x=1.0, y=0.0)
-        cnc.arc(SCArc((1.0, 0.0), (1.0, 0.0), (0.0, 0.0), 1.0, -2 * math.pi))
+        cnc.arc(
+            ArcSegment((1.0, 0.0), (1.0, 0.0), (0.0, 0.0), 1.0, -2 * math.pi)
+        )
         self.assertEqual(cnc.gcode().splitlines()[-1], "G2 I-1 J0 F12")
 
-    # Method `TestSCCNC.test_arc_edge_feed()`:
+    # Method `TestCNC.test_arc_edge_feed()`:
     def test_arc_edge_feed(self) -> None:
         """Arcs cutting a wall feed so the cutting edge keeps the feed."""
         # The milling tool has a 1/4 in diameter and a 12 in/min feed.
-        cnc: SCCNC = milling()
+        cnc: CNC = milling()
         cnc.rapid(x=0.5, y=0.0)
 
         # Turning right around 0.5 in, the edge is on 0.375 in: faster.
         cnc.arc(
-            SCArc((0.5, 0.0), (0.0, -0.5), (0.0, 0.0), 0.5, -math.pi / 2),
+            ArcSegment((0.5, 0.0), (0.0, -0.5), (0.0, 0.0), 0.5, -math.pi / 2),
             edge=True,
         )
         self.assertEqual(cnc.gcode().splitlines()[-1][-3:], "F16")
 
         # Turning left around 0.375 in, the edge is on 0.5 in: slower.
         cnc.arc(
-            SCArc((0.0, -0.5), (0.375, -0.5), (0.1875, -0.5), 0.1875, 3.0),
+            ArcSegment(
+                (0.0, -0.5), (0.375, -0.5), (0.1875, -0.5), 0.1875, 3.0
+            ),
             edge=True,
         )
         self.assertIn("F7.2", cnc.gcode().splitlines()[-1])
 
         # A sharp corner (an edge radius of 0) is held to the limit.
         cnc.arc(
-            SCArc((0.375, -0.5), (0.5, -0.5), (0.4375, -0.5), 0.0625, -3.0),
+            ArcSegment(
+                (0.375, -0.5), (0.5, -0.5), (0.4375, -0.5), 0.0625, -3.0
+            ),
             edge=True,
         )
         self.assertIn("F24", cnc.gcode().splitlines()[-1])
 
-    # Method `TestSCCNC.test_profile_outside()`:
+    # Method `TestCNC.test_profile_outside()`:
     def test_profile_outside(self) -> None:
         """Outside a polygon, the tool climb mills clockwise."""
-        cnc: SCCNC = milling(z_safe=0.5)
-        path: SCRoundedPolygon = cnc.profile(square(2.0, 0.25), -0.3, 0.125)
+        cnc: CNC = milling(z_safe=0.5)
+        path: RoundedPolygon = cnc.profile(square(2.0, 0.25), -0.3, 0.125)
         self.assertFalse(path.is_ccw())
         self.assertEqual(path.corners[0].radius, 0.375)
 
@@ -242,12 +250,12 @@ class TestSCCNC(unittest.TestCase):
         )
         self.assertEqual(lines[-1], "G0 Z0.5")
 
-    # Method `TestSCCNC.test_profile_inside()`:
+    # Method `TestCNC.test_profile_inside()`:
     def test_profile_inside(self) -> None:
         """Inside a polygon, the tool climb mills counter-clockwise."""
-        cnc: SCCNC = milling()
-        hole: SCRoundedPolygon = square(1.0, 0.25, ccw=False)
-        path: SCRoundedPolygon = cnc.profile(hole, -0.1, 0.5, inside=True)
+        cnc: CNC = milling()
+        hole: RoundedPolygon = square(1.0, 0.25, ccw=False)
+        path: RoundedPolygon = cnc.profile(hole, -0.1, 0.5, inside=True)
         self.assertTrue(path.is_ccw())
         self.assertEqual(path.corners[0].radius, 0.125)
         gcode: str = cnc.gcode()
@@ -268,15 +276,15 @@ class TestSCCNC(unittest.TestCase):
         cnc.profile(square(0.45, 0.0), -0.1, 0.5, inside=True)
         cnc.profile(square(0.55, 0.0), -0.1, 0.5, inside=True)
 
-    # Method `TestSCCNC.test_profile_stages()`:
+    # Method `TestCNC.test_profile_stages()`:
     def test_profile_stages(self) -> None:
         """A rougher leaves the allowance; the end mill finishes it."""
-        cnc: SCCNC = milling()
+        cnc: CNC = milling()
         allowance: float = cnc.machine.finish_allowance
-        plate: SCRoundedPolygon = square(1.0, 0.25)
-        full: SCRoundedPolygon = cnc.profile(plate, -0.5, 0.25, through=True)
+        plate: RoundedPolygon = square(1.0, 0.25)
+        full: RoundedPolygon = cnc.profile(plate, -0.5, 0.25, through=True)
         start: int = len(cnc.commands)
-        rough: SCRoundedPolygon = cnc.profile(
+        rough: RoundedPolygon = cnc.profile(
             plate, -0.5, 0.25, through=True, stage="rough"
         )
 
@@ -295,7 +303,7 @@ class TestSCCNC(unittest.TestCase):
         # The finish goes down once, through, its lead-in starting a
         # tool's diameter off its path (full-size leads, #86a).
         start = len(cnc.commands)
-        finish: SCRoundedPolygon = cnc.profile(
+        finish: RoundedPolygon = cnc.profile(
             plate, -0.5, 0.25, through=True, stage="finish"
         )
         self.assertEqual(finish.corners, full.corners)
@@ -311,23 +319,23 @@ class TestSCCNC(unittest.TestCase):
         self.assertAlmostEqual(
             min(
                 distance_to(entry, segment)
-                for segment in SCLoop.from_poly(finish).segments
+                for segment in Loop.from_poly(finish).segments
             ),
             cnc.cutter.diameter,
         )
 
-    # Method `TestSCCNC.test_pocket_stages()`:
+    # Method `TestCNC.test_pocket_stages()`:
     def test_pocket_stages(self) -> None:
         """A rougher stays off the walls and floor; the finish does not."""
-        cnc: SCCNC = milling()
+        cnc: CNC = milling()
         allowance: float = cnc.machine.finish_allowance
-        pocket: SCRoundedPolygon = square(1.5, 0.25)
-        full: list[SCRing] = cnc.pocket(pocket, -0.25, 0.125)
-        rough: list[SCRing] = cnc.pocket(pocket, -0.25, 0.125, stage="rough")
-        finish: list[SCRing] = cnc.pocket(pocket, -0.25, 0.125, stage="finish")
+        pocket: RoundedPolygon = square(1.5, 0.25)
+        full: list[Ring] = cnc.pocket(pocket, -0.25, 0.125)
+        rough: list[Ring] = cnc.pocket(pocket, -0.25, 0.125, stage="rough")
+        finish: list[Ring] = cnc.pocket(pocket, -0.25, 0.125, stage="finish")
 
         # The outer rings: the rougher's are the allowance further in.
-        def width(roots: list[SCRing]) -> float:
+        def width(roots: list[Ring]) -> float:
             xs: list[float] = [
                 segment.start[0] for segment in roots[0].loops[0].segments
             ]
@@ -339,78 +347,78 @@ class TestSCCNC(unittest.TestCase):
         self.assertIn("to Z-0.2)", cnc.gcode())
         self.assertIn("Finish pocket", cnc.gcode())
 
-    # Method `TestSCCNC.test_rougher_for()`:
+    # Method `TestCNC.test_rougher_for()`:
     def test_rougher_for(self) -> None:
         """The largest rougher no wider than the end mill, if any."""
-        rougher: SCTool = SCTool(
+        rougher: ToolEntry = ToolEntry(
             8, "Rougher", "roughing end mill", 0.25, 1200, 12.0, 4.0
         )
-        wide: SCTool = SCTool(
+        wide: ToolEntry = ToolEntry(
             9, "Wide", "roughing end mill", 0.5, 1200, 12.0, 4.0
         )
-        mill: SCMachine = machine()
+        mill: Machine = machine()
         self.assertIsNone(mill.rougher_for(mill.tool(1)))
         mill = machine(tools=(*mill.tools, rougher, wide))
         self.assertIs(mill.rougher_for(mill.tool(1)), rougher)
 
-    # Method `TestSCCNC.test_profile_errors()`:
+    # Method `TestCNC.test_profile_errors()`:
     def test_profile_errors(self) -> None:
         """Depths that make no sense are refused."""
-        cnc: SCCNC = milling()
+        cnc: CNC = milling()
         with self.assertRaises(ValueError):
             cnc.profile(square(1.0, 0.0), 0.0, 0.1)
         with self.assertRaises(ValueError):
             cnc.profile(square(1.0, 0.0), -0.1, 0.0)
 
-    # Method `TestSCCNC.test_comment()`:
+    # Method `TestCNC.test_comment()`:
     def test_comment(self) -> None:
         """A comment may not hold parentheses."""
-        cnc: SCCNC = milling()
+        cnc: CNC = milling()
         with self.assertRaises(ValueError):
             cnc.comment("a (nested) comment")
 
 
 # Function `rings()`:
-def rings(roots: list[SCRing]) -> list[SCRing]:
+def rings(roots: list[Ring]) -> list[Ring]:
     """Return every ring of a pocket's plan.
 
     Arguments:
-    * `roots` (`list[SCRing]`): The outermost rings.
+    * `roots` (`list[Ring]`): The outermost rings.
 
     Returns:
-    * (`list[SCRing]`): All of the rings, each after those inside it.
+    * (`list[Ring]`): All of the rings, each after those inside it.
     """
     return [ring for root in roots for ring in root.post_order()]
 
 
 # Function `uncut()`:
 def uncut(
-    poly: SCRoundedPolygon,
+    poly: RoundedPolygon,
     stepover: float,
     spacing: float,
-    islands: Sequence[SCRoundedPolygon] = (),
+    islands: Sequence[RoundedPolygon] = (),
 ) -> list[tuple[float, float]]:
     """Return the points of a pocket that no ring's cut reaches.
 
     The tool is 0.25 in across.
 
     Arguments:
-    * `poly` (`SCRoundedPolygon`): The pocket.
+    * `poly` (`RoundedPolygon`): The pocket.
     * `stepover` (`float`): The rings' stepover.
     * `spacing` (`float`): How far apart the points tried are.
-    * `islands` (`Sequence[SCRoundedPolygon]`): Outlines left standing.
+    * `islands` (`Sequence[RoundedPolygon]`): Outlines left standing.
 
     Returns:
     * (`list[tuple[float, float]]`): The points left uncut.
     """
     # Every segment and spur that the tool's center follows.
-    wall: SCLoop = SCLoop.from_poly(poly)
-    holes: list[SCLoop] = [SCLoop.from_poly(island) for island in islands]
-    region: list[SCLoop] = [
+    wall: Loop = Loop.from_poly(poly)
+    holes: list[Loop] = [Loop.from_poly(island) for island in islands]
+    region: list[Loop] = [
         wall,
         *(hole.reversed() if hole.is_ccw() else hole for hole in holes),
     ]
-    cuts: list[SCSegment] = [
+    cuts: list[XYSegment] = [
         segment
         for ring in rings(plan_pocket(region, 0.25, stepover))
         for segment in (
@@ -441,11 +449,11 @@ def uncut(
 
 
 # Function `depth()`:
-def depth(ring: SCRing) -> int:
+def depth(ring: Ring) -> int:
     """Return how many rings deep a ring's tree goes.
 
     Arguments:
-    * `ring` (`SCRing`): The ring.
+    * `ring` (`Ring`): The ring.
 
     Returns:
     * (`int`): 1 for a ring with none inside it.
@@ -454,27 +462,27 @@ def depth(ring: SCRing) -> int:
 
 
 # Function `island_pocket()`:
-def island_pocket() -> tuple[SCRoundedPolygon, list[SCRoundedPolygon]]:
+def island_pocket() -> tuple[RoundedPolygon, list[RoundedPolygon]]:
     """Return the demonstration's pocket with its three islands.
 
     Returns:
-    * (`SCRoundedPolygon`): The pocket.
-    * (`list[SCRoundedPolygon]`): Its islands.
+    * (`RoundedPolygon`): The pocket.
+    * (`list[RoundedPolygon]`): Its islands.
     """
     return demo_pocket(), demo_islands()
 
 
 # Function `rounded_dumbbell()`:
-def rounded_dumbbell() -> SCRoundedPolygon:
+def rounded_dumbbell() -> RoundedPolygon:
     """Return the dumbbell with its corners rounded as a pocket's are.
 
     Returns:
-    * (`SCRoundedPolygon`): The pocket.
+    * (`RoundedPolygon`): The pocket.
     """
-    return SCRoundedPolygon(
+    return RoundedPolygon(
         "Bell",
         [
-            SCCorner(
+            Corner(
                 corner.x,
                 corner.y,
                 0.1875 if index % 6 in (0, 1, 4, 5) else 0.0625,
@@ -493,33 +501,33 @@ class TestPocket(unittest.TestCase):
     # Method `TestPocket.test_plan()`:
     def test_plan(self) -> None:
         """A dumbbell's rings come apart into one tree per lobe."""
-        roots: list[SCRing] = plan_pocket(
-            [SCLoop.from_poly(rounded_dumbbell())], 0.25, 0.9
+        roots: list[Ring] = plan_pocket(
+            [Loop.from_poly(rounded_dumbbell())], 0.25, 0.9
         )
         self.assertEqual(len(roots), 1)
         self.assertEqual(len(roots[0].children), 2)
         self.assertEqual(roots[0].spurs, [])
-        child: SCRing
+        child: Ring
         for child in roots[0].children:
             self.assertTrue(child.loops[0].is_ccw())
             self.assertEqual(len(child.spurs), 5)
 
         # A pocket too small for the tool is refused.
         with self.assertRaises(ValueError):
-            plan_pocket([SCLoop.from_poly(square(0.2, 0.0))], 0.25, 0.9)
+            plan_pocket([Loop.from_poly(square(0.2, 0.0))], 0.25, 0.9)
 
     # Method `TestPocket.test_coverage()`:
     def test_coverage(self) -> None:
         """The rings and spurs reach every point of a pocket."""
-        poly: SCRoundedPolygon
+        poly: RoundedPolygon
         for poly in (
             rounded_dumbbell(),
-            SCRoundedPolygon(
+            RoundedPolygon(
                 "Triangle",
                 [
-                    SCCorner(0, 0, 0.2),
-                    SCCorner(2, 0, 0.2),
-                    SCCorner(0.5, 1.2, 0.2),
+                    Corner(0, 0, 0.2),
+                    Corner(2, 0, 0.2),
+                    Corner(0.5, 1.2, 0.2),
                 ],
                 0.0,
                 1.0,
@@ -533,15 +541,15 @@ class TestPocket(unittest.TestCase):
     # Method `TestPocket.test_order()`:
     def test_order(self) -> None:
         """Rings are cut after the rings inside them."""
-        roots: list[SCRing] = plan_pocket(
-            [SCLoop.from_poly(square(2.0, 0.125))], 0.25, 0.9
+        roots: list[Ring] = plan_pocket(
+            [Loop.from_poly(square(2.0, 0.125))], 0.25, 0.9
         )
-        order: list[tuple[SCRing, str]] = list(cut_order(roots[0], 0.25))
+        order: list[tuple[Ring, str]] = list(cut_order(roots[0], 0.25))
         self.assertIs(order[-1][0], roots[0])
         self.assertEqual(order[-1][1], "lead")
         self.assertEqual(order[0][1], "ramp")
-        seen: list[SCRing] = []
-        ring: SCRing
+        seen: list[Ring] = []
+        ring: Ring
         for ring, _ in order:
             for child in ring.children:
                 if child.length() >= 0.5 or child.children:
@@ -552,7 +560,7 @@ class TestPocket(unittest.TestCase):
     # Method `TestPocket.test_gcode()`:
     def test_gcode(self) -> None:
         """The pocket's G-code stays safe and ramps gently."""
-        cnc: SCCNC = milling()
+        cnc: CNC = milling()
         cnc.pocket(rounded_dumbbell(), -0.25, 0.125)
         cnc.finish()
         x: float = 0.0
@@ -574,7 +582,7 @@ class TestPocket(unittest.TestCase):
             )
             run: float = math.dist((x, y), new[:2])
             if code in (2.0, 3.0):
-                arc: SCArc = SCArc(
+                arc: ArcSegment = ArcSegment(
                     (x, y),
                     new[:2],
                     (x + words["I"], y + words["J"]),
@@ -602,13 +610,13 @@ class TestPocket(unittest.TestCase):
     # Method `TestPocket.test_settings()`:
     def test_settings(self) -> None:
         """The machine's stepover and ramp angle are used."""
-        narrow: SCCNC = milling(stepover=0.5)
-        wide: SCCNC = milling()
+        narrow: CNC = milling(stepover=0.5)
+        wide: CNC = milling()
         self.assertGreater(
             depth(narrow.pocket(square(2.0, 0.125), -0.1, 0.1)[0]),
             depth(wide.pocket(square(2.0, 0.125), -0.1, 0.1)[0]),
         )
-        steep: SCCNC = milling(ramp_angle=30.0)
+        steep: CNC = milling(ramp_angle=30.0)
         steep.pocket(square(2.0, 0.125), -0.1, 0.1)
         self.assertLess(len(steep.commands), len(wide.commands))
 
@@ -628,7 +636,7 @@ class TestRemap(unittest.TestCase):
             1: (-2.0, 1.0, -4.0, 3.0),
         }
         for turns, (x, y, i, j) in expected.items():
-            cnc = SCCNC("Test", machine())
+            cnc = CNC("Test", machine())
             cnc.commands = [dict(command)]
             cnc.remap(turns)
             self.assertEqual(
@@ -639,7 +647,7 @@ class TestRemap(unittest.TestCase):
     # Method `TestRemap.test_move()`:
     def test_move(self) -> None:
         """`X` and `Y` move, `I`, `J` and `Z` do not, after turning."""
-        cnc = SCCNC("Test", machine())
+        cnc = CNC("Test", machine())
         cnc.commands = [{"G": 3, "X": 1.0, "Y": 2.0, "I": 3.0, "J": 4.0}]
         cnc.remap(3, 10.0, 20.0)
         self.assertEqual(
@@ -650,7 +658,7 @@ class TestRemap(unittest.TestCase):
     # Method `TestRemap.test_left_out_words()`:
     def test_left_out_words(self) -> None:
         """A word left out stays left out on the axis it turned to."""
-        cnc = SCCNC("Test", machine())
+        cnc = CNC("Test", machine())
         cnc.commands = [{"G": 1, "X": 1.0, "F": 5.0}, {"G": 1, "Y": 1.0}]
         cnc.remap(3)
         self.assertEqual(
@@ -665,7 +673,7 @@ class TestRemap(unittest.TestCase):
         before = [dict(command) for command in cnc.commands]
         cnc.remap(3)
         self.assertEqual(cnc.commands, before)
-        cnc = SCCNC("Test", machine())
+        cnc = CNC("Test", machine())
         cnc.commands = [{"G": 83, "Z": -1.0, "R": 0.05, "Q": 0.1, "F": 4.0}]
         cnc.remap(2)
         self.assertEqual(
@@ -686,7 +694,7 @@ class TestRemap(unittest.TestCase):
     def test_refused(self) -> None:
         """Only quarter turns are done."""
         with self.assertRaises(ValueError):
-            SCCNC("Test", machine()).remap(4)
+            CNC("Test", machine()).remap(4)
 
 
 # Class `TestDrill`:
@@ -698,7 +706,7 @@ class TestDrill(unittest.TestCase):
         """Each canned cycle, and pecks written out as moves."""
         cycle: str
         for cycle in ("G81", "G73", "G83"):
-            cnc: SCCNC = SCCNC("Test", machine(drill_cycle=cycle))
+            cnc: CNC = CNC("Test", machine(drill_cycle=cycle))
             cnc.change_tool(2)
             cnc.drill([(1.0, 1.0), (2.0, 1.5)], -0.2)
             lines: list[str] = cnc.gcode().splitlines()[10:]
@@ -723,7 +731,7 @@ class TestDrill(unittest.TestCase):
 
         # Pecks: 0.05 at a time, back up to `R` between them, and back
         # down quickly to just above the last.
-        cnc = SCCNC("Test", machine(drill_cycle="moves"))
+        cnc = CNC("Test", machine(drill_cycle="moves"))
         cnc.change_tool(2)
         cnc.drill([(1.0, 1.0)], -0.1)
         self.assertEqual(
@@ -747,17 +755,17 @@ class TestDrill(unittest.TestCase):
     # Method `TestDrill.test_drill_for()`:
     def test_drill_for(self) -> None:
         """The largest drill smaller than the end mill is chosen."""
-        mill: SCMachine = machine()
+        mill: Machine = machine()
         self.assertEqual(mill.drill_for(mill.tool(1)).number, 2)
-        small: SCTool = SCTool(9, "Tiny", "end mill", 0.1, 1, 1.0, 1.0)
+        small: ToolEntry = ToolEntry(9, "Tiny", "end mill", 0.1, 1, 1.0, 1.0)
         with self.assertRaises(ValueError):
             mill.drill_for(small)
 
     # Method `TestDrill.test_drilled_pocket()`:
     def test_drilled_pocket(self) -> None:
         """A drilled pocket plunges down its holes, not ramping."""
-        cnc: SCCNC = milling()
-        poly: SCRoundedPolygon = rounded_dumbbell()
+        cnc: CNC = milling()
+        poly: RoundedPolygon = rounded_dumbbell()
         entries: list[tuple[float, float]] = cnc.pocket_entries(
             poly, cnc.cutter
         )
@@ -797,11 +805,11 @@ class TestIslands(unittest.TestCase):
     # Method `TestIslands.test_plan()`:
     def test_plan(self) -> None:
         """The wall ring goes around each island, clockwise."""
-        poly: SCRoundedPolygon
-        islands: list[SCRoundedPolygon]
+        poly: RoundedPolygon
+        islands: list[RoundedPolygon]
         poly, islands = island_pocket()
-        cnc: SCCNC = milling()
-        roots: list[SCRing] = cnc.pocket(poly, -0.1, 0.1, islands=islands)
+        cnc: CNC = milling()
+        roots: list[Ring] = cnc.pocket(poly, -0.1, 0.1, islands=islands)
         self.assertEqual(len(roots), 1)
         self.assertEqual(len(roots[0].loops), 4)
         self.assertTrue(roots[0].loops[0].is_ccw())
@@ -823,8 +831,8 @@ class TestIslands(unittest.TestCase):
     # Method `TestIslands.test_coverage()`:
     def test_coverage(self) -> None:
         """Every point of the pocket outside the islands is reached."""
-        poly: SCRoundedPolygon
-        islands: list[SCRoundedPolygon]
+        poly: RoundedPolygon
+        islands: list[RoundedPolygon]
         poly, islands = island_pocket()
         stepover: float
         for stepover in (0.9, 1.0):
@@ -833,12 +841,12 @@ class TestIslands(unittest.TestCase):
     # Method `TestIslands.test_gcode()`:
     def test_gcode(self) -> None:
         """No cut comes nearer an island than the tool's radius."""
-        poly: SCRoundedPolygon
-        islands: list[SCRoundedPolygon]
+        poly: RoundedPolygon
+        islands: list[RoundedPolygon]
         poly, islands = island_pocket()
-        cnc: SCCNC = milling()
+        cnc: CNC = milling()
         cnc.pocket(poly, -0.1, 0.1, islands=islands)
-        holes: list[SCLoop] = [SCLoop.from_poly(island) for island in islands]
+        holes: list[Loop] = [Loop.from_poly(island) for island in islands]
         line: str
         for line in cnc.gcode().splitlines():
             found: dict[str, float] = {
@@ -857,18 +865,18 @@ class TestIslands(unittest.TestCase):
     # Method `TestIslands.test_bad_islands()`:
     def test_bad_islands(self) -> None:
         """Islands outside the pocket, or crossing, are refused."""
-        poly: SCRoundedPolygon
-        islands: list[SCRoundedPolygon]
+        poly: RoundedPolygon
+        islands: list[RoundedPolygon]
         poly, islands = island_pocket()
-        cnc: SCCNC = milling()
-        outside: SCRoundedPolygon = square(0.2, 0.0)
-        crossing: SCRoundedPolygon = SCRoundedPolygon(
+        cnc: CNC = milling()
+        outside: RoundedPolygon = square(0.2, 0.0)
+        crossing: RoundedPolygon = RoundedPolygon(
             "Across",
-            [SCCorner(x, y) for x, y in ((0.2, 1), (0.5, 1), (0.5, 1.2))],
+            [Corner(x, y) for x, y in ((0.2, 1), (0.5, 1), (0.5, 1.2))],
             0.0,
             1.0,
         )
-        bad: list[SCRoundedPolygon]
+        bad: list[RoundedPolygon]
         for bad in ([outside], [crossing], [islands[0], islands[0]]):
             with self.assertRaises(ValueError):
                 cnc.pocket(poly, -0.1, 0.1, islands=bad)
@@ -881,7 +889,7 @@ class TestEdges(unittest.TestCase):
     # Method `TestEdges.test_through()`:
     def test_through(self) -> None:
         """A cut through the part goes 10% of its thickness deeper."""
-        cnc: SCCNC = milling()
+        cnc: CNC = milling()
         self.assertAlmostEqual(cnc.below(-0.5), -0.55)
         self.assertEqual(cnc.below(-0.5, through=False), -0.5)
 
@@ -908,9 +916,9 @@ class TestEdges(unittest.TestCase):
     # Method `TestEdges.test_bevel()`:
     def test_bevel(self) -> None:
         """A V-bit runs just off the wall, deep enough to bevel."""
-        cnc: SCCNC = milling()
+        cnc: CNC = milling()
         cnc.change_tool(5)
-        path: SCRoundedPolygon = cnc.chamfer(square(1.0, 0.25), 0.03)
+        path: RoundedPolygon = cnc.chamfer(square(1.0, 0.25), 0.03)
         lines: list[str] = cnc.gcode().splitlines()
         self.assertIn("(Chamfer Square 0.03 wide outside)", lines)
 
@@ -923,7 +931,7 @@ class TestEdges(unittest.TestCase):
             cnc.chamfer(square(1.0, 0.25))
 
         # Inside a hole, it goes around the other way.
-        inner: SCRoundedPolygon = cnc.chamfer(
+        inner: RoundedPolygon = cnc.chamfer(
             square(1.0, 0.25), 0.03, inside=True
         )
         self.assertTrue(inner.is_ccw())
@@ -932,9 +940,9 @@ class TestEdges(unittest.TestCase):
     # Method `TestEdges.test_round_over()`:
     def test_round_over(self) -> None:
         """A corner rounding bit rides its tip radius off the wall."""
-        cnc: SCCNC = milling()
+        cnc: CNC = milling()
         cnc.change_tool(6)
-        path: SCRoundedPolygon = cnc.chamfer(square(1.0, 0.25))
+        path: RoundedPolygon = cnc.chamfer(square(1.0, 0.25))
         lines: list[str] = cnc.gcode().splitlines()
         self.assertIn("(Round over Square to 0.0625 outside)", lines)
         self.assertIn("G1 Z-0.0625", lines)

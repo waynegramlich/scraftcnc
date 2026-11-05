@@ -12,7 +12,7 @@ and the reader can not disagree.
 Every problem is reported as `FILE:LINE: KEY: message` (the form that
 compilers use, so editors can jump to it), and all of them are
 reported at once.  `tomllib` gives the line of a syntax error; for the
-rest, `_SCScanner` finds the line of every key, since no TOML library
+rest, `_Scanner` finds the line of every key, since no TOML library
 keeps line numbers once a file is parsed.
 
 ```
@@ -40,7 +40,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, TypeAlias, cast
 
-from .machine import DrillCycle, SCMachine, SCTool, ToolKind
+from .machine import DrillCycle, Machine, ToolEntry, ToolKind
 
 # The format version that this module reads and describes.
 FORMAT_VERSION: str = "0.0.1"
@@ -102,7 +102,7 @@ CHIP_LOAD: dict[str, float] = {
 MONEY: dict[str, float] = {"USD": 1.0, "CAD": 1.0, "EUR": 1.0, "GBP": 1.0}
 CURRENCY: re.Pattern[str] = re.compile(r"[A-Z]{3}")
 
-# The kinds of measurement, as `SCField.form` names them.
+# The kinds of measurement, as `TableField.form` names them.
 UNITS: dict[str, dict[str, float]] = {
     "length": LENGTH,
     "feed": FEED,
@@ -150,10 +150,10 @@ BARE_KEY: re.Pattern[str] = re.compile(r"[A-Za-z0-9_-]+")
 VERSION: re.Pattern[str] = re.compile(r"(\d+)\.(\d+)\.(\d+)")
 
 
-# Class `SCField`:
+# Class `TableField`:
 # It only holds what the schema says of a key, so the count is fine.
 @dataclass(frozen=True, slots=True)
-class SCField:  # pylint: disable=too-many-instance-attributes
+class TableField:  # pylint: disable=too-many-instance-attributes
     """One key of a table, and what its value must be.
 
     Attributes:
@@ -178,7 +178,7 @@ class SCField:  # pylint: disable=too-many-instance-attributes
       sketch.
 
     Constructor:
-    * `SCField(key, form, meaning, required, of, choices, open, letter)`
+    * `TableField(key, form, meaning, required, of, choices, open, letter)`
     """
 
     # Constructor arguments:
@@ -191,7 +191,7 @@ class SCField:  # pylint: disable=too-many-instance-attributes
     open: bool = field(init=True, default=False)
     letter: str = field(init=True, default="")
 
-    # Method `SCField.__post_init__()`:
+    # Method `TableField.__post_init__()`:
     def __post_init__(self) -> None:
         """Check that the form is known.
 
@@ -208,7 +208,7 @@ class SCField:  # pylint: disable=too-many-instance-attributes
         if self.letter and not re.fullmatch("[A-Z]", self.letter):
             raise ValueError(f"{self.key}: `letter` is one of `A` to `Z`")
 
-    # Method `SCField.shown()`:
+    # Method `TableField.shown()`:
     def shown(self) -> str:
         """Return what the value is, in Markdown, for `Shops.md`.
 
@@ -231,46 +231,46 @@ class SCField:  # pylint: disable=too-many-instance-attributes
         return shown
 
 
-# Class `SCKind`:
+# Class `TableKind`:
 @dataclass(frozen=True, slots=True)
-class SCKind:
+class TableKind:
     """One kind of table, which may also be a file of its own.
 
     Attributes:
     * `kind` (`str`): Its name, the value of the `kind` key.
     * `summary` (`str`): What it is, in Markdown.
-    * `fields` (`tuple[SCField, ...]`): Its keys (but not the header).
+    * `fields` (`tuple[TableField, ...]`): Its keys (but not the header).
     * `named` (`bool`):
       True if it must have a `name` even when it is not a file of its
       own (things referred to by name).
     * `example` (`str`): An example file, in TOML.
 
     Constructor:
-    * `SCKind(kind, summary, fields, named, example)`
+    * `TableKind(kind, summary, fields, named, example)`
     """
 
     # Constructor arguments:
     kind: str = field(init=True)
     summary: str = field(init=True)
-    fields: tuple[SCField, ...] = field(init=True)
+    fields: tuple[TableField, ...] = field(init=True)
     named: bool = field(init=True)
     example: str = field(init=True)
 
 
 # The keys that start every file.
-HEADER: tuple[SCField, ...] = (
-    SCField(
+HEADER: tuple[TableField, ...] = (
+    TableField(
         "name",
         "string",
         "Unique among the things of its kind.",
     ),
-    SCField(
+    TableField(
         "kind",
         "string",
         "What the rest of the file is.",
     ),
-    SCField("language", "string", "The language of the names and notes."),
-    SCField(
+    TableField("language", "string", "The language of the names and notes."),
+    TableField(
         "version",
         "version",
         "The format version, `MAJOR.MINOR.PATCH`.",
@@ -332,7 +332,7 @@ MATERIALS: tuple[str, ...] = (
 )
 
 # One entry of a `holder` list, other than its bore.
-HOLDER_PART: SCField = SCField(
+HOLDER_PART: TableField = TableField(
     "holder",
     "choice",
     "What holds a tool.",
@@ -353,47 +353,47 @@ TOOL_KINDS: tuple[str, ...] = (
 
 
 # Function `_tool_fields()`:
-def _tool_fields(*special: SCField) -> tuple[SCField, ...]:
+def _tool_fields(*special: TableField) -> tuple[TableField, ...]:
     """Return the keys of a kind of tool.
 
     Arguments:
-    * `special` (`SCField`): The keys only this kind of tool has.
+    * `special` (`TableField`): The keys only this kind of tool has.
 
     Returns:
-    * (`tuple[SCField, ...]`):
+    * (`tuple[TableField, ...]`):
       `special` (its sizes first), then what every kind of tool has:
       its shank and length, what it is made of, where it came from,
       and how to cut with it.
     """
     return (
-        SCField(
+        TableField(
             "unique_id",
             "positive_integer",
             "Its unique id, a number from 1, unique among all the tools "
             "of the shop (this is not a T number).",
             True,
         ),
-        SCField("description", "string", "What it is, in a few words."),
+        TableField("description", "string", "What it is, in a few words."),
         *special,
-        SCField(
+        TableField(
             "shank",
             "length",
             "The shank diameter, if not `diameter`.",
             letter="S",
         ),
-        SCField(
+        TableField(
             "overall_length",
             "length",
             "Its whole length (OAL).",
             True,
             letter="L",
         ),
-        SCField(
+        TableField(
             "holder",
             "holder_list",
             "What holds it, from the spindle to its bore (see Tool Holders).",
         ),
-        SCField(
+        TableField(
             "material",
             "choice",
             "What it is made of.",
@@ -401,42 +401,42 @@ def _tool_fields(*special: SCField) -> tuple[SCField, ...]:
             choices=MATERIALS,
             open=True,
         ),
-        SCField("grade", "string", "The grade (`M2`, `M42`, ...)."),
-        SCField(
+        TableField("grade", "string", "The grade (`M2`, `M42`, ...)."),
+        TableField(
             "finish",
             "string",
             "Its finish or coating (`uncoated`, `AlTiN`, ...).",
         ),
-        SCField("manufacturer", "string", "Who made it."),
-        SCField("manufacturer_pn", "string", "The maker's part number."),
-        SCField("vendor", "string", "Who sold it."),
-        SCField("vendor_pn", "string", "The vendor's part number."),
-        SCField("cost", "money", "What it cost."),
-        SCField("acquired", "date", "When it was bought (`2026-10-27`)."),
-        SCField("rpm", "speed", "The spindle speed to cut at."),
-        SCField("feed", "feed", "The feed to cut at."),
-        SCField("plunge", "feed", "The feed going straight down."),
+        TableField("manufacturer", "string", "Who made it."),
+        TableField("manufacturer_pn", "string", "The maker's part number."),
+        TableField("vendor", "string", "Who sold it."),
+        TableField("vendor_pn", "string", "The vendor's part number."),
+        TableField("cost", "money", "What it cost."),
+        TableField("acquired", "date", "When it was bought (`2026-10-27`)."),
+        TableField("rpm", "speed", "The spindle speed to cut at."),
+        TableField("feed", "feed", "The feed to cut at."),
+        TableField("plunge", "feed", "The feed going straight down."),
     )
 
 
 # Function `_size_fields()`:
-def _size_fields(*, length_of_cut: bool = True) -> tuple[SCField, ...]:
+def _size_fields(*, length_of_cut: bool = True) -> tuple[TableField, ...]:
     """Return the `diameter` and `length_of_cut` keys of a tool.
 
     Arguments:
     * `length_of_cut` (`bool`): False to leave out `length_of_cut`.
 
     Returns:
-    * (`tuple[SCField, ...]`): The keys.
+    * (`tuple[TableField, ...]`): The keys.
     """
-    diameter: SCField = SCField(
+    diameter: TableField = TableField(
         "diameter", "length", "The cutting diameter.", True, letter="D"
     )
     if not length_of_cut:
         return (diameter,)
     return (
         diameter,
-        SCField(
+        TableField(
             "length_of_cut",
             "length",
             "How deep it can cut (LOC).",
@@ -447,54 +447,54 @@ def _size_fields(*, length_of_cut: bool = True) -> tuple[SCField, ...]:
 
 
 # Function `_countersink_fields()`:
-def _countersink_fields() -> tuple[SCField, ...]:
+def _countersink_fields() -> tuple[TableField, ...]:
     """Return the keys of a combined drill and countersink.
 
     Returns:
-    * (`tuple[SCField, ...]`): The keys.
+    * (`tuple[TableField, ...]`): The keys.
     """
     return _tool_fields(
         *_size_fields(length_of_cut=False),
-        SCField(
+        TableField(
             "drill_diameter",
             "length",
             "The diameter of the small drill at its tip.",
             True,
             letter="E",
         ),
-        SCField(
+        TableField(
             "drill_length",
             "length",
             "How far the small drill reaches from its tip (its diameter "
             "if not given).",
             letter="G",
         ),
-        SCField(
+        TableField(
             "angle",
             "angle",
             "The countersink's included angle.",
             True,
             letter="A",
         ),
-        SCField(
+        TableField(
             "point_angle",
             "angle",
             "The included angle of the small drill's point (90 deg if "
             "not given).",
             letter="P",
         ),
-        SCField("flutes", "integer", "How many flutes (2 if not given)."),
+        TableField("flutes", "integer", "How many flutes (2 if not given)."),
     )
 
 
 # Function `_cutting_field()`:
-def _cutting_field() -> SCField:
+def _cutting_field() -> TableField:
     """Return the `cutting` field of a drill or an end mill.
 
     Returns:
-    * (`SCField`): The field.
+    * (`TableField`): The field.
     """
-    return SCField(
+    return TableField(
         "cutting",
         "by_material",
         "Its own speed and feed for a material, which win over those "
@@ -505,15 +505,15 @@ def _cutting_field() -> SCField:
 
 
 # Every kind, in the order `Shops.md` describes them.
-KINDS: dict[str, SCKind] = {
+KINDS: dict[str, TableKind] = {
     kind.kind: kind
     for kind in (
-        SCKind(
+        TableKind(
             "shops",
             "Every shop: the top of a description.  Each shop may be "
             "written in place, or kept in its own file.",
             (
-                SCField(
+                TableField(
                     "shops",
                     "list",
                     "The shops.",
@@ -530,34 +530,34 @@ version = "0.0.1"
 shops = ["@home_shop.toml"]
 """,
         ),
-        SCKind(
+        TableKind(
             "shop",
             "A shop: its name, where it is, its machines and its tools.",
             (
-                SCField(
+                TableField(
                     "location", "table", "Where the shop is.", of="location"
                 ),
-                SCField(
+                TableField(
                     "machines",
                     "list",
                     "The machines in the shop.",
                     required=True,
                     of="machine",
                 ),
-                SCField(
+                TableField(
                     "tools",
                     "list",
                     "The tools on hand, shared by the machines.",
                     of="tools",
                 ),
-                SCField(
+                TableField(
                     "tooling",
                     "list",
                     "The work holding on hand (grid plates for now), "
                     "shared by the machines.",
                     of="tooling",
                 ),
-                SCField(
+                TableField(
                     "materials",
                     "table",
                     "The materials it cuts, and how to drill them.",
@@ -579,14 +579,14 @@ longitude = "-122.04002 deg"
 address = "700 All American Way, Sunnyvale, CA 94086"
 """,
         ),
-        SCKind(
+        TableKind(
             "location",
             "Where a shop is.  Every key is optional, since a shop on a "
             "boat may have none.",
             (
-                SCField("latitude", "angle", "North is positive."),
-                SCField("longitude", "angle", "East is positive."),
-                SCField("address", "string", "The street address."),
+                TableField("latitude", "angle", "North is positive."),
+                TableField("longitude", "angle", "East is positive."),
+                TableField("address", "string", "The street address."),
             ),
             False,
             """\
@@ -595,53 +595,53 @@ longitude = "-122.04002 deg"
 address = "700 All American Way, Sunnyvale, CA 94086"
 """,
         ),
-        SCKind(
+        TableKind(
             "machine",
             "A CNC mill or router (lathes, lasers and 3D printers "
             "later): its axes, table, spindle, controller and tool "
             "table.",
             (
-                SCField(
+                TableField(
                     "machine",
                     "choice",
                     "What sort of machine it is.",
                     required=True,
                     choices=("mill", "router"),
                 ),
-                SCField(
+                TableField(
                     "axes",
                     "list",
                     "One per axis.",
                     required=True,
                     of="axis",
                 ),
-                SCField(
+                TableField(
                     "table",
                     "table",
                     "The table that the work is held on.",
                     of="machine_table",
                 ),
-                SCField(
+                TableField(
                     "spindle",
                     "table",
                     "The spindle.",
                     required=True,
                     of="spindle",
                 ),
-                SCField(
+                TableField(
                     "controller",
                     "table",
                     "The controller.",
                     required=True,
                     of="controller",
                 ),
-                SCField(
+                TableField(
                     "tool_table",
                     "table",
                     "The tools loaded.",
                     of="tool_table",
                 ),
-                SCField(
+                TableField(
                     "preferences",
                     "table",
                     "How it is run.",
@@ -668,30 +668,30 @@ travel = "18 in"
 max_feed = "110 in/min"
 """,
         ),
-        SCKind(
+        TableKind(
             "axis",
             "One linear axis of a machine (rotary axes later).",
             (
-                SCField(
+                TableField(
                     "letter",
                     "choice",
                     "Its letter in G-code.",
                     required=True,
                     choices=("X", "Y", "Z"),
                 ),
-                SCField("travel", "length", "How far it moves.", True),
-                SCField("max_feed", "feed", "Its fastest feed.", True),
-                SCField(
+                TableField("travel", "length", "How far it moves.", True),
+                TableField("max_feed", "feed", "Its fastest feed.", True),
+                TableField(
                     "max_acceleration",
                     "acceleration",
                     "Its greatest acceleration.",
                 ),
-                SCField(
+                TableField(
                     "limit_switches",
                     "boolean",
                     "True if it has end of travel switches.",
                 ),
-                SCField("brake", "boolean", "True if it has a brake."),
+                TableField("brake", "boolean", "True if it has a brake."),
             ),
             False,
             """\
@@ -703,16 +703,16 @@ limit_switches = true
 brake = false
 """,
         ),
-        SCKind(
+        TableKind(
             "machine_table",
             "The table of a machine, and its T-slots.",
             (
-                SCField("length", "length", "Along X.", True),
-                SCField("width", "length", "Along Y.", True),
-                SCField("t_slots", "integer", "How many T-slots."),
-                SCField("t_slot_pitch", "length", "Between T-slots."),
-                SCField("t_slot_width", "length", "At the top."),
-                SCField("t_slot_depth", "length", "From the table top."),
+                TableField("length", "length", "Along X.", True),
+                TableField("width", "length", "Along Y.", True),
+                TableField("t_slots", "integer", "How many T-slots."),
+                TableField("t_slot_pitch", "length", "Between T-slots."),
+                TableField("t_slot_width", "length", "At the top."),
+                TableField("t_slot_depth", "length", "From the table top."),
             ),
             False,
             """\
@@ -724,11 +724,11 @@ t_slot_width = "0.625 in"
 t_slot_depth = "0.75 in"
 """,
         ),
-        SCKind(
+        TableKind(
             "spindle",
             "The spindle of a machine.",
             (
-                SCField(
+                TableField(
                     "interface",
                     "choice",
                     "What its tool holders fit.",
@@ -736,12 +736,16 @@ t_slot_depth = "0.75 in"
                     choices=INTERFACES,
                     open=True,
                 ),
-                SCField("min_rpm", "speed", "Its slowest speed."),
-                SCField("max_rpm", "speed", "Its fastest speed.", True),
-                SCField("reversible", "boolean", "True if it runs backwards."),
-                SCField("flood", "boolean", "True if it has flood coolant."),
-                SCField("mist", "boolean", "True if it has mist coolant."),
-                SCField("air", "boolean", "True if it has an air blast."),
+                TableField("min_rpm", "speed", "Its slowest speed."),
+                TableField("max_rpm", "speed", "Its fastest speed.", True),
+                TableField(
+                    "reversible", "boolean", "True if it runs backwards."
+                ),
+                TableField(
+                    "flood", "boolean", "True if it has flood coolant."
+                ),
+                TableField("mist", "boolean", "True if it has mist coolant."),
+                TableField("air", "boolean", "True if it has an air blast."),
             ),
             False,
             """\
@@ -754,7 +758,7 @@ mist = false
 air = false
 """,
         ),
-        SCKind(
+        TableKind(
             "controller",
             "The controller of a machine (e.g. LinuxCNC), and how its "
             "G-code is written.  LinuxCNC is the baseline.  (To come: "
@@ -762,14 +766,14 @@ air = false
             "offsets.)  `tool_change` is a Python `str.format()` "
             "template, filled in with the tool's `number`.",
             (
-                SCField(
+                TableField(
                     "post_processor",
                     "choice",
                     "Which dialect of G-code it reads.",
                     required=True,
                     choices=("linuxcnc",),
                 ),
-                SCField(
+                TableField(
                     "tool_change",
                     "string",
                     "The words that change the tool.",
@@ -785,63 +789,63 @@ post_processor = "linuxcnc"
 tool_change = "T{number:02d} M6"
 """,
         ),
-        SCKind(
+        TableKind(
             "preferences",
             "How a machine is run: heights, speeds and how pockets and "
             "holes are cut.  (These are kept with the machine for now; "
             "some may belong to the shop or to the job.)",
             (
-                SCField(
+                TableField(
                     "z_safe",
                     "length",
                     "Above all of the hold down tooling.",
                     True,
                 ),
-                SCField(
+                TableField(
                     "clearance",
                     "length",
                     "Rapids down stop this far above the work.",
                     True,
                 ),
-                SCField(
+                TableField(
                     "tool_change_z",
                     "length",
                     "Rise here before every tool change.",
                     True,
                 ),
-                SCField(
+                TableField(
                     "rapid_speed",
                     "feed",
                     "The rapid speed, for estimating run times.",
                     True,
                 ),
-                SCField(
+                TableField(
                     "drill_cycle",
                     "choice",
                     "How holes are drilled (`moves`: no canned cycle).",
                     required=True,
                     choices=("G81", "G73", "G83", "moves"),
                 ),
-                SCField(
+                TableField(
                     "through_overcut",
                     "fraction",
                     "How much deeper a cut through the part goes, of its "
                     "thickness.",
                     True,
                 ),
-                SCField(
+                TableField(
                     "stepover",
                     "fraction",
                     "How far apart pocket rings are, of the tool's diameter.",
                     True,
                 ),
-                SCField(
+                TableField(
                     "ramp_angle",
                     "angle",
                     "The steepest ramp into a pocket that is not drilled.",
                     True,
                 ),
-                SCField(
+                TableField(
                     "finish_allowance",
                     "length",
                     "What a roughing end mill leaves on walls and floors "
@@ -862,7 +866,7 @@ ramp_angle = "3 deg"
 finish_allowance = "0.05 in"
 """,
         ),
-        SCKind(
+        TableKind(
             "tool_table",
             "The tools loaded in one machine: T numbers (1 to 99) and "
             "the names of the tools in them.  Each is unique: no T "
@@ -872,7 +876,7 @@ finish_allowance = "0.05 in"
             "machine changes, so the tool table is usually a file of "
             "its own.",
             (
-                SCField(
+                TableField(
                     "tools",
                     "t_numbers",
                     "The tools, by T number.",
@@ -891,7 +895,7 @@ version = "0.0.1"
 4 = "15/64 in HSS jobber drill"
 """,
         ),
-        SCKind(
+        TableKind(
             "tools",
             "Tools: the bits that go in a holder in the spindle.  How "
             "to cut with each (`rpm`, `feed`, `plunge`) is given with "
@@ -904,33 +908,35 @@ version = "0.0.1"
             "`unique_id` are unique among all the tools (T numbers are "
             "only unique within one machine).",
             (
-                SCField("end_mills", "list", "The end mills.", of="end_mill"),
-                SCField("drills", "list", "The drills.", of="drill"),
-                SCField(
+                TableField(
+                    "end_mills", "list", "The end mills.", of="end_mill"
+                ),
+                TableField("drills", "list", "The drills.", of="drill"),
+                TableField(
                     "chamfer_mills",
                     "list",
                     "The chamfer mills.",
                     of="chamfer_mill",
                 ),
-                SCField(
+                TableField(
                     "corner_rounding_mills",
                     "list",
                     "The corner rounding mills.",
                     of="corner_rounding_mill",
                 ),
-                SCField(
+                TableField(
                     "double_angle_cutters",
                     "list",
                     "The double angle shank cutters.",
                     of="double_angle_cutter",
                 ),
-                SCField(
+                TableField(
                     "single_countersinks",
                     "list",
                     "The single end countersinks.",
                     of="single_countersink",
                 ),
-                SCField(
+                TableField(
                     "double_countersinks",
                     "list",
                     "The double end countersinks.",
@@ -965,32 +971,32 @@ holder = ["r8", "er32", "1/4 in"]
 material = "HSS"
 """,
         ),
-        SCKind(
+        TableKind(
             "end_mill",
             "An end mill: square, ball or bull nose (a square end with "
             "rounded corners), and perhaps a rougher.",
             _tool_fields(
                 *_size_fields(),
-                SCField("flutes", "integer", "How many flutes.", True),
-                SCField(
+                TableField("flutes", "integer", "How many flutes.", True),
+                TableField(
                     "end",
                     "choice",
                     "The shape of its end.",
                     required=True,
                     choices=("square", "ball", "bull_nose"),
                 ),
-                SCField(
+                TableField(
                     "corner_radius",
                     "length",
                     "A bull nose's corners.",
                     letter="B",
                 ),
-                SCField(
+                TableField(
                     "center_cutting",
                     "boolean",
                     "True if it can plunge straight down.",
                 ),
-                SCField(
+                TableField(
                     "roughing",
                     "boolean",
                     "True for a rougher (serrated flutes).",
@@ -1015,32 +1021,32 @@ cost = "47.02 USD"
 acquired = 2026-10-27
 """,
         ),
-        SCKind(
+        TableKind(
             "drill",
             "A twist drill.",
             _tool_fields(
                 *_size_fields(),
-                SCField(
+                TableField(
                     "flutes", "integer", "How many flutes (2 if not given)."
                 ),
-                SCField(
+                TableField(
                     "point_angle",
                     "angle",
                     "The included angle.",
                     True,
                     letter="P",
                 ),
-                SCField(
+                TableField(
                     "shank_length",
                     "length",
                     "How far its shank comes down from its top; if not "
                     "given, a `shank` starts where its flutes stop.",
                     letter="K",
                 ),
-                SCField(
+                TableField(
                     "split_point", "boolean", "True if it has a split point."
                 ),
-                SCField(
+                TableField(
                     "peck_depth",
                     "length",
                     "How deep each peck goes (0 for none).",
@@ -1069,13 +1075,13 @@ rpm = "1200 rpm"
 feed = "4 in/min"
 """,
         ),
-        SCKind(
+        TableKind(
             "cutting",
             "A tool's own speed and feed for one material.",
             (
-                SCField("rpm", "speed", "The spindle speed.", True),
-                SCField("feed", "feed", "The feed.", True),
-                SCField(
+                TableField("rpm", "speed", "The spindle speed.", True),
+                TableField("feed", "feed", "The feed.", True),
+                TableField(
                     "plunge",
                     "feed",
                     "The feed going straight down (a drill's `feed`, or "
@@ -1089,26 +1095,26 @@ rpm = "1200 rpm"
 feed = "4 in/min"
 """,
         ),
-        SCKind(
+        TableKind(
             "chamfer_mill",
             "A chamfer mill (a V-bit), which bevels top edges.",
             _tool_fields(
                 *_size_fields(length_of_cut=False),
-                SCField(
+                TableField(
                     "tip_diameter",
                     "length",
                     "The diameter at its tip.",
                     True,
                     letter="T",
                 ),
-                SCField(
+                TableField(
                     "angle",
                     "angle",
                     "The included angle (90 deg makes 45 deg bevels).",
                     True,
                     letter="A",
                 ),
-                SCField("flutes", "integer", "How many flutes."),
+                TableField("flutes", "integer", "How many flutes."),
             ),
             True,
             """\
@@ -1124,26 +1130,26 @@ vendor = "Shars Tool"
 vendor_pn = "416-3509"
 """,
         ),
-        SCKind(
+        TableKind(
             "corner_rounding_mill",
             "A corner rounding mill, which rounds top edges over to its "
             "radius.  Its tip (a pilot) rides along the wall below.",
             _tool_fields(
-                SCField(
+                TableField(
                     "radius",
                     "length",
                     "The radius it rounds edges to.",
                     True,
                     letter="R",
                 ),
-                SCField(
+                TableField(
                     "tip_diameter",
                     "length",
                     "The diameter at its tip.",
                     True,
                     letter="T",
                 ),
-                SCField("flutes", "integer", "How many flutes."),
+                TableField("flutes", "integer", "How many flutes."),
             ),
             True,
             """\
@@ -1159,40 +1165,40 @@ vendor = "Shars Tool"
 vendor_pn = "417-1112"
 """,
         ),
-        SCKind(
+        TableKind(
             "double_angle_cutter",
             "A pointed double angle shank cutter: a cone above and a "
             "cone below its widest point, on a thin neck, so it can "
             "chamfer bottom edges (back chamfering) as well as top ones.",
             _tool_fields(
                 *_size_fields(length_of_cut=False),
-                SCField(
+                TableField(
                     "angle",
                     "angle",
                     "The included angle of the two cones together.",
                     True,
                     letter="A",
                 ),
-                SCField(
+                TableField(
                     "width",
                     "length",
                     "The height of the cutter (L2), point to point.",
                     True,
                     letter="W",
                 ),
-                SCField(
+                TableField(
                     "neck_diameter",
                     "length",
                     "The neck's diameter.",
                     letter="N",
                 ),
-                SCField(
+                TableField(
                     "neck_length",
                     "length",
                     "The neck's length (L3), from the shank to the cutter.",
                     letter="M",
                 ),
-                SCField("flutes", "integer", "How many flutes."),
+                TableField("flutes", "integer", "How many flutes."),
             ),
             True,
             """\
@@ -1211,7 +1217,7 @@ vendor = "Shars Tool"
 vendor_pn = "436-4296"
 """,
         ),
-        SCKind(
+        TableKind(
             "single_countersink",
             "A combined drill and countersink on a shank: a small drill "
             "at its tip, joined to its body by a cone.  It can not go in "
@@ -1228,7 +1234,7 @@ overall_length = "2 in"
 material = "HSS"
 """,
         ),
-        SCKind(
+        TableKind(
             "double_countersink",
             "A combined drill and countersink, cut at both ends (a center "
             "drill).  Its `shank` means nothing, since it is cut at both "
@@ -1245,7 +1251,7 @@ overall_length = "2 in"
 material = "HSS"
 """,
         ),
-        SCKind(
+        TableKind(
             "tooling",
             "Tooling: what holds work on a machine, rather than cutting "
             "it.  Only grid plates are described so far; vises, "
@@ -1253,7 +1259,7 @@ material = "HSS"
             "piece's `name` is unique among the shop's tooling, so that "
             "a setup can name it.",
             (
-                SCField(
+                TableField(
                     "grid_plates",
                     "list",
                     "The grid plates.",
@@ -1277,7 +1283,7 @@ edge = "1/4 in"
 hole_diameter = "0.144 in"
 """,
         ),
-        SCKind(
+        TableKind(
             "grid_plate",
             "A grid plate: a plate with a grid of holes, for holding work "
             "down, perhaps with chamfered holes and tooling holes.  "
@@ -1285,78 +1291,78 @@ hole_diameter = "0.144 in"
             "SolidCraft minutes to model, once; the model cache keeps "
             "the result.",
             (
-                SCField(
+                TableField(
                     "description", "string", "What it is, in a few words."
                 ),
-                SCField("length", "length", "Its size along X.", True),
-                SCField("width", "length", "Its size along Y.", True),
-                SCField(
+                TableField("length", "length", "Its size along X.", True),
+                TableField("width", "length", "Its size along Y.", True),
+                TableField(
                     "height",
                     "length",
                     "Its size along Z, its thickness.",
                     True,
                 ),
-                SCField(
+                TableField(
                     "pitch",
                     "length",
                     "The distance between grid holes, along X and Y.",
                     True,
                 ),
-                SCField(
+                TableField(
                     "edge",
                     "length",
                     "The distance from a side to the nearest holes.",
                     True,
                 ),
-                SCField(
+                TableField(
                     "hole_diameter",
                     "length",
                     "The diameter of the grid's holes.",
                     True,
                 ),
-                SCField(
+                TableField(
                     "corner_radius",
                     "length",
                     "The radius of its four corners (square if not given).",
                 ),
-                SCField(
+                TableField(
                     "chamfer_depth",
                     "length",
                     "How deep the 45 degree chamfer on each grid hole's top "
                     "edge is (none if not given).",
                 ),
-                SCField(
+                TableField(
                     "tooling_columns",
                     "integer",
                     "The number of columns of tooling holes, an even "
                     "number (none if not given).",
                 ),
-                SCField(
+                TableField(
                     "tooling_rows",
                     "integer",
                     "The number of rows of tooling holes, an even number "
                     "(none if not given).",
                 ),
-                SCField(
+                TableField(
                     "tooling_pitch",
                     "length",
                     "The distance between tooling holes, along X and Y.",
                 ),
-                SCField(
+                TableField(
                     "tap_diameter",
                     "length",
                     "The diameter of the tooling holes to be threaded (the "
                     "tap drill).",
                 ),
-                SCField(
+                TableField(
                     "close_diameter",
                     "length",
                     "The diameter of the close fit tooling holes.",
                 ),
-                SCField("manufacturer", "string", "Who made it."),
-                SCField("vendor", "string", "Who sold it."),
-                SCField("cost", "money", "What it cost."),
-                SCField("acquired", "date", "When it was bought or made."),
+                TableField("manufacturer", "string", "Who made it."),
+                TableField("vendor", "string", "Who sold it."),
+                TableField("cost", "money", "What it cost."),
+                TableField("acquired", "date", "When it was bought or made."),
             ),
             True,
             """\
@@ -1377,46 +1383,46 @@ tap_diameter = "0.159 in"
 close_diameter = "0.196 in"
 """,
         ),
-        SCKind(
+        TableKind(
             "materials",
             "The materials a shop cuts, and how to drill and mill them.  "
             "Speeds and feeds worked out from these are only starting "
             "points; a tool's own `cutting` entries win.",
             (
-                SCField(
+                TableField(
                     "carbide_speed_factor",
                     "fraction",
                     "A carbide tool's surface speed, as a share of HSS's.",
                     True,
                 ),
-                SCField(
+                TableField(
                     "cobalt_speed_factor",
                     "fraction",
                     "A cobalt tool's surface speed, as a share of HSS's.",
                     True,
                 ),
-                SCField(
+                TableField(
                     "end_milling",
                     "table",
                     "How end mills feed.",
                     True,
                     of="end_milling",
                 ),
-                SCField(
+                TableField(
                     "drilling",
                     "table",
                     "How drills feed.",
                     True,
                     of="drilling",
                 ),
-                SCField(
+                TableField(
                     "groups",
                     "list",
                     "The groups of materials that cut alike.",
                     True,
                     of="material_group",
                 ),
-                SCField(
+                TableField(
                     "materials",
                     "list",
                     "The materials, each in a group.",
@@ -1456,13 +1462,13 @@ name = "6061 aluminum"
 group = "soft"
 """,
         ),
-        SCKind(
+        TableKind(
             "drilling",
             "How drills feed: the feed per revolution by drill diameter "
             "(the middle of the catalog ranges), times the group's "
             "`feed_factor`.",
             (
-                SCField(
+                TableField(
                     "feed_ranges",
                     "list",
                     "The feeds per revolution, smallest drills first.",
@@ -1477,18 +1483,18 @@ below = "1/8 in"
 feed = "0.002 in/rev"
 """,
         ),
-        SCKind(
+        TableKind(
             "end_milling",
             "How end mills feed: the chip load by diameter, times the "
             "group's `feed_factor`, times the flutes and the RPM.",
             (
-                SCField(
+                TableField(
                     "plunge_factor",
                     "fraction",
                     "The plunge feed, as a share of the feed.",
                     True,
                 ),
-                SCField(
+                TableField(
                     "chip_loads",
                     "list",
                     "The chip loads, smallest end mills first.",
@@ -1505,17 +1511,17 @@ below = "1/4 in"
 chip_load = "0.001 in/tooth"
 """,
         ),
-        SCKind(
+        TableKind(
             "chip_load",
             "The chip load of end mills below a diameter.",
             (
-                SCField(
+                TableField(
                     "below",
                     "length",
                     "The end mills it is for are smaller than this.",
                     True,
                 ),
-                SCField(
+                TableField(
                     "chip_load",
                     "chip_load",
                     "Their feed per tooth.",
@@ -1528,17 +1534,17 @@ below = "1/4 in"
 chip_load = "0.001 in/tooth"
 """,
         ),
-        SCKind(
+        TableKind(
             "feed_range",
             "The feed per revolution of drills below a diameter.",
             (
-                SCField(
+                TableField(
                     "below",
                     "length",
                     "The drills it is for are smaller than this.",
                     True,
                 ),
-                SCField(
+                TableField(
                     "feed",
                     "feed_per_rev",
                     "Their feed per revolution.",
@@ -1551,18 +1557,18 @@ below = "1/8 in"
 feed = "0.002 in/rev"
 """,
         ),
-        SCKind(
+        TableKind(
             "material_group",
             "A group of materials that cut alike.",
             (
-                SCField("description", "string", "What is in it."),
-                SCField(
+                TableField("description", "string", "What is in it."),
+                TableField(
                     "hss_surface_speed",
                     "surface_speed",
                     "The surface speed of an HSS tool.",
                     True,
                 ),
-                SCField(
+                TableField(
                     "feed_factor",
                     "fraction",
                     "The feed, as a share of `feed_ranges` and `chip_loads`.",
@@ -1577,10 +1583,10 @@ hss_surface_speed = "250 sfm"
 feed_factor = "150 %"
 """,
         ),
-        SCKind(
+        TableKind(
             "material",
             "A material the shop cuts.",
-            (SCField("group", "string", "The group it cuts with.", True),),
+            (TableField("group", "string", "The group it cuts with.", True),),
             True,
             """\
 name = "6061 aluminum"
@@ -1710,8 +1716,8 @@ whether a holder fits the spindle, nor a bore the collet or the tool.
 """
 
 
-# Class `SCShopError`:
-class SCShopError(ValueError):
+# Class `ShopError`:
+class ShopError(ValueError):
     """The problems found in a shop description.
 
     Attributes:
@@ -1719,10 +1725,10 @@ class SCShopError(ValueError):
       Each problem, as `FILE:LINE: KEY: message`.
 
     Constructor:
-    * `SCShopError(problems)`
+    * `ShopError(problems)`
     """
 
-    # Method `SCShopError.__init__()`:
+    # Method `ShopError.__init__()`:
     def __init__(self, problems: list[str]) -> None:
         """Hold the problems; the message is all of them, one a line.
 
@@ -1733,8 +1739,8 @@ class SCShopError(ValueError):
         self.problems: list[str] = problems
 
 
-# Class `_SCScanner`:
-class _SCScanner:
+# Class `_Scanner`:
+class _Scanner:
     """Find the line of every key and list item in a TOML file.
 
     The file has already been read by `tomllib`, so it is known to be
@@ -1752,10 +1758,10 @@ class _SCScanner:
       (`[[NAME]]`), where later headers refer to it.
 
     Constructor:
-    * `_SCScanner(text)`
+    * `_Scanner(text)`
     """
 
-    # Method `_SCScanner.__init__()`:
+    # Method `_Scanner.__init__()`:
     def __init__(self, text: str) -> None:
         """Get ready to scan a file.
 
@@ -1770,7 +1776,7 @@ class _SCScanner:
         self.lines: dict[KeyPath, int] = {}
         self.arrays: dict[KeyPath, int] = {}
 
-    # Method `_SCScanner.line()`:
+    # Method `_Scanner.line()`:
     def line(self) -> int:
         """Return the line the scanner is on.
 
@@ -1779,7 +1785,7 @@ class _SCScanner:
         """
         return bisect.bisect_right(self.starts, self.at)
 
-    # Method `_SCScanner.peek()`:
+    # Method `_Scanner.peek()`:
     def peek(self) -> str:
         """Return the next character.
 
@@ -1788,7 +1794,7 @@ class _SCScanner:
         """
         return self.text[self.at : self.at + 1]
 
-    # Method `_SCScanner.skip()`:
+    # Method `_Scanner.skip()`:
     def skip(self, newlines: bool) -> None:
         """Skip white space and comments.
 
@@ -1804,7 +1810,7 @@ class _SCScanner:
             else:
                 return
 
-    # Method `_SCScanner.string()`:
+    # Method `_Scanner.string()`:
     def string(self) -> str:
         """Skip the string that starts here.
 
@@ -1831,7 +1837,7 @@ class _SCScanner:
             extra += 1
         return self.text[start : self.at]
 
-    # Method `_SCScanner.key()`:
+    # Method `_Scanner.key()`:
     def key(self) -> list[str]:
         """Read a key (dotted or not) that starts here.
 
@@ -1857,7 +1863,7 @@ class _SCScanner:
                 return parts
             self.at += 1
 
-    # Method `_SCScanner.pair()`:
+    # Method `_Scanner.pair()`:
     def pair(self, table: KeyPath) -> None:
         """Read a `key = value` pair that starts here.
 
@@ -1878,7 +1884,7 @@ class _SCScanner:
         self.skip(newlines=False)
         self.value(path)
 
-    # Method `_SCScanner.value()`:
+    # Method `_Scanner.value()`:
     def value(self, path: KeyPath) -> None:
         """Read the value that starts here.
 
@@ -1896,7 +1902,7 @@ class _SCScanner:
             while self.peek() not in ("", ",", "]", "}", "#", "\n"):
                 self.at += 1
 
-    # Method `_SCScanner.items()`:
+    # Method `_Scanner.items()`:
     def items(self, path: KeyPath, *, inline_table: bool) -> None:
         """Read the items of an inline table or list, after its `{` or `[`.
 
@@ -1922,7 +1928,7 @@ class _SCScanner:
                 self.value(path + (index,))
                 index += 1
 
-    # Method `_SCScanner.header()`:
+    # Method `_Scanner.header()`:
     def header(self, parts: list[str]) -> KeyPath:
         """Return the path that a table header names.
 
@@ -1941,7 +1947,7 @@ class _SCScanner:
                 path += (self.arrays[path],)
         return path
 
-    # Method `_SCScanner.document()`:
+    # Method `_Scanner.document()`:
     def document(self) -> dict[KeyPath, int]:
         """Scan the whole file.
 
@@ -1979,7 +1985,7 @@ def locate(lines: dict[KeyPath, int], path: KeyPath) -> int:
     """Return the line of a key path, or of the nearest table above it.
 
     Arguments:
-    * `lines` (`dict[KeyPath, int]`): From `_SCScanner.document()`.
+    * `lines` (`dict[KeyPath, int]`): From `_Scanner.document()`.
     * `path` (`KeyPath`):
       The path (which may not be in the file, as for a missing key).
 
@@ -2093,9 +2099,9 @@ def measure(value: object, units: dict[str, float]) -> float:
     return number
 
 
-# Class `_SCSource`:
+# Class `_Source`:
 @dataclass(frozen=True, slots=True)
-class _SCSource:
+class _Source:
     """One file being read.
 
     Attributes:
@@ -2103,7 +2109,7 @@ class _SCSource:
     * `lines` (`dict[KeyPath, int]`): The line of every key path.
 
     Constructor:
-    * `_SCSource(shown, lines)`
+    * `_Source(shown, lines)`
     """
 
     # Constructor arguments:
@@ -2111,10 +2117,10 @@ class _SCSource:
     lines: dict[KeyPath, int] = field(init=True)
 
 
-# Class `_SCReader`:
+# Class `_Reader`:
 # It keeps one record per kind of thing checked, so the count is fine.
 @dataclass(slots=True)
-class _SCReader:  # pylint: disable=too-many-instance-attributes
+class _Reader:  # pylint: disable=too-many-instance-attributes
     """Read Nested TOML files, checking them against `KINDS`.
 
     Attributes:
@@ -2125,17 +2131,17 @@ class _SCReader:  # pylint: disable=too-many-instance-attributes
     * `reading` (`list[Path]`):
       The files being read, each named by the one before it, to find
       loops.
-    * `machine_tables` (`list[tuple[str, _SCSource, KeyPath, object]]`):
+    * `machine_tables` (`list[tuple[str, _Source, KeyPath, object]]`):
       Every machine's name, where its `tool_table` is, and the table.
-    * `tool_uses` (`list[tuple[_SCSource, KeyPath, str]]`):
+    * `tool_uses` (`list[tuple[_Source, KeyPath, str]]`):
       Every tool named in a `tool_table`: where, and its name.
-    * `tools` (`dict[str, tuple[_SCSource, KeyPath]]`):
+    * `tools` (`dict[str, tuple[_Source, KeyPath]]`):
       Every tool read, by name: where it is.
-    * `unique_ids` (`dict[int, tuple[_SCSource, KeyPath]]`):
+    * `unique_ids` (`dict[int, tuple[_Source, KeyPath]]`):
       Every tool read, by `unique_id`: where it is.
 
     Constructor:
-    * `_SCReader(directory)`
+    * `_Reader(directory)`
     """
 
     # Constructor arguments:
@@ -2146,26 +2152,26 @@ class _SCReader:  # pylint: disable=too-many-instance-attributes
         init=False, default_factory=dict
     )
     problems: list[str] = field(init=False, default_factory=list)
-    machine_tables: list[tuple[str, _SCSource, KeyPath, object]] = field(
+    machine_tables: list[tuple[str, _Source, KeyPath, object]] = field(
         init=False, default_factory=list
     )
     reading: list[Path] = field(init=False, default_factory=list)
-    tool_uses: list[tuple[_SCSource, KeyPath, str]] = field(
+    tool_uses: list[tuple[_Source, KeyPath, str]] = field(
         init=False, default_factory=list
     )
-    tools: dict[str, tuple[_SCSource, KeyPath]] = field(
+    tools: dict[str, tuple[_Source, KeyPath]] = field(
         init=False, default_factory=dict
     )
-    unique_ids: dict[int, tuple[_SCSource, KeyPath]] = field(
+    unique_ids: dict[int, tuple[_Source, KeyPath]] = field(
         init=False, default_factory=dict
     )
 
-    # Method `_SCReader.problem()`:
-    def problem(self, source: _SCSource, path: KeyPath, message: str) -> None:
+    # Method `_Reader.problem()`:
+    def problem(self, source: _Source, path: KeyPath, message: str) -> None:
         """Note a problem.
 
         Arguments:
-        * `source` (`_SCSource`): The file it is in.
+        * `source` (`_Source`): The file it is in.
         * `path` (`KeyPath`): Where in the file.
         * `message` (`str`): What is wrong.
         """
@@ -2173,7 +2179,7 @@ class _SCReader:  # pylint: disable=too-many-instance-attributes
         key: str = f" {shown_path(path)}:" if path else ""
         self.problems.append(f"{where}:{key} {message}")
 
-    # Method `_SCReader.file()`:
+    # Method `_Reader.file()`:
     def file(self, file: Path, shown: str) -> dict[str, object] | None:
         """Read and check one file, the first time it is named.
 
@@ -2208,7 +2214,7 @@ class _SCReader:  # pylint: disable=too-many-instance-attributes
                 )
             self.problems.append(f"{shown}:{message}")
             return None
-        source: _SCSource = _SCSource(shown, _SCScanner(text).document())
+        source: _Source = _Source(shown, _Scanner(text).document())
 
         # Check it against its own kind.
         kind: object = data.get("kind")
@@ -2224,17 +2230,17 @@ class _SCReader:  # pylint: disable=too-many-instance-attributes
         self.files[file] = contents
         return contents
 
-    # Method `_SCReader.reference()`:
+    # Method `_Reader.reference()`:
     def reference(
-        self, name: str, kind: SCKind, path: KeyPath, source: _SCSource
+        self, name: str, kind: TableKind, path: KeyPath, source: _Source
     ) -> dict[str, object]:
         """Return the contents of a file named by `"@FILE_NAME"`.
 
         Arguments:
         * `name` (`str`): The file name (after the `@`).
-        * `kind` (`SCKind`): The kind of table that belongs here.
+        * `kind` (`TableKind`): The kind of table that belongs here.
         * `path` (`KeyPath`): Where it is named.
-        * `source` (`_SCSource`): The file that names it.
+        * `source` (`_Source`): The file that names it.
 
         Returns:
         * (`dict[str, object]`):
@@ -2275,13 +2281,13 @@ class _SCReader:  # pylint: disable=too-many-instance-attributes
             return {}
         return contents
 
-    # Method `_SCReader.table()`:
+    # Method `_Reader.table()`:
     def table(
         self,
         value: object,
-        kind: SCKind,
+        kind: TableKind,
         path: KeyPath,
-        source: _SCSource,
+        source: _Source,
         *,
         whole: bool = False,
     ) -> dict[str, object]:
@@ -2289,9 +2295,9 @@ class _SCReader:  # pylint: disable=too-many-instance-attributes
 
         Arguments:
         * `value` (`object`): The table, or a `"@FILE_NAME"` string.
-        * `kind` (`SCKind`): What kind of table it must be.
+        * `kind` (`TableKind`): What kind of table it must be.
         * `path` (`KeyPath`): Where it is.
-        * `source` (`_SCSource`): The file it is in.
+        * `source` (`_Source`): The file it is in.
         * `whole` (`bool`): True if it is a whole file.
 
         Returns:
@@ -2311,7 +2317,7 @@ class _SCReader:  # pylint: disable=too-many-instance-attributes
             return {}
 
         # Check every key.
-        fields: dict[str, SCField] = {
+        fields: dict[str, TableField] = {
             field.key: field for field in HEADER + kind.fields
         }
         contents: dict[str, object] = {}
@@ -2359,21 +2365,19 @@ class _SCReader:  # pylint: disable=too-many-instance-attributes
             )
         return contents
 
-    # Method `_SCReader.name_tool()`:
-    def name_tool(
-        self, name: object, path: KeyPath, source: _SCSource
-    ) -> None:
+    # Method `_Reader.name_tool()`:
+    def name_tool(self, name: object, path: KeyPath, source: _Source) -> None:
         """Note where a tool is, refusing a name already taken.
 
         Arguments:
         * `name` (`object`): Its `name` (checked already as a string).
         * `path` (`KeyPath`): Where the tool is.
-        * `source` (`_SCSource`): The file it is in.
+        * `source` (`_Source`): The file it is in.
         """
         if not isinstance(name, str):
             return
         if name in self.tools:
-            other: _SCSource
+            other: _Source
             where: KeyPath
             other, where = self.tools[name]
             line: int = locate(other.lines, where)
@@ -2386,23 +2390,23 @@ class _SCReader:  # pylint: disable=too-many-instance-attributes
         else:
             self.tools[name] = (source, path)
 
-    # Method `_SCReader.note_unique_id()`:
+    # Method `_Reader.note_unique_id()`:
     def note_unique_id(
-        self, number: object, path: KeyPath, source: _SCSource
+        self, number: object, path: KeyPath, source: _Source
     ) -> None:
         """Note a tool's `unique_id`, refusing a number already taken.
 
         Arguments:
         * `number` (`object`): Its `unique_id` (checked already).
         * `path` (`KeyPath`): Where the tool is.
-        * `source` (`_SCSource`): The file it is in.
+        * `source` (`_Source`): The file it is in.
         """
         if not isinstance(number, int) or isinstance(number, bool):
             return
         if number < 1:
             return
         if number in self.unique_ids:
-            other: _SCSource
+            other: _Source
             where: KeyPath
             other, where = self.unique_ids[number]
             line: int = locate(other.lines, where)
@@ -2415,17 +2419,17 @@ class _SCReader:  # pylint: disable=too-many-instance-attributes
         else:
             self.unique_ids[number] = (source, path + ("unique_id",))
 
-    # Method `_SCReader.value()`:
+    # Method `_Reader.value()`:
     def value(
-        self, value: object, schema: SCField, path: KeyPath, source: _SCSource
+        self, value: object, schema: TableField, path: KeyPath, source: _Source
     ) -> object:
         """Check one value.
 
         Arguments:
         * `value` (`object`): The value.
-        * `schema` (`SCField`): What it must be.
+        * `schema` (`TableField`): What it must be.
         * `path` (`KeyPath`): Where it is.
-        * `source` (`_SCSource`): The file it is in.
+        * `source` (`_Source`): The file it is in.
 
         Returns:
         * (`object`):
@@ -2471,7 +2475,7 @@ class _SCReader:  # pylint: disable=too-many-instance-attributes
                 self.tool_uses.append((source, path + (number,), name))
         return value
 
-    # Method `_SCReader.check_tool_uses()`:
+    # Method `_Reader.check_tool_uses()`:
     def check_tool_uses(self) -> None:
         """Note every tool named in a tool table that was not read.
 
@@ -2493,12 +2497,12 @@ class _SCReader:  # pylint: disable=too-many-instance-attributes
                 owners[id(table)] = machine
 
         # Each tool named is a tool, and is named once.
-        first: dict[str, tuple[_SCSource, KeyPath]] = {}
+        first: dict[str, tuple[_Source, KeyPath]] = {}
         for source, path, name in self.tool_uses:
             if name not in self.tools:
                 self.problem(source, path, f'no tool named "{name}"')
             elif name in first:
-                other: _SCSource
+                other: _Source
                 where: KeyPath
                 other, where = first[name]
                 self.problem(
@@ -2513,12 +2517,12 @@ class _SCReader:  # pylint: disable=too-many-instance-attributes
 
 
 # Function `_scalar_problem()`:
-def _scalar_problem(value: object, schema: SCField) -> str:
+def _scalar_problem(value: object, schema: TableField) -> str:
     """Return what is wrong with a value that is not a table or list.
 
     Arguments:
     * `value` (`object`): The value.
-    * `schema` (`SCField`): What it must be.
+    * `schema` (`TableField`): What it must be.
 
     Returns:
     * (`str`): The problem, or `""` if there is none.
@@ -2551,12 +2555,12 @@ def _scalar_problem(value: object, schema: SCField) -> str:
 
 
 # Function `_chosen()`:
-def _chosen(value: str, schema: SCField) -> str:
+def _chosen(value: str, schema: TableField) -> str:
     """Return a choice as `schema` spells it.
 
     Arguments:
     * `value` (`str`): The choice, as written.
-    * `schema` (`SCField`): The `"choice"` it must be.
+    * `schema` (`TableField`): The `"choice"` it must be.
 
     Returns:
     * (`str`):
@@ -2569,12 +2573,12 @@ def _chosen(value: str, schema: SCField) -> str:
 
 
 # Function `_string_problem()`:
-def _string_problem(value: object, schema: SCField) -> str:
+def _string_problem(value: object, schema: TableField) -> str:
     """Return what is wrong with a string, a choice or a version.
 
     Arguments:
     * `value` (`object`): The value.
-    * `schema` (`SCField`): What it must be.
+    * `schema` (`TableField`): What it must be.
 
     Returns:
     * (`str`): The problem, or `""` if there is none.
@@ -2671,10 +2675,10 @@ def read(file: Path) -> dict[str, object]:
       contents.
 
     Raises:
-    * `SCShopError`: With every problem found.
+    * `ShopError`: With every problem found.
     """
     # Read every file.
-    reader: _SCReader = _SCReader(file.parent)
+    reader: _Reader = _Reader(file.parent)
     contents: dict[str, object] | None = reader.file(file, file.as_posix())
 
     # A shop (or shops) has its tools, so its machines' tool tables
@@ -2682,7 +2686,7 @@ def read(file: Path) -> dict[str, object]:
     if contents is not None and contents.get("kind") in ("shop", "shops"):
         reader.check_tool_uses()
     if reader.problems or contents is None:
-        raise SCShopError(reader.problems)
+        raise ShopError(reader.problems)
     return contents
 
 
@@ -2706,17 +2710,17 @@ def check_tool(
       the tool, as `read()` gives it.
 
     Raises:
-    * `SCShopError`: With every problem found.
+    * `ShopError`: With every problem found.
     """
     # Find the kind of tool.
     kind: object = description.get("kind")
     if kind not in TOOL_KINDS:
         known: str = ", ".join(TOOL_KINDS)
-        raise SCShopError([f"kind: {kind!r} is not one of {known}"])
+        raise ShopError([f"kind: {kind!r} is not one of {known}"])
     assert isinstance(kind, str)
 
     # Check it as a tools file would.
-    reader: _SCReader = _SCReader(Path("."))
+    reader: _Reader = _Reader(Path("."))
     tool: dict[str, object] = reader.table(
         {
             "name": kind.replace("_", " "),
@@ -2725,10 +2729,10 @@ def check_tool(
         },
         KINDS[kind],
         (),
-        _SCSource("description", {}),
+        _Source("description", {}),
     )
     if reader.problems:
-        raise SCShopError(reader.problems)
+        raise ShopError(reader.problems)
     return f"{kind}s", tool
 
 
@@ -2876,8 +2880,8 @@ def grid_plates(shop: dict[str, object]) -> dict[str, dict[str, object]]:
 # Function `cnc_machine()`:
 def cnc_machine(
     shop: dict[str, object], name: str, material: str = ""
-) -> SCMachine:
-    """Return a machine of a shop, with its loaded tools, for `SCCNC`.
+) -> Machine:
+    """Return a machine of a shop, with its loaded tools, for `CNC`.
 
     Arguments:
     * `shop` (`dict[str, object]`): The shop, from `read()`.
@@ -2887,7 +2891,7 @@ def cnc_machine(
       feeds (see `tool_cutting()`); needed if a drill is loaded.
 
     Returns:
-    * (`SCMachine`): Its preferences and its tool table.
+    * (`Machine`): Its preferences and its tool table.
 
     Raises:
     * `ValueError`:
@@ -2908,7 +2912,7 @@ def cnc_machine(
     )
 
     # The loaded tools, with drill speeds and feeds for the material.
-    tools: list[SCTool] = []
+    tools: list[ToolEntry] = []
     for number, (key, tool) in loaded_tools(shop, name).items():
         if key in CUT_KEYS:
             if not material:
@@ -2926,7 +2930,7 @@ def cnc_machine(
         tools.append(_cnc_tool(number, CNC_KINDS[key], tool))
 
     # The machine, with its loaded tools.
-    return SCMachine(
+    return Machine(
         name=name,
         z_safe=measure(preferences["z_safe"], LENGTH),
         clearance=measure(preferences["clearance"], LENGTH),
@@ -3247,8 +3251,10 @@ def _own_cutting(
 
 
 # Function `_cnc_tool()`:
-def _cnc_tool(number: int, kind: ToolKind, tool: dict[str, object]) -> SCTool:
-    """Return a loaded tool, for `SCCNC`.
+def _cnc_tool(
+    number: int, kind: ToolKind, tool: dict[str, object]
+) -> ToolEntry:
+    """Return a loaded tool, for `CNC`.
 
     Arguments:
     * `number` (`int`): Its T number.
@@ -3256,7 +3262,7 @@ def _cnc_tool(number: int, kind: ToolKind, tool: dict[str, object]) -> SCTool:
     * `tool` (`dict[str, object]`): The tool, from `read()`.
 
     Returns:
-    * (`SCTool`): The tool.
+    * (`ToolEntry`): The tool.
 
     Raises:
     * `ValueError`:
@@ -3275,7 +3281,7 @@ def _cnc_tool(number: int, kind: ToolKind, tool: dict[str, object]) -> SCTool:
     elif kind == "end mill" and tool.get("roughing") is True:
         kind = "roughing end mill"
     diameter: object = tool.get("tip_diameter", tool.get("diameter"))
-    return SCTool(
+    return ToolEntry(
         number=number,
         name=name,
         kind=kind,
@@ -3397,12 +3403,12 @@ def markdown_table(rows: list[list[str]], width: int = MARKDOWN_WIDTH) -> str:
 
 # Function `_fields_table()`:
 def _fields_table(
-    fields: tuple[SCField, ...], *, all_required: bool = False
+    fields: tuple[TableField, ...], *, all_required: bool = False
 ) -> str:
     """Return a Markdown table of some keys.
 
     Arguments:
-    * `fields` (`tuple[SCField, ...]`): The keys.
+    * `fields` (`tuple[TableField, ...]`): The keys.
     * `all_required` (`bool`):
       True if every one is required (as the header keys are, in a
       file).
@@ -3489,7 +3495,7 @@ def main(arguments: list[str]) -> int:
     for file in options.files:
         try:
             contents: dict[str, object] = read(file)
-        except SCShopError as error:
+        except ShopError as error:
             print(error, file=sys.stderr)
             status = 1
             continue

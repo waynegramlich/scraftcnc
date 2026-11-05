@@ -1,4 +1,4 @@
-"""Tests of which tool path `sim_solidcraft.SCPathRack` shows."""
+"""Tests of which tool path `sim_solidcraft.PathRack` shows."""
 
 import tempfile
 import unittest
@@ -30,7 +30,7 @@ class TestPathRack(unittest.TestCase):
         ):
             file = Path(directory, "p.ngc")
             file.write_text(PROGRAM, encoding="utf-8")
-            self.rack = sim_solidcraft.SCPathRack(
+            self.rack = sim_solidcraft.PathRack(
                 self.solidcraft, mock.MagicMock(), file
             )
 

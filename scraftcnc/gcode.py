@@ -1,18 +1,18 @@
 """Generate 3-axis mill RS-274 (G-code) for shapes made in SolidCraft.
 
-`SCCNC` collects RS-274 commands, each a plain dictionary of words
+`CNC` collects RS-274 commands, each a plain dictionary of words
 (e.g. `{"G": 1, "X": 1.0, "F": 12.0}`), and writes them as G-code.  It
 works in inches, with a machine and its tool table (`machine`), and
-cuts the shapes of `geometry` (such as `SCRoundedPolygon`): along
-their outlines (`SCCNC.profile()`) and out of their insides
-(`SCCNC.pocket()`).  It drills (`SCCNC.drill()`) where they go down
-(`SCCNC.pocket_entries()`, `SCCNC.profile_entry()`), so that an end
+cuts the shapes of `geometry` (such as `RoundedPolygon`): along
+their outlines (`CNC.profile()`) and out of their insides
+(`CNC.pocket()`).  It drills (`CNC.drill()`) where they go down
+(`CNC.pocket_entries()`, `CNC.profile_entry()`), so that an end
 mill can go straight down a hole instead of into solid material.
 
 A pocket is cleared by rings: the path along its wall, then smaller
 and smaller rings inside that, each `stepover` of the tool's diameter
 in from the last.  As they shrink the rings may come apart, so they
-make a tree (`SCRing`), which is cut from the smallest rings out.
+make a tree (`Ring`), which is cut from the smallest rings out.
 """
 
 # Most of this module's lines are docstrings and comments, so it is
@@ -28,12 +28,12 @@ from .geometry import (
     EPSILON,
     JOIN,
     TOUCH,
+    ArcSegment,
+    LineSegment,
+    Loop,
     Point,
-    SCArc,
-    SCLine,
-    SCLoop,
-    SCRoundedPolygon,
-    SCSegment,
+    RoundedPolygon,
+    XYSegment,
     beyond,
     distance_to,
     halves,
@@ -45,7 +45,7 @@ from .geometry import (
     turn_between,
     unit,
 )
-from .machine import SCMachine, SCTool
+from .machine import Machine, ToolEntry
 
 # One RS-274 command: its words, in order, keyed by letter (e.g.
 # `{"G": 1, "X": 10.0}`).  The key `comment` holds a comment line's
@@ -79,7 +79,7 @@ STAGE_WORDS: dict[Stage, str] = {
 
 # A cut through the part goes at least this far below it (1 mm, in
 # inches), whatever the machine's `through_overcut`, so that a thin
-# part is cut free instead of bulging out (see `SCCNC.below()`).
+# part is cut free instead of bulging out (see `CNC.below()`).
 MIN_THROUGH_OVERCUT: float = 1.0 / 25.4
 
 # A chamfer bit's tip runs this far off the wall (beyond its own
@@ -109,8 +109,8 @@ ARC_FEED_MAX: float = 2.0
 
 # Function `_leads()`:
 def _leads(
-    path: SCLoop, radius: float
-) -> tuple[SCArc, list[SCSegment], SCArc]:
+    path: Loop, radius: float
+) -> tuple[ArcSegment, list[XYSegment], ArcSegment]:
     """Plan the lead-in, the loop and the lead-out around a path.
 
     The loop starts and ends in the middle of the path's longest
@@ -119,26 +119,26 @@ def _leads(
     on its left, both counter-clockwise.
 
     Arguments:
-    * `path` (`SCLoop`): The path the tool's center follows.
+    * `path` (`Loop`): The path the tool's center follows.
     * `radius` (`float`): The radius of the lead-in and lead-out.
 
     Returns:
-    * (`SCArc`): The lead-in, ending where the loop starts.
-    * (`list[SCSegment]`): The loop, once around the path.
-    * (`SCArc`): The lead-out, ending where the lead-in starts.
+    * (`ArcSegment`): The lead-in, ending where the loop starts.
+    * (`list[XYSegment]`): The loop, once around the path.
+    * (`ArcSegment`): The lead-out, ending where the lead-in starts.
 
     Raises:
     * `ValueError`: If the lead-in or lead-out would cross the path.
     """
     # Start the loop in the middle of the longest segment.
-    segments: tuple[SCSegment, ...] = path.segments
+    segments: tuple[XYSegment, ...] = path.segments
     longest: int = max(
         range(len(segments)), key=lambda index: segments[index].length()
     )
-    first: SCSegment
-    second: SCSegment
+    first: XYSegment
+    second: XYSegment
     first, second = halves(segments[longest])
-    loop: list[SCSegment] = [
+    loop: list[XYSegment] = [
         second,
         *segments[longest + 1 :],
         *segments[:longest],
@@ -156,8 +156,8 @@ def _leads(
         start[0] - along[1] * 2.0 * radius,
         start[1] + along[0] * 2.0 * radius,
     )
-    lead_in: SCArc = SCArc(entry, start, center, radius, math.pi)
-    lead_out: SCArc = SCArc(start, entry, center, radius, math.pi)
+    lead_in: ArcSegment = ArcSegment(entry, start, center, radius, math.pi)
+    lead_out: ArcSegment = ArcSegment(start, entry, center, radius, math.pi)
 
     _check_leads(path, (lead_in, lead_out), start)
     return lead_in, loop, lead_out
@@ -165,20 +165,20 @@ def _leads(
 
 # Function `_check_leads()`:
 def _check_leads(
-    path: SCLoop, leads: tuple[SCArc, SCArc], start: Point
+    path: Loop, leads: tuple[ArcSegment, ArcSegment], start: Point
 ) -> None:
     """Check that the leads meet the path only at `start`.
 
     Arguments:
-    * `path` (`SCLoop`): The path the tool's center follows.
-    * `leads` (`tuple[SCArc, SCArc]`): The lead-in and lead-out.
+    * `path` (`Loop`): The path the tool's center follows.
+    * `leads` (`tuple[ArcSegment, ArcSegment]`): The lead-in and lead-out.
     * `start` (`Point`): Where they touch the path.
 
     Raises:
     * `ValueError`: If either meets the path anywhere else.
     """
-    lead: SCArc
-    segment: SCSegment
+    lead: ArcSegment
+    segment: XYSegment
     point: Point
     for lead in leads:
         for segment in path.segments:
@@ -192,12 +192,12 @@ def _check_leads(
 
 # Function `_profile_path()`:
 def _profile_path(
-    poly: SCRoundedPolygon, inside: bool, offset: float, lead: float
-) -> tuple[SCRoundedPolygon, tuple[SCArc, list[SCSegment], SCArc]]:
+    poly: RoundedPolygon, inside: bool, offset: float, lead: float
+) -> tuple[RoundedPolygon, tuple[ArcSegment, list[XYSegment], ArcSegment]]:
     """Return the path a tool follows to cut along an outline.
 
     Arguments:
-    * `poly` (`SCRoundedPolygon`): The outline.
+    * `poly` (`RoundedPolygon`): The outline.
     * `inside` (`bool`): True to cut from inside the outline.
     * `offset` (`float`):
       How far off the outline the tool's center goes (its radius, for
@@ -205,36 +205,36 @@ def _profile_path(
     * `lead` (`float`): The radius of the lead-in and lead-out.
 
     Returns:
-    * (`SCRoundedPolygon`):
+    * (`RoundedPolygon`):
       The path of the tool's center: off the outline by `offset`, going
       the climb milling way around.
-    * (`tuple[SCArc, list[SCSegment], SCArc]`): Its lead-in, loop and
+    * (`tuple[ArcSegment, list[XYSegment], ArcSegment]`): Its lead-in, loop and
       lead-out (see `_leads()`).
     """
-    path: SCRoundedPolygon = poly.offset(-offset if inside else offset)
+    path: RoundedPolygon = poly.offset(-offset if inside else offset)
     if path.is_ccw() != inside:
         path = path.reversed()
-    return path, _leads(SCLoop.from_poly(path), lead)
+    return path, _leads(Loop.from_poly(path), lead)
 
 
 # Function `_fitted_path()`:
 def _fitted_path(
-    poly: SCRoundedPolygon, inside: bool, offset: float, lead: float
-) -> tuple[SCRoundedPolygon, tuple[SCArc, list[SCSegment], SCArc]]:
+    poly: RoundedPolygon, inside: bool, offset: float, lead: float
+) -> tuple[RoundedPolygon, tuple[ArcSegment, list[XYSegment], ArcSegment]]:
     """Return a profile's path, with leads small enough to fit.
 
     The leads are halved (up to `LEAD_HALVINGS` times) until they do
     not cross the path, as in a narrow hole.
 
     Arguments:
-    * `poly` (`SCRoundedPolygon`): The outline.
+    * `poly` (`RoundedPolygon`): The outline.
     * `inside` (`bool`): True to cut from inside the outline.
     * `offset` (`float`): How far off the outline the tool's center is.
     * `lead` (`float`): The largest radius for the leads.
 
     Returns:
-    * (`SCRoundedPolygon`): The path (see `_profile_path()`).
-    * (`tuple[SCArc, list[SCSegment], SCArc]`): Its leads and loop.
+    * (`RoundedPolygon`): The path (see `_profile_path()`).
+    * (`tuple[ArcSegment, list[XYSegment], ArcSegment]`): Its leads and loop.
 
     Raises:
     * `ValueError`: If even the smallest leads cross the path.
@@ -263,9 +263,9 @@ def _number(value: float) -> str:
     return "0" if text in ("-0", "") else text
 
 
-# Class `SCRing`:
+# Class `Ring`:
 @dataclass(slots=True)
-class SCRing:
+class Ring:
     """One ring of a pocket's tool path, and the rings inside it.
 
     A ring is a region's edge: its outer loop, and a loop around each
@@ -274,27 +274,27 @@ class SCRing:
     the islands, climb milling with the material it cuts on its right.
 
     Attributes:
-    * `loops` (`list[SCLoop]`):
+    * `loops` (`list[Loop]`):
       The paths the tool's center follows: the outer loop first, then
       the loops around islands.
-    * `children` (`list[SCRing]`): The rings just inside this one.
-    * `spurs` (`list[SCLine]`):
+    * `children` (`list[Ring]`): The rings just inside this one.
+    * `spurs` (`list[LineSegment]`):
       Short cuts straight out from sharp corners of `loops` (and back),
       into the corners between them and the rings around them, which
       would otherwise be left uncut.
 
     Constructor:
-    * `SCRing(loops)`
+    * `Ring(loops)`
     """
 
     # Constructor arguments:
-    loops: list[SCLoop] = field(init=True)
+    loops: list[Loop] = field(init=True)
 
     # Attributes filled in by `plan_pocket()` (alphabetized):
-    children: list["SCRing"] = field(init=False, default_factory=list)
-    spurs: list[SCLine] = field(init=False, default_factory=list)
+    children: list["Ring"] = field(init=False, default_factory=list)
+    spurs: list[LineSegment] = field(init=False, default_factory=list)
 
-    # Method `SCRing.length()`:
+    # Method `Ring.length()`:
     def length(self) -> float:
         """Return the distance around all of the ring's loops.
 
@@ -303,23 +303,21 @@ class SCRing:
         """
         return sum(loop.length() for loop in self.loops)
 
-    # Method `SCRing.post_order()`:
-    def post_order(self) -> Iterator["SCRing"]:
+    # Method `Ring.post_order()`:
+    def post_order(self) -> Iterator["Ring"]:
         """Yield the rings inside this one (smallest first), then it.
 
         Yields:
-        * (`SCRing`): Each ring, after all of the rings inside it.
+        * (`Ring`): Each ring, after all of the rings inside it.
         """
-        child: SCRing
+        child: Ring
         for child in self.children:
             yield from child.post_order()
         yield self
 
 
 # Function `cut_order()`:
-def cut_order(
-    ring: SCRing, diameter: float
-) -> Iterator[tuple[SCRing, CutMode]]:
+def cut_order(ring: Ring, diameter: float) -> Iterator[tuple[Ring, CutMode]]:
     """Yield a pocket's rings in the order to cut them at one depth.
 
     Each ring comes after the rings inside it (smallest first), except
@@ -327,18 +325,18 @@ def cut_order(
     diameters) comes right after the ring around it.
 
     Arguments:
-    * `ring` (`SCRing`): The outermost ring.
+    * `ring` (`Ring`): The outermost ring.
     * `diameter` (`float`): The tool's diameter.
 
     Yields:
-    * (`tuple[SCRing, CutMode]`): Each ring, and how to cut it.
+    * (`tuple[Ring, CutMode]`): Each ring, and how to cut it.
     """
-    small: list[SCRing] = [
+    small: list[Ring] = [
         child
         for child in ring.children
         if not child.children and child.length() < SMALL_RING * diameter
     ]
-    child: SCRing
+    child: Ring
     for child in ring.children:
         if child not in small:
             yield from cut_order(child, diameter)
@@ -349,8 +347,8 @@ def cut_order(
 
 # Function `plan_pocket()`:
 def plan_pocket(
-    region: Sequence[SCLoop], diameter: float, stepover: float
-) -> list[SCRing]:
+    region: Sequence[Loop], diameter: float, stepover: float
+) -> list[Ring]:
     """Plan the rings that clear a pocket.
 
     The outermost rings follow the pocket's wall (and its islands'), a
@@ -360,7 +358,7 @@ def plan_pocket(
     outline of what is left.
 
     Arguments:
-    * `region` (`Sequence[SCLoop]`):
+    * `region` (`Sequence[Loop]`):
       The pocket's wall (counter-clockwise), then its islands
       (clockwise), so the pocket is on the left of each.
     * `diameter` (`float`): The tool's diameter.
@@ -368,41 +366,40 @@ def plan_pocket(
       How far apart the rings are, as a fraction of `diameter`.
 
     Returns:
-    * (`list[SCRing]`): The outermost rings (more than one when the
+    * (`list[Ring]`): The outermost rings (more than one when the
       pocket narrows to less than the tool's diameter somewhere).
 
     Raises:
     * `ValueError`: If the tool does not fit in the pocket.
     """
     name: str = region[0].name
-    roots: list[SCRing] = [
-        SCRing(loops)
-        for loops in _regions(inset(region, diameter / 2.0, name))
+    roots: list[Ring] = [
+        Ring(loops) for loops in _regions(inset(region, diameter / 2.0, name))
     ]
     if not roots:
         raise ValueError(f"{name}: the tool does not fit in it")
-    root: SCRing
+    root: Ring
     for root in roots:
         _grow(root, diameter, stepover * diameter, 1)
     return roots
 
 
 # Function `_regions()`:
-def _regions(loops: Sequence[SCLoop]) -> list[list[SCLoop]]:
+def _regions(loops: Sequence[Loop]) -> list[list[Loop]]:
     """Sort loops into regions: each outer loop, and the islands in it.
 
     Arguments:
-    * `loops` (`Sequence[SCLoop]`):
+    * `loops` (`Sequence[Loop]`):
       Loops with their regions on their left: counter-clockwise outer
       loops, and clockwise loops around islands.
 
     Returns:
-    * (`list[list[SCLoop]]`): Each region's loops, outer loop first.
+    * (`list[list[Loop]]`): Each region's loops, outer loop first.
       An island's loop goes with the smallest outer loop around it.
     """
-    outers: list[SCLoop] = [loop for loop in loops if loop.is_ccw()]
-    regions: list[list[SCLoop]] = [[outer] for outer in outers]
-    island: SCLoop
+    outers: list[Loop] = [loop for loop in loops if loop.is_ccw()]
+    regions: list[list[Loop]] = [[outer] for outer in outers]
+    island: Loop
     for island in loops:
         if island.is_ccw():
             continue
@@ -420,11 +417,11 @@ def _regions(loops: Sequence[SCLoop]) -> list[list[SCLoop]]:
 
 
 # Function `_grow()`:
-def _grow(ring: SCRing, diameter: float, step: float, level: int) -> None:
+def _grow(ring: Ring, diameter: float, step: float, level: int) -> None:
     """Fill in the rings inside a ring, and theirs, and so on.
 
     Arguments:
-    * `ring` (`SCRing`): The ring.
+    * `ring` (`Ring`): The ring.
     * `diameter` (`float`): The tool's diameter.
     * `step` (`float`): How far in each ring is from the one around it.
     * `level` (`int`): How many rings `ring` is inside of.
@@ -433,9 +430,9 @@ def _grow(ring: SCRing, diameter: float, step: float, level: int) -> None:
     # leave uncut.
     radius: float = diameter / 2.0
     base: str = ring.loops[0].name.split(" ring ")[0]
-    inner: list[SCLoop] = inset(ring.loops, step, f"{base} ring {level}")
-    ring.children = [SCRing(loops) for loops in _regions(inner)]
-    child: SCRing
+    inner: list[Loop] = inset(ring.loops, step, f"{base} ring {level}")
+    ring.children = [Ring(loops) for loops in _regions(inner)]
+    child: Ring
     for child in ring.children:
         _grow(child, diameter, step, level + 1)
     _add_spurs(ring, ring.children, diameter)
@@ -446,17 +443,17 @@ def _grow(ring: SCRing, diameter: float, step: float, level: int) -> None:
     # outline of what is left.  It is less than `step` minus a tool
     # radius from that outline, so following it clears it.
     if step > radius:
-        uncut: list[SCLoop] = beyond(
+        uncut: list[Loop] = beyond(
             inset(ring.loops, radius, f"{base} ring last"),
             inner,
             radius + REACH_MARGIN,
             f"{base} ring last",
         )
-        spurs: list[SCLine] = [
+        spurs: list[LineSegment] = [
             spur for child in ring.children for spur in child.spurs
         ]
-        last: list[SCRing] = [
-            SCRing(loops)
+        last: list[Ring] = [
+            Ring(loops)
             for loops in _regions(uncut)
             if not _reached(loops, spurs, radius)
         ]
@@ -465,21 +462,19 @@ def _grow(ring: SCRing, diameter: float, step: float, level: int) -> None:
 
 
 # Function `_add_spurs()`:
-def _add_spurs(
-    ring: SCRing, children: Sequence[SCRing], diameter: float
-) -> None:
+def _add_spurs(ring: Ring, children: Sequence[Ring], diameter: float) -> None:
     """Add spurs to the corners of rings, into what they leave uncut.
 
     Arguments:
-    * `ring` (`SCRing`): The ring around them.
-    * `children` (`Sequence[SCRing]`): The rings to add spurs to.
+    * `ring` (`Ring`): The ring around them.
+    * `children` (`Sequence[Ring]`): The rings to add spurs to.
     * `diameter` (`float`): The tool's diameter.
     """
-    nearby: list[SCLoop] = [
+    nearby: list[Loop] = [
         *ring.loops,
         *(loop for child in ring.children for loop in child.loops),
     ]
-    child: SCRing
+    child: Ring
     for child in children:
         child.spurs = [
             spur
@@ -494,13 +489,13 @@ def _add_spurs(
 
 # Function `_reached()`:
 def _reached(
-    loops: Sequence[SCLoop], spurs: Sequence[SCLine], radius: float
+    loops: Sequence[Loop], spurs: Sequence[LineSegment], radius: float
 ) -> bool:
     """Return whether spurs' cuts reach all around some loops.
 
     Arguments:
-    * `loops` (`Sequence[SCLoop]`): The loops (of a small region).
-    * `spurs` (`Sequence[SCLine]`): The spurs.
+    * `loops` (`Sequence[Loop]`): The loops (of a small region).
+    * `spurs` (`Sequence[LineSegment]`): The spurs.
     * `radius` (`float`): The tool's radius.
 
     Returns:
@@ -518,8 +513,8 @@ def _reached(
 
 # Function `_spurs()`:
 def _spurs(
-    loop: SCLoop, others: Sequence[SCLoop], diameter: float
-) -> list[SCLine]:
+    loop: Loop, others: Sequence[Loop], diameter: float
+) -> list[LineSegment]:
     """Return the spurs that reach into corners left uncut.
 
     Outside a ring's sharp corner, the ring around it can be more than
@@ -530,14 +525,14 @@ def _spurs(
     way that no ring's cut reaches.
 
     Arguments:
-    * `loop` (`SCLoop`): The ring's path.
-    * `others` (`Sequence[SCLoop]`): The paths of the rings near it.
+    * `loop` (`Loop`): The ring's path.
+    * `others` (`Sequence[Loop]`): The paths of the rings near it.
     * `diameter` (`float`): The tool's diameter.
 
     Returns:
-    * (`list[SCLine]`): The spurs, each from a corner of `loop` out.
+    * (`list[LineSegment]`): The spurs, each from a corner of `loop` out.
     """
-    spurs: list[SCLine] = []
+    spurs: list[LineSegment] = []
     corner: Point
     arriving: Point
     leaving: Point
@@ -553,7 +548,7 @@ def _spurs(
         reach: float = _uncut_reach(corner, out, loop, others, diameter)
         if reach > 0.0:
             spurs.append(
-                SCLine(
+                LineSegment(
                     corner,
                     (corner[0] + out[0] * reach, corner[1] + out[1] * reach),
                 )
@@ -565,8 +560,8 @@ def _spurs(
 def _uncut_reach(
     corner: Point,
     out: Point,
-    loop: SCLoop,
-    others: Sequence[SCLoop],
+    loop: Loop,
+    others: Sequence[Loop],
     diameter: float,
 ) -> float:
     """Return how far a spur must go out from a corner.
@@ -574,8 +569,8 @@ def _uncut_reach(
     Arguments:
     * `corner` (`Point`): The corner of `loop`.
     * `out` (`Point`): The unit direction out of the corner.
-    * `loop` (`SCLoop`): The ring's path.
-    * `others` (`Sequence[SCLoop]`): The paths of the rings near it.
+    * `loop` (`Loop`): The ring's path.
+    * `others` (`Sequence[Loop]`): The paths of the rings near it.
     * `diameter` (`float`): The tool's diameter.
 
     Returns:
@@ -661,10 +656,10 @@ def _remapped(command: RS274, turns: int, dx: float, dy: float) -> RS274:
     return result
 
 
-# Class `SCCNC`:
+# Class `CNC`:
 # A program's state, and the job's heights, are each an attribute.
 @dataclass(slots=True)
-class SCCNC:  # pylint: disable=too-many-instance-attributes
+class CNC:  # pylint: disable=too-many-instance-attributes
     """RS-274 (G-code) for a 3-axis mill, built one command at a time.
 
     The program works in inches and absolute coordinates, in the XY
@@ -681,7 +676,7 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
 
     Attributes:
     * `name` (`str`): The program's name (its first comment).
-    * `machine` (`SCMachine`): The machine and its tool table.
+    * `machine` (`Machine`): The machine and its tool table.
     * `z_top` (`float`): The Z of the material's top surface.
     * `job_z_safe` (`float | None`):
       This job's `z_safe` (its hold downs), or `None` for the
@@ -695,15 +690,15 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
     * `position` (`tuple[float | None, float | None, float | None]`):
       Where the tool was last sent (X, Y, Z); `None` until that axis
       first moves.
-    * `tool` (`SCTool | None`): The tool in the spindle, if any.
+    * `tool` (`ToolEntry | None`): The tool in the spindle, if any.
 
     Constructor:
-    * `SCCNC(name, machine, z_top, job_z_safe, job_clearance)`
+    * `CNC(name, machine, z_top, job_z_safe, job_clearance)`
     """
 
     # Constructor arguments:
     name: str = field(init=True)
-    machine: SCMachine = field(init=True)
+    machine: Machine = field(init=True)
     z_top: float = field(init=True, default=0.0)
     job_z_safe: float | None = field(init=True, default=None)
     job_clearance: float | None = field(init=True, default=None)
@@ -714,9 +709,9 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
     position: tuple[float | None, float | None, float | None] = field(
         init=False, default=(None, None, None)
     )
-    tool: SCTool | None = field(init=False, default=None)
+    tool: ToolEntry | None = field(init=False, default=None)
 
-    # Method `SCCNC.__post_init__()`:
+    # Method `CNC.__post_init__()`:
     def __post_init__(self) -> None:
         """Validate the heights, and start the program.
 
@@ -741,7 +736,7 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         self.add({"G": 94})  # Feeds per minute.
         self.rapid(z=self.z_safe)
 
-    # Method `SCCNC.z_safe()`:
+    # Method `CNC.z_safe()`:
     @property
     def z_safe(self) -> float:
         """Return the Z above all of the hold down tooling.
@@ -753,7 +748,7 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
             return self.job_z_safe
         return self.machine.z_safe
 
-    # Method `SCCNC.clearance()`:
+    # Method `CNC.clearance()`:
     @property
     def clearance(self) -> float:
         """Return how far above `z_top` a drill's rapids stop.
@@ -765,13 +760,13 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
             return self.job_clearance
         return self.machine.clearance
 
-    # Method `SCCNC.cutter()`:
+    # Method `CNC.cutter()`:
     @property
-    def cutter(self) -> SCTool:
+    def cutter(self) -> ToolEntry:
         """Return the tool in the spindle.
 
         Returns:
-        * (`SCTool`): The tool.
+        * (`ToolEntry`): The tool.
 
         Raises:
         * `ValueError`: If no tool has been chosen yet.
@@ -780,8 +775,8 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
             raise ValueError(f"{self.name}: no tool yet (see change_tool())")
         return self.tool
 
-    # Method `SCCNC.change_tool()`:
-    def change_tool(self, number: int) -> SCTool:
+    # Method `CNC.change_tool()`:
+    def change_tool(self, number: int) -> ToolEntry:
         """Change to another tool from the tool table.
 
         The tool rises to the machine's `tool_change_z` first (some
@@ -793,12 +788,12 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         * `number` (`int`): The tool's number.
 
         Returns:
-        * (`SCTool`): The tool.
+        * (`ToolEntry`): The tool.
 
         Raises:
         * `KeyError`: If the tool table has no such tool.
         """
-        tool: SCTool = self.machine.tool(number)
+        tool: ToolEntry = self.machine.tool(number)
         self.comment(f"Tool {number}: {tool.name}")
         self.rapid(z=self.machine.tool_change_z)
         if self.tool is not None:
@@ -813,7 +808,7 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         self.add({"M": 3, "S": tool.rpm})
         return tool
 
-    # Method `SCCNC.add()`:
+    # Method `CNC.add()`:
     def add(self, command: RS274) -> None:
         """Append one command to the program.
 
@@ -822,7 +817,7 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         """
         self.commands.append(command)
 
-    # Method `SCCNC.comment()`:
+    # Method `CNC.comment()`:
     def comment(self, text: str) -> None:
         """Append a comment.
 
@@ -836,12 +831,12 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
             raise ValueError(f"{text=} must not contain parentheses")
         self.add({"comment": text})
 
-    # Method `SCCNC._move()`:
+    # Method `CNC._move()`:
     def _move(
         self,
         code: int,
         axes: tuple[float | None, float | None, float | None],
-        arc: SCArc | None = None,
+        arc: ArcSegment | None = None,
         feed: float | None = None,
     ) -> None:
         """Append a move, leaving out unchanged axes and feeds.
@@ -852,7 +847,7 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         * `code` (`int`): The move's `G` code.
         * `axes` (`tuple[float | None, float | None, float | None]`):
           The X, Y and Z to move to; `None` stays where it is.
-        * `arc` (`SCArc | None`): The arc, for `G2` and `G3`.
+        * `arc` (`ArcSegment | None`): The arc, for `G2` and `G3`.
         * `feed` (`float | None`):
           The feed of a `G1`, `G2` or `G3` (default: the tool's feed).
         """
@@ -892,7 +887,7 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
                 distance = arc.length()
             self.minutes += distance / speed
 
-    # Method `SCCNC._last_feed()`:
+    # Method `CNC._last_feed()`:
     def _last_feed(self) -> float:
         """Return the last feed given (`F`).
 
@@ -906,7 +901,7 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
                 return float(feed)
         return 0.0
 
-    # Method `SCCNC.rapid()`:
+    # Method `CNC.rapid()`:
     def rapid(
         self,
         x: float | None = None,
@@ -922,7 +917,7 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         """
         self._move(0, (x, y, z))
 
-    # Method `SCCNC.linear()`:
+    # Method `CNC.linear()`:
     def linear(
         self,
         x: float | None = None,
@@ -938,9 +933,9 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         """
         self._move(1, (x, y, z))
 
-    # Method `SCCNC.arc()`:
+    # Method `CNC.arc()`:
     def arc(
-        self, arc: SCArc, z: float | None = None, *, edge: bool = False
+        self, arc: ArcSegment, z: float | None = None, *, edge: bool = False
     ) -> None:
         """Cut along an XY arc at the tool's feed (`G2` or `G3`).
 
@@ -956,7 +951,7 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         left (`G3`), it goes down.
 
         Arguments:
-        * `arc` (`SCArc`): The arc.
+        * `arc` (`ArcSegment`): The arc.
         * `z` (`float | None`): The Z to end at, or `None` to stay.
         * `edge` (`bool`): True to scale the feed for the cutting edge.
         """
@@ -978,7 +973,7 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
             feed,
         )
 
-    # Method `SCCNC.plunge()`:
+    # Method `CNC.plunge()`:
     def plunge(self, z: float) -> None:
         """Go straight down (or up) at the tool's plunge feed (`G1`).
 
@@ -987,7 +982,7 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         """
         self._move(1, (None, None, z), feed=self.cutter.plunge)
 
-    # Method `SCCNC.drill()`:
+    # Method `CNC.drill()`:
     def drill(
         self, points: Sequence[Point], bottom: float, *, through: bool = False
     ) -> None:
@@ -1014,7 +1009,7 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
           If the tool is not a drill, or `bottom` is not below `z_top`.
         """
         # Validate the drill and the depth.
-        tool: SCTool = self.cutter
+        tool: ToolEntry = self.cutter
         if tool.kind != "drill":
             raise ValueError(f"tool {tool.number} is not a drill")
         bottom = self.below(bottom, through)
@@ -1053,7 +1048,7 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
             self.add({"G": 80})
             self._time_hole((retract, bottom), peck)
 
-    # Method `SCCNC._peck()`:
+    # Method `CNC._peck()`:
     def _peck(self, point: Point, bottom: float, retract: float) -> None:
         """Drill one hole, pecking, with ordinary moves.
 
@@ -1063,7 +1058,7 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         * `retract` (`float`): The Z to rise to between pecks.
         """
         # Go over the hole and down to just above the work.
-        tool: SCTool = self.cutter
+        tool: ToolEntry = self.cutter
         peck: float = tool.peck if tool.peck > 0.0 else retract - bottom
         self.rapid(x=point[0], y=point[1])
         self.rapid(z=retract)
@@ -1078,7 +1073,7 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
             self.rapid(z=retract)
         self.rapid(z=self.z_safe)
 
-    # Method `SCCNC._time_hole()`:
+    # Method `CNC._time_hole()`:
     def _time_hole(self, heights: tuple[float, float], peck: float) -> None:
         """Count the time a canned cycle takes for one hole, once over it.
 
@@ -1097,7 +1092,7 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         self.minutes += rapids / self.machine.rapid_speed
         self.minutes += (retract - bottom) / self.cutter.plunge
 
-    # Method `SCCNC.below()`:
+    # Method `CNC.below()`:
     def below(self, bottom: float, through: bool = True) -> float:
         """Return how deep to cut to reach a bottom.
 
@@ -1123,14 +1118,14 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         overcut: float = self.machine.through_overcut * (self.z_top - bottom)
         return bottom - max(overcut, MIN_THROUGH_OVERCUT)
 
-    # Method `SCCNC.chamfer()`:
+    # Method `CNC.chamfer()`:
     def chamfer(
         self,
-        poly: SCRoundedPolygon,
+        poly: RoundedPolygon,
         size: float = 0.0,
         *,
         inside: bool = False,
-    ) -> SCRoundedPolygon:
+    ) -> RoundedPolygon:
         """Bevel or round over the top edge of an outline.
 
         With a chamfer bit (a V-bit of included angle 2θ), the bevel is
@@ -1145,14 +1140,14 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         leads as a profile has, in one pass.
 
         Arguments:
-        * `poly` (`SCRoundedPolygon`): The outline whose top edge to do.
+        * `poly` (`RoundedPolygon`): The outline whose top edge to do.
         * `size` (`float`): The bevel's width across the top.
         * `inside` (`bool`):
           True for the edge of a hole or pocket (from inside the
           outline), False for the outside of the part (or an island).
 
         Returns:
-        * (`SCRoundedPolygon`): The path the tool's center followed.
+        * (`RoundedPolygon`): The path the tool's center followed.
 
         Raises:
         * `ValueError`:
@@ -1161,7 +1156,7 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         """
         # How far off the wall the tip goes, how deep, and how wide the
         # bit cuts at the top.
-        tool: SCTool = self.cutter
+        tool: ToolEntry = self.cutter
         tip: float = tool.diameter / 2.0
         if tool.kind == "chamfer":
             if size <= 0.0:
@@ -1180,10 +1175,10 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
             raise ValueError(f"tool {tool.number} cannot chamfer")
 
         # Down at the lead-in's start, in, once around, out, and up.
-        path: SCRoundedPolygon
-        lead_in: SCArc
-        loop: list[SCSegment]
-        lead_out: SCArc
+        path: RoundedPolygon
+        lead_in: ArcSegment
+        loop: list[XYSegment]
+        lead_out: ArcSegment
         path, (lead_in, loop, lead_out) = _profile_path(
             poly, inside, offset, reach
         )
@@ -1196,7 +1191,7 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         self.rapid(z=self.z_safe)
         return path
 
-    # Method `SCCNC._stage_depths()`:
+    # Method `CNC._stage_depths()`:
     def _stage_depths(
         self, bottom: float, step: float, through: bool, stage: Stage
     ) -> list[float]:
@@ -1221,14 +1216,14 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
             return [bottom]
         return self._depths(bottom, step)
 
-    # Method `SCCNC._stage_offsets()`:
+    # Method `CNC._stage_offsets()`:
     def _stage_offsets(
-        self, tool: SCTool, stage: Stage
+        self, tool: ToolEntry, stage: Stage
     ) -> tuple[float, float]:
         """Return how far off an outline a profile goes, and its leads.
 
         Arguments:
-        * `tool` (`SCTool`): The tool.
+        * `tool` (`ToolEntry`): The tool.
         * `stage` (`Stage`): The stage.
 
         Returns:
@@ -1244,7 +1239,7 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
             return radius + self.machine.finish_allowance, radius
         return radius, radius
 
-    # Method `SCCNC._depths()`:
+    # Method `CNC._depths()`:
     def _depths(self, bottom: float, step: float) -> list[float]:
         """Return the depths to cut at, from just below `z_top` down.
 
@@ -1269,43 +1264,43 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
             for index in range(1, passes + 1)
         ]
 
-    # Method `SCCNC._follow()`:
+    # Method `CNC._follow()`:
     def _follow(
-        self, segments: Sequence[SCSegment], spurs: Sequence[SCLine]
+        self, segments: Sequence[XYSegment], spurs: Sequence[LineSegment]
     ) -> None:
         """Cut along segments at the current Z, with any spurs.
 
         Arguments:
-        * `segments` (`Sequence[SCSegment]`): The segments, in order.
-        * `spurs` (`Sequence[SCLine]`):
+        * `segments` (`Sequence[XYSegment]`): The segments, in order.
+        * `spurs` (`Sequence[LineSegment]`):
           Spurs to cut out and back wherever a segment ends at one's
           start.
         """
-        segment: SCSegment
+        segment: XYSegment
         for segment in segments:
-            if isinstance(segment, SCLine):
+            if isinstance(segment, LineSegment):
                 self.linear(x=segment.end[0], y=segment.end[1])
             else:
                 self.arc(segment, edge=True)
-            spur: SCLine
+            spur: LineSegment
             for spur in spurs:
                 if math.dist(spur.start, segment.end) <= JOIN:
                     self.linear(x=spur.end[0], y=spur.end[1])
                     self.linear(x=spur.start[0], y=spur.start[1])
 
-    # Method `SCCNC.profile()`:
+    # Method `CNC.profile()`:
     # Each argument is part of saying what to cut, and the optional
     # ones are keyword-only, so there are more than `pylint` likes.
     def profile(  # pylint: disable=too-many-arguments
         self,
-        poly: SCRoundedPolygon,
+        poly: RoundedPolygon,
         bottom: float,
         step: float,
         *,
         inside: bool = False,
         through: bool = False,
         stage: Stage = "full",
-    ) -> SCRoundedPolygon:
+    ) -> RoundedPolygon:
         """Cut along a polygon's outline, from `z_top` down to `bottom`.
 
         The tool's edge follows the outline from outside it (cutting
@@ -1326,7 +1321,7 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         along the lead-out; finally it rises to `z_safe`.
 
         Arguments:
-        * `poly` (`SCRoundedPolygon`): The outline to cut along.
+        * `poly` (`RoundedPolygon`): The outline to cut along.
         * `bottom` (`float`): The deepest Z to cut to.
         * `step` (`float`): The most to go down between passes.
         * `inside` (`bool`): True to cut from inside the outline.
@@ -1339,7 +1334,7 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
           to size in one pass at full depth, or `"full"`.
 
         Returns:
-        * (`SCRoundedPolygon`): The path the tool's center followed.
+        * (`RoundedPolygon`): The path the tool's center followed.
 
         Raises:
         * `ValueError`:
@@ -1348,10 +1343,10 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         """
         # Plan the path and its leads.
         depths: list[float] = self._stage_depths(bottom, step, through, stage)
-        path: SCRoundedPolygon
-        lead_in: SCArc
-        loop: list[SCSegment]
-        lead_out: SCArc
+        path: RoundedPolygon
+        lead_in: ArcSegment
+        loop: list[XYSegment]
+        lead_out: ArcSegment
         path, (lead_in, loop, lead_out) = _fitted_path(
             poly, inside, *self._stage_offsets(self.cutter, stage)
         )
@@ -1374,11 +1369,11 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         self.rapid(z=self.z_safe)
         return path
 
-    # Method `SCCNC.profile_entry()`:
+    # Method `CNC.profile_entry()`:
     def profile_entry(
         self,
-        poly: SCRoundedPolygon,
-        tool: SCTool,
+        poly: RoundedPolygon,
+        tool: ToolEntry,
         *,
         inside: bool = False,
         stage: Stage = "full",
@@ -1388,8 +1383,8 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         This is where to drill, so that the tool goes down a hole.
 
         Arguments:
-        * `poly` (`SCRoundedPolygon`): The outline.
-        * `tool` (`SCTool`): The tool that will cut it.
+        * `poly` (`RoundedPolygon`): The outline.
+        * `tool` (`ToolEntry`): The tool that will cut it.
         * `inside` (`bool`): True to cut from inside the outline.
         * `stage` (`Stage`): The stage of the cut (see `profile()`).
 
@@ -1399,20 +1394,20 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         offsets: tuple[float, float] = self._stage_offsets(tool, stage)
         return _fitted_path(poly, inside, *offsets)[1][0].start
 
-    # Method `SCCNC.pocket()`:
+    # Method `CNC.pocket()`:
     # Each argument is part of saying what to cut, and the optional
     # ones are keyword-only, so there are more than `pylint` likes.
     def pocket(  # pylint: disable=too-many-arguments
         self,
-        poly: SCRoundedPolygon,
+        poly: RoundedPolygon,
         bottom: float,
         step: float,
         *,
-        islands: Sequence[SCRoundedPolygon] = (),
+        islands: Sequence[RoundedPolygon] = (),
         drilled: bool = False,
         through: bool = False,
         stage: Stage = "full",
-    ) -> list[SCRing]:
+    ) -> list[Ring]:
         """Clear the inside of a polygon, from `z_top` down to `bottom`.
 
         The pocket is cleared by rings (see `plan_pocket()`), at each
@@ -1432,10 +1427,10 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         rises to `z_safe`, goes over, and comes back down.
 
         Arguments:
-        * `poly` (`SCRoundedPolygon`): The pocket's outline.
+        * `poly` (`RoundedPolygon`): The pocket's outline.
         * `bottom` (`float`): The pocket's floor.
         * `step` (`float`): The most to go down between depths.
-        * `islands` (`Sequence[SCRoundedPolygon]`):
+        * `islands` (`Sequence[RoundedPolygon]`):
           Outlines inside the pocket to leave standing.
         * `drilled` (`bool`):
           True when holes have been drilled at `pocket_entries()`.
@@ -1449,7 +1444,7 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
           cleared), or `"full"`.
 
         Returns:
-        * (`list[SCRing]`): The outermost rings (with the rest inside).
+        * (`list[Ring]`): The outermost rings (with the rest inside).
 
         Raises:
         * `ValueError`:
@@ -1459,7 +1454,7 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         """
         # Plan the rings, then cut them.
         depths: list[float] = self._stage_depths(bottom, step, through, stage)
-        roots: list[SCRing] = self._plan(
+        roots: list[Ring] = self._plan(
             poly, islands, self.cutter.diameter, stage
         )
         around: str = f" around {len(islands)} islands" if islands else ""
@@ -1470,25 +1465,25 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         self._clear(roots, depths, drilled or stage == "finish")
         return roots
 
-    # Method `SCCNC._clear()`:
+    # Method `CNC._clear()`:
     def _clear(
-        self, roots: Sequence[SCRing], depths: Sequence[float], drilled: bool
+        self, roots: Sequence[Ring], depths: Sequence[float], drilled: bool
     ) -> None:
         """Cut every ring of a pocket at each depth, smallest first.
 
         Arguments:
-        * `roots` (`Sequence[SCRing]`): The outermost rings.
+        * `roots` (`Sequence[Ring]`): The outermost rings.
         * `depths` (`Sequence[float]`): The depths, from the top down.
         * `drilled` (`bool`): True when the entries have been drilled.
         """
-        walls: list[SCLoop] = [loop for root in roots for loop in root.loops]
+        walls: list[Loop] = [loop for root in roots for loop in root.loops]
         self.rapid(z=self.z_safe)
         above: float = self.z_top + self.clearance
         z: float
         for z in depths:
-            root: SCRing
+            root: Ring
             for root in roots:
-                ring: SCRing
+                ring: Ring
                 mode: CutMode
                 for ring, mode in cut_order(root, self.cutter.diameter):
                     if drilled and mode == "ramp":
@@ -1497,26 +1492,26 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
             above = z
         self.rapid(z=self.z_safe)
 
-    # Method `SCCNC._plan()`:
+    # Method `CNC._plan()`:
     def _plan(
         self,
-        poly: SCRoundedPolygon,
-        islands: Sequence[SCRoundedPolygon],
+        poly: RoundedPolygon,
+        islands: Sequence[RoundedPolygon],
         diameter: float,
         stage: Stage = "full",
-    ) -> list[SCRing]:
+    ) -> list[Ring]:
         """Plan the rings that clear a pocket with a tool.
 
         Arguments:
-        * `poly` (`SCRoundedPolygon`): The pocket's outline.
-        * `islands` (`Sequence[SCRoundedPolygon]`): Outlines to leave.
+        * `poly` (`RoundedPolygon`): The pocket's outline.
+        * `islands` (`Sequence[RoundedPolygon]`): Outlines to leave.
         * `diameter` (`float`): The tool's diameter.
         * `stage` (`Stage`):
           `"rough"` to keep the machine's `finish_allowance` away from
           the walls and islands.
 
         Returns:
-        * (`list[SCRing]`): The outermost rings.
+        * (`list[Ring]`): The outermost rings.
 
         Raises:
         * `ValueError`:
@@ -1525,13 +1520,13 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         """
         # The pocket's wall goes counter-clockwise, and its islands
         # clockwise, so the pocket is on the left of each.
-        wall: SCLoop = SCLoop.from_poly(poly)
+        wall: Loop = Loop.from_poly(poly)
         if not wall.is_ccw():
             wall = wall.reversed()
-        region: list[SCLoop] = [wall]
-        island: SCRoundedPolygon
+        region: list[Loop] = [wall]
+        island: RoundedPolygon
         for island in islands:
-            loop: SCLoop = SCLoop.from_poly(island)
+            loop: Loop = Loop.from_poly(island)
             region.append(loop.reversed() if loop.is_ccw() else loop)
             if not wall.contains(loop.segments[0].start):
                 raise ValueError(f"{island.name} is not inside {poly.name}")
@@ -1539,7 +1534,7 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         # No two outlines may cross or touch.
         index: int
         for index, loop in enumerate(region):
-            other: SCLoop
+            other: Loop
             for other in region[index + 1 :]:
                 if any(
                     meet(first, second)
@@ -1555,12 +1550,12 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
             region = inset(region, allowance, poly.name)
         return plan_pocket(region, diameter, self.machine.stepover)
 
-    # Method `SCCNC.pocket_entries()`:
+    # Method `CNC.pocket_entries()`:
     def pocket_entries(
         self,
-        poly: SCRoundedPolygon,
-        tool: SCTool,
-        islands: Sequence[SCRoundedPolygon] = (),
+        poly: RoundedPolygon,
+        tool: ToolEntry,
+        islands: Sequence[RoundedPolygon] = (),
         stage: Stage = "full",
     ) -> list[Point]:
         """Return where a pocket cut with a tool goes down into it.
@@ -1570,9 +1565,9 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         the rings that have nothing cut inside them.
 
         Arguments:
-        * `poly` (`SCRoundedPolygon`): The pocket's outline.
-        * `tool` (`SCTool`): The tool that will clear it.
-        * `islands` (`Sequence[SCRoundedPolygon]`): Outlines to leave.
+        * `poly` (`RoundedPolygon`): The pocket's outline.
+        * `tool` (`ToolEntry`): The tool that will clear it.
+        * `islands` (`Sequence[RoundedPolygon]`): Outlines to leave.
         * `stage` (`Stage`): The stage of the cut (see `pocket()`).
 
         Returns:
@@ -1586,23 +1581,23 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
             for loop in ring.loops
         ]
 
-    # Method `SCCNC._cut_ring()`:
+    # Method `CNC._cut_ring()`:
     def _cut_ring(
         self,
-        ring: SCRing,
+        ring: Ring,
         mode: CutMode,
         heights: tuple[float, float],
-        walls: Sequence[SCLoop],
+        walls: Sequence[Loop],
     ) -> None:
         """Cut once around a pocket's ring at one depth.
 
         Arguments:
-        * `ring` (`SCRing`): The ring.
+        * `ring` (`Ring`): The ring.
         * `mode` (`CutMode`): How to cut it (see `cut_order()`).
         * `heights` (`tuple[float, float]`):
           The Z the pocket is clear down to (or just above `z_top`, at
           the first depth), and the Z to cut at.
-        * `walls` (`Sequence[SCLoop]`): The pocket's outermost rings.
+        * `walls` (`Sequence[Loop]`): The pocket's outermost rings.
         """
         # A ring with nothing cut inside it is ramped down into, along
         # each of its loops (or plunged into, down a drilled hole at
@@ -1610,7 +1605,7 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         above: float
         z: float
         above, z = heights
-        loop: SCLoop
+        loop: Loop
         if mode != "lead":
             for loop in ring.loops:
                 self._arrive(
@@ -1629,26 +1624,26 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         for loop in ring.loops:
             self._cut_loop(loop, ring.spurs, z, walls)
 
-    # Method `SCCNC._cut_loop()`:
+    # Method `CNC._cut_loop()`:
     def _cut_loop(
         self,
-        loop: SCLoop,
-        spurs: Sequence[SCLine],
+        loop: Loop,
+        spurs: Sequence[LineSegment],
         z: float,
-        walls: Sequence[SCLoop],
+        walls: Sequence[Loop],
     ) -> None:
         """Cut once around a loop at one depth, led in from its left.
 
         Arguments:
-        * `loop` (`SCLoop`): The loop (with what is cut on its left).
-        * `spurs` (`Sequence[SCLine]`): Spurs from its corners.
+        * `loop` (`Loop`): The loop (with what is cut on its left).
+        * `spurs` (`Sequence[LineSegment]`): Spurs from its corners.
         * `z` (`float`): The Z to cut at.
-        * `walls` (`Sequence[SCLoop]`): The pocket's outermost rings.
+        * `walls` (`Sequence[Loop]`): The pocket's outermost rings.
         """
         try:
-            lead_in: SCArc
-            path: list[SCSegment]
-            lead_out: SCArc
+            lead_in: ArcSegment
+            path: list[XYSegment]
+            lead_out: ArcSegment
             lead_in, path, lead_out = _leads(loop, self.cutter.diameter / 2.0)
         except ValueError:
             self._arrive(loop.segments[0].start, z, walls)
@@ -1659,16 +1654,14 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         self._follow(path, spurs)
         self.arc(lead_out)
 
-    # Method `SCCNC._arrive()`:
-    def _arrive(
-        self, target: Point, z: float, walls: Sequence[SCLoop]
-    ) -> None:
+    # Method `CNC._arrive()`:
+    def _arrive(self, target: Point, z: float, walls: Sequence[Loop]) -> None:
         """Move the tool to a point in a pocket, at a clear Z.
 
         Arguments:
         * `target` (`Point`): Where to go.
         * `z` (`float`): The Z to arrive at.
-        * `walls` (`Sequence[SCLoop]`): The pocket's outermost rings.
+        * `walls` (`Sequence[Loop]`): The pocket's outermost rings.
         """
         # Stay in the pocket when the way there crosses no wall.
         x: float | None
@@ -1677,8 +1670,8 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         x, y, height = self.position
         if x is not None and y is not None and height is not None:
             here: Point = (x, y)
-            way: list[SCLine] = (
-                [SCLine(here, target)]
+            way: list[LineSegment] = (
+                [LineSegment(here, target)]
                 if math.dist(here, target) > EPSILON
                 else []
             )
@@ -1701,8 +1694,8 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         self.plunge(self.z_top + self.clearance)
         self.linear(z=z)
 
-    # Method `SCCNC._ramp()`:
-    def _ramp(self, loop: SCLoop, above: float, z: float) -> None:
+    # Method `CNC._ramp()`:
+    def _ramp(self, loop: Loop, above: float, z: float) -> None:
         """Go down along a loop, no steeper than `ramp_angle`.
 
         The tool starts at the loop's start, at `above`, and goes around
@@ -1710,7 +1703,7 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         `z`.
 
         Arguments:
-        * `loop` (`SCLoop`): The loop.
+        * `loop` (`Loop`): The loop.
         * `above` (`float`): The Z to start at.
         * `z` (`float`): The Z to end at.
         """
@@ -1727,25 +1720,25 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
         total: float = laps * lap
         done: float = 0.0
         for _ in range(laps):
-            segment: SCSegment
+            segment: XYSegment
             for segment in loop.segments:
                 done += segment.length()
                 height: float = above - drop * done / total
                 if done >= total * (1.0 - EPSILON):
                     height = z
-                if isinstance(segment, SCLine):
+                if isinstance(segment, LineSegment):
                     self.linear(x=segment.end[0], y=segment.end[1], z=height)
                 else:
                     self.arc(segment, z=height)
 
-    # Method `SCCNC.finish()`:
+    # Method `CNC.finish()`:
     def finish(self) -> None:
         """End the program: rise to `z_safe`, stop the spindle, `M2`."""
         self.rapid(z=self.z_safe)
         self.add({"M": 5})
         self.add({"M": 2})
 
-    # Method `SCCNC.remap()`:
+    # Method `CNC.remap()`:
     def remap(self, turns: int = 0, dx: float = 0.0, dy: float = 0.0) -> None:
         """Turn the whole program about its origin, then move it.
 
@@ -1771,7 +1764,7 @@ class SCCNC:  # pylint: disable=too-many-instance-attributes
             _remapped(command, turns, dx, dy) for command in self.commands
         ]
 
-    # Method `SCCNC.gcode()`:
+    # Method `CNC.gcode()`:
     def gcode(self) -> str:
         """Return the program as G-code text.
 

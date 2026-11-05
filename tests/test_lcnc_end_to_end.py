@@ -11,8 +11,8 @@ SCRAFTCNC_LINUXCNC=1 python3 -m unittest -v test_lcnc_end_to_end
 ```
 """
 
-# The server and the panel outlive any `with` block, each thing that a
-# person can do at the panel is a test, and the path's test is one story.
+# The server and the HMI outlive any `with` block, each thing that a
+# person can do at the HMI is a test, and the path's test is one story.
 # pylint: disable=consider-using-with,too-many-public-methods
 # pylint: disable=too-many-locals
 
@@ -32,7 +32,7 @@ from typing import Any, ClassVar
 
 from scraftcnc import shops
 from scraftcnc.lcnc import lcnc_client
-from scraftcnc.plot import SCMove, command_moves, read_gcode
+from scraftcnc.plot import PathMove, command_moves, read_gcode
 
 HERE: Path = Path(__file__).resolve().parent.parent
 SERVER_DIRECTORY: Path = HERE
@@ -91,7 +91,7 @@ def segment_distance(
     )
 
 
-def path_segments(moves: list[SCMove]) -> list[Segment]:
+def path_segments(moves: list[PathMove]) -> list[Segment]:
     """Return the straight lines that the tool's tip may be on.
 
     `G43` at a tool change makes the tip's Z read differently while the
@@ -100,7 +100,7 @@ def path_segments(moves: list[SCMove]) -> list[Segment]:
     vertical line through each tool change is part of the path too.
 
     Arguments:
-    * `moves` (`list[SCMove]`): The moves.
+    * `moves` (`list[PathMove]`): The moves.
 
     Returns:
     * (`list[Segment]`): The lines.
@@ -133,7 +133,7 @@ class TestEndToEnd(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        """Start LinuxCNC's server, then the panel."""
+        """Start LinuxCNC's server, then the HMI."""
         cls.directory = tempfile.TemporaryDirectory()
         cls.server = subprocess.Popen(
             [sys.executable, "-u", "-m", "scraftcnc.lcnc.serve_linuxcnc"],
@@ -143,7 +143,7 @@ class TestEndToEnd(unittest.TestCase):
         end: float = time.monotonic() + 120.0
         while True:
             try:
-                with lcnc_client.SCClient(timeout=5.0):
+                with lcnc_client.BridgeClient(timeout=5.0):
                     break
             except OSError:
                 if time.monotonic() > end or cls.server.poll() is not None:
@@ -168,15 +168,15 @@ class TestEndToEnd(unittest.TestCase):
                 return
             except OSError:
                 time.sleep(0.05)
-        raise TimeoutError("The panel never opened its port.")
+        raise TimeoutError("The HMI never opened its port.")
 
     @classmethod
     def tearDownClass(cls) -> None:
-        """Stop the panel and LinuxCNC, and check that they stop."""
+        """Stop the HMI and LinuxCNC, and check that they stop."""
         cls.panel.terminate()
         cls.panel.wait(timeout=10.0)
         if cls.server.poll() is None:
-            with lcnc_client.SCClient(timeout=10.0) as lcnc:
+            with lcnc_client.BridgeClient(timeout=10.0) as lcnc:
                 lcnc.call("shutdown")
             cls.server.wait(timeout=60.0)
         cls.directory.cleanup()
@@ -192,7 +192,7 @@ class TestEndToEnd(unittest.TestCase):
             self.wait_idle()
 
     def ask(self, line: str) -> str:
-        """Send one line to the panel's port, and return its answer."""
+        """Send one line to the HMI's port, and return its answer."""
         with socket.create_connection(("127.0.0.1", self.port), 30.0) as port:
             port.sendall(f"{line}\n".encode())
             return port.makefile().readline().strip()
@@ -207,7 +207,7 @@ class TestEndToEnd(unittest.TestCase):
         return shown
 
     def status(self) -> dict[str, str]:
-        """Return the panel's status, by name."""
+        """Return the HMI's status, by name."""
         pairs = [word.split("=", 1) for word in self.ask("status").split()]
         return {pair[0]: pair[1] for pair in pairs}
 
@@ -244,7 +244,7 @@ class TestEndToEnd(unittest.TestCase):
         self.wait_idle()
 
     def open_program(self, name: str, text: str) -> None:
-        """Write a program here, and open it in the panel."""
+        """Write a program here, and open it in the HMI."""
         file: Path = Path(self.directory.name, name)
         file.write_text(text, encoding="utf-8")
         self.assertEqual(self.ask(f"open {file}"), "ok")
@@ -261,8 +261,8 @@ class TestEndToEnd(unittest.TestCase):
         return self.ask("messages").removeprefix("messages:").strip()
 
     def test_start_up(self) -> None:
-        """The panel gets the shop's tools, and an origin well placed."""
-        with lcnc_client.SCClient() as lcnc:
+        """The HMI gets the shop's tools, and an origin well placed."""
+        with lcnc_client.BridgeClient() as lcnc:
             table = lcnc.stat("tool_table")["tool_table"]
             g5x = lcnc.stat("g5x_offset")["g5x_offset"][:3]
         tools = {tool["id"] for tool in table if tool["id"] > 0}
@@ -362,7 +362,7 @@ class TestEndToEnd(unittest.TestCase):
         self.assertEqual(self.shown()["buttons"]["Start"], "normal")
 
     def test_panel_closed_and_opened(self) -> None:
-        """LinuxCNC outlives the panel; a new one keeps what it had."""
+        """LinuxCNC outlives the HMI; a new one keeps what it had."""
         self.open_program("kept.ngc", TWO_TOOLS)
         self.execute("G20 G90 G0 X2 Y1")
         self.press("Quit")
@@ -385,7 +385,7 @@ class TestEndToEnd(unittest.TestCase):
             text=True,
             check=True,
         )
-        moves: list[SCMove] = command_moves(read_gcode(done.stdout))
+        moves: list[PathMove] = command_moves(read_gcode(done.stdout))
         self.open_program("demo.ngc", done.stdout)
 
         # Run it, following the machine.
@@ -455,8 +455,8 @@ class TestEndToEnd(unittest.TestCase):
         self.assertGreater(max(lines), moves[-1]["line"] - 5)
 
     def test_zz_server_stops_under_the_panel(self) -> None:
-        """The panel reports a LinuxCNC that has gone, and stays up."""
-        with lcnc_client.SCClient(timeout=10.0) as lcnc:
+        """The HMI reports a LinuxCNC that has gone, and stays up."""
+        with lcnc_client.BridgeClient(timeout=10.0) as lcnc:
             lcnc.call("shutdown")
         self.server.wait(timeout=60.0)
         self.wait_for(

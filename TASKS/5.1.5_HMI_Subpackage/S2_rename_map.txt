@@ -1,0 +1,149 @@
+# S2 rename map (old -> new); (*) marks a non-mechanical name.
+SCAngle -> Angle
+SCAppearanceCommands -> AppearanceCommands
+SCArc -> ArcSegment  (*)
+SCAssembly -> Assembly
+SCAssemblyCommands -> AssemblyCommands
+SCBodyCommands -> BodyCommands
+SCBridge -> Bridge
+SCBridgeError -> BridgeError
+SCBrowserCommands -> BrowserCommands
+SCCNC -> CNC
+SCCacheable -> Cacheable
+SCCanvasCommands -> CanvasCommands
+SCClient -> BridgeClient  (*)
+SCCommandPort -> CommandPort
+SCComponentCommands -> ComponentCommands
+SCConfigCommands -> ConfigCommands
+SCConstructCommands -> ConstructCommands
+SCContactCommands -> ContactCommands
+SCControlTransport -> ControlTransport
+SCCopiedShop -> CopiedShop
+SCCorner -> Corner
+SCCutter -> Cutter
+SCCylinder -> Cylinder
+SCDemoPart -> DemoPart
+SCDiagnosticsCommands -> DiagnosticsCommands
+SCDimension -> Dimension
+SCDocCommands -> DocCommands
+SCDocumentCommands -> DocumentCommands
+SCDoubleEndCountersink -> DoubleEndCountersink
+SCDrill -> Drill
+SCEditCommands -> EditCommands
+SCEngineCommands -> EngineCommands
+SCExplodeCommands -> ExplodeCommands
+SCExprCommands -> ExprCommands
+SCFaceCommands -> FaceCommands
+SCFakeControlPort -> FakeControlPort
+SCFakeSolidCraft -> FakeSolidCraft
+SCFakeTransport -> FakeTransport
+SCField -> TableField  (*)
+SCFileCommands -> FileCommands
+SCGridPlate -> GridPlate
+SCHandler -> BridgeHandler  (*)
+SCHeadlessServer -> HeadlessServer
+SCHeadlessTransport -> HeadlessTransport
+SCHole -> Hole
+SCInserted -> InsertedModel  (*)
+SCInspectCommands -> InspectCommands
+SCItem -> AssemblyItem  (*)
+SCJawPlate -> JawPlate
+SCJointCommands -> JointCommands
+SCKeepOut -> KeepOut
+SCKind -> TableKind  (*)
+SCLayer -> MountLayer  (*)
+SCLibraryCommands -> LibraryCommands
+SCLine -> LineSegment  (*)
+SCListener -> SampleListener  (*)
+SCListenerFailed -> SampleListenerFailed  (*)
+SCLoggingHeadlessTransport -> LoggingHeadlessTransport
+SCLoop -> Loop
+SCMachine -> Machine
+SCMachineVise -> MachineVise
+SCMachineViseLayer -> MachineViseLayer
+SCMark -> Mark  (*)
+SCMaterialCommands -> MaterialCommands
+SCMeshCommands -> MeshCommands
+SCMillTable -> MillTable
+SCModelCache -> ModelCache
+SCModelCommands -> ModelCommands
+SCModelPage -> ModelPage
+SCModeledTool -> ModeledTool
+SCMotionCommands -> MotionCommands
+SCMount -> Mount
+SCMove -> PathMove  (*)
+SCNamespace -> CommandNamespace  (*)
+SCOccurrenceCommands -> OccurrenceCommands
+SCOptions -> InstallOptions  (*)
+SCPanel -> HMI  (*)
+SCPanelMachine -> HMIMachine  (*)
+SCParallel -> Parallel
+SCParallelLayer -> ParallelLayer
+SCParallelPair -> ParallelPair
+SCParametersCommands -> ParametersCommands
+SCPart -> DemoPlate  (*)
+SCPartsCommands -> PartsCommands
+SCPathRack -> PathRack
+SCPlaced -> PlacedItem  (*)
+SCPlacedTool -> PlacedTool
+SCPlacedWork -> PlacedWork
+SCPlacement -> Placement
+SCPlasticCommands -> PlasticCommands
+SCPlate -> Plate
+SCPrism -> Prism
+SCPyBind -> PyBind
+SCRadius -> Radius
+SCRecordingTransport -> RecordingTransport
+SCRegistry -> Registry
+SCRenderCommands -> RenderCommands
+SCRing -> Ring
+SCRoundedPolygon -> RoundedPolygon
+SCSample -> Sample
+SCScrewFit -> ScrewFit
+SCSegment -> XYSegment  (*)
+SCSelectCommands -> SelectCommands
+SCSelectionCommands -> SelectionCommands
+SCServer -> BridgeServer  (*)
+SCSetup -> Setup
+SCSetupDrawer -> SetupDrawer
+SCSetupVersionWarning -> SetupVersionWarning
+SCSetupView -> SetupView
+SCShape -> ViewShape  (*)
+SCSheetCommands -> SheetCommands
+SCShopError -> ShopError
+SCShow -> DemoShow  (*)
+SCShowFailed -> DemoShowFailed  (*)
+SCShown -> ShownItem  (*)
+SCSimulator -> Simulator
+SCSketchCommands -> SketchCommands
+SCSolidCommands -> SolidCommands
+SCSolidCraftDisplay -> SolidCraftDisplay
+SCSolidCraftError -> SolidCraftError
+SCStatus -> HMIStatus  (*)
+SCStep -> InstallStep  (*)
+SCStock -> Stock
+SCSurfaceCommands -> SurfaceCommands
+SCTableLayer -> TableLayer
+SCTarget -> InstallTarget  (*)
+SCTimelineCommands -> TimelineCommands
+SCTool -> ToolEntry  (*)
+SCToolModel -> ToolModel
+SCToolRack -> ToolRack
+SCTormach -> Tormach
+SCTransport -> Transport
+SCView -> View
+SCViewCommands -> ViewCommands
+SCViolation -> Violation
+SCViseBlock -> ViseBlock
+SCViseNotches -> ViseNotches
+TestSCCNC -> TestCNC  (*)
+TestSCLoop -> TestLoop  (*)
+TestSCRoundedPolygon -> TestRoundedPolygon  (*)
+_SCChecker -> _Checker
+_SCReader -> _Reader
+_SCScanner -> _Scanner
+_SCShared -> _Shared
+_SCSketch -> _Sketch
+_SCSource -> _Source
+_SCState -> _State
+_SCViseSizes -> _ViseSizes

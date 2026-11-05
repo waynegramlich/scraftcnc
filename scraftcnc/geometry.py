@@ -1,21 +1,21 @@
 """Lines, arcs and rounded polygons in the XY plane.
 
-`SCRoundedPolygon` is a polygon whose corners each have their own
-radius.  It computes its own outline as straight lines (`SCLine`) and
-tangent arcs (`SCArc`), so the same geometry can be drawn into a
-SolidCraft sketch (`SCRoundedPolygon.sketch()`) and followed by a tool.
+`RoundedPolygon` is a polygon whose corners each have their own
+radius.  It computes its own outline as straight lines (`LineSegment`) and
+tangent arcs (`ArcSegment`), so the same geometry can be drawn into a
+SolidCraft sketch (`RoundedPolygon.sketch()`) and followed by a tool.
 It has a range of heights, going up (material) or down (a hole), and may
 have children that start on its surface and stay within its outline.
-`SCHole` is a round one that goes down.
+`Hole` is a round one that goes down.
 
-`SCLoop` is any closed loop of lines and arcs, such as the paths that
+`Loop` is any closed loop of lines and arcs, such as the paths that
 `inset()` finds inside a region: the classic offset, which moves every
 segment in, finds where the moved segments cross, drops the pieces
 that came too close to the region's edge, and joins the rest into
 loops (one region can become several).
 
-This module only uses `scraftpybind` through the `SCPyBind`
-that is handed to `SCRoundedPolygon.sketch()`, so it imports it only for
+This module only uses `scraftpybind` through the `PyBind`
+that is handed to `RoundedPolygon.sketch()`, so it imports it only for
 type checking.
 """
 
@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, TypeAlias
 
 if TYPE_CHECKING:
-    from .pybind.scraftpybind import JSON, SCPyBind
+    from .pybind.scraftpybind import JSON, PyBind
 
 # A point in the XY plane, `(x, y)`.
 Point: TypeAlias = tuple[float, float]
@@ -57,9 +57,9 @@ ANGLE: float = 1e-6
 SLOP: float = 1e-4
 
 
-# Class `SCLine`:
+# Class `LineSegment`:
 @dataclass(frozen=True, slots=True)
-class SCLine:
+class LineSegment:
     """A straight line segment in the XY plane.
 
     Attributes:
@@ -67,14 +67,14 @@ class SCLine:
     * `end` (`Point`): Where the line ends.
 
     Constructor:
-    * `SCLine(start, end)`
+    * `LineSegment(start, end)`
     """
 
     # Constructor arguments:
     start: Point = field(init=True)
     end: Point = field(init=True)
 
-    # Method `SCLine.length()`:
+    # Method `LineSegment.length()`:
     def length(self) -> float:
         """Return the line's length.
 
@@ -84,9 +84,9 @@ class SCLine:
         return math.dist(self.start, self.end)
 
 
-# Class `SCArc`:
+# Class `ArcSegment`:
 @dataclass(frozen=True, slots=True)
-class SCArc:
+class ArcSegment:
     """A circular arc in the XY plane.
 
     Attributes:
@@ -99,7 +99,7 @@ class SCArc:
       counter-clockwise, negative is clockwise.
 
     Constructor:
-    * `SCArc(start, end, center, radius, sweep)`
+    * `ArcSegment(start, end, center, radius, sweep)`
     """
 
     # Constructor arguments:
@@ -109,7 +109,7 @@ class SCArc:
     radius: float = field(init=True)
     sweep: float = field(init=True)
 
-    # Method `SCArc.length()`:
+    # Method `ArcSegment.length()`:
     def length(self) -> float:
         """Return the arc's length.
 
@@ -118,7 +118,7 @@ class SCArc:
         """
         return abs(self.sweep) * self.radius
 
-    # Method `SCArc.contains()`:
+    # Method `ArcSegment.contains()`:
     def contains(self, point: Point) -> bool:
         """Return whether a point on the arc's circle is on the arc.
 
@@ -145,13 +145,13 @@ class SCArc:
 
 
 # One piece of an outline.
-SCSegment: TypeAlias = SCLine | SCArc
+XYSegment: TypeAlias = LineSegment | ArcSegment
 
 
-# Class `SCCorner`:
+# Class `Corner`:
 @dataclass(frozen=True, slots=True)
-class SCCorner:
-    """A corner of an `SCRoundedPolygon`.
+class Corner:
+    """A corner of an `RoundedPolygon`.
 
     Attributes:
     * `x` (`float`): The X of the (sharp) corner.
@@ -160,7 +160,7 @@ class SCCorner:
       The radius the corner is rounded to (0 for a sharp corner).
 
     Constructor:
-    * `SCCorner(x, y, radius)`
+    * `Corner(x, y, radius)`
     """
 
     # Constructor arguments:
@@ -168,7 +168,7 @@ class SCCorner:
     y: float = field(init=True)
     radius: float = field(init=True, default=0.0)
 
-    # Method `SCCorner.__post_init__()`:
+    # Method `Corner.__post_init__()`:
     def __post_init__(self) -> None:
         """Validate the radius.
 
@@ -179,11 +179,11 @@ class SCCorner:
             raise ValueError(f"{self.radius=} must not be negative")
 
 
-# Class `SCRoundedPolygon`:
+# Class `RoundedPolygon`:
 # Most of its attributes are results kept from the constructor.
 @dataclass(slots=True)
 # pylint: disable-next=too-many-instance-attributes
-class SCRoundedPolygon:
+class RoundedPolygon:
     """A polygon in the XY plane with a radius at each corner.
 
     Each corner is rounded by an arc tangent to its two edges, so the
@@ -203,13 +203,13 @@ class SCRoundedPolygon:
 
     Attributes:
     * `name` (`str`): The polygon's name (used for its sketch).
-    * `corners` (`Sequence[SCCorner]`):
+    * `corners` (`Sequence[Corner]`):
       The corners, in order around the polygon (stored as a tuple).
     * `z_start` (`float`): The height it starts at.
     * `z_end` (`float`): The height it ends at (not `z_start`).
-    * `children` (`Sequence[SCRoundedPolygon]`):
+    * `children` (`Sequence[RoundedPolygon]`):
       The polygons that start on its surface (stored as a tuple).
-    * `bound` (`tuple[SCLine, ...]`):
+    * `bound` (`tuple[LineSegment, ...]`):
       A closed polygon that holds the whole outline, for a quick test
       of what is nowhere near it: the sharp corners, but with a chord
       across each rounded corner that turns against the others, since
@@ -217,44 +217,44 @@ class SCRoundedPolygon:
       cross, which a very sharp corner with a large radius can do.
     * `box` (`tuple[float, float, float, float]`):
       Low X, high X, low Y and high Y of a box around the outline.
-    * `grown_cache` (`dict[float, SCRoundedPolygon]`):
+    * `grown_cache` (`dict[float, RoundedPolygon]`):
       What `grown()` has found, by radius.
-    * `segments` (`tuple[SCSegment, ...]`):
+    * `segments` (`tuple[XYSegment, ...]`):
       The outline, starting with the edge that leaves the first corner
       and ending with the first corner's arc.  An edge used up entirely
       by its corners' arcs has no line, and a sharp corner has no arc.
-    * `shrunk_cache` (`dict[float, list[SCRoundedPolygon]]`):
+    * `shrunk_cache` (`dict[float, list[RoundedPolygon]]`):
       What `shrunk()` has found, by radius.
     * `signed_area` (`float`):
       The area of the sharp polygon: positive when the corners go
       counter-clockwise, negative when they go clockwise.
 
     Constructor:
-    * `SCRoundedPolygon(name, corners, z_start, z_end, children)`
+    * `RoundedPolygon(name, corners, z_start, z_end, children)`
     """
 
     # Constructor arguments:
     name: str = field(init=True)
-    corners: Sequence[SCCorner] = field(init=True)
+    corners: Sequence[Corner] = field(init=True)
     z_start: float = field(init=True)
     z_end: float = field(init=True)
-    children: Sequence["SCRoundedPolygon"] = field(init=True, default=())
+    children: Sequence["RoundedPolygon"] = field(init=True, default=())
 
     # Attributes set by `__post_init__()` (alphabetized):
-    bound: tuple[SCLine, ...] = field(init=False, default=())
+    bound: tuple[LineSegment, ...] = field(init=False, default=())
     box: tuple[float, float, float, float] = field(
         init=False, default=(0.0, 0.0, 0.0, 0.0)
     )
-    grown_cache: dict[float, "SCRoundedPolygon"] = field(
+    grown_cache: dict[float, "RoundedPolygon"] = field(
         init=False, default_factory=dict, repr=False, compare=False
     )
-    segments: tuple[SCSegment, ...] = field(init=False, default=())
-    shrunk_cache: dict[float, list["SCRoundedPolygon"]] = field(
+    segments: tuple[XYSegment, ...] = field(init=False, default=())
+    shrunk_cache: dict[float, list["RoundedPolygon"]] = field(
         init=False, default_factory=dict, repr=False, compare=False
     )
     signed_area: float = field(init=False, default=0.0)
 
-    # Method `SCRoundedPolygon.__post_init__()`:
+    # Method `RoundedPolygon.__post_init__()`:
     def __post_init__(self) -> None:
         """Validate the corners, and compute what follows from them.
 
@@ -274,7 +274,7 @@ class SCRoundedPolygon:
             )
 
         # Validate the corners.
-        corners: tuple[SCCorner, ...] = tuple(self.corners)
+        corners: tuple[Corner, ...] = tuple(self.corners)
         self.corners = corners
         count: int = len(corners)
         if count < 3:
@@ -289,11 +289,11 @@ class SCRoundedPolygon:
 
         # Round each corner, finding where its arc meets its two edges.
         index: int
-        arcs: list[SCArc | None] = []
+        arcs: list[ArcSegment | None] = []
         entries: list[Point] = []
         exits: list[Point] = []
         for index in range(count):
-            arc: SCArc | None
+            arc: ArcSegment | None
             entry: Point
             exit_: Point
             arc, entry, exit_ = self._round(index)
@@ -305,7 +305,7 @@ class SCRoundedPolygon:
         # over from their edge, checking that the arcs fit on it.  The
         # outline starts with the edge leaving the first corner, so it
         # ends with the first corner's arc.
-        segments: list[SCSegment] = []
+        segments: list[XYSegment] = []
         for index in range(count):
             following: int = (index + 1) % count
             edge: float = math.dist(
@@ -324,8 +324,8 @@ class SCRoundedPolygon:
                     f"{following} need {used:g} of an edge {edge:g} long"
                 )
             if edge - used > TOUCH:
-                segments.append(SCLine(exits[index], entries[following]))
-            following_arc: SCArc | None = arcs[following]
+                segments.append(LineSegment(exits[index], entries[following]))
+            following_arc: ArcSegment | None = arcs[following]
             if following_arc is not None:
                 segments.append(following_arc)
         self.segments = _closed(segments)
@@ -335,7 +335,7 @@ class SCRoundedPolygon:
         self.children = tuple(self.children)
         self._check_children()
 
-    # Method `SCRoundedPolygon.circle()`:
+    # Method `RoundedPolygon.circle()`:
     # The arguments read like the constructor's, in the same order.
     @staticmethod
     # pylint: disable-next=too-many-arguments,too-many-positional-arguments
@@ -346,7 +346,7 @@ class SCRoundedPolygon:
         radius: float,
         z_start: float,
         z_end: float,
-    ) -> "SCRoundedPolygon":
+    ) -> "RoundedPolygon":
         """Return a whole circle, as a rounded polygon.
 
         It is a counter-clockwise square whose corner radii are half its
@@ -362,31 +362,31 @@ class SCRoundedPolygon:
         * `z_end` (`float`): The height it ends at.
 
         Returns:
-        * (`SCRoundedPolygon`): The circle.
+        * (`RoundedPolygon`): The circle.
 
         Raises:
         * `ValueError`: If `radius` is not above zero, or the heights
           are the same.
         """
-        return SCRoundedPolygon(
+        return RoundedPolygon(
             name, _circle_corners(name, x, y, radius), z_start, z_end
         )
 
-    # Method `SCRoundedPolygon._round()`:
-    def _round(self, index: int) -> tuple[SCArc | None, Point, Point]:
+    # Method `RoundedPolygon._round()`:
+    def _round(self, index: int) -> tuple[ArcSegment | None, Point, Point]:
         """Round one corner.
 
         Arguments:
         * `index` (`int`): The corner's index in `corners`.
 
         Returns:
-        * (`SCArc | None`): The corner's arc (`None` when it is sharp).
+        * (`ArcSegment | None`): The corner's arc (`None` when it is sharp).
         * (`Point`): Where the outline arrives at the corner (the arc's
           start, or the corner itself when it is sharp).
         * (`Point`): Where the outline leaves the corner.
         """
         # Find the directions of the edges arriving and leaving.
-        corner: SCCorner = self.corners[index]
+        corner: Corner = self.corners[index]
         arriving: Point
         leaving: Point
         turn: float
@@ -414,9 +414,9 @@ class SCRoundedPolygon:
             entry[0] - arriving[1] * side,
             entry[1] + arriving[0] * side,
         )
-        return SCArc(entry, exit_, center, radius, turn), entry, exit_
+        return ArcSegment(entry, exit_, center, radius, turn), entry, exit_
 
-    # Method `SCRoundedPolygon._turn()`:
+    # Method `RoundedPolygon._turn()`:
     def _turn(self, index: int) -> tuple[Point, Point, float]:
         """Return how the outline turns at a (sharp) corner.
 
@@ -436,9 +436,9 @@ class SCRoundedPolygon:
         """
         # Find the directions of the edges arriving and leaving.
         count: int = len(self.corners)
-        previous: SCCorner = self.corners[index - 1]
-        corner: SCCorner = self.corners[index]
-        following: SCCorner = self.corners[(index + 1) % count]
+        previous: Corner = self.corners[index - 1]
+        corner: Corner = self.corners[index]
+        following: Corner = self.corners[(index + 1) % count]
         arriving: Point = unit(corner.x - previous.x, corner.y - previous.y)
         leaving: Point = unit(following.x - corner.x, following.y - corner.y)
         if arriving == (0.0, 0.0) or leaving == (0.0, 0.0):
@@ -459,7 +459,7 @@ class SCRoundedPolygon:
             )
         return arriving, leaving, turn
 
-    # Method `SCRoundedPolygon._check_crossings()`:
+    # Method `RoundedPolygon._check_crossings()`:
     def _check_crossings(self) -> None:
         """Check that no two segments of the outline cross or touch.
 
@@ -468,7 +468,7 @@ class SCRoundedPolygon:
         Raises:
         * `ValueError`: If two segments cross or touch.
         """
-        segments: tuple[SCSegment, ...] = self.segments
+        segments: tuple[XYSegment, ...] = self.segments
         count: int = len(segments)
         first: int
         second: int
@@ -490,7 +490,7 @@ class SCRoundedPolygon:
                             f"cross at ({point[0]:g}, {point[1]:g})"
                         )
 
-    # Method `SCRoundedPolygon._check_children()`:
+    # Method `RoundedPolygon._check_children()`:
     def _check_children(self) -> None:
         """Check that its children start on it, and stay in and apart.
 
@@ -499,7 +499,7 @@ class SCRoundedPolygon:
           goes out of the outline, or overlaps another child.
         """
         index: int
-        child: SCRoundedPolygon
+        child: RoundedPolygon
         for index, child in enumerate(self.children):
             if child.z_start != self.z_end:
                 raise ValueError(
@@ -510,19 +510,19 @@ class SCRoundedPolygon:
                 raise ValueError(
                     f"{self.name}: {child.name} is not inside the outline"
                 )
-            other: SCRoundedPolygon
+            other: RoundedPolygon
             for other in self.children[index + 1 :]:
                 if child.overlaps(other):
                     raise ValueError(
                         f"{self.name}: {child.name} overlaps {other.name}"
                     )
 
-    # Method `SCRoundedPolygon.overlaps()`:
-    def overlaps(self, other: "SCRoundedPolygon") -> bool:
+    # Method `RoundedPolygon.overlaps()`:
+    def overlaps(self, other: "RoundedPolygon") -> bool:
         """Return whether two outlines share any area; touching is fine.
 
         Arguments:
-        * `other` (`SCRoundedPolygon`): The other polygon.
+        * `other` (`RoundedPolygon`): The other polygon.
 
         Returns:
         * (`bool`): True when part of one is inside the other.
@@ -542,51 +542,51 @@ class SCRoundedPolygon:
 
         # No edge goes into the other, so they share area only when they
         # are the same outline.
-        loop: SCLoop = SCLoop(other.name, other.segments)
+        loop: Loop = Loop(other.name, other.segments)
         return all(
             loop.distance(point_at(edge, 0.5)) <= TOUCH
             for edge in self.segments
         )
 
-    # Method `SCRoundedPolygon._find_bound()`:
+    # Method `RoundedPolygon._find_bound()`:
     def _find_bound(
         self,
-        arcs: Sequence[SCArc | None],
+        arcs: Sequence[ArcSegment | None],
         entries: Sequence[Point],
         exits: Sequence[Point],
-    ) -> tuple[SCLine, ...]:
+    ) -> tuple[LineSegment, ...]:
         """Return the closed polygon of lines that holds the outline.
 
         Arguments:
-        * `arcs` (`Sequence[SCArc | None]`): Each corner's arc.
+        * `arcs` (`Sequence[ArcSegment | None]`): Each corner's arc.
         * `entries` (`Sequence[Point]`): Where each corner's arc starts.
         * `exits` (`Sequence[Point]`): Where each corner's arc ends.
 
         Returns:
-        * (`tuple[SCLine, ...]`): The lines, or none if they cross.
+        * (`tuple[LineSegment, ...]`): The lines, or none if they cross.
         """
         # A corner bulging outward stays sharp; a rounded one turning
         # the other way gets the chord of its arc.
-        ccw: bool = SCLoop(self.name, self.segments).is_ccw()
+        ccw: bool = Loop(self.name, self.segments).is_ccw()
         points: list[Point] = []
         index: int
-        arc: SCArc | None
+        arc: ArcSegment | None
         for index, arc in enumerate(arcs):
             if arc is not None and (arc.sweep > 0.0) != ccw:
                 points += [entries[index], exits[index]]
             else:
-                corner: SCCorner = self.corners[index]
+                corner: Corner = self.corners[index]
                 points.append((corner.x, corner.y))
 
         # An edge used up by its arcs leaves two ends in the same place.
         count: int = len(points)
-        lines: list[SCLine] = [
-            SCLine(point, points[(index + 1) % count])
+        lines: list[LineSegment] = [
+            LineSegment(point, points[(index + 1) % count])
             for index, point in enumerate(points)
             if math.dist(point, points[(index + 1) % count]) > TOUCH
         ]
 
-        # Crossing lines would make `SCLoop.contains()` read wrongly.
+        # Crossing lines would make `Loop.contains()` read wrongly.
         count = len(lines)
         first: int
         second: int
@@ -598,8 +598,8 @@ class SCRoundedPolygon:
                     return ()
         return tuple(lines)
 
-    # Method `SCRoundedPolygon.enters()`:
-    def enters(self, segment: SCSegment) -> bool:
+    # Method `RoundedPolygon.enters()`:
+    def enters(self, segment: XYSegment) -> bool:
         """Return whether any part of a line or arc is inside the outline.
 
         Only the outline counts; children are for `hits()`.  A move that
@@ -613,7 +613,7 @@ class SCRoundedPolygon:
         each piece is entirely in or out, and tests the pieces.
 
         Arguments:
-        * `segment` (`SCSegment`):
+        * `segment` (`XYSegment`):
           The line or arc (of at most one whole turn, and its ends may
           be the same point).
 
@@ -628,7 +628,7 @@ class SCRoundedPolygon:
         # A move that stays out of `bound` can not reach the outline.
         short: bool = segment.length() <= TOUCH
         if self.bound and not short:
-            loop: SCLoop = SCLoop(self.name, self.bound)
+            loop: Loop = Loop(self.name, self.bound)
             if not (
                 loop.contains(segment.start)
                 or loop.contains(segment.end)
@@ -637,14 +637,14 @@ class SCRoundedPolygon:
                 return False
 
         # Test the pieces between the edges.
-        outline: SCLoop = SCLoop(self.name, self.segments)
+        outline: Loop = Loop(self.name, self.segments)
         return any(
             outline.contains(point)
             for point in _clear_points(segment, self.segments)
         )
 
-    # Method `SCRoundedPolygon.leaves()`:
-    def leaves(self, segment: SCSegment) -> bool:
+    # Method `RoundedPolygon.leaves()`:
+    def leaves(self, segment: XYSegment) -> bool:
         """Return whether any part of a line or arc leaves the outline.
 
         This is `enters()` turned around, for a tool that must stay in a
@@ -653,7 +653,7 @@ class SCRoundedPolygon:
         `TOUCH`.
 
         Arguments:
-        * `segment` (`SCSegment`):
+        * `segment` (`XYSegment`):
           The line or arc (of at most one whole turn, and its ends may
           be the same point).
 
@@ -664,31 +664,31 @@ class SCRoundedPolygon:
         * `ValueError`: If an arc goes around more than one whole turn.
         """
         self._check_turns(segment)
-        loop: SCLoop = SCLoop(self.name, self.segments)
+        loop: Loop = Loop(self.name, self.segments)
         return any(
             not loop.contains(point)
             for point in _clear_points(segment, self.segments)
         )
 
-    # Method `SCRoundedPolygon._check_turns()`:
-    def _check_turns(self, segment: SCSegment) -> None:
+    # Method `RoundedPolygon._check_turns()`:
+    def _check_turns(self, segment: XYSegment) -> None:
         """Check that a move goes around at most one whole turn.
 
         Arguments:
-        * `segment` (`SCSegment`): The move.
+        * `segment` (`XYSegment`): The move.
 
         Raises:
         * `ValueError`: If it is an arc of more than one whole turn,
           since `fraction_of()` can not place points on one.
         """
         if (
-            isinstance(segment, SCArc)
+            isinstance(segment, ArcSegment)
             and abs(segment.sweep) > 2.0 * math.pi + ANGLE
         ):
             raise ValueError(f"{self.name}: {segment} is over one turn")
 
-    # Method `SCRoundedPolygon.grown()`:
-    def grown(self, radius: float) -> "SCRoundedPolygon":
+    # Method `RoundedPolygon.grown()`:
+    def grown(self, radius: float) -> "RoundedPolygon":
         """Return where a tool's center would touch this polygon.
 
         A tool of radius `radius` reaches this polygon just when its
@@ -704,7 +704,7 @@ class SCRoundedPolygon:
         * `radius` (`float`): The tool's radius (not negative).
 
         Returns:
-        * (`SCRoundedPolygon`):
+        * (`RoundedPolygon`):
           The grown exterior, going around the same way, named after
           this one, with the same heights and no children.  It is kept,
           so the same one comes back for the same radius.
@@ -720,8 +720,8 @@ class SCRoundedPolygon:
             return self.grown_cache[radius]
 
         # The outside of the polygon is on the left of a clockwise loop.
-        loop: SCLoop = SCLoop(self.name, self.segments)
-        outside: SCLoop = loop.reversed() if loop.is_ccw() else loop
+        loop: Loop = Loop(self.name, self.segments)
+        outside: Loop = loop.reversed() if loop.is_ccw() else loop
         name: str = f"{self.name} grown {radius:g}"
 
         # A slot can happen to fit one slop exactly, but not two.
@@ -729,13 +729,13 @@ class SCRoundedPolygon:
         slop: float
         for slop in (SLOP, 2.0 * SLOP):
             try:
-                exterior: SCLoop = max(
+                exterior: Loop = max(
                     inset([outside], radius + slop, name),
                     key=lambda found: abs(found.signed_area()),
                 )
                 if exterior.is_ccw() != loop.is_ccw():
                     exterior = exterior.reversed()
-                moved: SCRoundedPolygon = exterior.polygon(
+                moved: RoundedPolygon = exterior.polygon(
                     name, self.z_start, self.z_end
                 )
                 self.grown_cache[radius] = moved
@@ -745,8 +745,8 @@ class SCRoundedPolygon:
         assert problem is not None
         raise problem
 
-    # Method `SCRoundedPolygon.shrunk()`:
-    def shrunk(self, radius: float) -> list["SCRoundedPolygon"]:
+    # Method `RoundedPolygon.shrunk()`:
+    def shrunk(self, radius: float) -> list["RoundedPolygon"]:
         """Return where a tool's center can go and stay inside this.
 
         This is `grown()` turned around, for a tool that must stay in a
@@ -758,7 +758,7 @@ class SCRoundedPolygon:
         * `radius` (`float`): The tool's radius (not negative).
 
         Returns:
-        * (`list[SCRoundedPolygon]`):
+        * (`list[RoundedPolygon]`):
           The places it can be, going counter-clockwise: none when it
           does not fit, several when a narrow neck splits the region.
           They have the same heights, and no children.  They are kept,
@@ -775,8 +775,8 @@ class SCRoundedPolygon:
             return self.shrunk_cache[radius]
 
         # The inside is on the left of a counter-clockwise loop.
-        loop: SCLoop = SCLoop(self.name, self.segments)
-        inside: SCLoop = loop if loop.is_ccw() else loop.reversed()
+        loop: Loop = Loop(self.name, self.segments)
+        inside: Loop = loop if loop.is_ccw() else loop.reversed()
         name: str = f"{self.name} shrunk {radius:g}"
 
         # A neck can happen to fit one slop exactly, but not two.
@@ -784,7 +784,7 @@ class SCRoundedPolygon:
         slop: float
         for slop in (SLOP, 2.0 * SLOP):
             try:
-                places: list[SCRoundedPolygon] = [
+                places: list[RoundedPolygon] = [
                     found.polygon(found.name, self.z_start, self.z_end)
                     for found in inset([inside], radius + slop, name)
                 ]
@@ -795,15 +795,15 @@ class SCRoundedPolygon:
         assert problem is not None
         raise problem
 
-    # Method `SCRoundedPolygon.hits()`:
-    def hits(self, move: SCSegment, z: float, radius: float) -> bool:
+    # Method `RoundedPolygon.hits()`:
+    def hits(self, move: XYSegment, z: float, radius: float) -> bool:
         """Return whether a tool moving at a height hits this root.
 
         The tool is a cylinder reaching up forever, so with its tip at
         `z`, it is blocked wherever the surface is above `z`.
 
         Arguments:
-        * `move` (`SCSegment`): The path of the tool's center, in XY.
+        * `move` (`XYSegment`): The path of the tool's center, in XY.
         * `z` (`float`): The lowest height of the tip during the move.
         * `radius` (`float`): The tool's radius.
 
@@ -816,7 +816,7 @@ class SCRoundedPolygon:
         self._check_root()
         return self._hits(move, z, radius)
 
-    # Method `SCRoundedPolygon._check_root()`:
+    # Method `RoundedPolygon._check_root()`:
     def _check_root(self) -> None:
         """Check that this polygon can be a root.
 
@@ -829,12 +829,12 @@ class SCRoundedPolygon:
                 f"{self.z_start!r} to {self.z_end!r}"
             )
 
-    # Method `SCRoundedPolygon._hits()`:
-    def _hits(self, move: SCSegment, z: float, radius: float) -> bool:
+    # Method `RoundedPolygon._hits()`:
+    def _hits(self, move: XYSegment, z: float, radius: float) -> bool:
         """Return whether a tool hits this polygon or its descendants.
 
         Arguments:
-        * `move` (`SCSegment`): The path of the tool's center, in XY.
+        * `move` (`XYSegment`): The path of the tool's center, in XY.
         * `z` (`float`): The lowest height of the tip during the move.
         * `radius` (`float`): The tool's radius.
 
@@ -843,7 +843,7 @@ class SCRoundedPolygon:
         """
         # Where this surface is not above the tip, only children matter.
         # pylint: disable=protected-access
-        child: SCRoundedPolygon
+        child: RoundedPolygon
         if self.z_end <= z:
             return any(child._hits(move, z, radius) for child in self.children)
 
@@ -856,12 +856,12 @@ class SCRoundedPolygon:
                 return child._hits(move, z, radius)
         return True
 
-    # Method `SCRoundedPolygon.model()`:
-    def model(self, solidcraft: "SCPyBind", mm_per_unit: float = 1.0) -> str:
+    # Method `RoundedPolygon.model()`:
+    def model(self, solidcraft: "PyBind", mm_per_unit: float = 1.0) -> str:
         """Model this root and its descendants as one body.
 
         Arguments:
-        * `solidcraft` (`SCPyBind`): Where to model it.
+        * `solidcraft` (`PyBind`): Where to model it.
         * `mm_per_unit` (`float`):
           Scales the polygon's units to SolidCraft's millimeters.
 
@@ -884,9 +884,9 @@ class SCRoundedPolygon:
         self._model_children(solidcraft, mm_per_unit, self.name)
         return self.name
 
-    # Method `SCRoundedPolygon._model_children()`:
+    # Method `RoundedPolygon._model_children()`:
     def _model_children(
-        self, solidcraft: "SCPyBind", mm_per_unit: float, body: str
+        self, solidcraft: "PyBind", mm_per_unit: float, body: str
     ) -> None:
         """Model what this polygon's own extrude did not make.
 
@@ -894,19 +894,19 @@ class SCRoundedPolygon:
         The rest with the same heights share one sketch and one extrude.
 
         Arguments:
-        * `solidcraft` (`SCPyBind`): Where to model them.
+        * `solidcraft` (`PyBind`): Where to model them.
         * `mm_per_unit` (`float`):
           Scales the polygon's units to SolidCraft's millimeters.
         * `body` (`str`): The body to add to or cut from.
         """
         # pylint: disable=protected-access
-        ends: dict[float, list[SCRoundedPolygon]] = {}
-        child: SCRoundedPolygon
+        ends: dict[float, list[RoundedPolygon]] = {}
+        child: RoundedPolygon
         for child in self.children:
             if child.z_end != self.z_start:
                 ends.setdefault(child.z_end, []).append(child)
         z_end: float
-        group: list[SCRoundedPolygon]
+        group: list[RoundedPolygon]
         for z_end, group in ends.items():
             solidcraft.sketch.create(
                 plane="XY",
@@ -924,7 +924,7 @@ class SCRoundedPolygon:
         for child in self.children:
             child._model_children(solidcraft, mm_per_unit, body)
 
-    # Method `SCRoundedPolygon.is_ccw()`:
+    # Method `RoundedPolygon.is_ccw()`:
     def is_ccw(self) -> bool:
         """Return whether the corners go counter-clockwise.
 
@@ -933,18 +933,18 @@ class SCRoundedPolygon:
         """
         return self.signed_area > 0.0
 
-    # Method `SCRoundedPolygon.reversed()`:
-    def reversed(self) -> "SCRoundedPolygon":
+    # Method `RoundedPolygon.reversed()`:
+    def reversed(self) -> "RoundedPolygon":
         """Return the same polygon going around the other way.
 
         The first corner stays first.
 
         Returns:
-        * (`SCRoundedPolygon`):
+        * (`RoundedPolygon`):
           The reversed polygon, with the same name.
         """
-        corners: Sequence[SCCorner] = self.corners
-        return SCRoundedPolygon(
+        corners: Sequence[Corner] = self.corners
+        return RoundedPolygon(
             self.name,
             (corners[0], *corners[:0:-1]),
             self.z_start,
@@ -952,8 +952,8 @@ class SCRoundedPolygon:
             self.children,
         )
 
-    # Method `SCRoundedPolygon.offset()`:
-    def offset(self, distance: float) -> "SCRoundedPolygon":
+    # Method `RoundedPolygon.offset()`:
+    def offset(self, distance: float) -> "RoundedPolygon":
         """Return the outline moved outward (or inward) by a distance.
 
         This is the path a tool's center follows to cut along the
@@ -969,7 +969,7 @@ class SCRoundedPolygon:
         * `distance` (`float`): How far out to move (negative is in).
 
         Returns:
-        * (`SCRoundedPolygon`):
+        * (`RoundedPolygon`):
           The moved outline, going around the same way, named after this
           one.
 
@@ -981,9 +981,9 @@ class SCRoundedPolygon:
         # Outward is to the right going counter-clockwise, and to the
         # left going clockwise.
         sense: float = 1.0 if self.is_ccw() else -1.0
-        corners: list[SCCorner] = []
+        corners: list[Corner] = []
         index: int
-        corner: SCCorner
+        corner: Corner
         for index, corner in enumerate(self.corners):
             arriving: Point
             leaving: Point
@@ -998,7 +998,7 @@ class SCRoundedPolygon:
                 distance if turn * sense > 0.0 else -distance
             )
             corners.append(
-                SCCorner(
+                Corner(
                     corner.x + (before[0] + after[0]) * scale,
                     corner.y + (before[1] + after[1]) * scale,
                     max(radius, 0.0),
@@ -1006,10 +1006,10 @@ class SCRoundedPolygon:
             )
         name: str = f"{self.name} offset {distance:g}"
         self._check_moved(name, corners)
-        return SCRoundedPolygon(name, corners, self.z_start, self.z_end)
+        return RoundedPolygon(name, corners, self.z_start, self.z_end)
 
-    # Method `SCRoundedPolygon._check_moved()`:
-    def _check_moved(self, name: str, moved: Sequence[SCCorner]) -> None:
+    # Method `RoundedPolygon._check_moved()`:
+    def _check_moved(self, name: str, moved: Sequence[Corner]) -> None:
         """Check that moving the corners turned no edge around.
 
         Moving in too far turns an edge around, which can still make a
@@ -1017,7 +1017,7 @@ class SCRoundedPolygon:
 
         Arguments:
         * `name` (`str`): The moved polygon's name.
-        * `moved` (`Sequence[SCCorner]`): The moved corners, in order.
+        * `moved` (`Sequence[Corner]`): The moved corners, in order.
 
         Raises:
         * `ValueError`: If an edge points the other way once moved.
@@ -1039,9 +1039,9 @@ class SCRoundedPolygon:
                     f"{name}: the edge from corner {index} collapses"
                 )
 
-    # Method `SCRoundedPolygon.sketch()`:
+    # Method `RoundedPolygon.sketch()`:
     def sketch(
-        self, solidcraft: "SCPyBind", mm_per_unit: float = 1.0
+        self, solidcraft: "PyBind", mm_per_unit: float = 1.0
     ) -> list[str]:
         """Draw the outline, and children it shares an extrude with.
 
@@ -1052,7 +1052,7 @@ class SCRoundedPolygon:
         computed, so SolidCraft joins them into one closed profile.
 
         Arguments:
-        * `solidcraft` (`SCPyBind`): Where to draw it.
+        * `solidcraft` (`PyBind`): Where to draw it.
         * `mm_per_unit` (`float`):
           SolidCraft's sketch coordinates are millimeters, whatever the
           design's units, so this scales the outline's units to them
@@ -1065,20 +1065,20 @@ class SCRoundedPolygon:
         """
         # pylint: disable=protected-access
         curves: list[str] = self._draw_outline(solidcraft, mm_per_unit)
-        child: SCRoundedPolygon
+        child: RoundedPolygon
         for child in self.children:
             if child.z_end == self.z_start:
                 curves += child._draw_outline(solidcraft, mm_per_unit)
         return curves
 
-    # Method `SCRoundedPolygon._draw_outline()`:
+    # Method `RoundedPolygon._draw_outline()`:
     def _draw_outline(
-        self, solidcraft: "SCPyBind", mm_per_unit: float
+        self, solidcraft: "PyBind", mm_per_unit: float
     ) -> list[str]:
         """Draw just the outline into the open sketch.
 
         Arguments:
-        * `solidcraft` (`SCPyBind`): Where to draw it.
+        * `solidcraft` (`PyBind`): Where to draw it.
         * `mm_per_unit` (`float`):
           Scales the outline's units to SolidCraft's millimeters.
 
@@ -1099,12 +1099,12 @@ class SCRoundedPolygon:
             return point[0] * mm_per_unit, point[1] * mm_per_unit
 
         curves: list[str] = []
-        segment: SCSegment
+        segment: XYSegment
         for segment in self.segments:
             # SolidCraft's arcs go counter-clockwise from `start` to
             # `end`, so a clockwise arc is drawn from its end.
             result: JSON
-            if isinstance(segment, SCLine):
+            if isinstance(segment, LineSegment):
                 result = solidcraft.sketch.line(
                     points=[mm(segment.start), mm(segment.end)]
                 )
@@ -1124,8 +1124,8 @@ class SCRoundedPolygon:
         return curves
 
 
-# Class `SCHole`:
-class SCHole(SCRoundedPolygon):
+# Class `Hole`:
+class Hole(RoundedPolygon):
     """A round hole, going down.
 
     A rounded polygon like any other, except that it draws a true circle
@@ -1137,12 +1137,12 @@ class SCHole(SCRoundedPolygon):
     * `diameter` (`float`): Its diameter.
 
     Constructor:
-    * `SCHole(x, y, diameter, z_start, z_end, children)`
+    * `Hole(x, y, diameter, z_start, z_end, children)`
     """
 
     __slots__ = ("diameter", "x", "y")
 
-    # Method `SCHole.__init__()`:
+    # Method `Hole.__init__()`:
     # The arguments read like the parent's constructor, in the same order.
     # pylint: disable-next=too-many-arguments,too-many-positional-arguments
     def __init__(
@@ -1152,7 +1152,7 @@ class SCHole(SCRoundedPolygon):
         diameter: float,
         z_start: float,
         z_end: float,
-        children: Sequence[SCRoundedPolygon] = (),
+        children: Sequence[RoundedPolygon] = (),
     ) -> None:
         """Make the hole.
 
@@ -1162,7 +1162,7 @@ class SCHole(SCRoundedPolygon):
         * `diameter` (`float`): Its diameter.
         * `z_start` (`float`): The height of its top.
         * `z_end` (`float`): The height of its bottom.
-        * `children` (`Sequence[SCRoundedPolygon]`):
+        * `children` (`Sequence[RoundedPolygon]`):
           What starts on its bottom.
 
         Raises:
@@ -1177,7 +1177,7 @@ class SCHole(SCRoundedPolygon):
         self.x: float = x
         self.y: float = y
         self.diameter: float = diameter
-        SCRoundedPolygon.__init__(
+        RoundedPolygon.__init__(
             self,
             name,
             _circle_corners(name, x, y, diameter / 2.0),
@@ -1186,14 +1186,14 @@ class SCHole(SCRoundedPolygon):
             children,
         )
 
-    # Method `SCHole._draw_outline()`:
+    # Method `Hole._draw_outline()`:
     def _draw_outline(
-        self, solidcraft: "SCPyBind", mm_per_unit: float
+        self, solidcraft: "PyBind", mm_per_unit: float
     ) -> list[str]:
         """Draw a true circle into the open sketch.
 
         Arguments:
-        * `solidcraft` (`SCPyBind`): Where to draw it.
+        * `solidcraft` (`PyBind`): Where to draw it.
         * `mm_per_unit` (`float`):
           Scales the outline's units to SolidCraft's millimeters.
 
@@ -1213,7 +1213,7 @@ class SCHole(SCRoundedPolygon):
 # Function `_circle_corners()`:
 def _circle_corners(
     name: str, x: float, y: float, radius: float
-) -> tuple[SCCorner, ...]:
+) -> tuple[Corner, ...]:
     """Return the corners of a square that rounds into a whole circle.
 
     Arguments:
@@ -1223,7 +1223,7 @@ def _circle_corners(
     * `radius` (`float`): Its radius.
 
     Returns:
-    * (`tuple[SCCorner, ...]`): The corners, going counter-clockwise.
+    * (`tuple[Corner, ...]`): The corners, going counter-clockwise.
 
     Raises:
     * `ValueError`: If `radius` is not above zero.
@@ -1231,21 +1231,21 @@ def _circle_corners(
     if radius <= 0.0:
         raise ValueError(f"{name}: {radius=} must be above zero")
     return (
-        SCCorner(x - radius, y - radius, radius),
-        SCCorner(x + radius, y - radius, radius),
-        SCCorner(x + radius, y + radius, radius),
-        SCCorner(x - radius, y + radius, radius),
+        Corner(x - radius, y - radius, radius),
+        Corner(x + radius, y - radius, radius),
+        Corner(x + radius, y + radius, radius),
+        Corner(x - radius, y + radius, radius),
     )
 
 
 # Function `_box_around()`:
 def _box_around(
-    segments: Sequence[SCSegment],
+    segments: Sequence[XYSegment],
 ) -> tuple[float, float, float, float]:
     """Return a box around an outline, a little big around its arcs.
 
     Arguments:
-    * `segments` (`Sequence[SCSegment]`): The outline.
+    * `segments` (`Sequence[XYSegment]`): The outline.
 
     Returns:
     * (`tuple[float, float, float, float]`):
@@ -1253,11 +1253,11 @@ def _box_around(
     """
     xs: list[float] = []
     ys: list[float] = []
-    segment: SCSegment
+    segment: XYSegment
     for segment in segments:
         reach: float = 0.0
         center: Point = segment.start
-        if isinstance(segment, SCArc):
+        if isinstance(segment, ArcSegment):
             reach = segment.radius
             center = segment.center
         else:
@@ -1269,26 +1269,26 @@ def _box_around(
 
 
 # Function `_without_backtracks()`:
-def _without_backtracks(segments: Sequence[SCSegment]) -> list[SCSegment]:
+def _without_backtracks(segments: Sequence[XYSegment]) -> list[XYSegment]:
     """Return an outline without its tiny segments and backward lines.
 
     Arguments:
-    * `segments` (`Sequence[SCSegment]`): The outline.
+    * `segments` (`Sequence[XYSegment]`): The outline.
 
     Returns:
-    * (`list[SCSegment]`):
+    * (`list[XYSegment]`):
       The segments longer than `SLOP`, less any line that ends on the
       segment before it and starts on the one after it, to within
       `SLOP`, since it only goes back over them.
     """
-    long: list[SCSegment] = [
+    long: list[XYSegment] = [
         segment for segment in segments if segment.length() > SLOP
     ]
     return [
         segment
         for index, segment in enumerate(long)
         if not (
-            isinstance(segment, SCLine)
+            isinstance(segment, LineSegment)
             and distance_to(segment.end, long[index - 1]) <= SLOP
             and distance_to(segment.start, long[(index + 1) % len(long)])
             <= SLOP
@@ -1297,29 +1297,29 @@ def _without_backtracks(segments: Sequence[SCSegment]) -> list[SCSegment]:
 
 
 # Function `_closed()`:
-def _closed(segments: Sequence[SCSegment]) -> tuple[SCSegment, ...]:
+def _closed(segments: Sequence[XYSegment]) -> tuple[XYSegment, ...]:
     """Return an outline with each segment ending where the next starts.
 
     Arcs that use up an edge to within `TOUCH` have no line between
     them, so their ends may differ by that much.
 
     Arguments:
-    * `segments` (`Sequence[SCSegment]`): The outline.
+    * `segments` (`Sequence[XYSegment]`): The outline.
 
     Returns:
-    * (`tuple[SCSegment, ...]`):
+    * (`tuple[XYSegment, ...]`):
       The same outline, with its joints shared.
     """
-    closed: list[SCSegment] = []
+    closed: list[XYSegment] = []
     index: int
-    segment: SCSegment
+    segment: XYSegment
     for index, segment in enumerate(segments):
         end: Point = segments[(index + 1) % len(segments)].start
-        if isinstance(segment, SCLine):
-            closed.append(SCLine(segment.start, end))
+        if isinstance(segment, LineSegment):
+            closed.append(LineSegment(segment.start, end))
         else:
             closed.append(
-                SCArc(
+                ArcSegment(
                     segment.start,
                     end,
                     segment.center,
@@ -1332,7 +1332,7 @@ def _closed(segments: Sequence[SCSegment]) -> tuple[SCSegment, ...]:
 
 # Function `_clear_points()`:
 def _clear_points(
-    segment: SCSegment, edges: Sequence[SCSegment]
+    segment: XYSegment, edges: Sequence[XYSegment]
 ) -> Iterator[Point]:
     """Yield points of a move that show which side of the edges it is.
 
@@ -1342,20 +1342,20 @@ def _clear_points(
     one is by chance that near to an edge the piece misses.
 
     Arguments:
-    * `segment` (`SCSegment`):
+    * `segment` (`XYSegment`):
       The move (its ends may be the same point).
-    * `edges` (`Sequence[SCSegment]`): The edges.
+    * `edges` (`Sequence[XYSegment]`): The edges.
 
     Yields:
     * (`Point`): The points clear of the edges.
     """
-    pieces: list[SCSegment] = [segment]
+    pieces: list[XYSegment] = [segment]
     if segment.length() > TOUCH:
         pieces = split_at(
             segment,
             [point for edge in edges for point in meet(segment, edge)],
         )
-    piece: SCSegment
+    piece: XYSegment
     for piece in pieces:
         fraction: float
         for fraction in (0.25, 0.5, 0.75):
@@ -1366,13 +1366,13 @@ def _clear_points(
 
 # Function `_segments_meet()`:
 def _segments_meet(
-    first: Sequence[SCSegment], second: Sequence[SCSegment]
+    first: Sequence[XYSegment], second: Sequence[XYSegment]
 ) -> bool:
     """Return whether two outlines cross or touch.
 
     Arguments:
-    * `first` (`Sequence[SCSegment]`): One outline.
-    * `second` (`Sequence[SCSegment]`): The other.
+    * `first` (`Sequence[XYSegment]`): One outline.
+    * `second` (`Sequence[XYSegment]`): The other.
 
     Returns:
     * (`bool`): True if any segment of one meets a segment of the other.
@@ -1427,33 +1427,33 @@ def cross(a: Point, b: Point) -> float:
 
 
 # Function `meet()`:
-def meet(a: SCSegment, b: SCSegment) -> list[Point]:
+def meet(a: XYSegment, b: XYSegment) -> list[Point]:
     """Return where two segments meet.
 
     Arguments:
-    * `a` (`SCSegment`): One segment.
-    * `b` (`SCSegment`): The other.
+    * `a` (`XYSegment`): One segment.
+    * `b` (`XYSegment`): The other.
 
     Returns:
     * (`list[Point]`): The points where they cross or touch (for
       segments that overlap, the ends of the overlap).
     """
-    if isinstance(a, SCLine):
-        if isinstance(b, SCLine):
+    if isinstance(a, LineSegment):
+        if isinstance(b, LineSegment):
             return meet_lines(a, b)
         return meet_line_arc(a, b)
-    if isinstance(b, SCLine):
+    if isinstance(b, LineSegment):
         return meet_line_arc(b, a)
     return meet_arcs(a, b)
 
 
 # Function `meet_lines()`:
-def meet_lines(a: SCLine, b: SCLine) -> list[Point]:
+def meet_lines(a: LineSegment, b: LineSegment) -> list[Point]:
     """Return where two lines meet.
 
     Arguments:
-    * `a` (`SCLine`): One line.
-    * `b` (`SCLine`): The other.
+    * `a` (`LineSegment`): One line.
+    * `b` (`LineSegment`): The other.
 
     Returns:
     * (`list[Point]`): The crossing, the ends of their overlap, or
@@ -1497,12 +1497,12 @@ def meet_lines(a: SCLine, b: SCLine) -> list[Point]:
 
 
 # Function `meet_line_arc()`:
-def meet_line_arc(line: SCLine, arc: SCArc) -> list[Point]:
+def meet_line_arc(line: LineSegment, arc: ArcSegment) -> list[Point]:
     """Return where a line and an arc meet.
 
     Arguments:
-    * `line` (`SCLine`): The line.
-    * `arc` (`SCArc`): The arc.
+    * `line` (`LineSegment`): The line.
+    * `arc` (`ArcSegment`): The arc.
 
     Returns:
     * (`list[Point]`): The points where they cross or touch.
@@ -1538,12 +1538,12 @@ def meet_line_arc(line: SCLine, arc: SCArc) -> list[Point]:
 
 
 # Function `meet_arcs()`:
-def meet_arcs(a: SCArc, b: SCArc) -> list[Point]:
+def meet_arcs(a: ArcSegment, b: ArcSegment) -> list[Point]:
     """Return where two arcs meet.
 
     Arguments:
-    * `a` (`SCArc`): One arc.
-    * `b` (`SCArc`): The other.
+    * `a` (`ArcSegment`): One arc.
+    * `b` (`ArcSegment`): The other.
 
     Returns:
     * (`list[Point]`): The points where they cross or touch (for arcs
@@ -1595,22 +1595,24 @@ def meet_arcs(a: SCArc, b: SCArc) -> list[Point]:
 
 
 # Function `halves()`:
-def halves(segment: SCSegment) -> tuple[SCSegment, SCSegment]:
+def halves(segment: XYSegment) -> tuple[XYSegment, XYSegment]:
     """Split a segment in half.
 
     Arguments:
-    * `segment` (`SCSegment`): The segment.
+    * `segment` (`XYSegment`): The segment.
 
     Returns:
-    * (`SCSegment`): Its first half.
-    * (`SCSegment`): Its second half.
+    * (`XYSegment`): Its first half.
+    * (`XYSegment`): Its second half.
     """
-    if isinstance(segment, SCLine):
+    if isinstance(segment, LineSegment):
         middle: Point = (
             (segment.start[0] + segment.end[0]) / 2.0,
             (segment.start[1] + segment.end[1]) / 2.0,
         )
-        return SCLine(segment.start, middle), SCLine(middle, segment.end)
+        return LineSegment(segment.start, middle), LineSegment(
+            middle, segment.end
+        )
     center: Point = segment.center
     angle: float = (
         math.atan2(segment.start[1] - center[1], segment.start[0] - center[0])
@@ -1622,22 +1624,22 @@ def halves(segment: SCSegment) -> tuple[SCSegment, SCSegment]:
     )
     half: float = segment.sweep / 2.0
     return (
-        SCArc(segment.start, middle, center, segment.radius, half),
-        SCArc(middle, segment.end, center, segment.radius, half),
+        ArcSegment(segment.start, middle, center, segment.radius, half),
+        ArcSegment(middle, segment.end, center, segment.radius, half),
     )
 
 
 # Function `start_tangent()`:
-def start_tangent(segment: SCSegment) -> Point:
+def start_tangent(segment: XYSegment) -> Point:
     """Return the direction a segment starts in.
 
     Arguments:
-    * `segment` (`SCSegment`): The segment.
+    * `segment` (`XYSegment`): The segment.
 
     Returns:
     * (`Point`): The unit direction at its start.
     """
-    if isinstance(segment, SCLine):
+    if isinstance(segment, LineSegment):
         return unit(
             segment.end[0] - segment.start[0],
             segment.end[1] - segment.start[1],
@@ -1651,18 +1653,18 @@ def start_tangent(segment: SCSegment) -> Point:
 
 
 # Function `reverse_segment()`:
-def reverse_segment(segment: SCSegment) -> SCSegment:
+def reverse_segment(segment: XYSegment) -> XYSegment:
     """Return a segment going the other way.
 
     Arguments:
-    * `segment` (`SCSegment`): The segment.
+    * `segment` (`XYSegment`): The segment.
 
     Returns:
-    * (`SCSegment`): The same segment from its end to its start.
+    * (`XYSegment`): The same segment from its end to its start.
     """
-    if isinstance(segment, SCLine):
-        return SCLine(segment.end, segment.start)
-    return SCArc(
+    if isinstance(segment, LineSegment):
+        return LineSegment(segment.end, segment.start)
+    return ArcSegment(
         segment.end,
         segment.start,
         segment.center,
@@ -1672,11 +1674,11 @@ def reverse_segment(segment: SCSegment) -> SCSegment:
 
 
 # Function `end_tangent()`:
-def end_tangent(segment: SCSegment) -> Point:
+def end_tangent(segment: XYSegment) -> Point:
     """Return the direction a segment ends in.
 
     Arguments:
-    * `segment` (`SCSegment`): The segment.
+    * `segment` (`XYSegment`): The segment.
 
     Returns:
     * (`Point`): The unit direction at its end.
@@ -1714,17 +1716,17 @@ def turn_between(before: Point, after: Point) -> float:
 
 
 # Function `point_at()`:
-def point_at(segment: SCSegment, fraction: float) -> Point:
+def point_at(segment: XYSegment, fraction: float) -> Point:
     """Return the point a fraction of the way along a segment.
 
     Arguments:
-    * `segment` (`SCSegment`): The segment.
+    * `segment` (`XYSegment`): The segment.
     * `fraction` (`float`): 0 for its start, 1 for its end.
 
     Returns:
     * (`Point`): The point.
     """
-    if isinstance(segment, SCLine):
+    if isinstance(segment, LineSegment):
         return (
             segment.start[0] + (segment.end[0] - segment.start[0]) * fraction,
             segment.start[1] + (segment.end[1] - segment.start[1]) * fraction,
@@ -1743,18 +1745,18 @@ def point_at(segment: SCSegment, fraction: float) -> Point:
 
 
 # Function `fraction_of()`:
-def fraction_of(segment: SCSegment, point: Point) -> float:
+def fraction_of(segment: XYSegment, point: Point) -> float:
     """Return how far along a segment a point on it is.
 
     Arguments:
-    * `segment` (`SCSegment`): The segment.
+    * `segment` (`XYSegment`): The segment.
     * `point` (`Point`): A point on the segment (or its circle).
 
     Returns:
     * (`float`): 0 at its start and 1 at its end (a little outside
       that range for a point just beyond an end).
     """
-    if isinstance(segment, SCLine):
+    if isinstance(segment, LineSegment):
         along: Point = (
             segment.end[0] - segment.start[0],
             segment.end[1] - segment.start[1],
@@ -1781,21 +1783,21 @@ def fraction_of(segment: SCSegment, point: Point) -> float:
 
 # Function `piece_of()`:
 def piece_of(
-    segment: SCSegment, ends: tuple[Point, Point], fractions: Point
-) -> SCSegment:
+    segment: XYSegment, ends: tuple[Point, Point], fractions: Point
+) -> XYSegment:
     """Return the piece of a segment between two of its points.
 
     Arguments:
-    * `segment` (`SCSegment`): The segment.
+    * `segment` (`XYSegment`): The segment.
     * `ends` (`tuple[Point, Point]`): The piece's start and end.
     * `fractions` (`Point`): How far along `segment` they are.
 
     Returns:
-    * (`SCSegment`): The piece.
+    * (`XYSegment`): The piece.
     """
-    if isinstance(segment, SCLine):
-        return SCLine(ends[0], ends[1])
-    return SCArc(
+    if isinstance(segment, LineSegment):
+        return LineSegment(ends[0], ends[1])
+    return ArcSegment(
         ends[0],
         ends[1],
         segment.center,
@@ -1805,17 +1807,17 @@ def piece_of(
 
 
 # Function `split_at()`:
-def split_at(segment: SCSegment, points: Sequence[Point]) -> list[SCSegment]:
+def split_at(segment: XYSegment, points: Sequence[Point]) -> list[XYSegment]:
     """Split a segment at points on it.
 
     Points within `TOUCH` of an end, or of another point, are left out.
 
     Arguments:
-    * `segment` (`SCSegment`): The segment.
+    * `segment` (`XYSegment`): The segment.
     * `points` (`Sequence[Point]`): Points on the segment.
 
     Returns:
-    * (`list[SCSegment]`): The pieces, in order.
+    * (`list[XYSegment]`): The pieces, in order.
     """
     # Find where along the segment each point is.
     length: float = segment.length()
@@ -1828,7 +1830,7 @@ def split_at(segment: SCSegment, points: Sequence[Point]) -> list[SCSegment]:
     cuts.sort()
 
     # Cut it there.
-    pieces: list[SCSegment] = []
+    pieces: list[XYSegment] = []
     done: float = 0.0
     start: Point = segment.start
     for fraction, point in cuts:
@@ -1840,17 +1842,17 @@ def split_at(segment: SCSegment, points: Sequence[Point]) -> list[SCSegment]:
 
 
 # Function `distance_to()`:
-def distance_to(point: Point, segment: SCSegment) -> float:
+def distance_to(point: Point, segment: XYSegment) -> float:
     """Return the distance from a point to a segment.
 
     Arguments:
     * `point` (`Point`): The point.
-    * `segment` (`SCSegment`): The segment.
+    * `segment` (`XYSegment`): The segment.
 
     Returns:
     * (`float`): The distance.
     """
-    if isinstance(segment, SCLine):
+    if isinstance(segment, LineSegment):
         fraction: float = min(max(fraction_of(segment, point), 0.0), 1.0)
         return math.dist(point, point_at(segment, fraction))
     apart: float = math.dist(point, segment.center)
@@ -1867,46 +1869,46 @@ def distance_to(point: Point, segment: SCSegment) -> float:
     return min(math.dist(point, segment.start), math.dist(point, segment.end))
 
 
-# Class `SCLoop`:
+# Class `Loop`:
 @dataclass(frozen=True, slots=True)
-class SCLoop:
+class Loop:
     """A closed loop of lines and arcs in the XY plane.
 
     Each segment starts where the one before it ends, and the last ends
-    where the first starts.  Unlike an `SCRoundedPolygon`, two segments
+    where the first starts.  Unlike an `RoundedPolygon`, two segments
     may meet at an angle anywhere (such as two arcs meeting at a point).
 
     Attributes:
     * `name` (`str`): The loop's name.
-    * `segments` (`tuple[SCSegment, ...]`): The segments, in order.
+    * `segments` (`tuple[XYSegment, ...]`): The segments, in order.
 
     Constructor:
-    * `SCLoop(name, segments)`
+    * `Loop(name, segments)`
     """
 
     # Constructor arguments:
     name: str = field(init=True)
-    segments: tuple[SCSegment, ...] = field(init=True)
+    segments: tuple[XYSegment, ...] = field(init=True)
 
-    # Method `SCLoop.from_poly()`:
+    # Method `Loop.from_poly()`:
     @staticmethod
-    def from_poly(poly: SCRoundedPolygon) -> "SCLoop":
+    def from_poly(poly: RoundedPolygon) -> "Loop":
         """Return a rounded polygon's outline as a loop.
 
         Arguments:
-        * `poly` (`SCRoundedPolygon`): The polygon.
+        * `poly` (`RoundedPolygon`): The polygon.
 
         Returns:
-        * (`SCLoop`): Its outline, with its name.
+        * (`Loop`): Its outline, with its name.
         """
-        return SCLoop(poly.name, poly.segments)
+        return Loop(poly.name, poly.segments)
 
-    # Method `SCLoop.polygon()`:
+    # Method `Loop.polygon()`:
     # Type hints on every variable inflate its count of locals.
     # pylint: disable-next=too-many-locals
     def polygon(
         self, name: str, z_start: float, z_end: float
-    ) -> SCRoundedPolygon:
+    ) -> RoundedPolygon:
         """Return the loop as a rounded polygon.
 
         Each arc's corner is where the tangents at its ends meet, with
@@ -1927,17 +1929,17 @@ class SCLoop:
         * `z_end` (`float`): The height it ends at.
 
         Returns:
-        * (`SCRoundedPolygon`): The polygon, going around the same way.
+        * (`RoundedPolygon`): The polygon, going around the same way.
 
         Raises:
         * `ValueError`: If the loop turns back on itself, or crosses
           itself.
         """
         # One corner can not make a half circle, so split long arcs.
-        pieces: list[SCSegment] = []
-        segment: SCSegment
+        pieces: list[XYSegment] = []
+        segment: XYSegment
         for segment in _without_backtracks(self.segments):
-            if isinstance(segment, SCLine):
+            if isinstance(segment, LineSegment):
                 pieces.append(segment)
                 continue
             count: int = max(
@@ -1958,29 +1960,29 @@ class SCLoop:
                 )
 
         # An arc gives its corner, and a joint not smooth gives another.
-        corners: list[SCCorner] = []
+        corners: list[Corner] = []
         index: int
-        piece: SCSegment
+        piece: XYSegment
         for index, piece in enumerate(pieces):
-            if isinstance(piece, SCArc):
+            if isinstance(piece, ArcSegment):
                 tangent: Point = start_tangent(piece)
                 reach: float = piece.radius * math.tan(abs(piece.sweep) / 2.0)
                 corners.append(
-                    SCCorner(
+                    Corner(
                         piece.start[0] + tangent[0] * reach,
                         piece.start[1] + tangent[1] * reach,
                         piece.radius,
                     )
                 )
-            following: SCSegment = pieces[(index + 1) % len(pieces)]
+            following: XYSegment = pieces[(index + 1) % len(pieces)]
             turn: float = turn_between(
                 end_tangent(piece), start_tangent(following)
             )
             if abs(turn) > ANGLE:
-                corners.append(SCCorner(piece.end[0], piece.end[1]))
-        return SCRoundedPolygon(name, corners, z_start, z_end)
+                corners.append(Corner(piece.end[0], piece.end[1]))
+        return RoundedPolygon(name, corners, z_start, z_end)
 
-    # Method `SCLoop.signed_area()`:
+    # Method `Loop.signed_area()`:
     def signed_area(self) -> float:
         """Return the area inside the loop.
 
@@ -1991,10 +1993,10 @@ class SCLoop:
         # Green's theorem: each segment's chord, plus the sliver
         # between each arc and its chord.
         area: float = 0.0
-        segment: SCSegment
+        segment: XYSegment
         for segment in self.segments:
             area += 0.5 * cross(segment.start, segment.end)
-            if isinstance(segment, SCArc):
+            if isinstance(segment, ArcSegment):
                 area += (
                     0.5
                     * segment.radius**2
@@ -2002,7 +2004,7 @@ class SCLoop:
                 )
         return area
 
-    # Method `SCLoop.is_ccw()`:
+    # Method `Loop.is_ccw()`:
     def is_ccw(self) -> bool:
         """Return whether the loop goes counter-clockwise.
 
@@ -2011,7 +2013,7 @@ class SCLoop:
         """
         return self.signed_area() > 0.0
 
-    # Method `SCLoop.length()`:
+    # Method `Loop.length()`:
     def length(self) -> float:
         """Return the distance once around the loop.
 
@@ -2020,19 +2022,19 @@ class SCLoop:
         """
         return sum(segment.length() for segment in self.segments)
 
-    # Method `SCLoop.reversed()`:
-    def reversed(self) -> "SCLoop":
+    # Method `Loop.reversed()`:
+    def reversed(self) -> "Loop":
         """Return the loop going around the other way.
 
         Returns:
-        * (`SCLoop`): The reversed loop, with the same name.
+        * (`Loop`): The reversed loop, with the same name.
         """
-        return SCLoop(
+        return Loop(
             self.name,
             tuple(reverse_segment(segment) for segment in self.segments[::-1]),
         )
 
-    # Method `SCLoop.distance()`:
+    # Method `Loop.distance()`:
     def distance(self, point: Point) -> float:
         """Return the distance from a point to the loop.
 
@@ -2044,7 +2046,7 @@ class SCLoop:
         """
         return min(distance_to(point, segment) for segment in self.segments)
 
-    # Method `SCLoop.contains()`:
+    # Method `Loop.contains()`:
     def contains(self, point: Point) -> bool:
         """Return whether a point is inside the loop (either way round).
 
@@ -2061,9 +2063,9 @@ class SCLoop:
         x: float = point[0]
         y: float = point[1] + math.pi * 1e-8
         crossings: int = 0
-        segment: SCSegment
+        segment: XYSegment
         for segment in self.segments:
-            if isinstance(segment, SCLine):
+            if isinstance(segment, LineSegment):
                 (x1, y1), (x2, y2) = segment.start, segment.end
                 if (y1 > y) != (y2 > y) and x < x1 + (y - y1) * (x2 - x1) / (
                     y2 - y1
@@ -2084,7 +2086,7 @@ class SCLoop:
                     crossings += 1
         return crossings % 2 == 1
 
-    # Method `SCLoop.corners()`:
+    # Method `Loop.corners()`:
     def corners(self) -> list[tuple[Point, Point, Point]]:
         """Return where the loop turns sharply between two segments.
 
@@ -2094,9 +2096,9 @@ class SCLoop:
         """
         corners: list[tuple[Point, Point, Point]] = []
         index: int
-        segment: SCSegment
+        segment: XYSegment
         for index, segment in enumerate(self.segments):
-            following: SCSegment = self.segments[
+            following: XYSegment = self.segments[
                 (index + 1) % len(self.segments)
             ]
             arriving: Point = end_tangent(segment)
@@ -2107,7 +2109,7 @@ class SCLoop:
 
 
 # Function `offset_segment()`:
-def offset_segment(segment: SCSegment, distance: float) -> SCSegment | None:
+def offset_segment(segment: XYSegment, distance: float) -> XYSegment | None:
     """Return a segment moved to its left by a distance.
 
     A line moves sideways; an arc keeps its center and changes its
@@ -2116,17 +2118,17 @@ def offset_segment(segment: SCSegment, distance: float) -> SCSegment | None:
     trimming in `inset()` always drops).
 
     Arguments:
-    * `segment` (`SCSegment`): The segment.
+    * `segment` (`XYSegment`): The segment.
     * `distance` (`float`): How far to move it.
 
     Returns:
-    * (`SCSegment | None`): The moved segment, or `None` when an arc
+    * (`XYSegment | None`): The moved segment, or `None` when an arc
       shrinks to a point.
     """
     # A line moves sideways.
-    if isinstance(segment, SCLine):
+    if isinstance(segment, LineSegment):
         side: Point = left(start_tangent(segment))
-        return SCLine(
+        return LineSegment(
             (
                 segment.start[0] + side[0] * distance,
                 segment.start[1] + side[1] * distance,
@@ -2154,12 +2156,12 @@ def offset_segment(segment: SCSegment, distance: float) -> SCSegment | None:
             )
         )
     if radius < 0.0:
-        return SCLine(ends[0], ends[1])
-    return SCArc(ends[0], ends[1], segment.center, radius, segment.sweep)
+        return LineSegment(ends[0], ends[1])
+    return ArcSegment(ends[0], ends[1], segment.center, radius, segment.sweep)
 
 
 # Function `inset()`:
-def inset(loops: Sequence[SCLoop], distance: float, name: str) -> list[SCLoop]:
+def inset(loops: Sequence[Loop], distance: float, name: str) -> list[Loop]:
     """Return the loops a distance inside a region.
 
     The region is on the left of each of its loops (counter-clockwise
@@ -2171,17 +2173,17 @@ def inset(loops: Sequence[SCLoop], distance: float, name: str) -> list[SCLoop]:
     several, or vanish.
 
     Arguments:
-    * `loops` (`Sequence[SCLoop]`): The loops around the region.
+    * `loops` (`Sequence[Loop]`): The loops around the region.
     * `distance` (`float`): How far in to go (positive).
     * `name` (`str`): The name of the loops found (numbered when there
       are several).
 
     Returns:
-    * (`list[SCLoop]`): The loops, with the region still on their left.
+    * (`list[Loop]`): The loops, with the region still on their left.
     """
     assert distance > 0.0, f"{distance=} must be positive"
     # Move the segments in, and keep the pieces that are far enough in.
-    kept: list[SCSegment] = _trim(_moved(loops, distance), loops, distance)
+    kept: list[XYSegment] = _trim(_moved(loops, distance), loops, distance)
 
     # Join the pieces into loops.
     return _loops(kept, name)
@@ -2189,11 +2191,11 @@ def inset(loops: Sequence[SCLoop], distance: float, name: str) -> list[SCLoop]:
 
 # Function `beyond()`:
 def beyond(
-    region: Sequence[SCLoop],
-    inner: Sequence[SCLoop],
+    region: Sequence[Loop],
+    inner: Sequence[Loop],
     distance: float,
     name: str,
-) -> list[SCLoop]:
+) -> list[Loop]:
     """Return the part of a region farther than a distance from another.
 
     `inner` is a region inside `region` (both with their regions on
@@ -2205,35 +2207,35 @@ def beyond(
     pieces of the grown outline inside `region`, are joined into loops.
 
     Arguments:
-    * `region` (`Sequence[SCLoop]`): The region's loops.
-    * `inner` (`Sequence[SCLoop]`): The inner region's loops.
+    * `region` (`Sequence[Loop]`): The region's loops.
+    * `inner` (`Sequence[Loop]`): The inner region's loops.
     * `distance` (`float`): How far from `inner` to take away.
     * `name` (`str`): The name of the loops found (numbered when there
       are several).
 
     Returns:
-    * (`list[SCLoop]`): The loops of what is left, with it on their
+    * (`list[Loop]`): The loops of what is left, with it on their
       left.
     """
     # Grow the inner region: an inset of its outside.
     if not inner:
         return list(region)
-    grown: list[SCLoop] = inset(
+    grown: list[Loop] = inset(
         [loop.reversed() for loop in inner], distance, name
     )
-    outline: list[SCSegment] = [
+    outline: list[XYSegment] = [
         segment for loop in region for segment in loop.segments
     ]
-    edge: list[SCSegment] = [
+    edge: list[XYSegment] = [
         segment for loop in grown for segment in loop.segments
     ]
 
     # Keep the region's outline where it is far from the inner region,
     # and the grown outline where it is inside the region.
-    kept: list[SCSegment] = []
-    segment: SCSegment
+    kept: list[XYSegment] = []
+    segment: XYSegment
     for segment in outline:
-        piece: SCSegment
+        piece: XYSegment
         for piece in _split_by(segment, edge):
             middle: Point = point_at(piece, 0.5)
             if all(loop.distance(middle) > distance + TOUCH for loop in inner):
@@ -2248,16 +2250,16 @@ def beyond(
 
 # Function `_split_by()`:
 def _split_by(
-    segment: SCSegment, others: Sequence[SCSegment]
-) -> list[SCSegment]:
+    segment: XYSegment, others: Sequence[XYSegment]
+) -> list[XYSegment]:
     """Split a segment wherever other segments cross it.
 
     Arguments:
-    * `segment` (`SCSegment`): The segment.
-    * `others` (`Sequence[SCSegment]`): The segments that may cross it.
+    * `segment` (`XYSegment`): The segment.
+    * `others` (`Sequence[XYSegment]`): The segments that may cross it.
 
     Returns:
-    * (`list[SCSegment]`): Its pieces (longer than `TOUCH`), in order.
+    * (`list[XYSegment]`): Its pieces (longer than `TOUCH`), in order.
     """
     crossings: list[Point] = [
         point for other in others for point in meet(segment, other)
@@ -2270,33 +2272,33 @@ def _split_by(
 
 
 # Function `_loops()`:
-def _loops(pieces: list[SCSegment], name: str) -> list[SCLoop]:
+def _loops(pieces: list[XYSegment], name: str) -> list[Loop]:
     """Join pieces into named loops, dropping any with no area.
 
     Arguments:
-    * `pieces` (`list[SCSegment]`): The pieces, in any order.
+    * `pieces` (`list[XYSegment]`): The pieces, in any order.
     * `name` (`str`): The loops' name (numbered when there are
       several).
 
     Returns:
-    * (`list[SCLoop]`): The loops.
+    * (`list[Loop]`): The loops.
     """
-    found: list[SCLoop] = []
-    chain: list[SCSegment]
+    found: list[Loop] = []
+    chain: list[XYSegment]
     for chain in _chain(pieces):
-        result: SCLoop = SCLoop(name, tuple(_merge(chain)))
+        result: Loop = Loop(name, tuple(_merge(chain)))
         if abs(result.signed_area()) > EPSILON:
             found.append(result)
     if len(found) > 1:
         found = [
-            SCLoop(f"{name} {number}", result.segments)
+            Loop(f"{name} {number}", result.segments)
             for number, result in enumerate(found, 1)
         ]
     return found
 
 
 # Function `_moved()`:
-def _moved(loops: Sequence[SCLoop], distance: float) -> list[SCSegment]:
+def _moved(loops: Sequence[Loop], distance: float) -> list[XYSegment]:
     """Return the segments of a region's loops moved in, and joined.
 
     Each corner is joined by an arc around it when it turns right
@@ -2304,21 +2306,21 @@ def _moved(loops: Sequence[SCLoop], distance: float) -> list[SCSegment]:
     (which `_trim()` always drops).
 
     Arguments:
-    * `loops` (`Sequence[SCLoop]`): The loops around the region.
+    * `loops` (`Sequence[Loop]`): The loops around the region.
     * `distance` (`float`): How far in to move them.
 
     Returns:
-    * (`list[SCSegment]`): The moved segments and the joins.
+    * (`list[XYSegment]`): The moved segments and the joins.
     """
-    raw: list[SCSegment] = []
-    loop: SCLoop
+    raw: list[XYSegment] = []
+    loop: Loop
     for loop in loops:
         count: int = len(loop.segments)
         index: int
-        segment: SCSegment
+        segment: XYSegment
         for index, segment in enumerate(loop.segments):
             # Move the segment.
-            moved: SCSegment | None = offset_segment(segment, distance)
+            moved: XYSegment | None = offset_segment(segment, distance)
             if moved is not None and moved.length() > EPSILON:
                 raw.append(moved)
 
@@ -2337,33 +2339,35 @@ def _moved(loops: Sequence[SCLoop], distance: float) -> list[SCSegment]:
                 for side in (left(arriving), left(leaving))
             ]
             if turn < 0.0:
-                raw.append(SCArc(ends[0], ends[1], corner, distance, turn))
+                raw.append(
+                    ArcSegment(ends[0], ends[1], corner, distance, turn)
+                )
             else:
-                raw.append(SCLine(ends[0], ends[1]))
+                raw.append(LineSegment(ends[0], ends[1]))
     return raw
 
 
 # Function `_trim()`:
 def _trim(
-    raw: list[SCSegment], loops: Sequence[SCLoop], distance: float
-) -> list[SCSegment]:
+    raw: list[XYSegment], loops: Sequence[Loop], distance: float
+) -> list[XYSegment]:
     """Return the pieces of moved segments that are far enough in.
 
     Arguments:
-    * `raw` (`list[SCSegment]`): The moved segments and joins.
-    * `loops` (`Sequence[SCLoop]`): The loops around the region.
+    * `raw` (`list[XYSegment]`): The moved segments and joins.
+    * `loops` (`Sequence[Loop]`): The loops around the region.
     * `distance` (`float`): How far in they were moved.
 
     Returns:
-    * (`list[SCSegment]`): The pieces, split wherever the moved
+    * (`list[XYSegment]`): The pieces, split wherever the moved
       segments cross, that are `distance` from the region's edge.
     """
-    edge: list[SCSegment] = [
+    edge: list[XYSegment] = [
         segment for loop in loops for segment in loop.segments
     ]
-    kept: list[SCSegment] = []
+    kept: list[XYSegment] = []
     index: int
-    segment: SCSegment
+    segment: XYSegment
     for index, segment in enumerate(raw):
         crossings: list[Point] = [
             point
@@ -2371,7 +2375,7 @@ def _trim(
             if other != index
             for point in meet(segment, against)
         ]
-        piece: SCSegment
+        piece: XYSegment
         for piece in split_at(segment, crossings):
             middle: Point = point_at(piece, 0.5)
             if piece.length() > TOUCH and all(
@@ -2383,21 +2387,21 @@ def _trim(
 
 
 # Function `_chain()`:
-def _chain(pieces: list[SCSegment]) -> list[list[SCSegment]]:
+def _chain(pieces: list[XYSegment]) -> list[list[XYSegment]]:
     """Join pieces end to start into closed chains.
 
     Arguments:
-    * `pieces` (`list[SCSegment]`): The pieces, in any order.
+    * `pieces` (`list[XYSegment]`): The pieces, in any order.
 
     Returns:
-    * (`list[list[SCSegment]]`): The closed chains (pieces that do not
+    * (`list[list[XYSegment]]`): The closed chains (pieces that do not
       close up are dropped).
     """
-    chains: list[list[SCSegment]] = []
-    unused: list[SCSegment] = list(pieces)
+    chains: list[list[XYSegment]] = []
+    unused: list[XYSegment] = list(pieces)
     while unused:
         # Follow the chain until it comes back to its start.
-        chain: list[SCSegment] = [unused.pop(0)]
+        chain: list[XYSegment] = [unused.pop(0)]
         while True:
             end: Point = chain[-1].end
             if len(chain) > 1 and math.dist(end, chain[0].start) <= JOIN:
@@ -2416,22 +2420,22 @@ def _chain(pieces: list[SCSegment]) -> list[list[SCSegment]]:
 
 
 # Function `_merge()`:
-def _merge(chain: list[SCSegment]) -> list[SCSegment]:
+def _merge(chain: list[XYSegment]) -> list[XYSegment]:
     """Close a chain's gaps, and rejoin pieces split from one segment.
 
     Arguments:
-    * `chain` (`list[SCSegment]`): A closed chain of pieces.
+    * `chain` (`list[XYSegment]`): A closed chain of pieces.
 
     Returns:
-    * (`list[SCSegment]`): The same loop, each segment starting exactly
+    * (`list[XYSegment]`): The same loop, each segment starting exactly
       where the one before ends, with lines that continue each other
       (and arcs of one circle going the same way) made one.
     """
     # Rejoin pieces that continue each other.
-    merged: list[SCSegment] = []
-    segment: SCSegment
+    merged: list[XYSegment] = []
+    segment: XYSegment
     for segment in chain:
-        joined: SCSegment | None = (
+        joined: XYSegment | None = (
             _join(merged[-1], segment) if merged else None
         )
         if joined is None:
@@ -2439,20 +2443,20 @@ def _merge(chain: list[SCSegment]) -> list[SCSegment]:
         else:
             merged[-1] = joined
     if len(merged) > 2:
-        wrapped: SCSegment | None = _join(merged[-1], merged[0])
+        wrapped: XYSegment | None = _join(merged[-1], merged[0])
         if wrapped is not None:
             merged = [wrapped, *merged[1:-1]]
 
     # Make each segment start exactly where the one before ends.
-    closed: list[SCSegment] = []
+    closed: list[XYSegment] = []
     index: int
     for index, segment in enumerate(merged):
         start: Point = merged[index - 1].end
-        if isinstance(segment, SCLine):
-            closed.append(SCLine(start, segment.end))
+        if isinstance(segment, LineSegment):
+            closed.append(LineSegment(start, segment.end))
         else:
             closed.append(
-                SCArc(
+                ArcSegment(
                     start,
                     segment.end,
                     segment.center,
@@ -2464,27 +2468,27 @@ def _merge(chain: list[SCSegment]) -> list[SCSegment]:
 
 
 # Function `_join()`:
-def _join(first: SCSegment, second: SCSegment) -> SCSegment | None:
+def _join(first: XYSegment, second: XYSegment) -> XYSegment | None:
     """Return two segments as one, when the second continues the first.
 
     Arguments:
-    * `first` (`SCSegment`): The first segment.
-    * `second` (`SCSegment`): The segment after it.
+    * `first` (`XYSegment`): The first segment.
+    * `second` (`XYSegment`): The segment after it.
 
     Returns:
-    * (`SCSegment | None`): The two as one, or `None` when they meet at
+    * (`XYSegment | None`): The two as one, or `None` when they meet at
       an angle or are not alike.
     """
     if abs(turn_between(end_tangent(first), start_tangent(second))) > ANGLE:
         return None
-    if isinstance(first, SCLine) and isinstance(second, SCLine):
-        return SCLine(first.start, second.end)
+    if isinstance(first, LineSegment) and isinstance(second, LineSegment):
+        return LineSegment(first.start, second.end)
     if (
-        isinstance(first, SCArc)
-        and isinstance(second, SCArc)
+        isinstance(first, ArcSegment)
+        and isinstance(second, ArcSegment)
         and _same_circle(first, second)
     ):
-        return SCArc(
+        return ArcSegment(
             first.start,
             second.end,
             first.center,
@@ -2495,12 +2499,12 @@ def _join(first: SCSegment, second: SCSegment) -> SCSegment | None:
 
 
 # Function `_same_circle()`:
-def _same_circle(first: SCArc, second: SCArc) -> bool:
+def _same_circle(first: ArcSegment, second: ArcSegment) -> bool:
     """Return whether two arcs can be one arc.
 
     Arguments:
-    * `first` (`SCArc`): One arc.
-    * `second` (`SCArc`): The other.
+    * `first` (`ArcSegment`): One arc.
+    * `second` (`ArcSegment`): The other.
 
     Returns:
     * (`bool`): True when they share a circle and a direction, and

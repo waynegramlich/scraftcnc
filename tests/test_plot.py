@@ -6,8 +6,8 @@ import re
 import unittest
 from typing import Any, cast
 
-from scraftcnc.gcode import SCCNC
-from scraftcnc.geometry import SCArc
+from scraftcnc.gcode import CNC
+from scraftcnc.geometry import ArcSegment
 from scraftcnc.plot import (
     command_moves,
     path_moves,
@@ -26,11 +26,11 @@ class TestPlot(unittest.TestCase):
     # Method `TestPlot.test_moves()`:
     def test_moves(self) -> None:
         """Lines go straight, and arcs and helices are broken up."""
-        cnc: SCCNC = milling()
+        cnc: CNC = milling()
         cnc.rapid(x=1.0, y=0.0)
         cnc.linear(z=-0.1)
         cnc.arc(
-            SCArc((1.0, 0.0), (0.0, 1.0), (0.0, 0.0), 1.0, math.pi / 2),
+            ArcSegment((1.0, 0.0), (0.0, 1.0), (0.0, 0.0), 1.0, math.pi / 2),
             z=-0.2,
         )
         moves = path_moves(cnc)
@@ -72,7 +72,7 @@ class TestPlot(unittest.TestCase):
 
     def test_drilling(self) -> None:
         """A canned cycle is drawn as over, down, through and up."""
-        cnc: SCCNC = milling()
+        cnc: CNC = milling()
         cnc.change_tool(2)
         cnc.rapid(x=0.0, y=0.0)
         cnc.drill([(1.0, 1.0), (2.0, 1.0)], -0.2)
@@ -86,7 +86,7 @@ class TestPlot(unittest.TestCase):
     # Method `TestPlot.test_read_gcode()`:
     def test_read_gcode(self) -> None:
         """A program's G-code reads back into the same moves."""
-        cnc: SCCNC = milling()
+        cnc: CNC = milling()
         cnc.change_tool(2)
         cnc.rapid(x=0.0, y=0.0)
         cnc.drill([(1.0, 1.0), (2.0, 1.0)], -0.2)
@@ -94,7 +94,7 @@ class TestPlot(unittest.TestCase):
         cnc.rapid(x=1.0, y=0.0)
         cnc.linear(z=-0.1)
         cnc.arc(
-            SCArc((1.0, 0.0), (0.0, 1.0), (0.0, 0.0), 1.0, math.pi / 2),
+            ArcSegment((1.0, 0.0), (0.0, 1.0), (0.0, 0.0), 1.0, math.pi / 2),
             z=-0.2,
         )
         commands = read_gcode(cnc.gcode())
@@ -119,7 +119,7 @@ class TestPlot(unittest.TestCase):
     # Method `TestPlot.test_page()`:
     def test_page(self) -> None:
         """The page carries the program, its moves and the outlines."""
-        cnc: SCCNC = milling()
+        cnc: CNC = milling()
         cnc.pocket(square(1.0, 0.125), -0.2, 0.1)
         cnc.finish()
         page: str = plot_html(cnc, [(square(1.0, 0.125), 0.0)], "A </b> test")
@@ -135,10 +135,10 @@ class TestPlot(unittest.TestCase):
     # Method `TestPlot.test_sketch()`:
     def test_sketch(self) -> None:
         """The path goes into one 3D sketch per operation and kind."""
-        cnc: SCCNC = milling()
+        cnc: CNC = milling()
         cnc.profile(square(1.0, 0.25), -0.1, 0.1)
         cnc.finish()
-        fake: SCFakeSolidCraft = SCFakeSolidCraft()
+        fake: FakeSolidCraft = FakeSolidCraft()
         names: list[str] = sketch_path(cast(Any, fake), cnc, 25.4)
         self.assertEqual(
             names,
@@ -166,20 +166,20 @@ class TestPlot(unittest.TestCase):
         self.assertGreater(len(first), 20)
 
 
-# Class `SCFakeTransport`:
-class SCFakeTransport:  # pylint: disable=too-few-public-methods
+# Class `FakeTransport`:
+class FakeTransport:  # pylint: disable=too-few-public-methods
     """Stands in for a GUI's transport, recording `engine.batch` steps.
 
     Attributes:
     * `batches` (`list[list[dict[str, Any]]]`): Each batch's steps.
     """
 
-    # Method `SCFakeTransport.__init__()`:
+    # Method `FakeTransport.__init__()`:
     def __init__(self) -> None:
         """Start with no batches."""
         self.batches: list[list[dict[str, Any]]] = []
 
-    # Method `SCFakeTransport.request()`:
+    # Method `FakeTransport.request()`:
     def request(self, method: str, params: dict[str, Any]) -> Any:
         """Record a batch, and answer that every step ran.
 
@@ -195,28 +195,28 @@ class SCFakeTransport:  # pylint: disable=too-few-public-methods
         return {"completed": len(params["commands"])}
 
 
-# Class `SCFakeSolidCraft`:
+# Class `FakeSolidCraft`:
 # Its commands come from `__getattr__()`, so `pylint` sees no public
 # methods.
-class SCFakeSolidCraft:  # pylint: disable=too-few-public-methods
-    """Stands in for `SCPyBind`, recording the sketch commands.
+class FakeSolidCraft:  # pylint: disable=too-few-public-methods
+    """Stands in for `PyBind`, recording the sketch commands.
 
     Attributes:
     * `calls` (`list[tuple[str, dict[str, Any]]]`): Each command's name
       and arguments.
-    * `sketch` (`SCFakeSolidCraft`):
+    * `sketch` (`FakeSolidCraft`):
       Itself, for `solidcraft.sketch.X()`.
-    * `transport` (`SCFakeTransport`): Where batches go.
+    * `transport` (`FakeTransport`): Where batches go.
     """
 
-    # Method `SCFakeSolidCraft.__init__()`:
+    # Method `FakeSolidCraft.__init__()`:
     def __init__(self) -> None:
         """Start with no calls."""
         self.calls: list[tuple[str, dict[str, Any]]] = []
-        self.sketch: SCFakeSolidCraft = self
-        self.transport: SCFakeTransport = SCFakeTransport()
+        self.sketch: FakeSolidCraft = self
+        self.transport: FakeTransport = FakeTransport()
 
-    # Method `SCFakeSolidCraft.__getattr__()`:
+    # Method `FakeSolidCraft.__getattr__()`:
     def __getattr__(self, name: str) -> Any:
         """Return a function that records a call of a command.
 

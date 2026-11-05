@@ -1,6 +1,6 @@
 """Setup comments: an assembly written into a `.nc` file, and read back.
 
-A setup (`assembly.SCAssembly`) is written as whole-line RS-274
+A setup (`assembly.Assembly`) is written as whole-line RS-274
 comments, `(SCC: ...)`, each holding one line of TOML.  The first one
 is `version = "..."` (`scraftcnc.__version__`), then one `[[item]]`
 table per item, in stacking order.  A `( ... )` comment can not hold
@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__
-from .assembly import SCAssembly
+from .assembly import Assembly
 
 # The marker that starts each setup comment.
 MARKER: str = "SCC:"
@@ -40,8 +40,8 @@ _BARE_KEY: re.Pattern[str] = re.compile(r"^[A-Za-z0-9_-]+$")
 _AT_LINE: re.Pattern[str] = re.compile(r"at line (\d+)")
 
 
-# Class `SCSetupVersionWarning`:
-class SCSetupVersionWarning(UserWarning):
+# Class `SetupVersionWarning`:
+class SetupVersionWarning(UserWarning):
     """Warned when a `.nc` file was written by a newer `scraftcnc`.
 
     What can be read is still read; the rest is skipped.
@@ -49,11 +49,11 @@ class SCSetupVersionWarning(UserWarning):
 
 
 # Function `write()`:
-def write(assembly: SCAssembly) -> list[str]:
+def write(assembly: Assembly) -> list[str]:
     """Return an assembly as `.nc` setup comment lines.
 
     Arguments:
-    * `assembly` (`SCAssembly`): The setup.
+    * `assembly` (`Assembly`): The setup.
 
     Returns:
     * (`list[str]`): The `(SCC: ...)` lines, without line ends.
@@ -67,18 +67,18 @@ def write(assembly: SCAssembly) -> list[str]:
 
 
 # Function `read()`:
-def read(lines: Iterable[str]) -> SCAssembly | None:
+def read(lines: Iterable[str]) -> Assembly | None:
     """Return the assembly in a program's setup comments.
 
     Only whole-line `(SCC: ...)` comments are read; every other line
     is skipped.  A program written by a newer `scraftcnc` warns with
-    `SCSetupVersionWarning` and is read as far as it can be.
+    `SetupVersionWarning` and is read as far as it can be.
 
     Arguments:
     * `lines` (`Iterable[str]`): The program's lines.
 
     Returns:
-    * (`SCAssembly | None`):
+    * (`Assembly | None`):
       The assembly, or `None` when there are no setup comments.
 
     Raises:
@@ -126,24 +126,24 @@ def read(lines: Iterable[str]) -> SCAssembly | None:
         warnings.warn(
             f"setup comments are version {version}, newer than "
             f"scraftcnc {__version__}; reading what can be read",
-            SCSetupVersionWarning,
+            SetupVersionWarning,
             stacklevel=2,
         )
     unknown: list[str] = sorted(set(table) - {"item"})
     if unknown and not newer:
         raise ValueError(f"setup comments: unknown keys {unknown}")
-    return SCAssembly.from_dict({"item": table.get("item", [])})
+    return Assembly.from_dict({"item": table.get("item", [])})
 
 
 # Function `read_file()`:
-def read_file(path: str | Path) -> SCAssembly | None:
+def read_file(path: str | Path) -> Assembly | None:
     """Return the assembly in a `.nc` file's setup comments.
 
     Arguments:
     * `path` (`str | Path`): The `.nc` file.
 
     Returns:
-    * (`SCAssembly | None`):
+    * (`Assembly | None`):
       The assembly, or `None` when there are no setup comments.
 
     Raises:

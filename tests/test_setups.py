@@ -9,10 +9,10 @@ from pathlib import Path
 from typing import Any
 
 from scraftcnc import setups
-from scraftcnc.pybind.scraftpybind import SCHeadlessTransport, SCPyBind
+from scraftcnc.pybind.scraftpybind import HeadlessTransport, PyBind
 from scraftcnc.shops import grid_plates, read
 from scraftcnc.tooling import tools
-from scraftcnc.tooling.mount import SCMachineViseLayer, SCParallelLayer
+from scraftcnc.tooling.mount import MachineViseLayer, ParallelLayer
 from scraftcnc.tooling.shop_registries import use_shop
 from tests.flat_plate import FLAT_PLATE, use_flat_plate
 
@@ -37,7 +37,7 @@ class TestExample(unittest.TestCase):
     """The example: a grid plate from a chunk, in a vise."""
 
     def setUp(self) -> None:
-        self.setup = setups.SCSetup(example())
+        self.setup = setups.Setup(example())
 
     def test_items(self) -> None:
         """Everything in the JSON is there."""
@@ -59,7 +59,7 @@ class TestExample(unittest.TestCase):
         vise = tools.KURT_D688
         table, _, first, second = self.setup.tooling
         parallel = first.layer
-        assert isinstance(parallel, SCParallelLayer)
+        assert isinstance(parallel, ParallelLayer)
         self.assertAlmostEqual(
             table.placement.z + tools.MIKINI_1610L.thickness, 0.0
         )
@@ -73,7 +73,7 @@ class TestExample(unittest.TestCase):
     def test_parallels_next_to_jaws(self) -> None:
         """Each parallel touches a jaw's plate, along the jaw."""
         vise = self.setup.tooling[1].layer
-        assert isinstance(vise, SCMachineViseLayer)
+        assert isinstance(vise, MachineViseLayer)
         gap = setups._gap(vise, self.setup.tooling[1].placement)
         self.assertAlmostEqual(gap.high[1], 3.0 * INCH)
         self.assertAlmostEqual(gap.low[1], -3.0 * INCH)
@@ -124,12 +124,12 @@ class TestShopGridPlates(unittest.TestCase):
         """The shop's plate is `tools.GRID_PLATE`, so it shares its cache."""
         shop = grid_plates(read(setups.SHOP))
         self.assertEqual(
-            tools.SCGridPlate.from_shop(shop["Grid plate"]), tools.GRID_PLATE
+            tools.GridPlate.from_shop(shop["Grid plate"]), tools.GRID_PLATE
         )
 
     def test_defaults(self) -> None:
         """Keys not given are 0: square corners, no chamfers, no tooling."""
-        plate = tools.SCGridPlate.from_shop(
+        plate = tools.GridPlate.from_shop(
             {
                 "name": "Small",
                 "length": "4 in",
@@ -155,7 +155,7 @@ class TestProblems(unittest.TestCase):
         setup_json = copy.deepcopy(example())
         change(setup_json)
         with self.assertRaises(ValueError) as caught:
-            setups.SCSetup(setup_json)
+            setups.Setup(setup_json)
         return str(caught.exception)
 
     def test_no_unit(self) -> None:
@@ -212,7 +212,7 @@ class TestProblems(unittest.TestCase):
         """A setup must be an object."""
         with self.assertRaises(ValueError):
             # Deliberately the wrong type: it must be refused.
-            setups.SCSetup([])  # type: ignore[arg-type]
+            setups.Setup([])  # type: ignore[arg-type]
 
 
 class TestOtherSetups(unittest.TestCase):
@@ -222,28 +222,28 @@ class TestOtherSetups(unittest.TestCase):
         """Material wider than the gap is reported."""
         setup_json = example()
         setup_json["tooling"][1]["opening"] = "5 in"
-        text = "\n".join(setups.SCSetup(setup_json).notes())
+        text = "\n".join(setups.Setup(setup_json).notes())
         self.assertIn("DOES NOT FIT", text)
 
     def test_not_clamped(self) -> None:
         """Material narrower than the gap is reported."""
         setup_json = example()
         setup_json["materials"][0]["size"][0] = "5 in"
-        text = "\n".join(setups.SCSetup(setup_json).notes())
+        text = "\n".join(setups.Setup(setup_json).notes())
         self.assertIn("NOT CLAMPED: Raw aluminum is 1.000 in narrower", text)
 
     def test_out_of_reach(self) -> None:
         """A part past the travel is reported."""
         setup_json = example()
         setup_json["machine"]["y_travel"] = "4 in"
-        text = "\n".join(setups.SCSetup(setup_json).notes())
+        text = "\n".join(setups.Setup(setup_json).notes())
         self.assertIn("OUT OF REACH: Grid plate reaches 0.750 in", text)
 
     def test_part_does_not_fit(self) -> None:
         """Material too small for the part is reported."""
         setup_json = example()
         setup_json["materials"][0]["size"][1] = "10 in"
-        text = "\n".join(setups.SCSetup(setup_json).notes())
+        text = "\n".join(setups.Setup(setup_json).notes())
         self.assertIn(
             "Grid plate reaches past Raw aluminum along X, by 0.250 in "
             "on the low side and 0.250 in on the high side",
@@ -252,7 +252,7 @@ class TestOtherSetups(unittest.TestCase):
 
     def test_part_margin(self) -> None:
         """The material is 1/2 in past the part at both ends."""
-        material = setups.SCSetup(example()).materials[0]
+        material = setups.Setup(example()).materials[0]
         room = material.bounds()
         part = material.parts[0].bounds()
         self.assertAlmostEqual(part.low[0] - room.low[0], 0.5 * INCH)
@@ -264,7 +264,7 @@ class TestOtherSetups(unittest.TestCase):
         setup_json["materials"].append(
             copy.deepcopy(setup_json["materials"][0])
         )
-        setup = setups.SCSetup(setup_json)
+        setup = setups.Setup(setup_json)
         self.assertEqual(len(setup.materials), 2)
 
 
@@ -273,9 +273,7 @@ class TestDemoStack(unittest.TestCase):
 
     def setUp(self) -> None:
         path = HERE / "examples/setup/demo_stack.json"
-        self.setup = setups.SCSetup(
-            json.loads(path.read_text(encoding="utf-8"))
-        )
+        self.setup = setups.Setup(json.loads(path.read_text(encoding="utf-8")))
 
     def test_each_rests_on_the_last(self) -> None:
         """Each piece stands on the one below, up to the plate's bottom."""
@@ -284,7 +282,7 @@ class TestDemoStack(unittest.TestCase):
         self.assertAlmostEqual(vise.placement.z, rails)
         rails += tools.KURT_D688.bed_top()
         parallel = first.layer
-        assert isinstance(parallel, SCParallelLayer)
+        assert isinstance(parallel, ParallelLayer)
         self.assertAlmostEqual(first.placement.z, rails)
         self.assertAlmostEqual(second.placement.z, rails)
         self.assertAlmostEqual(
@@ -307,7 +305,7 @@ class TestDemoStack(unittest.TestCase):
 
         # The vise's gap, which is as wide as the grid plate.
         layer = vise.layer
-        assert isinstance(layer, SCMachineViseLayer)
+        assert isinstance(layer, MachineViseLayer)
         self.assertAlmostEqual(layer.opening, tools.GRID_PLATE.length)
         self.assertAlmostEqual(
             vise.placement.y - layer.vise.gap_center(layer.opening), center[1]
@@ -316,7 +314,7 @@ class TestDemoStack(unittest.TestCase):
 
         # The parallels are next to the jaws, under the grid plate.
         parallel = first.layer
-        assert isinstance(parallel, SCParallelLayer)
+        assert isinstance(parallel, ParallelLayer)
         half = (layer.opening - parallel.parallel.thickness) / 2.0
         self.assertAlmostEqual(first.placement.y, center[1] + half)
         self.assertAlmostEqual(second.placement.y, center[1] - half)
@@ -328,9 +326,9 @@ class TestModel(unittest.TestCase):
     def test_model(self) -> None:
         """Nothing overlaps, and everything lands where the JSON says."""
         program = shutil.which("solidcraft-cli") or str(CLI)
-        setup = setups.SCSetup(example())
-        with SCHeadlessTransport(program) as transport:
-            solidcraft = SCPyBind(transport)
+        setup = setups.Setup(example())
+        with HeadlessTransport(program) as transport:
+            solidcraft = PyBind(transport)
             names = setup.model(solidcraft)
             self.assertEqual(len(names), 1 + 12 + 2 + 1 + 1)
 

@@ -17,7 +17,7 @@ def lines_of(text: str) -> dict[shops.KeyPath, int]:
     """Return the line of every key path in some TOML."""
     tomllib.loads(text)
     # pylint: disable-next=protected-access
-    return shops._SCScanner(text).document()
+    return shops._Scanner(text).document()
 
 
 class TestScanner(unittest.TestCase):
@@ -129,7 +129,7 @@ class TestMeasure(unittest.TestCase):
                 self.assertIn(problem, str(caught.exception))
 
 
-class SCCopiedShop(unittest.TestCase):
+class CopiedShop(unittest.TestCase):
     """A copy of the example shop, to change and read."""
 
     def setUp(self) -> None:
@@ -159,13 +159,13 @@ class SCCopiedShop(unittest.TestCase):
 
     def problems(self, name: str = "home_shop.toml") -> list[str]:
         """Return the problems found reading a copied file."""
-        with self.assertRaises(shops.SCShopError) as caught:
+        with self.assertRaises(shops.ShopError) as caught:
             shops.read(self.directory / name)
         prefix = self.directory.as_posix() + "/"
         return [p.replace(prefix, "") for p in caught.exception.problems]
 
 
-class TestReader(SCCopiedShop):
+class TestReader(CopiedShop):
     """Reading the example shop, and copies of it with problems."""
 
     def test_example(self) -> None:
@@ -541,7 +541,7 @@ class TestReader(SCCopiedShop):
         )
 
 
-class TestCNCMachine(SCCopiedShop):
+class TestCNCMachine(CopiedShop):
     """A shop's machine, for the G-code side."""
 
     def test_cnc_machine(self) -> None:
@@ -778,9 +778,9 @@ class TestMarkdown(unittest.TestCase):
                 continue
             with self.subTest(kind=kind.kind):
                 # pylint: disable-next=protected-access
-                reader = shops._SCReader(EXAMPLES)
+                reader = shops._Reader(EXAMPLES)
                 # pylint: disable-next=protected-access
-                source = shops._SCSource(kind.kind, {})
+                source = shops._Source(kind.kind, {})
                 reader.table(tomllib.loads(kind.example), kind, (), source)
                 self.assertEqual(reader.problems, [])
 

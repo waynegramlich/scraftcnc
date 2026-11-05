@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from typing import Any
 
-from scraftcnc.pybind.scraftpybind import JSON, SCHeadlessTransport, SCPyBind
+from scraftcnc.pybind.scraftpybind import JSON, HeadlessTransport, PyBind
 from scraftcnc.shops import read
 from scraftcnc.tooling import tools
 from scraftcnc.tooling.cutter_models import EXAMPLE_SHOP
@@ -73,7 +73,7 @@ class TestKeepOut(unittest.TestCase):
 
     def test_grown(self) -> None:
         """A prism grows by the margin on all six sides."""
-        prism = tools.SCPrism("Box", (0.0, 1.0, 2.0), (3.0, 5.0, 7.0))
+        prism = tools.Prism("Box", (0.0, 1.0, 2.0), (3.0, 5.0, 7.0))
         grown = prism.grown(1.0)
         self.assertEqual(grown.low, (-1.0, 0.0, 1.0))
         self.assertEqual(grown.high, (4.0, 6.0, 8.0))
@@ -82,20 +82,20 @@ class TestKeepOut(unittest.TestCase):
     def test_empty_prism(self) -> None:
         """A prism with no size on some axis is refused."""
         with self.assertRaises(ValueError):
-            tools.SCPrism("Flat", (0.0, 0.0, 0.0), (1.0, 1.0, 0.0))
+            tools.Prism("Flat", (0.0, 0.0, 0.0), (1.0, 1.0, 0.0))
 
     def test_margin_units(self) -> None:
         """A margin is read with its unit."""
-        prism = tools.SCPrism("Box", (0.0, 0.0, 0.0), (1.0, 1.0, 1.0))
+        prism = tools.Prism("Box", (0.0, 0.0, 0.0), (1.0, 1.0, 1.0))
         for margin in ("1/8 in", "1/8 inch", "3.175 mm"):
             with self.subTest(margin=margin):
-                grown = tools.SCKeepOut().add_prism(prism, margin)
+                grown = tools.KeepOut().add_prism(prism, margin)
                 self.assertAlmostEqual(grown.low[0], -3.175)
                 self.assertAlmostEqual(grown.high[2], 4.175)
 
     def test_one_per_table(self) -> None:
         """Each table's prism encloses it, 1/8 inch away."""
-        tormach = tools.SCTormach(None)  # type: ignore[arg-type]
+        tormach = tools.Tormach(None)  # type: ignore[arg-type]
         keep_out = tormach.mill_table_keep_out()
         self.assertEqual(len(keep_out.prisms), len(tools.MILL_TABLES))
         for table, prism in zip(
@@ -121,7 +121,7 @@ class TestDrill(unittest.TestCase):
         """The outline closes, with a groove and an edge per flute."""
         for flutes in range(1, 6):
             with self.subTest(flutes=flutes):
-                arcs = tools.SCDrill("D", 20.0, 100.0, flutes).section()
+                arcs = tools.Drill("D", 20.0, 100.0, flutes).section()
                 self.assertEqual(len(arcs), 2 * flutes)
                 for (_, _, end), (start, _, _) in zip(
                     arcs, arcs[1:] + arcs[:1], strict=True
@@ -138,7 +138,7 @@ class TestDrill(unittest.TestCase):
 
     def test_flat_tip_has_no_height(self) -> None:
         """A flat tip's height is exactly zero."""
-        drill = tools.SCDrill("D", 20.0, 100.0, 2, point_angle=180.0)
+        drill = tools.Drill("D", 20.0, 100.0, 2, point_angle=180.0)
         self.assertEqual(drill.point_height(), 0.0)
 
     def test_refused(self) -> None:
@@ -151,11 +151,11 @@ class TestDrill(unittest.TestCase):
             (10.0, 1.0, 2),
         ):
             with self.subTest(args=args), self.assertRaises(ValueError):
-                tools.SCDrill("D", *args)
+                tools.Drill("D", *args)
 
     def test_cylinder(self) -> None:
         """The cylinder encloses the drill, up from its tip."""
-        drill = tools.SCDrill("D", 20.0, 100.0, 2, 40.0, 30.0)
+        drill = tools.Drill("D", 20.0, 100.0, 2, 40.0, 30.0)
         cylinder = drill.cylinder((1.0, 2.0, 3.0))
         self.assertEqual(cylinder.center, (1.0, 2.0))
         self.assertEqual((cylinder.low, cylinder.high), (3.0, 103.0))
@@ -163,8 +163,8 @@ class TestDrill(unittest.TestCase):
 
     def test_cylinder_grown(self) -> None:
         """A keep-out grows the side and both ends by the margin."""
-        cylinder = tools.SCCylinder("C", (0.0, 0.0), 0.0, 10.0, 5.0)
-        grown = tools.SCKeepOut().add_cylinder(cylinder, "1/8 in")
+        cylinder = tools.Cylinder("C", (0.0, 0.0), 0.0, 10.0, 5.0)
+        grown = tools.KeepOut().add_cylinder(cylinder, "1/8 in")
         self.assertAlmostEqual(grown.low, -3.175)
         self.assertAlmostEqual(grown.high, 13.175)
         self.assertAlmostEqual(grown.radius, 8.175)
@@ -313,7 +313,7 @@ class TestVise(unittest.TestCase):
 
     def test_outline(self) -> None:
         """A block's outline is its rectangle, with rounded corners."""
-        block = tools.SCViseBlock(100.0, 60.0, 10.0, 5.0)
+        block = tools.ViseBlock(100.0, 60.0, 10.0, 5.0)
         outline = block.outline("Block", (7.0, -3.0))
         self.assertEqual(len(outline.segments), 8)
         self.assertTrue(outline.is_ccw())
@@ -325,13 +325,13 @@ class TestVise(unittest.TestCase):
 
     def test_sharp_outline(self) -> None:
         """A block with no corner radius has only its four edges."""
-        outline = tools.SCViseBlock(100.0, 60.0, 10.0).outline("Block")
+        outline = tools.ViseBlock(100.0, 60.0, 10.0).outline("Block")
         self.assertEqual(len(outline.segments), 4)
 
     def test_notched_outline(self) -> None:
         """The notches line up across the block, four corners each."""
-        block = tools.SCViseBlock(100.0, 60.0, 10.0, 5.0)
-        notches = tools.SCViseNotches((-20.0, 20.0), 10.0, 8.0, 3.0, 1.0)
+        block = tools.ViseBlock(100.0, 60.0, 10.0, 5.0)
+        notches = tools.ViseNotches((-20.0, 20.0), 10.0, 8.0, 3.0, 1.0)
         outline = block.outline("Block", (0.0, 0.0), notches)
         corners = [(corner.x, corner.y) for corner in outline.corners]
         self.assertEqual(len(corners), 4 + 4 * 2 * 2)
@@ -346,10 +346,10 @@ class TestVise(unittest.TestCase):
 
     def test_any_number_of_notches(self) -> None:
         """Any number of notches per side works, even none."""
-        block = tools.SCViseBlock(100.0, 60.0, 10.0, 5.0)
+        block = tools.ViseBlock(100.0, 60.0, 10.0, 5.0)
         for centers in ((), (0.0,), (-30.0, 0.0, 30.0)):
             with self.subTest(centers=centers):
-                notches = tools.SCViseNotches(centers, 10.0, 8.0, 3.0, 1.0)
+                notches = tools.ViseNotches(centers, 10.0, 8.0, 3.0, 1.0)
                 outline = block.outline("Block", notches=notches)
                 self.assertEqual(len(outline.corners), 4 + 8 * len(centers))
                 self.assertAlmostEqual(
@@ -359,7 +359,7 @@ class TestVise(unittest.TestCase):
     def test_notch_area(self) -> None:
         """The rounds at the inner and outer corners count."""
         fillet = 1.0 - math.pi / 4.0
-        notches = tools.SCViseNotches((0.0,), 10.0, 8.0, 3.0, 1.0)
+        notches = tools.ViseNotches((0.0,), 10.0, 8.0, 3.0, 1.0)
         self.assertAlmostEqual(
             notches.area(), 2.0 * (80.0 + 2.0 * fillet * (1.0 - 9.0))
         )
@@ -374,7 +374,7 @@ class TestVise(unittest.TestCase):
             ((5.0, 0.0), 10.0, 8.0, 3.0, 1.0),
         ):
             with self.subTest(args=args), self.assertRaises(ValueError):
-                tools.SCViseNotches(*args)
+                tools.ViseNotches(*args)
 
     def test_block_refused(self) -> None:
         """Numbers that make no block are refused."""
@@ -385,7 +385,7 @@ class TestVise(unittest.TestCase):
             (100.0, 60.0, 10.0, 31.0),
         ):
             with self.subTest(args=args), self.assertRaises(ValueError):
-                tools.SCViseBlock(*args)
+                tools.ViseBlock(*args)
 
     def test_jaw_plate_refused(self) -> None:
         """A jaw plate whose holes do not fit is refused."""
@@ -424,11 +424,11 @@ class TestVise(unittest.TestCase):
             width: float,
             depth: float = 35.0,
             radius: float = 1.0,
-        ) -> tools.SCViseNotches:
+        ) -> tools.ViseNotches:
             """Return notches with the given places and sizes."""
-            return tools.SCViseNotches(centers, width, depth, radius, 1.0)
+            return tools.ViseNotches(centers, width, depth, radius, 1.0)
 
-        def plate(**sizes: float) -> tools.SCJawPlate:
+        def plate(**sizes: float) -> tools.JawPlate:
             """Return the D688's jaw plate with some sizes changed."""
             changes: dict[str, Any] = sizes
             return dataclasses.replace(tools.KURT_JAW_PLATE, **changes)
@@ -444,12 +444,12 @@ class TestVise(unittest.TestCase):
             {"max_opening": 11.0 * 25.4},
             {"jaw_plate": plate(width=300.0, hole_spacing=200.0)},
             {"jaw_plate": plate(height=50.0)},
-            {"fixed_jaw": tools.SCViseBlock(38.1, 100.0, jaw.height)},
-            {"fixed_jaw": tools.SCViseBlock(38.1, jaw.width, 50.0)},
-            {"movable_jaw": tools.SCViseBlock(30.0, jaw.width, jaw.height)},
+            {"fixed_jaw": tools.ViseBlock(38.1, 100.0, jaw.height)},
+            {"fixed_jaw": tools.ViseBlock(38.1, jaw.width, 50.0)},
+            {"movable_jaw": tools.ViseBlock(30.0, jaw.width, jaw.height)},
             {
-                "fixed_jaw": tools.SCViseBlock(38.1, 300.0, jaw.height),
-                "movable_jaw": tools.SCViseBlock(133.35, 300.0, jaw.height),
+                "fixed_jaw": tools.ViseBlock(38.1, 300.0, jaw.height),
+                "movable_jaw": tools.ViseBlock(133.35, 300.0, jaw.height),
             },
             {"lead_screw_height": 0.6 * 25.4},
             {"lead_screw_height": 1.6 * 25.4},
@@ -488,7 +488,7 @@ class TestParallels(unittest.TestCase):
 
     def test_holes(self) -> None:
         """Holes are optional, but need both sizes, and must fit."""
-        self.assertFalse(tools.SCParallel("P", 20.0, 4.0, 100.0).has_holes())
+        self.assertFalse(tools.Parallel("P", 20.0, 4.0, 100.0).has_holes())
         for spacing, diameter in (
             (50.0, 0.0),
             (0.0, 8.0),
@@ -500,8 +500,8 @@ class TestParallels(unittest.TestCase):
                 self.subTest(spacing=spacing, diameter=diameter),
                 self.assertRaises(ValueError),
             ):
-                tools.SCParallel("P", 20.0, 4.0, 100.0, spacing, diameter)
-        parallel = tools.SCParallel("P", 20.0, 4.0, 100.0, 50.0, 10.0)
+                tools.Parallel("P", 20.0, 4.0, 100.0, spacing, diameter)
+        parallel = tools.Parallel("P", 20.0, 4.0, 100.0, 50.0, 10.0)
         self.assertAlmostEqual(
             parallel.volume(), 20.0 * 4.0 * 100.0 - 2.0 * math.pi * 25.0 * 4.0
         )
@@ -526,7 +526,7 @@ class TestParallels(unittest.TestCase):
 
     def test_prism(self) -> None:
         """A parallel's prism encloses it, up from its bottom edge."""
-        parallel = tools.SCParallel("P", 20.0, 4.0, 100.0)
+        parallel = tools.Parallel("P", 20.0, 4.0, 100.0)
         prism = parallel.prism((10.0, 30.0, 5.0))
         self.assertEqual(prism.low, (8.0, -20.0, 5.0))
         self.assertEqual(prism.high, (12.0, 80.0, 25.0))
@@ -655,9 +655,9 @@ class TestModels(unittest.TestCase):
     def test_volumes(self) -> None:
         """Each body has the volume that its numbers call for."""
         program = shutil.which("solidcraft-cli") or str(CLI)
-        with SCHeadlessTransport(program) as transport:
-            solidcraft = SCPyBind(transport)
-            names = tools.SCTormach(solidcraft).mill_tables()
+        with HeadlessTransport(program) as transport:
+            solidcraft = PyBind(transport)
+            names = tools.Tormach(solidcraft).mill_tables()
             result: JSON = solidcraft.inspect.center_of_mass(bodies=names)
         assert isinstance(result, dict)
         bodies = result["bodies"]
@@ -672,8 +672,8 @@ class TestModels(unittest.TestCase):
     def test_drill_volumes(self) -> None:
         """Flat tipped drills match the volumes worked out by hand."""
         drills = [
-            tools.SCDrill("Plain", 20.0, 100.0, 3, point_angle=180.0),
-            tools.SCDrill("Shank", 20.0, 100.0, 2, 40.0, 10.0, 180.0),
+            tools.Drill("Plain", 20.0, 100.0, 3, point_angle=180.0),
+            tools.Drill("Shank", 20.0, 100.0, 2, 40.0, 10.0, 180.0),
         ]
         expected = [
             (math.pi * 100.0 - 3 * drills[0].groove_area()) * 100.0,
@@ -681,8 +681,8 @@ class TestModels(unittest.TestCase):
             + math.pi * 25.0 * 40.0,
         ]
         program = shutil.which("solidcraft-cli") or str(CLI)
-        with SCHeadlessTransport(program) as transport:
-            solidcraft = SCPyBind(transport)
+        with HeadlessTransport(program) as transport:
+            solidcraft = PyBind(transport)
             names = [
                 drill.model(solidcraft, (index * 50.0, 10.0, 5.0))
                 for index, drill in enumerate(drills)
@@ -702,8 +702,8 @@ class TestModels(unittest.TestCase):
     def test_sample_drills(self) -> None:
         """Each sample drill sits inside its keep-out cylinder."""
         program = shutil.which("solidcraft-cli") or str(CLI)
-        with SCHeadlessTransport(program) as transport:
-            solidcraft = SCPyBind(transport)
+        with HeadlessTransport(program) as transport:
+            solidcraft = PyBind(transport)
             names, keep_out = tools.sample_drills(solidcraft)
             regions = keep_out.model(solidcraft)
             result: JSON = solidcraft.inspect.center_of_mass(
@@ -727,8 +727,8 @@ class TestModels(unittest.TestCase):
     def _vise_bodies(self) -> list[dict[str, JSON]]:
         """Return what SolidCraft measures of the modeled `KURT_D688`."""
         program = shutil.which("solidcraft-cli") or str(CLI)
-        with SCHeadlessTransport(program) as transport:
-            solidcraft = SCPyBind(transport)
+        with HeadlessTransport(program) as transport:
+            solidcraft = PyBind(transport)
             names = tools.KURT_D688.model(
                 solidcraft, (10.0, 20.0, 30.0), VISE_OPENING, VISE_LIFT
             )
@@ -882,8 +882,8 @@ class TestModels(unittest.TestCase):
     def test_countersinks(self) -> None:
         """Every countersink revolves to the right volume and place."""
         program = shutil.which("solidcraft-cli") or str(CLI)
-        with SCHeadlessTransport(program) as transport:
-            solidcraft = SCPyBind(transport)
+        with HeadlessTransport(program) as transport:
+            solidcraft = PyBind(transport)
             names = tools.countersink_rows(solidcraft)
             self.assertEqual(len(names), 44)
             for sink in tools.DOUBLE_END_COUNTERSINKS.values():
@@ -922,8 +922,8 @@ class TestModels(unittest.TestCase):
     def test_largest(self) -> None:
         """The largest of each table, one body each."""
         program = shutil.which("solidcraft-cli") or str(CLI)
-        with SCHeadlessTransport(program) as transport:
-            solidcraft = SCPyBind(transport)
+        with HeadlessTransport(program) as transport:
+            solidcraft = PyBind(transport)
             names = tools.largest_countersinks(solidcraft)
         self.assertEqual(
             names,
@@ -938,8 +938,8 @@ class TestModels(unittest.TestCase):
     def test_countersink_faces(self) -> None:
         """It lands at its tip, with only cones, cylinders and flats."""
         program = shutil.which("solidcraft-cli") or str(CLI)
-        with SCHeadlessTransport(program) as transport:
-            solidcraft = SCPyBind(transport)
+        with HeadlessTransport(program) as transport:
+            solidcraft = PyBind(transport)
             sink = tools.DOUBLE_END_COUNTERSINKS["421-0130"]
             body = sink.model(solidcraft, (5.0, 6.0, 7.0))
             result = solidcraft.inspect.center_of_mass(bodies=[body])
@@ -960,9 +960,9 @@ class TestModels(unittest.TestCase):
         for opening in (0.0, VISE_OPENING, vise.max_opening):
             with (
                 self.subTest(opening=opening),
-                SCHeadlessTransport(program) as transport,
+                HeadlessTransport(program) as transport,
             ):
-                solidcraft = SCPyBind(transport)
+                solidcraft = PyBind(transport)
                 names = vise.model(solidcraft, opening=opening)
                 result = solidcraft.inspect.interference(bodies=names)
                 assert isinstance(result, dict)
@@ -974,8 +974,8 @@ class TestModels(unittest.TestCase):
         """The vise's keep-out bodies have the volumes of their prisms."""
         keep_out = tools.KURT_D688.keep_out(opening=VISE_OPENING)
         program = shutil.which("solidcraft-cli") or str(CLI)
-        with SCHeadlessTransport(program) as transport:
-            solidcraft = SCPyBind(transport)
+        with HeadlessTransport(program) as transport:
+            solidcraft = PyBind(transport)
             names = keep_out.model(solidcraft)
             result: JSON = solidcraft.inspect.center_of_mass(bodies=names)
         assert isinstance(result, dict)
@@ -996,8 +996,8 @@ class TestModels(unittest.TestCase):
     def test_parallel_set(self) -> None:
         """Each parallel and keep-out has the volume its numbers call for."""
         program = shutil.which("solidcraft-cli") or str(CLI)
-        with SCHeadlessTransport(program) as transport:
-            solidcraft = SCPyBind(transport)
+        with HeadlessTransport(program) as transport:
+            solidcraft = PyBind(transport)
             names, keep_out = tools.parallel_set(solidcraft)
             regions = keep_out.model(solidcraft)
             result: JSON = solidcraft.inspect.center_of_mass(
@@ -1038,9 +1038,9 @@ class TestModels(unittest.TestCase):
     def test_keep_out_volumes(self) -> None:
         """Keep-outs add new bodies, and leave the tables as they were."""
         program = shutil.which("solidcraft-cli") or str(CLI)
-        with SCHeadlessTransport(program) as transport:
-            solidcraft = SCPyBind(transport)
-            tormach = tools.SCTormach(solidcraft)
+        with HeadlessTransport(program) as transport:
+            solidcraft = PyBind(transport)
+            tormach = tools.Tormach(solidcraft)
             tables = tormach.mill_tables()
             keep_out = tormach.mill_table_keep_out()
             regions = keep_out.model(solidcraft)

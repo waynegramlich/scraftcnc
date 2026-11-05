@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Write `Tool_Models.md` and its sketches, from the code.
 
-Each kind of model has one `SCModelPage`: a sample of it, and where the
+Each kind of model has one `ModelPage`: a sample of it, and where the
 dimensions go on its sketch.  Everything else comes from elsewhere, so
 that the document can not disagree with the code: each size's letter
 and meaning from the schema in `shops.py`, and the sketch's outline
@@ -32,13 +32,13 @@ from types import ModuleType
 from typing import TypeAlias
 
 from .. import shops
-from ..geometry import SCArc, SCRoundedPolygon, SCSegment
+from ..geometry import ArcSegment, RoundedPolygon, XYSegment
 from ..pybind import scraftpybind
 from ..shops import (
     ANGLE,
     KINDS,
     LENGTH,
-    SCField,
+    TableField,
     check_tool,
     markdown_table,
     measure,
@@ -51,12 +51,12 @@ from .tools import (
     KURT_JAW_PLATE,
     PARALLEL_HEIGHTS,
     PARALLELS,
-    SCGridPlate,
-    SCJawPlate,
-    SCMachineVise,
-    SCParallel,
-    SCViseBlock,
-    SCViseNotches,
+    GridPlate,
+    JawPlate,
+    MachineVise,
+    Parallel,
+    ViseBlock,
+    ViseNotches,
 )
 
 # Where the files go.
@@ -87,9 +87,9 @@ INK: str = "#222222"
 LETTER_SIZE: int = 18
 
 
-# Class `SCDimension`:
+# Class `Dimension`:
 @dataclass(frozen=True, slots=True)
-class SCDimension:
+class Dimension:
     """One dimension line on a sketch, in the sample's inches.
 
     Attributes:
@@ -107,7 +107,7 @@ class SCDimension:
     * `letter_shift` (`float`): How far along the line to move its letter.
 
     Constructor:
-    * `SCDimension(key, across, low, high, at, reach, letter_shift)`
+    * `Dimension(key, across, low, high, at, reach, letter_shift)`
     """
 
     # Constructor arguments:
@@ -120,9 +120,9 @@ class SCDimension:
     letter_shift: float = field(init=True, default=0.0)
 
 
-# Class `SCAngle`:
+# Class `Angle`:
 @dataclass(frozen=True, slots=True)
-class SCAngle:
+class Angle:
     """An included angle on a sketch: an arc around its apex.
 
     Attributes:
@@ -135,7 +135,7 @@ class SCAngle:
     * `letter_shift` (`float`): How far along X to move its letter.
 
     Constructor:
-    * `SCAngle(key, degrees, radius, apex, direction, letter_shift)`
+    * `Angle(key, degrees, radius, apex, direction, letter_shift)`
     """
 
     # Constructor arguments:
@@ -147,9 +147,9 @@ class SCAngle:
     letter_shift: float = field(init=True, default=0.0)
 
 
-# Class `SCRadius`:
+# Class `Radius`:
 @dataclass(frozen=True, slots=True)
-class SCRadius:
+class Radius:
     """A radius on a sketch: a line from an arc's center out to the arc.
 
     Attributes:
@@ -161,7 +161,7 @@ class SCRadius:
       Where its letter goes, from the center, as X and Z in inches.
 
     Constructor:
-    * `SCRadius(key, center, radius, direction, letter_at)`
+    * `Radius(key, center, radius, direction, letter_at)`
     """
 
     # Constructor arguments:
@@ -173,12 +173,12 @@ class SCRadius:
 
 
 # What a sketch marks a size with.
-SCMark: TypeAlias = SCDimension | SCAngle | SCRadius
+Mark: TypeAlias = Dimension | Angle | Radius
 
 
-# Class `SCModelPage`:
+# Class `ModelPage`:
 @dataclass(frozen=True, slots=True)
-class SCModelPage:
+class ModelPage:
     """What `Tool_Models.md` says about one kind of model.
 
     Attributes:
@@ -186,7 +186,7 @@ class SCModelPage:
     * `title` (`str`): Its heading.
     * `sample` (`dict[str, object]`):
       A description of one, used for the sketch and the examples.
-    * `dimensions` (`Callable[[dict[str, object]], list[SCMark]]`):
+    * `dimensions` (`Callable[[dict[str, object]], list[Mark]]`):
       Where the dimension lines and angles go, given the sample.
     * `other_keys` (`tuple[str, ...]`):
       The keys to show that are not dimensions.
@@ -194,7 +194,7 @@ class SCModelPage:
       The lettered keys that mean nothing for this kind.
 
     Constructor:
-    * `SCModelPage(kind, title, sample, dimensions, other_keys,
+    * `ModelPage(kind, title, sample, dimensions, other_keys,
       unused_keys)`
     """
 
@@ -202,20 +202,20 @@ class SCModelPage:
     kind: str = field(init=True)
     title: str = field(init=True)
     sample: dict[str, object] = field(init=True)
-    dimensions: Callable[[dict[str, object]], list[SCMark]] = field(init=True)
+    dimensions: Callable[[dict[str, object]], list[Mark]] = field(init=True)
     other_keys: tuple[str, ...] = field(init=True)
     unused_keys: tuple[str, ...] = field(init=True, default=())
 
 
 # Function `_end_mill_dimensions()`:
-def _end_mill_dimensions(tool: dict[str, object]) -> list[SCMark]:
+def _end_mill_dimensions(tool: dict[str, object]) -> list[Mark]:
     """Return where an end mill's marks go.
 
     Arguments:
     * `tool` (`dict[str, object]`): The sample, a bull nose.
 
     Returns:
-    * (`list[SCMark]`): Its marks.
+    * (`list[Mark]`): Its marks.
     """
     radius: float = measure(tool["diameter"], LENGTH) / 2
     shank: float = measure(tool["shank"], LENGTH) / 2
@@ -226,31 +226,27 @@ def _end_mill_dimensions(tool: dict[str, object]) -> list[SCMark]:
     left: float = -radius - STAND_OFF
     right: float = radius + STAND_OFF
     return [
-        SCDimension(
+        Dimension(
             "diameter", True, -radius, radius, -STAND_OFF, (corner, corner)
         ),
-        SCDimension(
+        Dimension(
             "shank", True, -shank, shank, length + STAND_OFF, (length, length)
         ),
-        SCDimension("length_of_cut", False, 0.0, cut, left, (-inner, -radius)),
-        SCDimension(
-            "overall_length", False, 0.0, length, right, (inner, shank)
-        ),
-        SCRadius(
-            "corner_radius", (inner, corner), corner, -45.0, (-0.02, 0.17)
-        ),
+        Dimension("length_of_cut", False, 0.0, cut, left, (-inner, -radius)),
+        Dimension("overall_length", False, 0.0, length, right, (inner, shank)),
+        Radius("corner_radius", (inner, corner), corner, -45.0, (-0.02, 0.17)),
     ]
 
 
 # Function `_drill_dimensions()`:
-def _drill_dimensions(tool: dict[str, object]) -> list[SCMark]:
+def _drill_dimensions(tool: dict[str, object]) -> list[Mark]:
     """Return where a drill's dimension lines and point angle go.
 
     Arguments:
     * `tool` (`dict[str, object]`): The sample, with a step to its shank.
 
     Returns:
-    * (`list[SCMark]`): Its marks.
+    * (`list[Mark]`): Its marks.
     """
     radius: float = measure(tool["diameter"], LENGTH) / 2
     shank: float = measure(tool["shank"], LENGTH) / 2
@@ -262,30 +258,28 @@ def _drill_dimensions(tool: dict[str, object]) -> list[SCMark]:
     left: float = -radius - STAND_OFF
     right: float = radius + STAND_OFF
     return [
-        SCDimension(
-            "diameter", True, -radius, radius, -STAND_OFF, (rise, rise)
-        ),
-        SCDimension(
+        Dimension("diameter", True, -radius, radius, -STAND_OFF, (rise, rise)),
+        Dimension(
             "shank", True, -shank, shank, length + STAND_OFF, (length, length)
         ),
-        SCDimension("length_of_cut", False, 0.0, cut, left, (0.0, -radius)),
-        SCDimension(
+        Dimension("length_of_cut", False, 0.0, cut, left, (0.0, -radius)),
+        Dimension(
             "shank_length", False, start, length, left, (-shank, -shank)
         ),
-        SCDimension("overall_length", False, 0.0, length, right, (0.0, shank)),
-        SCAngle("point_angle", point, ANGLE_RADIUS, letter_shift=LETTER_OFF),
+        Dimension("overall_length", False, 0.0, length, right, (0.0, shank)),
+        Angle("point_angle", point, ANGLE_RADIUS, letter_shift=LETTER_OFF),
     ]
 
 
 # Function `_chamfer_mill_dimensions()`:
-def _chamfer_mill_dimensions(tool: dict[str, object]) -> list[SCMark]:
+def _chamfer_mill_dimensions(tool: dict[str, object]) -> list[Mark]:
     """Return where a chamfer mill's marks go.
 
     Arguments:
     * `tool` (`dict[str, object]`): The sample.
 
     Returns:
-    * (`list[SCMark]`): Its marks.
+    * (`list[Mark]`): Its marks.
     """
     radius: float = measure(tool["diameter"], LENGTH) / 2
     shank: float = measure(tool["shank"], LENGTH) / 2
@@ -295,14 +289,14 @@ def _chamfer_mill_dimensions(tool: dict[str, object]) -> list[SCMark]:
     slope: float = math.tan(math.radians(angle / 2))
     rise: float = (radius - tip) / slope
     return [
-        SCDimension("tip_diameter", True, -tip, tip, -STAND_OFF, (0.0, 0.0)),
-        SCDimension(
+        Dimension("tip_diameter", True, -tip, tip, -STAND_OFF, (0.0, 0.0)),
+        Dimension(
             "diameter", True, -radius, radius, -2 * STAND_OFF, (rise, rise)
         ),
-        SCDimension(
+        Dimension(
             "shank", True, -shank, shank, length + STAND_OFF, (length, length)
         ),
-        SCDimension(
+        Dimension(
             "overall_length",
             False,
             0.0,
@@ -310,7 +304,7 @@ def _chamfer_mill_dimensions(tool: dict[str, object]) -> list[SCMark]:
             radius + STAND_OFF,
             (tip, shank),
         ),
-        SCAngle(
+        Angle(
             "angle",
             angle,
             ANGLE_RADIUS,
@@ -321,25 +315,25 @@ def _chamfer_mill_dimensions(tool: dict[str, object]) -> list[SCMark]:
 
 
 # Function `_corner_rounding_mill_dimensions()`:
-def _corner_rounding_mill_dimensions(tool: dict[str, object]) -> list[SCMark]:
+def _corner_rounding_mill_dimensions(tool: dict[str, object]) -> list[Mark]:
     """Return where a corner rounding mill's marks go.
 
     Arguments:
     * `tool` (`dict[str, object]`): The sample.
 
     Returns:
-    * (`list[SCMark]`): Its marks.
+    * (`list[Mark]`): Its marks.
     """
     round_over: float = measure(tool["radius"], LENGTH)
     shank: float = measure(tool["shank"], LENGTH) / 2
     tip: float = measure(tool["tip_diameter"], LENGTH) / 2
     length: float = measure(tool["overall_length"], LENGTH)
     return [
-        SCDimension("tip_diameter", True, -tip, tip, -STAND_OFF, (0.0, 0.0)),
-        SCDimension(
+        Dimension("tip_diameter", True, -tip, tip, -STAND_OFF, (0.0, 0.0)),
+        Dimension(
             "shank", True, -shank, shank, length + STAND_OFF, (length, length)
         ),
-        SCDimension(
+        Dimension(
             "overall_length",
             False,
             0.0,
@@ -347,19 +341,19 @@ def _corner_rounding_mill_dimensions(tool: dict[str, object]) -> list[SCMark]:
             shank + 2 * STAND_OFF,
             (tip, shank),
         ),
-        SCRadius("radius", (tip + round_over, 0.0), round_over, 135.0),
+        Radius("radius", (tip + round_over, 0.0), round_over, 135.0),
     ]
 
 
 # Function `_double_angle_cutter_dimensions()`:
-def _double_angle_cutter_dimensions(tool: dict[str, object]) -> list[SCMark]:
+def _double_angle_cutter_dimensions(tool: dict[str, object]) -> list[Mark]:
     """Return where a double angle cutter's marks go.
 
     Arguments:
     * `tool` (`dict[str, object]`): The sample.
 
     Returns:
-    * (`list[SCMark]`): Its marks.
+    * (`list[Mark]`): Its marks.
     """
     radius: float = measure(tool["diameter"], LENGTH) / 2
     shank: float = measure(tool["shank"], LENGTH) / 2
@@ -372,7 +366,7 @@ def _double_angle_cutter_dimensions(tool: dict[str, object]) -> list[SCMark]:
     left: float = -radius - STAND_OFF
     middle: float = (width + top) / 2
     return [
-        SCDimension(
+        Dimension(
             "diameter",
             True,
             -radius,
@@ -380,12 +374,12 @@ def _double_angle_cutter_dimensions(tool: dict[str, object]) -> list[SCMark]:
             -STAND_OFF,
             (width / 2, width / 2),
         ),
-        SCDimension(
+        Dimension(
             "shank", True, -shank, shank, length + STAND_OFF, (length, length)
         ),
-        SCDimension("width", False, 0.0, width, left, (-edge, -edge)),
-        SCDimension("neck_length", False, width, top, left, (-edge, -neck)),
-        SCDimension(
+        Dimension("width", False, 0.0, width, left, (-edge, -edge)),
+        Dimension("neck_length", False, width, top, left, (-edge, -neck)),
+        Dimension(
             "neck_diameter",
             True,
             -neck,
@@ -394,7 +388,7 @@ def _double_angle_cutter_dimensions(tool: dict[str, object]) -> list[SCMark]:
             (middle, middle),
             neck + LETTER_OFF,
         ),
-        SCDimension(
+        Dimension(
             "overall_length",
             False,
             0.0,
@@ -402,21 +396,19 @@ def _double_angle_cutter_dimensions(tool: dict[str, object]) -> list[SCMark]:
             radius + STAND_OFF,
             (edge, shank),
         ),
-        SCAngle(
-            "angle", angle, ANGLE_RADIUS * 0.75, (radius, width / 2), 180.0
-        ),
+        Angle("angle", angle, ANGLE_RADIUS * 0.75, (radius, width / 2), 180.0),
     ]
 
 
 # Function `_countersink_dimensions()`:
-def _countersink_dimensions(tool: dict[str, object]) -> list[SCMark]:
+def _countersink_dimensions(tool: dict[str, object]) -> list[Mark]:
     """Return where a countersink's marks go, at its lower end.
 
     Arguments:
     * `tool` (`dict[str, object]`): The sample.
 
     Returns:
-    * (`list[SCMark]`): Its marks.
+    * (`list[Mark]`): Its marks.
     """
     radius: float = measure(tool["diameter"], LENGTH) / 2
     drill: float = measure(tool["drill_diameter"], LENGTH) / 2
@@ -428,15 +420,15 @@ def _countersink_dimensions(tool: dict[str, object]) -> list[SCMark]:
     body: float = reach + (radius - drill) / slope
     flat: float = COUNTERSINK_TIP_FLAT * drill
     left: float = -radius - STAND_OFF
-    marks: list[SCMark] = [
-        SCDimension(
+    marks: list[Mark] = [
+        Dimension(
             "drill_diameter", True, -drill, drill, -STAND_OFF, (0.0, 0.0)
         ),
-        SCDimension(
+        Dimension(
             "diameter", True, -radius, radius, -2 * STAND_OFF, (body, body)
         ),
-        SCDimension("drill_length", False, 0.0, reach, left, (0.0, -drill)),
-        SCDimension(
+        Dimension("drill_length", False, 0.0, reach, left, (0.0, -drill)),
+        Dimension(
             "overall_length",
             False,
             0.0,
@@ -444,14 +436,14 @@ def _countersink_dimensions(tool: dict[str, object]) -> list[SCMark]:
             radius + STAND_OFF,
             (flat, flat if "shank" not in tool else radius),
         ),
-        SCAngle(
+        Angle(
             "point_angle",
             point,
             drill,
             (0.0, -flat / math.tan(math.radians(point / 2))),
             letter_shift=LETTER_OFF * 0.8,
         ),
-        SCAngle(
+        Angle(
             "angle",
             angle,
             (radius - drill / 2) / math.sin(math.radians(angle / 2)),
@@ -462,7 +454,7 @@ def _countersink_dimensions(tool: dict[str, object]) -> list[SCMark]:
     if "shank" in tool:
         shank: float = measure(tool["shank"], LENGTH) / 2
         marks.append(
-            SCDimension(
+            Dimension(
                 "shank",
                 True,
                 -shank,
@@ -475,8 +467,8 @@ def _countersink_dimensions(tool: dict[str, object]) -> list[SCMark]:
 
 
 # The kinds of model, in the order of the document.
-PAGES: tuple[SCModelPage, ...] = (
-    SCModelPage(
+PAGES: tuple[ModelPage, ...] = (
+    ModelPage(
         "end_mill",
         "End Mill",
         {
@@ -494,7 +486,7 @@ PAGES: tuple[SCModelPage, ...] = (
         _end_mill_dimensions,
         ("flutes", "end", "material", "finish"),
     ),
-    SCModelPage(
+    ModelPage(
         "drill",
         "Drill",
         {
@@ -511,7 +503,7 @@ PAGES: tuple[SCModelPage, ...] = (
         _drill_dimensions,
         ("flutes", "material", "finish"),
     ),
-    SCModelPage(
+    ModelPage(
         "chamfer_mill",
         "Chamfer Mill",
         {
@@ -527,7 +519,7 @@ PAGES: tuple[SCModelPage, ...] = (
         _chamfer_mill_dimensions,
         ("flutes", "material", "finish"),
     ),
-    SCModelPage(
+    ModelPage(
         "corner_rounding_mill",
         "Corner Rounding Mill",
         {
@@ -542,7 +534,7 @@ PAGES: tuple[SCModelPage, ...] = (
         _corner_rounding_mill_dimensions,
         ("flutes", "material", "finish"),
     ),
-    SCModelPage(
+    ModelPage(
         "double_angle_cutter",
         "Double Angle Cutter",
         {
@@ -560,7 +552,7 @@ PAGES: tuple[SCModelPage, ...] = (
         _double_angle_cutter_dimensions,
         ("flutes", "material", "finish"),
     ),
-    SCModelPage(
+    ModelPage(
         "single_countersink",
         "Single End Countersink",
         {
@@ -578,7 +570,7 @@ PAGES: tuple[SCModelPage, ...] = (
         _countersink_dimensions,
         ("flutes", "material", "finish"),
     ),
-    SCModelPage(
+    ModelPage(
         "double_countersink",
         "Double End Countersink",
         {
@@ -600,15 +592,15 @@ PAGES: tuple[SCModelPage, ...] = (
 
 # What the Python interface is made of, in the order of the document:
 # a module and a name in it, and True to give only the first paragraph
-# of its docstring (`SCPyBind` lists every command there is).
+# of its docstring (`PyBind` lists every command there is).
 INTERFACE: tuple[tuple[ModuleType, str, bool], ...] = (
     (cutter_models, "model_description", False),
-    (cutter_models, "SCModeledTool", False),
+    (cutter_models, "ModeledTool", False),
     (shops, "check_tool", False),
-    (shops, "SCShopError", False),
+    (shops, "ShopError", False),
     (scraftpybind, "connect", False),
-    (scraftpybind, "SCPyBind", True),
-    (scraftpybind, "SCSolidCraftError", False),
+    (scraftpybind, "PyBind", True),
+    (scraftpybind, "SolidCraftError", False),
 )
 
 # The start of the document.
@@ -634,16 +626,16 @@ from `solidcraft --control 8080`, or `headless` for `solidcraft-cli`.
 They add the model to the design at the origin, standing on its tip.
 A description with a problem is refused before SolidCraft is touched:
 the JSON form prints every problem and exits with 1, and the Python
-form raises `SCShopError`.
+form raises `ShopError`.
 """
 
 
 # Function `sketch()`:
-def sketch(page: SCModelPage) -> str:
+def sketch(page: ModelPage) -> str:
     """Return a model's sketch, as an SVG file.
 
     Arguments:
-    * `page` (`SCModelPage`): The model.
+    * `page` (`ModelPage`): The model.
 
     Returns:
     * (`str`): The SVG file's text.
@@ -654,9 +646,9 @@ def sketch(page: SCModelPage) -> str:
     key, tool = check_tool(page.sample)
     half: Profile = profile(key, tool)
     outline: Profile = half + [(-r, z) for r, z in reversed(half)]
-    marks: list[SCMark] = page.dimensions(tool)
-    dimensions: list[SCDimension] = [
-        mark for mark in marks if isinstance(mark, SCDimension)
+    marks: list[Mark] = page.dimensions(tool)
+    dimensions: list[Dimension] = [
+        mark for mark in marks if isinstance(mark, Dimension)
     ]
     xs: list[float] = [r for r, _ in outline]
     zs: list[float] = [z for _, z in outline]
@@ -685,9 +677,9 @@ def sketch(page: SCModelPage) -> str:
     # The dimension lines, with their letters.
     letters: dict[str, str] = _letters(page)
     for mark in marks:
-        if isinstance(mark, SCDimension):
+        if isinstance(mark, Dimension):
             _dimension(root, mark, letters[mark.key])
-        elif isinstance(mark, SCAngle):
+        elif isinstance(mark, Angle):
             _angle(root, mark, letters[mark.key])
         else:
             _radius(root, mark, letters[mark.key])
@@ -697,12 +689,12 @@ def sketch(page: SCModelPage) -> str:
 
 # Function `_extend()`:
 def _extend(
-    dimensions: list[SCDimension], xs: list[float], zs: list[float]
+    dimensions: list[Dimension], xs: list[float], zs: list[float]
 ) -> None:
     """Add how far dimension lines and their letters reach.
 
     Arguments:
-    * `dimensions` (`list[SCDimension]`): The dimension lines.
+    * `dimensions` (`list[Dimension]`): The dimension lines.
     * `xs` (`list[float]`): The X of everything drawn (inches), added to.
     * `zs` (`list[float]`): The Z of everything drawn (inches), added to.
     """
@@ -755,11 +747,11 @@ def _root(xs: list[float], zs: list[float]) -> ET.Element:
 
 
 # Function `_away()`:
-def _away(dimension: SCDimension) -> float:
+def _away(dimension: Dimension) -> float:
     """Return which way a dimension line stands off the tool.
 
     Arguments:
-    * `dimension` (`SCDimension`): The dimension line.
+    * `dimension` (`Dimension`): The dimension line.
 
     Returns:
     * (`float`): `1.0` toward larger values, or `-1.0`.
@@ -809,12 +801,12 @@ def _line(
 
 
 # Function `_dimension()`:
-def _dimension(root: ET.Element, dimension: SCDimension, letter: str) -> None:
+def _dimension(root: ET.Element, dimension: Dimension, letter: str) -> None:
     """Add a dimension line, its arrows and its letter to a sketch.
 
     Arguments:
     * `root` (`ET.Element`): The sketch.
-    * `dimension` (`SCDimension`): The dimension line.
+    * `dimension` (`Dimension`): The dimension line.
     * `letter` (`str`): Its letter.
     """
 
@@ -880,12 +872,12 @@ def _letter(root: ET.Element, x: float, z: float, letter: str) -> None:
 
 
 # Function `_angle()`:
-def _angle(root: ET.Element, angle: SCAngle, letter: str) -> None:
+def _angle(root: ET.Element, angle: Angle, letter: str) -> None:
     """Add an included angle's arc, arrows and letter to a sketch.
 
     Arguments:
     * `root` (`ET.Element`): The sketch.
-    * `angle` (`SCAngle`): The angle.
+    * `angle` (`Angle`): The angle.
     * `letter` (`str`): Its letter.
     """
 
@@ -939,12 +931,12 @@ def _angle(root: ET.Element, angle: SCAngle, letter: str) -> None:
 
 
 # Function `_radius()`:
-def _radius(root: ET.Element, radius: SCRadius, letter: str) -> None:
+def _radius(root: ET.Element, radius: Radius, letter: str) -> None:
     """Add a radius's line, arrow and letter to a sketch.
 
     Arguments:
     * `root` (`ET.Element`): The sketch.
-    * `radius` (`SCRadius`): The radius.
+    * `radius` (`Radius`): The radius.
     * `letter` (`str`): Its letter.
     """
     # The line, from the arc's center out to the arc.
@@ -973,24 +965,24 @@ def _radius(root: ET.Element, radius: SCRadius, letter: str) -> None:
 
 
 # Function `_fields()`:
-def _fields(kind: str) -> dict[str, SCField]:
+def _fields(kind: str) -> dict[str, TableField]:
     """Return the keys of a kind.
 
     Arguments:
     * `kind` (`str`): The kind.
 
     Returns:
-    * (`dict[str, SCField]`): Its keys, by name.
+    * (`dict[str, TableField]`): Its keys, by name.
     """
     return {schema.key: schema for schema in KINDS[kind].fields}
 
 
 # Function `_letters()`:
-def _letters(page: SCModelPage) -> dict[str, str]:
+def _letters(page: ModelPage) -> dict[str, str]:
     """Return the letters of a model's sizes.
 
     Arguments:
-    * `page` (`SCModelPage`): The model.
+    * `page` (`ModelPage`): The model.
 
     Returns:
     * (`dict[str, str]`): Each lettered key's letter.
@@ -1003,11 +995,11 @@ def _letters(page: SCModelPage) -> dict[str, str]:
 
 
 # Function `_toml()`:
-def _toml(page: SCModelPage) -> str:
+def _toml(page: ModelPage) -> str:
     """Return a model's sample as an entry in a tools file.
 
     Arguments:
-    * `page` (`SCModelPage`): The model.
+    * `page` (`ModelPage`): The model.
 
     Returns:
     * (`str`): The TOML, with what a tools file also requires.
@@ -1023,11 +1015,11 @@ def _toml(page: SCModelPage) -> str:
 
 
 # Function `_python()`:
-def _python(page: SCModelPage) -> str:
+def _python(page: ModelPage) -> str:
     """Return a model's sample as a Python program.
 
     Arguments:
-    * `page` (`SCModelPage`): The model.
+    * `page` (`ModelPage`): The model.
 
     Returns:
     * (`str`): The program.
@@ -1037,12 +1029,12 @@ def _python(page: SCModelPage) -> str:
         for key, val in page.sample.items()
     )
     return (
-        "from scraftcnc.pybind.scraftpybind import SCPyBind, connect\n"
+        "from scraftcnc.pybind.scraftpybind import PyBind, connect\n"
         "from scraftcnc.tooling.cutter_models import model_description\n"
         "\n"
         'with connect("8080") as transport:\n'
         "    model_description(\n"
-        "        SCPyBind(transport),\n"
+        "        PyBind(transport),\n"
         "        {\n"
         f"{entries}"
         "        },\n"
@@ -1166,22 +1158,22 @@ def _interface_entry(module: ModuleType, name: str, brief: bool) -> str:
 
 
 # Function `section()`:
-def section(page: SCModelPage) -> str:
+def section(page: ModelPage) -> str:
     """Return a model's section of the document.
 
     Arguments:
-    * `page` (`SCModelPage`): The model.
+    * `page` (`ModelPage`): The model.
 
     Returns:
     * (`str`): Its Markdown.
     """
     # The dimensions, by letter.
-    fields: dict[str, SCField] = _fields(page.kind)
+    fields: dict[str, TableField] = _fields(page.kind)
     rows: list[list[str]] = [["Letter", "Units", "Description"]]
     for key, letter in sorted(
         _letters(page).items(), key=lambda item: item[1]
     ):
-        schema: SCField = fields[key]
+        schema: TableField = fields[key]
         required: str = "" if schema.required else "Optional.  "
         rows.append(
             [
@@ -1217,9 +1209,9 @@ def section(page: SCModelPage) -> str:
     )
 
 
-# Class `SCShape`:
+# Class `ViewShape`:
 @dataclass(frozen=True, slots=True)
-class SCShape:
+class ViewShape:
     """One shape in a view of a model.
 
     Attributes:
@@ -1230,7 +1222,7 @@ class SCShape:
     * `dashes` (`str`): An SVG `stroke-dasharray`, or `""` for none.
 
     Constructor:
-    * `SCShape(path, points, fill, dashes)`
+    * `ViewShape(path, points, fill, dashes)`
     """
 
     # Constructor arguments:
@@ -1240,33 +1232,33 @@ class SCShape:
     dashes: str = field(init=True, default="")
 
 
-# Class `SCView`:
+# Class `View`:
 @dataclass(frozen=True, slots=True)
-class SCView:
+class View:
     """One view of a model of tooling, drawn from its numbers.
 
     Attributes:
     * `name` (`str`): The view's name, which names its file.
     * `title` (`str`): What the document calls it.
-    * `shapes` (`list[SCShape]`): What is drawn, farthest first.
-    * `marks` (`list[SCMark]`):
+    * `shapes` (`list[ViewShape]`): What is drawn, farthest first.
+    * `marks` (`list[Mark]`):
       Its dimension lines and radii, whose keys are paths such as
       `base.length`.
 
     Constructor:
-    * `SCView(name, title, shapes, marks)`
+    * `View(name, title, shapes, marks)`
     """
 
     # Constructor arguments:
     name: str = field(init=True)
     title: str = field(init=True)
-    shapes: list[SCShape] = field(init=True)
-    marks: list[SCMark] = field(init=True)
+    shapes: list[ViewShape] = field(init=True)
+    marks: list[Mark] = field(init=True)
 
 
 # The machine vise that its page is drawn from, and the space between
 # rows of dimension lines (inches).
-VISE: SCMachineVise = KURT_D688
+VISE: MachineVise = KURT_D688
 VISE_NAME: str = "KURT_D688"
 ROW: float = 0.4
 
@@ -1309,7 +1301,7 @@ def _rectangle(
     high: tuple[float, float],
     fill: str = TOOL_FILL,
     dashes: str = "",
-) -> SCShape:
+) -> ViewShape:
     """Return a rectangle.
 
     Arguments:
@@ -1319,7 +1311,7 @@ def _rectangle(
     * `dashes` (`str`): An SVG `stroke-dasharray`, or `""` for none.
 
     Returns:
-    * (`SCShape`): The rectangle.
+    * (`ViewShape`): The rectangle.
     """
     corners: Profile = [
         low,
@@ -1333,7 +1325,7 @@ def _rectangle(
 # Function `_polygon()`:
 def _polygon(
     corners: Profile, fill: str = TOOL_FILL, dashes: str = ""
-) -> SCShape:
+) -> ViewShape:
     """Return a polygon.
 
     Arguments:
@@ -1342,10 +1334,10 @@ def _polygon(
     * `dashes` (`str`): An SVG `stroke-dasharray`, or `""` for none.
 
     Returns:
-    * (`SCShape`): The polygon.
+    * (`ViewShape`): The polygon.
     """
     path: str = "M " + " L ".join(_xy(x, z) for x, z in corners) + " Z"
-    return SCShape(path, corners, fill, dashes)
+    return ViewShape(path, corners, fill, dashes)
 
 
 # Function `_circle()`:
@@ -1354,7 +1346,7 @@ def _circle(
     radius: float,
     fill: str = TOOL_FILL,
     dashes: str = "",
-) -> SCShape:
+) -> ViewShape:
     """Return a circle.
 
     Arguments:
@@ -1364,7 +1356,7 @@ def _circle(
     * `dashes` (`str`): An SVG `stroke-dasharray`, or `""` for none.
 
     Returns:
-    * (`SCShape`): The circle, as two half circles.
+    * (`ViewShape`): The circle, as two half circles.
     """
     x, z = center
     pixels: float = radius * SCALE
@@ -1374,24 +1366,24 @@ def _circle(
         f"{arc} {_xy(x - radius, z)} Z"
     )
     points: Profile = [(x - radius, z - radius), (x + radius, z + radius)]
-    return SCShape(path, points, fill, dashes)
+    return ViewShape(path, points, fill, dashes)
 
 
 # Function `_outline()`:
 def _outline(
-    polygon: SCRoundedPolygon, fill: str = TOOL_FILL, dashes: str = ""
-) -> SCShape:
+    polygon: RoundedPolygon, fill: str = TOOL_FILL, dashes: str = ""
+) -> ViewShape:
     """Return an outline seen from above, with true arcs.
 
     Arguments:
-    * `polygon` (`SCRoundedPolygon`): The outline (millimeters).
+    * `polygon` (`RoundedPolygon`): The outline (millimeters).
     * `fill` (`str`): Its fill color, or `"none"`.
     * `dashes` (`str`): An SVG `stroke-dasharray`, or `""` for none.
 
     Returns:
-    * (`SCShape`): The outline, with X and Y as the sketch's X and Z.
+    * (`ViewShape`): The outline, with X and Y as the sketch's X and Z.
     """
-    segments: tuple[SCSegment, ...] = polygon.segments
+    segments: tuple[XYSegment, ...] = polygon.segments
     start: tuple[float, float] = segments[0].start
     path: str = f"M {_xy(_in(start[0]), _in(start[1]))}"
     points: Profile = []
@@ -1399,7 +1391,7 @@ def _outline(
         x: float = _in(segment.end[0])
         z: float = _in(segment.end[1])
         points.append((x, z))
-        if isinstance(segment, SCArc):
+        if isinstance(segment, ArcSegment):
             # Y points down in SVG, so a counter-clockwise arc has a
             # sweep flag of 0.
             pixels: float = _in(segment.radius) * SCALE
@@ -1409,11 +1401,13 @@ def _outline(
             path += f" {_xy(x, z)}"
         else:
             path += f" L {_xy(x, z)}"
-    return SCShape(path + " Z", points, fill, dashes)
+    return ViewShape(path + " Z", points, fill, dashes)
 
 
 # Function `_center_line()`:
-def _center_line(across: bool, at: float, low: float, high: float) -> SCShape:
+def _center_line(
+    across: bool, at: float, low: float, high: float
+) -> ViewShape:
     """Return a center line, reaching past what it centers.
 
     Arguments:
@@ -1423,7 +1417,7 @@ def _center_line(across: bool, at: float, low: float, high: float) -> SCShape:
     * `high` (`float`): Where what it centers ends (inches).
 
     Returns:
-    * (`SCShape`): The line, unfilled.
+    * (`ViewShape`): The line, unfilled.
     """
     ends: Profile = [
         (low - CENTER_LINE_PAST, at),
@@ -1432,13 +1426,13 @@ def _center_line(across: bool, at: float, low: float, high: float) -> SCShape:
     if not across:
         ends = [(x, z) for z, x in ends]
     path: str = f"M {_xy(*ends[0])} L {_xy(*ends[1])}"
-    return SCShape(path, ends, "none", CENTER_LINE)
+    return ViewShape(path, ends, "none", CENTER_LINE)
 
 
-# Class `_SCViseSizes`:
+# Class `_ViseSizes`:
 # It holds one number for each place that the views measure from.
 @dataclass(frozen=True, slots=True)
-class _SCViseSizes:  # pylint: disable=too-many-instance-attributes
+class _ViseSizes:  # pylint: disable=too-many-instance-attributes
     """Where the parts of the machine vise's sample are, in inches.
 
     X is along the lead screw, toward the hexagon; Y across; Z up from
@@ -1460,7 +1454,7 @@ class _SCViseSizes:  # pylint: disable=too-many-instance-attributes
     * `stick` (`float`): The X of the end of the lead screw's cylinder.
 
     Constructor:
-    * `_SCViseSizes()`
+    * `_ViseSizes()`
     """
 
     # Attributes set by `__post_init__()` (alphabetized):
@@ -1478,10 +1472,10 @@ class _SCViseSizes:  # pylint: disable=too-many-instance-attributes
     screw_z: float = field(init=False, default=0.0)
     stick: float = field(init=False, default=0.0)
 
-    # Method `_SCViseSizes.__post_init__()`:
+    # Method `_ViseSizes.__post_init__()`:
     def __post_init__(self) -> None:
         """Work out where the parts are."""
-        v: SCMachineVise = VISE
+        v: MachineVise = VISE
         sizes: dict[str, float] = {
             "bed_bottom": v.base.height + v.body.height,
             "bed_top": v.bed_top(),
@@ -1515,18 +1509,18 @@ def _hexagon() -> Profile:
 
 
 # Function `_vise_top()`:
-def _vise_top(s: _SCViseSizes) -> SCView:
+def _vise_top(s: _ViseSizes) -> View:
     """Return the machine vise seen from above.
 
     Arguments:
-    * `s` (`_SCViseSizes`): Where its parts are.
+    * `s` (`_ViseSizes`): Where its parts are.
 
     Returns:
-    * (`SCView`): The view, X to the right and Y up.
+    * (`View`): The view, X to the right and Y up.
     """
     # The pocket's floor and the lead screw in it, the bed, the jaws and
     # their plates, then the lead screw's end.
-    v: SCMachineVise = VISE
+    v: MachineVise = VISE
     end: float = _in(v.end_block_length)
     screw: float = _in(v.lead_screw_diameter) / 2.0
     hex_y: float = max(y for y, _ in _hexagon())
@@ -1537,7 +1531,7 @@ def _vise_top(s: _SCViseSizes) -> SCView:
         (-s.half, -s.half + end),
         (s.half - end, s.half),
     ]
-    shapes: list[SCShape] = [
+    shapes: list[ViewShape] = [
         _rectangle(
             (-s.half + end, -s.gap), (s.half - end, s.gap), POCKET_FILL
         ),
@@ -1568,31 +1562,31 @@ def _vise_top(s: _SCViseSizes) -> SCView:
         ],
         _center_line(False, 0.0, -s.outer, s.outer),
     ]
-    return SCView("top", "Top", shapes, _vise_top_marks(s))
+    return View("top", "Top", shapes, _vise_top_marks(s))
 
 
 # Function `_vise_top_marks()`:
-def _vise_top_marks(s: _SCViseSizes) -> list[SCMark]:
+def _vise_top_marks(s: _ViseSizes) -> list[Mark]:
     """Return the dimension lines and radii of the view from above.
 
     Arguments:
-    * `s` (`_SCViseSizes`): Where the parts are.
+    * `s` (`_ViseSizes`): Where the parts are.
 
     Returns:
-    * (`list[SCMark]`): The marks.
+    * (`list[Mark]`): The marks.
     """
     # The lengths along the top, from the fixed jaw out to the hexagon.
-    v: SCMachineVise = VISE
+    v: MachineVise = VISE
     end: float = _in(v.end_block_length)
     screw: float = _in(v.lead_screw_diameter) / 2.0
     hex_y: float = max(y for y, _ in _hexagon())
     jaw: float = _in(v.fixed_jaw.width) / 2.0
     above: float = s.outer + STAND_OFF
-    marks: list[SCMark] = [
-        SCDimension(
+    marks: list[Mark] = [
+        Dimension(
             "fixed_jaw.length", True, -s.half, s.fixed_face, above, (jaw, jaw)
         ),
-        SCDimension(
+        Dimension(
             "max_opening",
             True,
             s.fixed_face + s.plate,
@@ -1600,10 +1594,10 @@ def _vise_top_marks(s: _SCViseSizes) -> list[SCMark]:
             above,
             (jaw, jaw),
         ),
-        SCDimension(
+        Dimension(
             "movable_jaw.length", True, s.face, s.moving_end, above, (jaw, jaw)
         ),
-        SCDimension(
+        Dimension(
             "lead_screw_stick_out",
             True,
             s.half,
@@ -1611,10 +1605,10 @@ def _vise_top_marks(s: _SCViseSizes) -> list[SCMark]:
             above,
             (screw, screw),
         ),
-        SCDimension(
+        Dimension(
             "hex_length", True, s.stick, s.hex_end, above, (hex_y, hex_y)
         ),
-        SCDimension(
+        Dimension(
             "base.length", True, -s.half, s.half, above + ROW, (above, above)
         ),
     ]
@@ -1628,7 +1622,7 @@ def _vise_top_marks(s: _SCViseSizes) -> list[SCMark]:
     body_w: float = _in(v.body_notches.width) / 2.0
     below: float = -s.outer - STAND_OFF
     marks += [
-        SCDimension(
+        Dimension(
             "body_notches.width",
             True,
             body_x - body_w,
@@ -1636,7 +1630,7 @@ def _vise_top_marks(s: _SCViseSizes) -> list[SCMark]:
             below,
             (body_y, body_y),
         ),
-        SCDimension(
+        Dimension(
             "base_notches.width",
             True,
             base_x - base_w,
@@ -1644,7 +1638,7 @@ def _vise_top_marks(s: _SCViseSizes) -> list[SCMark]:
             below,
             (base_y, base_y),
         ),
-        SCDimension(
+        Dimension(
             "end_block_length",
             True,
             s.half - end,
@@ -1652,7 +1646,7 @@ def _vise_top_marks(s: _SCViseSizes) -> list[SCMark]:
             below,
             (-s.gap, -s.gap),
         ),
-        SCDimension(
+        Dimension(
             "body_notches.centers",
             True,
             body_x,
@@ -1660,7 +1654,7 @@ def _vise_top_marks(s: _SCViseSizes) -> list[SCMark]:
             below - ROW,
             (body_y + _in(v.body_notches.depth), below - ROW),
         ),
-        SCDimension(
+        Dimension(
             "base_notches.centers",
             True,
             0.0,
@@ -1668,7 +1662,7 @@ def _vise_top_marks(s: _SCViseSizes) -> list[SCMark]:
             below - ROW,
             (below - ROW, base_y + _in(v.base_notches.depth)),
         ),
-        SCDimension(
+        Dimension(
             "body.length",
             True,
             -s.half,
@@ -1683,7 +1677,7 @@ def _vise_top_marks(s: _SCViseSizes) -> list[SCMark]:
     body_out: float = body_x - body_w - STAND_OFF
     past: float = s.hex_end + STAND_OFF
     marks += [
-        SCDimension(
+        Dimension(
             "base_notches.depth",
             False,
             base_y,
@@ -1691,7 +1685,7 @@ def _vise_top_marks(s: _SCViseSizes) -> list[SCMark]:
             base_out,
             (base_x + base_w, base_x + base_w),
         ),
-        SCDimension(
+        Dimension(
             "body_notches.depth",
             False,
             body_y,
@@ -1699,11 +1693,9 @@ def _vise_top_marks(s: _SCViseSizes) -> list[SCMark]:
             body_out,
             (body_x - body_w, body_x - body_w),
         ),
-        SCDimension(
-            "rail_width", False, s.gap, s.outer, past, (s.half, s.half)
-        ),
-        SCDimension("rail_gap", False, -s.gap, s.gap, past, (s.half, s.half)),
-        SCDimension(
+        Dimension("rail_width", False, s.gap, s.outer, past, (s.half, s.half)),
+        Dimension("rail_gap", False, -s.gap, s.gap, past, (s.half, s.half)),
+        Dimension(
             "fixed_jaw.width",
             False,
             -jaw,
@@ -1716,20 +1708,20 @@ def _vise_top_marks(s: _SCViseSizes) -> list[SCMark]:
 
 
 # Function `_vise_radii()`:
-def _vise_radii(s: _SCViseSizes) -> list[SCMark]:
+def _vise_radii(s: _ViseSizes) -> list[Mark]:
     """Return the radii of the view from above.
 
     The base's are on its +X notch and corner, on the -Y side, and the
     body's on its -X notch and corner.
 
     Arguments:
-    * `s` (`_SCViseSizes`): Where the parts are.
+    * `s` (`_ViseSizes`): Where the parts are.
 
     Returns:
-    * (`list[SCMark]`): The radii.
+    * (`list[Mark]`): The radii.
     """
-    v: SCMachineVise = VISE
-    marks: list[SCMark] = []
+    v: MachineVise = VISE
+    marks: list[Mark] = []
     for name, block, notches, side, corner in (
         ("base", v.base, v.base_notches, 1.0, s.half),
         ("body", v.body, v.body_notches, -1.0, -s.half),
@@ -1743,21 +1735,21 @@ def _vise_radii(s: _SCViseSizes) -> list[SCMark]:
         deep: float = edge + _in(notches.depth)
         rounded: float = _in(block.corner_radius)
         marks += [
-            SCRadius(
+            Radius(
                 f"{name}_notches.inner_radius",
                 (x - side * inner, deep - inner),
                 inner,
                 90.0 + side * 45.0,
                 (side * 0.2, 0.3),
             ),
-            SCRadius(
+            Radius(
                 f"{name}_notches.outer_radius",
                 (x + side * outer, edge + outer),
                 outer,
                 -90.0 - side * 45.0,
                 (-side * 0.05, -0.32),
             ),
-            SCRadius(
+            Radius(
                 f"{name}.corner_radius",
                 (corner - side * rounded, edge + rounded),
                 rounded,
@@ -1769,19 +1761,19 @@ def _vise_radii(s: _SCViseSizes) -> list[SCMark]:
 
 
 # Function `_vise_back()`:
-def _vise_back(s: _SCViseSizes) -> SCView:
+def _vise_back(s: _ViseSizes) -> View:
     """Return the machine vise seen from its lead screw's end.
 
     Arguments:
-    * `s` (`_SCViseSizes`): Where its parts are.
+    * `s` (`_ViseSizes`): Where its parts are.
 
     Returns:
-    * (`SCView`): The view, Y to the right and Z up.
+    * (`View`): The view, Y to the right and Z up.
     """
     # The movable jaw, the base, the body and the bed, the lead screw's
     # hole, the lead screw and its hexagon; hidden, the movable jaw
     # plate's holes and counterbores.
-    v: SCMachineVise = VISE
+    v: MachineVise = VISE
     base: float = _in(v.base.width) / 2.0
     body: float = _in(v.body.width) / 2.0
     moving: float = _in(v.movable_jaw.width) / 2.0
@@ -1790,7 +1782,7 @@ def _vise_back(s: _SCViseSizes) -> SCView:
     holes_x: float = _in(v.jaw_plate.hole_spacing) / 2.0
     holes_z: float = s.bed_top + _in(v.jaw_plate.hole_height)
     hexagon: Profile = [(y, s.screw_z + z) for y, z in _hexagon()]
-    shapes: list[SCShape] = [
+    shapes: list[ViewShape] = [
         _rectangle((-moving, s.bed_top), (moving, s.jaw_top)),
         _rectangle((-base, 0.0), (base, _in(v.base.height))),
         _rectangle((-body, _in(v.base.height)), (body, s.bed_bottom)),
@@ -1814,8 +1806,8 @@ def _vise_back(s: _SCViseSizes) -> SCView:
     flat: float = max(y for y, z in _hexagon() if z > 0.0)
     left: float = -s.outer - STAND_OFF
     right: float = s.outer + STAND_OFF
-    marks: list[SCMark] = [
-        SCDimension(
+    marks: list[Mark] = [
+        Dimension(
             "movable_jaw.width",
             True,
             -moving,
@@ -1823,8 +1815,8 @@ def _vise_back(s: _SCViseSizes) -> SCView:
             s.jaw_top + STAND_OFF,
             (s.jaw_top, s.jaw_top),
         ),
-        SCDimension("base.width", True, -base, base, -STAND_OFF, (0.0, 0.0)),
-        SCDimension(
+        Dimension("base.width", True, -base, base, -STAND_OFF, (0.0, 0.0)),
+        Dimension(
             "body.width",
             True,
             -body,
@@ -1832,10 +1824,10 @@ def _vise_back(s: _SCViseSizes) -> SCView:
             -STAND_OFF - ROW,
             (_in(v.base.height), _in(v.base.height)),
         ),
-        SCDimension(
+        Dimension(
             "lead_screw_height", False, 0.0, s.screw_z, left, (-base, -screw)
         ),
-        SCDimension(
+        Dimension(
             "hex_size",
             False,
             s.screw_z - _in(v.hex_size) / 2.0,
@@ -1843,7 +1835,7 @@ def _vise_back(s: _SCViseSizes) -> SCView:
             right,
             (flat, flat),
         ),
-        SCDimension(
+        Dimension(
             "lead_screw_diameter",
             False,
             s.screw_z - screw,
@@ -1851,7 +1843,7 @@ def _vise_back(s: _SCViseSizes) -> SCView:
             right + ROW,
             (0.0, 0.0),
         ),
-        SCDimension(
+        Dimension(
             "lead_screw_hole_diameter",
             False,
             s.screw_z - hole,
@@ -1860,26 +1852,26 @@ def _vise_back(s: _SCViseSizes) -> SCView:
             (0.0, 0.0),
         ),
     ]
-    return SCView("back", "Back (the hexagon's end)", shapes, marks)
+    return View("back", "Back (the hexagon's end)", shapes, marks)
 
 
 # Function `_vise_side()`:
-def _vise_side(s: _SCViseSizes) -> SCView:
+def _vise_side(s: _ViseSizes) -> View:
     """Return the machine vise seen from its -Y side.
 
     Arguments:
-    * `s` (`_SCViseSizes`): Where its parts are.
+    * `s` (`_ViseSizes`): Where its parts are.
 
     Returns:
-    * (`SCView`): The view, X to the right and Z up.
+    * (`View`): The view, X to the right and Z up.
     """
     # The lead screw's end, the body and the base with their notches
     # (seen face on), the bed, then the jaws and jaw plates.
-    v: SCMachineVise = VISE
+    v: MachineVise = VISE
     screw: float = _in(v.lead_screw_diameter) / 2.0
     hex_z: float = _in(v.hex_size) / 2.0
     base_top: float = _in(v.base.height)
-    shapes: list[SCShape] = [
+    shapes: list[ViewShape] = [
         _rectangle((s.half, s.screw_z - screw), (s.stick, s.screw_z + screw)),
         _rectangle(
             (s.stick, s.screw_z - hex_z), (s.hex_end, s.screw_z + hex_z)
@@ -1912,14 +1904,12 @@ def _vise_side(s: _SCViseSizes) -> SCView:
     # The heights: the stack on the left, the movable jaw on the right.
     left: float = -s.half - STAND_OFF
     edge: tuple[float, float] = (-s.half, -s.half)
-    marks: list[SCMark] = [
-        SCDimension("base.height", False, 0.0, base_top, left, edge),
-        SCDimension("body.height", False, base_top, s.bed_bottom, left, edge),
-        SCDimension("rail_height", False, s.bed_bottom, s.bed_top, left, edge),
-        SCDimension(
-            "fixed_jaw.height", False, s.bed_top, s.jaw_top, left, edge
-        ),
-        SCDimension(
+    marks: list[Mark] = [
+        Dimension("base.height", False, 0.0, base_top, left, edge),
+        Dimension("body.height", False, base_top, s.bed_bottom, left, edge),
+        Dimension("rail_height", False, s.bed_bottom, s.bed_top, left, edge),
+        Dimension("fixed_jaw.height", False, s.bed_top, s.jaw_top, left, edge),
+        Dimension(
             "movable_jaw.height",
             False,
             s.bed_top,
@@ -1928,26 +1918,26 @@ def _vise_side(s: _SCViseSizes) -> SCView:
             (s.moving_end, s.moving_end),
         ),
     ]
-    return SCView("side", "Side (from -Y)", shapes, marks)
+    return View("side", "Side (from -Y)", shapes, marks)
 
 
 # Function `vise_views()`:
-def vise_views() -> list[SCView]:
+def vise_views() -> list[View]:
     """Return the views of the machine vise, in the document's order.
 
     Returns:
-    * (`list[SCView]`): The top, back and side views.
+    * (`list[View]`): The top, back and side views.
     """
-    sizes: _SCViseSizes = _SCViseSizes()
+    sizes: _ViseSizes = _ViseSizes()
     return [_vise_top(sizes), _vise_back(sizes), _vise_side(sizes)]
 
 
 # Function `vise_numbers()`:
-def vise_numbers(views: list[SCView]) -> dict[str, str]:
+def vise_numbers(views: list[View]) -> dict[str, str]:
     """Return the number of each size drawn, in the order drawn.
 
     Arguments:
-    * `views` (`list[SCView]`): The views.
+    * `views` (`list[View]`): The views.
 
     Returns:
     * (`dict[str, str]`): Each size's path and number.
@@ -1957,11 +1947,11 @@ def vise_numbers(views: list[SCView]) -> dict[str, str]:
 
 
 # Function `view_sketch()`:
-def view_sketch(view: SCView, numbers: dict[str, str]) -> str:
+def view_sketch(view: View, numbers: dict[str, str]) -> str:
     """Return one view, as an SVG file.
 
     Arguments:
-    * `view` (`SCView`): The view.
+    * `view` (`View`): The view.
     * `numbers` (`dict[str, str]`): What each mark is labeled with.
 
     Returns:
@@ -1972,10 +1962,10 @@ def view_sketch(view: SCView, numbers: dict[str, str]) -> str:
     xs: list[float] = [x for shape in view.shapes for x, _ in shape.points]
     zs: list[float] = [z for shape in view.shapes for _, z in shape.points]
     _extend(
-        [mark for mark in view.marks if isinstance(mark, SCDimension)], xs, zs
+        [mark for mark in view.marks if isinstance(mark, Dimension)], xs, zs
     )
     for mark in view.marks:
-        if isinstance(mark, SCRadius):
+        if isinstance(mark, Radius):
             xs.append(mark.center[0] + mark.letter_at[0])
             zs.append(mark.center[1] + mark.letter_at[1])
     root: ET.Element = _root(xs, zs)
@@ -1993,9 +1983,9 @@ def view_sketch(view: SCView, numbers: dict[str, str]) -> str:
             attributes["stroke-dasharray"] = shape.dashes
         ET.SubElement(root, "path", attributes)
     for mark in view.marks:
-        if isinstance(mark, SCDimension):
+        if isinstance(mark, Dimension):
             _dimension(root, mark, numbers[mark.key])
-        elif isinstance(mark, SCRadius):
+        elif isinstance(mark, Radius):
             _radius(root, mark, numbers[mark.key])
     ET.indent(root)
     return ET.tostring(root, encoding="unicode") + "\n"
@@ -2035,12 +2025,12 @@ def vise_sizes() -> dict[str, str]:
       jaw plate has a section of its own.
     """
     parts: dict[type, dict[str, str]] = {
-        part: _attributes(part) for part in (SCViseBlock, SCViseNotches)
+        part: _attributes(part) for part in (ViseBlock, ViseNotches)
     }
     meanings: dict[str, str] = {}
-    for name, meaning in _attributes(SCMachineVise).items():
+    for name, meaning in _attributes(MachineVise).items():
         part: object = getattr(VISE, name)
-        if isinstance(part, (str, SCJawPlate)):
+        if isinstance(part, (str, JawPlate)):
             continue
         if type(part) not in parts:
             meanings[name] = meaning
@@ -2061,12 +2051,12 @@ def vise_section() -> str:
     * (`str`): Its Markdown.
     """
     # What it is, from its docstring, and its views.
-    doc: str = inspect.getdoc(SCMachineVise) or ""
+    doc: str = inspect.getdoc(MachineVise) or ""
     about: str = doc.split("\n\nAttributes:", maxsplit=1)[0]
     paragraphs: str = "\n\n".join(
         textwrap.fill(paragraph, 72) for paragraph in about.split("\n\n")
     )
-    views: list[SCView] = vise_views()
+    views: list[View] = vise_views()
     numbers: dict[str, str] = vise_numbers(views)
     images: str = "\n\n".join(
         f"{view.title}:\n\n"
@@ -2093,15 +2083,15 @@ def vise_section() -> str:
         if item["kind"] == "machine_vise"
     )
     python: str = (
-        "from scraftcnc.pybind.scraftpybind import SCPyBind, connect\n"
+        "from scraftcnc.pybind.scraftpybind import PyBind, connect\n"
         f"from scraftcnc.tooling.tools import {VISE_NAME}\n"
         "\n"
         'with connect("8080") as transport:\n'
-        f"    {VISE_NAME}.model(SCPyBind(transport), opening=76.2)\n"
+        f"    {VISE_NAME}.model(PyBind(transport), opening=76.2)\n"
     )
     interface: str = "\n".join(
         _interface_entry(tools, name, False)
-        for name in ("SCMachineVise", "SCViseBlock", "SCViseNotches")
+        for name in ("MachineVise", "ViseBlock", "ViseNotches")
     )
     return (
         "## Machine Vise\n\n"
@@ -2143,22 +2133,22 @@ def _size_rows(
 
 
 # The jaw plate that its section is drawn from.
-JAW_PLATE: SCJawPlate = KURT_JAW_PLATE
+JAW_PLATE: JawPlate = KURT_JAW_PLATE
 JAW_PLATE_NAME: str = "KURT_JAW_PLATE"
 
 
 # Function `jaw_plate_views()`:
-def jaw_plate_views() -> list[SCView]:
+def jaw_plate_views() -> list[View]:
     """Return the views of the jaw plate, in the document's order.
 
     Both are drawn with the plate's width across: from above, with its
     clamping face toward the bottom; and looking at its clamping face.
 
     Returns:
-    * (`list[SCView]`): The top and face views.
+    * (`list[View]`): The top and face views.
     """
     # The plate's sizes (inches).
-    p: SCJawPlate = JAW_PLATE
+    p: JawPlate = JAW_PLATE
     thick: float = _in(p.length)
     half: float = _in(p.width) / 2.0
     tall: float = _in(p.height)
@@ -2170,18 +2160,16 @@ def jaw_plate_views() -> list[SCView]:
 
     # From above: each hole and counterbore hidden inside, the clamping
     # face at the bottom.
-    top_shapes: list[SCShape] = [_rectangle((-half, 0.0), (half, thick))]
+    top_shapes: list[ViewShape] = [_rectangle((-half, 0.0), (half, thick))]
     for x in (-holes, holes):
         top_shapes += [
             _rectangle((x - bore, 0.0), (x + bore, deep), "none", HIDDEN),
             _rectangle((x - hole, deep), (x + hole, thick), "none", HIDDEN),
             _center_line(False, x, 0.0, thick),
         ]
-    top_marks: list[SCMark] = [
-        SCDimension(
-            "length", False, 0.0, thick, half + STAND_OFF, (half, half)
-        ),
-        SCDimension(
+    top_marks: list[Mark] = [
+        Dimension("length", False, 0.0, thick, half + STAND_OFF, (half, half)),
+        Dimension(
             "counterbore_depth",
             False,
             0.0,
@@ -2192,7 +2180,7 @@ def jaw_plate_views() -> list[SCView]:
     ]
 
     # The clamping face: the counterbores, with the holes through them.
-    face_shapes: list[SCShape] = [_rectangle((-half, 0.0), (half, tall))]
+    face_shapes: list[ViewShape] = [_rectangle((-half, 0.0), (half, tall))]
     for x in (-holes, holes):
         face_shapes += [
             _circle((x, up), bore),
@@ -2200,16 +2188,16 @@ def jaw_plate_views() -> list[SCView]:
             _center_line(False, x, up - bore, up + bore),
         ]
     face_shapes.append(_center_line(True, up, -half, half))
-    face_marks: list[SCMark] = [
-        SCDimension("width", True, -half, half, -STAND_OFF - ROW, (0.0, 0.0)),
-        SCDimension("hole_spacing", True, -holes, holes, -STAND_OFF, (up, up)),
-        SCDimension(
+    face_marks: list[Mark] = [
+        Dimension("width", True, -half, half, -STAND_OFF - ROW, (0.0, 0.0)),
+        Dimension("hole_spacing", True, -holes, holes, -STAND_OFF, (up, up)),
+        Dimension(
             "height", False, 0.0, tall, -half - STAND_OFF, (-half, -half)
         ),
-        SCDimension(
+        Dimension(
             "hole_height", False, 0.0, up, half + STAND_OFF, (half, holes)
         ),
-        SCDimension(
+        Dimension(
             "counterbore_diameter",
             True,
             -holes - bore,
@@ -2217,7 +2205,7 @@ def jaw_plate_views() -> list[SCView]:
             tall + STAND_OFF,
             (up, up),
         ),
-        SCDimension(
+        Dimension(
             "hole_diameter",
             True,
             holes - hole,
@@ -2227,8 +2215,8 @@ def jaw_plate_views() -> list[SCView]:
         ),
     ]
     return [
-        SCView("top", "Top (clamping face down)", top_shapes, top_marks),
-        SCView("face", "Clamping face", face_shapes, face_marks),
+        View("top", "Top (clamping face down)", top_shapes, top_marks),
+        View("face", "Clamping face", face_shapes, face_marks),
     ]
 
 
@@ -2240,12 +2228,12 @@ def jaw_plate_section() -> str:
     * (`str`): Its Markdown.
     """
     # What it is, from its docstring, and its views.
-    doc: str = inspect.getdoc(SCJawPlate) or ""
+    doc: str = inspect.getdoc(JawPlate) or ""
     about: str = doc.split("\n\nAttributes:", maxsplit=1)[0]
     paragraphs: str = "\n\n".join(
         textwrap.fill(paragraph, 72) for paragraph in about.split("\n\n")
     )
-    views: list[SCView] = jaw_plate_views()
+    views: list[View] = jaw_plate_views()
     numbers: dict[str, str] = vise_numbers(views)
     images: str = "\n\n".join(
         f"{view.title}:\n\n"
@@ -2254,7 +2242,7 @@ def jaw_plate_section() -> str:
     )
 
     # The sizes, by number; then the rest, and how to make one.
-    meanings: dict[str, str] = _attributes(SCJawPlate)
+    meanings: dict[str, str] = _attributes(JawPlate)
     rows: list[list[str]] = _size_rows(numbers, meanings)
     others: str = "\n".join(
         textwrap.fill(f"* `{key}`: {meaning}", 72, subsequent_indent="  ")
@@ -2262,11 +2250,11 @@ def jaw_plate_section() -> str:
         if key not in numbers
     )
     python: str = (
-        "from scraftcnc.pybind.scraftpybind import SCPyBind, connect\n"
+        "from scraftcnc.pybind.scraftpybind import PyBind, connect\n"
         f"from scraftcnc.tooling.tools import {JAW_PLATE_NAME}\n"
         "\n"
         'with connect("8080") as transport:\n'
-        f'    {JAW_PLATE_NAME}.model(SCPyBind(transport), "Jaw plate")\n'
+        f'    {JAW_PLATE_NAME}.model(PyBind(transport), "Jaw plate")\n'
     )
     return (
         "## Jaw Plate\n\n"
@@ -2278,25 +2266,25 @@ def jaw_plate_section() -> str:
         f"Not a size:\n\n{others}\n\n"
         "Like the vise, it is made in Python, in millimeters:\n\n"
         f"```python\n{python}```\n\n"
-        f"{_interface_entry(tools, 'SCJawPlate', False)}"
+        f"{_interface_entry(tools, 'JawPlate', False)}"
     )
 
 
 # The parallel that its section is drawn from.
-PARALLEL: SCParallel = next(
+PARALLEL: Parallel = next(
     parallel for parallel in PARALLELS if parallel.name == "Parallel 3/4 in A"
 )
 
 
 # Function `parallel_views()`:
-def parallel_views() -> list[SCView]:
+def parallel_views() -> list[View]:
     """Return the views of a parallel, in the document's order.
 
     Returns:
-    * (`list[SCView]`): Its side, looking through its holes, and its end.
+    * (`list[View]`): Its side, looking through its holes, and its end.
     """
     # Its sizes (inches).
-    p: SCParallel = PARALLEL
+    p: Parallel = PARALLEL
     half: float = _in(p.length) / 2.0
     tall: float = _in(p.height)
     thick: float = _in(p.thickness)
@@ -2305,20 +2293,20 @@ def parallel_views() -> list[SCView]:
     up: float = tall / 2.0
 
     # The side: the holes through it, and its center lines.
-    side_shapes: list[SCShape] = [_rectangle((-half, 0.0), (half, tall))]
+    side_shapes: list[ViewShape] = [_rectangle((-half, 0.0), (half, tall))]
     for x in (-holes, holes):
         side_shapes += [
             _circle((x, up), hole, POCKET_FILL),
             _center_line(False, x, up - hole, up + hole),
         ]
     side_shapes.append(_center_line(True, up, -half, half))
-    side_marks: list[SCMark] = [
-        SCDimension("length", True, -half, half, -STAND_OFF - ROW, (0.0, 0.0)),
-        SCDimension("hole_spacing", True, -holes, holes, -STAND_OFF, (up, up)),
-        SCDimension(
+    side_marks: list[Mark] = [
+        Dimension("length", True, -half, half, -STAND_OFF - ROW, (0.0, 0.0)),
+        Dimension("hole_spacing", True, -holes, holes, -STAND_OFF, (up, up)),
+        Dimension(
             "height", False, 0.0, tall, -half - STAND_OFF, (-half, -half)
         ),
-        SCDimension(
+        Dimension(
             "hole_diameter",
             True,
             holes - hole,
@@ -2329,14 +2317,14 @@ def parallel_views() -> list[SCView]:
     ]
 
     # The end: the holes hidden inside it.
-    end_shapes: list[SCShape] = [
+    end_shapes: list[ViewShape] = [
         _rectangle((-thick / 2.0, 0.0), (thick / 2.0, tall)),
         _rectangle(
             (-thick / 2.0, up - hole), (thick / 2.0, up + hole), "none", HIDDEN
         ),
     ]
-    end_marks: list[SCMark] = [
-        SCDimension(
+    end_marks: list[Mark] = [
+        Dimension(
             "thickness",
             True,
             -thick / 2.0,
@@ -2346,8 +2334,8 @@ def parallel_views() -> list[SCView]:
         ),
     ]
     return [
-        SCView("side", "Side", side_shapes, side_marks),
-        SCView("end", "End", end_shapes, end_marks),
+        View("side", "Side", side_shapes, side_marks),
+        View("end", "End", end_shapes, end_marks),
     ]
 
 
@@ -2359,12 +2347,12 @@ def parallel_section() -> str:
     * (`str`): Its Markdown.
     """
     # What it is, from its docstring, and its views.
-    doc: str = inspect.getdoc(SCParallel) or ""
+    doc: str = inspect.getdoc(Parallel) or ""
     about: str = doc.split("\n\nAttributes:", maxsplit=1)[0]
     paragraphs: str = "\n\n".join(
         textwrap.fill(paragraph, 72) for paragraph in about.split("\n\n")
     )
-    views: list[SCView] = parallel_views()
+    views: list[View] = parallel_views()
     numbers: dict[str, str] = vise_numbers(views)
     images: str = "\n\n".join(
         f"{view.title}:\n\n"
@@ -2373,7 +2361,7 @@ def parallel_section() -> str:
     )
 
     # The sizes, by number, and the set on hand.
-    meanings: dict[str, str] = _attributes(SCParallel)
+    meanings: dict[str, str] = _attributes(Parallel)
     rows: list[list[str]] = _size_rows(numbers, meanings)
     heights: str = textwrap.fill(
         "`tools.PARALLELS` is a set of two of each of the standard "
@@ -2389,13 +2377,13 @@ def parallel_section() -> str:
     )
 
     # How to make one, and where a setup names one.
-    p: SCParallel = PARALLEL
+    p: Parallel = PARALLEL
     python: str = (
-        "from scraftcnc.pybind.scraftpybind import SCPyBind, connect\n"
-        "from scraftcnc.tooling.tools import SCParallel\n"
+        "from scraftcnc.pybind.scraftpybind import PyBind, connect\n"
+        "from scraftcnc.tooling.tools import Parallel\n"
         "\n"
         "# Its sizes in millimeters; the holes are optional.\n"
-        "parallel = SCParallel(\n"
+        "parallel = Parallel(\n"
         '    "Parallel 3/4 in",\n'
         f"    height={p.height:.3f},\n"
         f"    thickness={p.thickness:.3f},\n"
@@ -2404,7 +2392,7 @@ def parallel_section() -> str:
         f"    hole_diameter={p.hole_diameter:.3f},\n"
         ")\n"
         'with connect("8080") as transport:\n'
-        "    parallel.model(SCPyBind(transport), (0.0, 0.0, 0.0))\n"
+        "    parallel.model(PyBind(transport), (0.0, 0.0, 0.0))\n"
     )
     setup: object = next(
         item
@@ -2428,32 +2416,32 @@ def parallel_section() -> str:
         "A setup file (`examples/setup/`) names one of the set by its\n"
         "`type`:\n\n"
         f"```json\n{json.dumps(setup, indent=2)}\n```\n\n"
-        f"{_interface_entry(tools, 'SCParallel', False)}"
+        f"{_interface_entry(tools, 'Parallel', False)}"
     )
 
 
 # The grid plate that its section is drawn from, and how much larger
 # its hole's section is drawn.
-GRID: SCGridPlate = GRID_PLATE
+GRID: GridPlate = GRID_PLATE
 DETAIL: float = 8.0
 
 
 # Function `grid_plate_views()`:
-def grid_plate_views() -> list[SCView]:
+def grid_plate_views() -> list[View]:
     """Return the views of the grid plate, in the document's order.
 
     Returns:
-    * (`list[SCView]`): The view from above, and a section through one
+    * (`list[View]`): The view from above, and a section through one
       grid hole, drawn larger.
     """
     # The plate, its grid holes with their chamfers, and its tooling
     # holes: the tap drill holes filled, the close fit holes open.
-    g: SCGridPlate = GRID
+    g: GridPlate = GRID
     half_x: float = _in(g.length) / 2.0
     half_y: float = _in(g.width) / 2.0
     hole: float = _in(g.hole_diameter) / 2.0
     top: float = _in(g.chamfered_diameter()) / 2.0
-    shapes: list[SCShape] = [
+    shapes: list[ViewShape] = [
         _outline(g.outline((0.0, 0.0)), TOOL_FILL),
     ]
     for x, y in g.hole_centers():
@@ -2472,8 +2460,8 @@ def grid_plate_views() -> list[SCView]:
     ]
     below: float = -half_y - STAND_OFF
     corner: float = _in(g.corner_radius)
-    marks: list[SCMark] = [
-        SCDimension(
+    marks: list[Mark] = [
+        Dimension(
             "edge",
             True,
             -half_x,
@@ -2481,7 +2469,7 @@ def grid_plate_views() -> list[SCView]:
             below,
             (-half_y, -half_y + _in(g.edge)),
         ),
-        SCDimension(
+        Dimension(
             "pitch",
             True,
             columns[0],
@@ -2489,13 +2477,13 @@ def grid_plate_views() -> list[SCView]:
             below,
             (-half_y + _in(g.edge), -half_y + _in(g.edge)),
         ),
-        SCDimension(
+        Dimension(
             "length", True, -half_x, half_x, below - ROW, (below, below)
         ),
-        SCDimension(
+        Dimension(
             "width", False, -half_y, half_y, -half_x - STAND_OFF, (0.0, 0.0)
         ),
-        SCRadius(
+        Radius(
             "corner_radius",
             (half_x - corner, -half_y + corner),
             corner,
@@ -2513,7 +2501,7 @@ def grid_plate_views() -> list[SCView]:
             )
         above: float = half_y + STAND_OFF
         marks += [
-            SCDimension(
+            Dimension(
                 "tooling_pitch",
                 True,
                 tooling[-2][0],
@@ -2521,7 +2509,7 @@ def grid_plate_views() -> list[SCView]:
                 above + ROW,
                 (y_top, y_top),
             ),
-            SCDimension(
+            Dimension(
                 "tap_diameter",
                 True,
                 x_tap - r_tap,
@@ -2529,7 +2517,7 @@ def grid_plate_views() -> list[SCView]:
                 above,
                 (y_top, y_top),
             ),
-            SCDimension(
+            Dimension(
                 "close_diameter",
                 True,
                 x_close - r_close,
@@ -2539,19 +2527,19 @@ def grid_plate_views() -> list[SCView]:
             ),
         ]
     return [
-        SCView("top", "Top", shapes, marks),
+        View("top", "Top", shapes, marks),
         _grid_hole_section(),
     ]
 
 
 # Function `_grid_hole_section()`:
-def _grid_hole_section() -> SCView:
+def _grid_hole_section() -> View:
     """Return a section through one grid hole, `DETAIL` times size.
 
     Returns:
-    * (`SCView`): The section, across the hole, a pitch wide.
+    * (`View`): The section, across the hole, a pitch wide.
     """
-    g: SCGridPlate = GRID
+    g: GridPlate = GRID
     side: float = _in(g.pitch) / 2.0 * DETAIL
     hole: float = _in(g.hole_diameter) / 2.0 * DETAIL
     deep: float = _in(g.chamfer_depth) * DETAIL
@@ -2564,19 +2552,15 @@ def _grid_hole_section() -> SCView:
         (-side, tall),
     ]
     right: Profile = [(-x, z) for x, z in reversed(left)]
-    shapes: list[SCShape] = [
+    shapes: list[ViewShape] = [
         _polygon(left),
         _polygon(right),
         _center_line(False, 0.0, 0.0, tall),
     ]
-    marks: list[SCMark] = [
-        SCDimension(
-            "height", False, 0.0, tall, side + STAND_OFF, (side, side)
-        ),
-        SCDimension(
-            "hole_diameter", True, -hole, hole, -STAND_OFF, (0.0, 0.0)
-        ),
-        SCDimension(
+    marks: list[Mark] = [
+        Dimension("height", False, 0.0, tall, side + STAND_OFF, (side, side)),
+        Dimension("hole_diameter", True, -hole, hole, -STAND_OFF, (0.0, 0.0)),
+        Dimension(
             "chamfer_depth",
             False,
             tall - deep,
@@ -2586,7 +2570,7 @@ def _grid_hole_section() -> SCView:
         ),
     ]
     title: str = f"Section through a grid hole ({DETAIL:.0f} times size)"
-    return SCView("section", title, shapes, marks)
+    return View("section", title, shapes, marks)
 
 
 # Function `grid_plate_section()`:
@@ -2597,12 +2581,12 @@ def grid_plate_section() -> str:
     * (`str`): Its Markdown.
     """
     # What it is, from its docstring, and its views.
-    doc: str = inspect.getdoc(SCGridPlate) or ""
+    doc: str = inspect.getdoc(GridPlate) or ""
     about: str = doc.split("\n\nAttributes:", maxsplit=1)[0]
     paragraphs: str = "\n\n".join(
         textwrap.fill(paragraph, 72) for paragraph in about.split("\n\n")
     )
-    views: list[SCView] = grid_plate_views()
+    views: list[View] = grid_plate_views()
     numbers: dict[str, str] = vise_numbers(views)
     images: str = "\n\n".join(
         f"{view.title}:\n\n"
@@ -2611,7 +2595,7 @@ def grid_plate_section() -> str:
     )
 
     # The sizes, by number; then the rest, and how to make one.
-    meanings: dict[str, str] = _attributes(SCGridPlate)
+    meanings: dict[str, str] = _attributes(GridPlate)
     rows: list[list[str]] = _size_rows(numbers, meanings)
     others: str = "\n".join(
         textwrap.fill(f"* `{key}`: {meaning}", 72, subsequent_indent="  ")
@@ -2619,14 +2603,14 @@ def grid_plate_section() -> str:
         if key not in numbers
     )
     python: str = (
-        "from scraftcnc.model_cache import SCModelCache\n"
-        "from scraftcnc.pybind.scraftpybind import SCPyBind, connect\n"
+        "from scraftcnc.model_cache import ModelCache\n"
+        "from scraftcnc.pybind.scraftpybind import PyBind, connect\n"
         "from scraftcnc.tooling.tools import GRID_PLATE\n"
         "\n"
         "# Through the cache: slow the first time, then about a second.\n"
         'with connect("8080") as transport:\n'
         "    (plate,) = GRID_PLATE.cacheable()\n"
-        "    SCModelCache().insert(SCPyBind(transport), plate)\n"
+        "    ModelCache().insert(PyBind(transport), plate)\n"
     )
     toml: str = (HERE / "examples/shop/tooling.toml").read_text(
         encoding="utf-8"
@@ -2650,7 +2634,7 @@ def grid_plate_section() -> str:
         "(about 4-1/2 minutes for `tools.GRID_PLATE`'s 200, against\n"
         "seconds without them), and is done again whenever the cache\n"
         "key changes.  Turning it off is recommended:\n"
-        "`SCGridPlate.named(name, chamfer=False)` (in a setup's\n"
+        "`GridPlate.named(name, chamfer=False)` (in a setup's\n"
         "`args`, `chamfer = false`), as the demonstration does.\n\n"
         f"{images}\n\n"
         f"{markdown_table(rows)}\n\n"
@@ -2663,7 +2647,7 @@ def grid_plate_section() -> str:
         "A setup file (`examples/setup/`) names one by its `type`, from\n"
         "the shop's tooling files or `tools.py`:\n\n"
         f"```json\n{json.dumps(setup, indent=2)}\n```\n\n"
-        f"{_interface_entry(tools, 'SCGridPlate', False)}"
+        f"{_interface_entry(tools, 'GridPlate', False)}"
     )
 
 
@@ -2730,7 +2714,7 @@ def main() -> None:
         (directory / f"{page.kind}.svg").write_text(
             sketch(page), encoding="utf-8"
         )
-    views: list[SCView] = vise_views()
+    views: list[View] = vise_views()
     numbers: dict[str, str] = vise_numbers(views)
     for view in views:
         (directory / f"machine_vise_{view.name}.svg").write_text(

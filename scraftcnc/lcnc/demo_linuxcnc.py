@@ -22,7 +22,7 @@ from typing import Any
 
 from . import install_linuxcnc
 from .install_linuxcnc import stamp
-from .lcnc_client import SCBridgeError, SCClient, constant
+from .lcnc_client import BridgeClient, BridgeError, constant
 from .serve_linuxcnc import serving
 
 # How long LinuxCNC may take to start, and to shut down (seconds).
@@ -68,11 +68,13 @@ def wait_for(what: str, ready: Callable[[], bool]) -> None:
 
 
 # Function `check_position()`:
-def check_position(lcnc: SCClient, wanted: tuple[float, float, float]) -> None:
+def check_position(
+    lcnc: BridgeClient, wanted: tuple[float, float, float]
+) -> None:
     """Check where the machine is.
 
     Arguments:
-    * `lcnc` (`SCClient`): The connection.
+    * `lcnc` (`BridgeClient`): The connection.
     * `wanted` (`tuple[float, float, float]`): Its X, Y and Z.
 
     Raises:
@@ -87,11 +89,11 @@ def check_position(lcnc: SCClient, wanted: tuple[float, float, float]) -> None:
 
 
 # Function `check_protocol()`:
-def check_protocol(lcnc: SCClient) -> None:
+def check_protocol(lcnc: BridgeClient) -> None:
     """Check the calls that do not move the machine.
 
     Arguments:
-    * `lcnc` (`SCClient`): The connection.
+    * `lcnc` (`BridgeClient`): The connection.
 
     Raises:
     * `RuntimeError`: If an answer is wrong.
@@ -115,23 +117,23 @@ def check_protocol(lcnc: SCClient) -> None:
     for name in ("command.__class__", "command.nope", "eval", "stat.poll"):
         try:
             lcnc.call(name)
-        except SCBridgeError:
+        except BridgeError:
             continue
         raise RuntimeError(f"{name} was not refused.")
     try:
         lcnc.call("program.write", "../escaped.ngc", "M2\n")
-    except SCBridgeError:
+    except BridgeError:
         pass
     else:
         raise RuntimeError("A path outside `programs/` was not refused.")
 
 
 # Function `prepare()`:
-def prepare(lcnc: SCClient) -> None:
+def prepare(lcnc: BridgeClient) -> None:
     """Turn the machine on and home it.
 
     Arguments:
-    * `lcnc` (`SCClient`): The connection.
+    * `lcnc` (`BridgeClient`): The connection.
     """
     # On.
     constants: dict[str, Any] = lcnc.call("constants")
@@ -158,11 +160,11 @@ def prepare(lcnc: SCClient) -> None:
 
 
 # Function `move_by_mdi()`:
-def move_by_mdi(lcnc: SCClient) -> None:
+def move_by_mdi(lcnc: BridgeClient) -> None:
     """Move the machine with one line of G-code, and check it.
 
     Arguments:
-    * `lcnc` (`SCClient`): The connection.
+    * `lcnc` (`BridgeClient`): The connection.
     """
     lcnc.call("command.mode", constant("MODE_MDI"))
     lcnc.call("command.wait_complete")
@@ -176,11 +178,11 @@ def move_by_mdi(lcnc: SCClient) -> None:
 
 
 # Function `run_program()`:
-def run_program(lcnc: SCClient) -> None:
+def run_program(lcnc: BridgeClient) -> None:
     """Send and run the G-code program, following the machine.
 
     Arguments:
-    * `lcnc` (`SCClient`): The connection.
+    * `lcnc` (`BridgeClient`): The connection.
 
     Raises:
     * `RuntimeError`: If the machine did not go where it should.
@@ -224,7 +226,7 @@ def exercise() -> None:
     Raises:
     * `RuntimeError`: If anything is wrong, or LinuxCNC reports errors.
     """
-    with SCClient() as lcnc:
+    with BridgeClient() as lcnc:
         check_protocol(lcnc)
         prepare(lcnc)
         move_by_mdi(lcnc)
@@ -250,10 +252,10 @@ def stop_server(server: subprocess.Popen[bytes]) -> None:
     * `server` (`subprocess.Popen[bytes]`): The server.
     """
     try:
-        with SCClient(timeout=10.0) as lcnc:
+        with BridgeClient(timeout=10.0) as lcnc:
             lcnc.call("shutdown")
         server.wait(timeout=STOP_TIME)
-    except (OSError, SCBridgeError, subprocess.TimeoutExpired):
+    except (OSError, BridgeError, subprocess.TimeoutExpired):
         server.terminate()
 
 
@@ -297,7 +299,7 @@ def demonstrate(target_arguments: list[str]) -> int:
                 failure = f"serve_linuxcnc.py exited with {status}."
             elif serving():
                 failure = "The port still answers after the shutdown."
-        except (RuntimeError, OSError, SCBridgeError) as error:
+        except (RuntimeError, OSError, BridgeError) as error:
             failure = str(error)
         except subprocess.TimeoutExpired:
             failure = "LinuxCNC did not shut down."

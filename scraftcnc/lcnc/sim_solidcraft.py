@@ -2,7 +2,7 @@
 
 The SolidCraft side of the simulation (`T.rlg~3.3`), split out of
 `sim_linuxcnc.py`, which drives LinuxCNC and hands each position it
-polls to listeners.  `SCSolidCraftDisplay` is such a listener: every
+polls to listeners.  `SolidCraftDisplay` is such a listener: every
 tool of a shop's machine is modeled (`cutter_models`), hidden, in a
 SolidCraft session where `demo.py` has modeled the part,
 and the one in the spindle is shown, following the position.  Each
@@ -25,7 +25,7 @@ distrobox enter lcnc -- python3 -m scraftcnc.lcnc.sim_linuxcnc demo.ngc \
 ```
 
 When SolidCraft fails or stops answering (as when its window is
-closed), `SCSolidCraftDisplay.sample()` raises, and `sim_linuxcnc.py`
+closed), `SolidCraftDisplay.sample()` raises, and `sim_linuxcnc.py`
 stops the program.  Nothing here needs LinuxCNC, so it runs anywhere
 `scraftpybind` does.
 """
@@ -36,16 +36,16 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Protocol
 
-from ..model_cache import SCModelCache
-from ..plot import SCMove, command_moves, read_gcode
+from ..model_cache import ModelCache
+from ..plot import PathMove, command_moves, read_gcode
 from ..pybind.scraftpybind import (
-    SCHeadlessTransport,
-    SCPyBind,
-    SCTransport,
+    HeadlessTransport,
+    PyBind,
+    Transport,
     connect,
 )
 from ..shops import loaded_tools, read
-from ..tooling.cutter_models import SCModeledTool, model_tool
+from ..tooling.cutter_models import ModeledTool, model_tool
 from .probe_batch import path_steps, send_batch, sketch_steps
 
 # SolidCraft's coordinates are millimeters.
@@ -65,9 +65,9 @@ SOLIDCRAFT_CLI: Path = (
 )
 
 
-# Class `SCSample`:
-class SCSample(Protocol):
-    """What the display reads of a sample (`sim_linuxcnc.SCSample`).
+# Class `Sample`:
+class Sample(Protocol):
+    """What the display reads of a sample (`sim_linuxcnc.Sample`).
 
     Attributes:
     * `line` (`int`): The G-code line being run (from 1).
@@ -77,26 +77,26 @@ class SCSample(Protocol):
       program coordinates).
     """
 
-    # Property `SCSample.line`:
+    # Property `Sample.line`:
     @property
     def line(self) -> int:
         """The G-code line being run (from 1)."""
 
-    # Property `SCSample.tool`:
+    # Property `Sample.tool`:
     @property
     def tool(self) -> int:
         """The T number of the tool in the spindle (0 for none)."""
 
-    # Property `SCSample.position`:
+    # Property `Sample.position`:
     @property
     def position(self) -> Position:
         """The tool tip's X, Y and Z (inches, program coordinates)."""
 
 
-# Class `SCToolModel`:
+# Class `ToolModel`:
 # It keeps the last position between moves, so it is a class with
 # one method.
-class SCToolModel:  # pylint: disable=too-few-public-methods
+class ToolModel:  # pylint: disable=too-few-public-methods
     """One tool in SolidCraft, made from its description in the shop.
 
     Its tip starts at the program's zero.  SolidCraft moves a
@@ -105,43 +105,43 @@ class SCToolModel:  # pylint: disable=too-few-public-methods
     is sent only when the tool has moved.
 
     Attributes:
-    * `modeled` (`SCModeledTool`): Its body, flute lines and occurrence.
+    * `modeled` (`ModeledTool`): Its body, flute lines and occurrence.
     * `position` (`Position`): Where its tip was last sent.
-    * `solidcraft` (`SCPyBind`): The SolidCraft session.
+    * `solidcraft` (`PyBind`): The SolidCraft session.
     """
 
-    # Method `SCToolModel.__init__()`:
+    # Method `ToolModel.__init__()`:
     def __init__(
         self,
-        solidcraft: SCPyBind,
+        solidcraft: PyBind,
         number: int,
         tool: tuple[str, dict[str, object]],
-        cache: SCModelCache | None = None,
+        cache: ModelCache | None = None,
     ) -> None:
         """Model the tool, as a component of its own, hidden.
 
         Arguments:
-        * `solidcraft` (`SCPyBind`):
+        * `solidcraft` (`PyBind`):
           The SolidCraft session.
         * `number` (`int`):
           Its T number, which names it (`T1`, ...).
         * `tool` (`tuple[str, dict[str, object]]`):
           Its list in the tools file, and its description (from
           `shops.loaded_tools()`).
-        * `cache` (`SCModelCache | None`):
+        * `cache` (`ModelCache | None`):
           Where to keep its model between runs, or `None` to build it.
         """
         # The tool, standing on its tip at the program's zero.
-        self.solidcraft: SCPyBind = solidcraft
+        self.solidcraft: PyBind = solidcraft
         self.position: Position = (0.0, 0.0, 0.0)
-        self.modeled: SCModeledTool = model_tool(
+        self.modeled: ModeledTool = model_tool(
             solidcraft, f"T{number}", tool, color=TOOL_COLOR, cache=cache
         )
         solidcraft.browser.visibility(
             visible=False, items=self.modeled.items()
         )
 
-    # Method `SCToolModel.move_to()`:
+    # Method `ToolModel.move_to()`:
     def move_to(self, position: Position) -> None:
         """Move the tip to a position, if it is not there already.
 
@@ -163,44 +163,44 @@ class SCToolModel:  # pylint: disable=too-few-public-methods
         self.position = position
 
 
-# Class `SCToolRack`:
+# Class `ToolRack`:
 # It keeps the tool shown between moves, so it is a class with one
 # method.
-class SCToolRack:  # pylint: disable=too-few-public-methods
+class ToolRack:  # pylint: disable=too-few-public-methods
     """Every tool of a machine in SolidCraft; the one in use is shown.
 
     Attributes:
     * `current` (`int`): The T number of the tool shown (0 for none).
-    * `solidcraft` (`SCPyBind`): The SolidCraft session.
-    * `tools` (`dict[int, SCToolModel]`): The tools, by T number.
+    * `solidcraft` (`PyBind`): The SolidCraft session.
+    * `tools` (`dict[int, ToolModel]`): The tools, by T number.
     """
 
-    # Method `SCToolRack.__init__()`:
+    # Method `ToolRack.__init__()`:
     def __init__(
         self,
-        solidcraft: SCPyBind,
+        solidcraft: PyBind,
         tools: dict[int, tuple[str, dict[str, object]]],
-        cache: SCModelCache | None = None,
+        cache: ModelCache | None = None,
     ) -> None:
         """Model every tool, hidden.
 
         Arguments:
-        * `solidcraft` (`SCPyBind`):
+        * `solidcraft` (`PyBind`):
           The SolidCraft session.
         * `tools` (`dict[int, tuple[str, dict[str, object]]]`):
           The tools, by T number (from `shops.loaded_tools()`).
-        * `cache` (`SCModelCache | None`):
+        * `cache` (`ModelCache | None`):
           Where to keep their models between runs, or `None` to build
           them.
         """
-        self.solidcraft: SCPyBind = solidcraft
+        self.solidcraft: PyBind = solidcraft
         self.current: int = 0
-        self.tools: dict[int, SCToolModel] = {
-            number: SCToolModel(solidcraft, number, tool, cache)
+        self.tools: dict[int, ToolModel] = {
+            number: ToolModel(solidcraft, number, tool, cache)
             for number, tool in sorted(tools.items())
         }
 
-    # Method `SCToolRack.move_to()`:
+    # Method `ToolRack.move_to()`:
     def move_to(self, number: int, position: Position) -> None:
         """Show the tool in the spindle, at a position.
 
@@ -228,8 +228,8 @@ class SCToolRack:  # pylint: disable=too-few-public-methods
             self.tools[number].move_to(position)
 
 
-# Class `SCPathRack`:
-class SCPathRack:  # pylint: disable=too-few-public-methods
+# Class `PathRack`:
+class PathRack:  # pylint: disable=too-few-public-methods
     """Each tool's planned path in SolidCraft; the one in use is shown.
 
     A path is drawn one tool ahead of the run: the first tool's before
@@ -240,37 +240,37 @@ class SCPathRack:  # pylint: disable=too-few-public-methods
 
     Attributes:
     * `current` (`int`): The T number whose path is shown (0 for none).
-    * `moves` (`dict[int, list[SCMove]]`): Each tool's moves, by T
+    * `moves` (`dict[int, list[PathMove]]`): Each tool's moves, by T
       number, in the order the tools are first used.
-    * `session` (`SCTransport`): The transport, for the batches.
+    * `session` (`Transport`): The transport, for the batches.
     * `sketches` (`dict[int, str]`): Each drawn path's sketch, by T
       number.
-    * `solidcraft` (`SCPyBind`): The SolidCraft session.
+    * `solidcraft` (`PyBind`): The SolidCraft session.
     """
 
-    # Method `SCPathRack.__init__()`:
+    # Method `PathRack.__init__()`:
     def __init__(
-        self, solidcraft: SCPyBind, session: SCTransport, program: Path
+        self, solidcraft: PyBind, session: Transport, program: Path
     ) -> None:
         """Group the moves by tool, and draw the first tool's path.
 
         Arguments:
-        * `solidcraft` (`SCPyBind`):
+        * `solidcraft` (`PyBind`):
           The SolidCraft session.
-        * `session` (`SCTransport`): Its transport, for the batches.
+        * `session` (`Transport`): Its transport, for the batches.
         * `program` (`Path`): The G-code file.
         """
-        self.solidcraft: SCPyBind = solidcraft
-        self.session: SCTransport = session
+        self.solidcraft: PyBind = solidcraft
+        self.session: Transport = session
         self.current: int = 0
         self.sketches: dict[int, str] = {}
 
         # Group the moves by the tool in the spindle, in program order.
-        moves: list[SCMove] = command_moves(
+        moves: list[PathMove] = command_moves(
             read_gcode(program.read_text(encoding="utf-8"))
         )
-        self.moves: dict[int, list[SCMove]] = {}
-        move: SCMove
+        self.moves: dict[int, list[PathMove]] = {}
+        move: PathMove
         for move in moves:
             self.moves.setdefault(move["tool"], []).append(move)
 
@@ -279,7 +279,7 @@ class SCPathRack:  # pylint: disable=too-few-public-methods
         if tools:
             self.show(tools[0])
 
-    # Method `SCPathRack.draw()`:
+    # Method `PathRack.draw()`:
     def draw(self, number: int) -> None:
         """Draw a tool's whole path as a hidden 3D sketch (one batch).
 
@@ -298,7 +298,7 @@ class SCPathRack:  # pylint: disable=too-few-public-methods
         )
         self.sketches[number] = name
 
-    # Method `SCPathRack.show()`:
+    # Method `PathRack.show()`:
     def show(self, number: int) -> None:
         """Show only the path of the tool in the spindle.
 
@@ -325,51 +325,51 @@ class SCPathRack:  # pylint: disable=too-few-public-methods
             self.draw(order[order.index(number) + 1])
 
 
-# Class `SCSolidCraftDisplay`:
-class SCSolidCraftDisplay:
-    """A `sim_linuxcnc.SCListener` that shows the run in SolidCraft.
+# Class `SolidCraftDisplay`:
+class SolidCraftDisplay:
+    """A `sim_linuxcnc.SampleListener` that shows the run in SolidCraft.
 
     Attributes:
-    * `paths` (`SCPathRack`): Each tool's path; the one in the spindle
+    * `paths` (`PathRack`): Each tool's path; the one in the spindle
       is shown.
-    * `rack` (`SCToolRack`): The tools, whose one in the spindle
+    * `rack` (`ToolRack`): The tools, whose one in the spindle
       follows the position.
     """
 
-    # Method `SCSolidCraftDisplay.__init__()`:
+    # Method `SolidCraftDisplay.__init__()`:
     def __init__(
         self,
-        solidcraft: SCPyBind,
+        solidcraft: PyBind,
         tools: dict[int, tuple[str, dict[str, object]]],
-        paths: SCPathRack,
+        paths: PathRack,
     ) -> None:
         """Model the tools.
 
         Arguments:
-        * `solidcraft` (`SCPyBind`):
+        * `solidcraft` (`PyBind`):
           The SolidCraft session.
         * `tools` (`dict[int, tuple[str, dict[str, object]]]`):
           The tools, by T number (from `shops.loaded_tools()`).
-        * `paths` (`SCPathRack`): Each tool's path, drawn.
+        * `paths` (`PathRack`): Each tool's path, drawn.
         """
-        self.rack: SCToolRack = SCToolRack(solidcraft, tools, SCModelCache())
-        self.paths: SCPathRack = paths
+        self.rack: ToolRack = ToolRack(solidcraft, tools, ModelCache())
+        self.paths: PathRack = paths
 
-    # Method `SCSolidCraftDisplay.sample()`:
-    def sample(self, sample: SCSample) -> None:
+    # Method `SolidCraftDisplay.sample()`:
+    def sample(self, sample: Sample) -> None:
         """Show the tool in the spindle where it is, and its path.
 
         Arguments:
-        * `sample` (`SCSample`): Where the tool is.
+        * `sample` (`Sample`): Where the tool is.
 
         Raises:
-        * `SCSolidCraftError` or `OSError`: If SolidCraft fails or stops
+        * `SolidCraftError` or `OSError`: If SolidCraft fails or stops
           answering.
         """
         self.paths.show(sample.tool)
         self.rack.move_to(sample.tool, sample.position)
 
-    # Method `SCSolidCraftDisplay.finish()`:
+    # Method `SolidCraftDisplay.finish()`:
     def finish(self) -> None:
         """Do nothing: the last tool and its path stay shown."""
 
@@ -391,7 +391,7 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
 
 
 # Function `transport()`:
-def transport(where: str) -> SCTransport:
+def transport(where: str) -> Transport:
     """Return a transport to SolidCraft.
 
     A headless session uses the extracted `solidcraft-cli`
@@ -404,14 +404,14 @@ def transport(where: str) -> SCTransport:
     * `where` (`str`): A GUI's control port, or `headless`.
 
     Returns:
-    * (`SCTransport`): The transport, which connects on first use.
+    * (`Transport`): The transport, which connects on first use.
 
     Raises:
     * `ValueError`: If `where` is neither.
     """
-    found: SCTransport = connect(where)
-    if isinstance(found, SCHeadlessTransport) and SOLIDCRAFT_CLI.exists():
-        found = SCHeadlessTransport(cli=str(SOLIDCRAFT_CLI))
+    found: Transport = connect(where)
+    if isinstance(found, HeadlessTransport) and SOLIDCRAFT_CLI.exists():
+        found = HeadlessTransport(cli=str(SOLIDCRAFT_CLI))
     return found
 
 
@@ -419,7 +419,7 @@ def transport(where: str) -> SCTransport:
 @contextmanager
 def display(
     options: argparse.Namespace, program: Path
-) -> Iterator[SCSolidCraftDisplay]:
+) -> Iterator[SolidCraftDisplay]:
     """Connect to SolidCraft and set the display up, for the run.
 
     Arguments:
@@ -428,16 +428,16 @@ def display(
     * `program` (`Path`): The G-code file, whose paths are drawn.
 
     Yields:
-    * (`SCSolidCraftDisplay`): The display, to hand the samples to.
+    * (`SolidCraftDisplay`): The display, to hand the samples to.
 
     Raises:
-    * `SCSolidCraftError` or `OSError`: If SolidCraft fails or is not
+    * `SolidCraftError` or `OSError`: If SolidCraft fails or is not
       there.
     """
     with transport(options.solidcraft) as session:
-        solidcraft: SCPyBind = SCPyBind(session)
-        yield SCSolidCraftDisplay(
+        solidcraft: PyBind = PyBind(session)
+        yield SolidCraftDisplay(
             solidcraft,
             loaded_tools(read(options.shop), options.machine),
-            SCPathRack(solidcraft, session, program),
+            PathRack(solidcraft, session, program),
         )

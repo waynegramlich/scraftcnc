@@ -1,7 +1,7 @@
-"""The machine and its tools, as the G-code side (`SCCNC`) sees them.
+"""The machine and its tools, as the G-code side (`CNC`) sees them.
 
-`SCMachine` holds a machine's preferences and its loaded tools
-(`SCTool`), in inches, inches per minute, revolutions per minute,
+`Machine` holds a machine's preferences and its loaded tools
+(`ToolEntry`), in inches, inches per minute, revolutions per minute,
 degrees and fractions.  They are built from a shop's description by
 `shops.cnc_machine()`, which reads the units each file gives.
 
@@ -31,11 +31,11 @@ ToolKind: TypeAlias = Literal[
 DrillCycle: TypeAlias = Literal["G81", "G73", "G83", "moves"]
 
 
-# Class `SCTool`:
+# Class `ToolEntry`:
 # Each attribute is a setting of the tool table, so there are more
 # than `pylint` likes.
 @dataclass(frozen=True, slots=True)
-class SCTool:  # pylint: disable=too-many-instance-attributes
+class ToolEntry:  # pylint: disable=too-many-instance-attributes
     """One tool of the tool table.
 
     Attributes:
@@ -66,7 +66,7 @@ class SCTool:  # pylint: disable=too-many-instance-attributes
       (0 when it is not).
 
     Constructor:
-    * `SCTool(number, name, kind, diameter, rpm, feed, plunge, peck,
+    * `ToolEntry(number, name, kind, diameter, rpm, feed, plunge, peck,
       angle, radius, widest)`
     """
 
@@ -83,7 +83,7 @@ class SCTool:  # pylint: disable=too-many-instance-attributes
     radius: float = field(init=True, default=0.0)
     widest: float = field(init=True, default=0.0)
 
-    # Method `SCTool.__post_init__()`:
+    # Method `ToolEntry.__post_init__()`:
     def __post_init__(self) -> None:
         """Validate the tool.
 
@@ -112,7 +112,7 @@ class SCTool:  # pylint: disable=too-many-instance-attributes
         if self.kind == "corner round" and self.radius <= 0.0:
             raise ValueError(f"{where}: radius must be positive")
 
-    # Method `SCTool.widest_radius()`:
+    # Method `ToolEntry.widest_radius()`:
     def widest_radius(self) -> float:
         """Return the radius of the widest part that cuts.
 
@@ -122,11 +122,11 @@ class SCTool:  # pylint: disable=too-many-instance-attributes
         return max(self.diameter, self.widest) / 2.0
 
 
-# Class `SCMachine`:
+# Class `Machine`:
 # Each attribute is a machine preference, so there are more than
 # `pylint` likes.
 @dataclass(frozen=True, slots=True)
-class SCMachine:  # pylint: disable=too-many-instance-attributes
+class Machine:  # pylint: disable=too-many-instance-attributes
     """A machine's preferences and its tool table.
 
     Attributes:
@@ -151,13 +151,13 @@ class SCMachine:  # pylint: disable=too-many-instance-attributes
     * `ramp_angle` (`float`):
       The steepest angle (degrees) a tool goes down at into a pocket
       that has not been drilled.
-    * `tools` (`tuple[SCTool, ...]`): The tool table.
+    * `tools` (`tuple[ToolEntry, ...]`): The tool table.
     * `finish_allowance` (`float`):
       How much a roughing end mill leaves on walls and floors for the
       end mill that finishes them.
 
     Constructor:
-    * `SCMachine(name, z_safe, clearance, tool_change_z, tool_change,
+    * `Machine(name, z_safe, clearance, tool_change_z, tool_change,
       rapid_speed, drill_cycle, through_overcut, stepover, ramp_angle,
       tools, finish_allowance)`
     """
@@ -173,10 +173,10 @@ class SCMachine:  # pylint: disable=too-many-instance-attributes
     through_overcut: float = field(init=True)
     stepover: float = field(init=True)
     ramp_angle: float = field(init=True)
-    tools: tuple[SCTool, ...] = field(init=True)
+    tools: tuple[ToolEntry, ...] = field(init=True)
     finish_allowance: float = field(init=True, default=0.05)
 
-    # Method `SCMachine.__post_init__()`:
+    # Method `Machine.__post_init__()`:
     def __post_init__(self) -> None:
         """Validate the preferences and the tool table.
 
@@ -217,7 +217,7 @@ class SCMachine:  # pylint: disable=too-many-instance-attributes
         if len(set(numbers)) != len(numbers):
             raise ValueError(f"tool numbers {numbers} are not all different")
 
-    # Method `SCMachine.change_words()`:
+    # Method `Machine.change_words()`:
     def change_words(self, number: int) -> list[str]:
         """Return the words that change to a tool.
 
@@ -235,58 +235,58 @@ class SCMachine:  # pylint: disable=too-many-instance-attributes
         except (KeyError, IndexError, ValueError) as error:
             raise ValueError(f"{self.tool_change=}: {error}") from error
 
-    # Method `SCMachine.tool()`:
-    def tool(self, number: int) -> SCTool:
+    # Method `Machine.tool()`:
+    def tool(self, number: int) -> ToolEntry:
         """Return a tool by its number.
 
         Arguments:
         * `number` (`int`): The tool's number.
 
         Returns:
-        * (`SCTool`): The tool.
+        * (`ToolEntry`): The tool.
 
         Raises:
         * `KeyError`: If the tool table has no such tool.
         """
-        tool: SCTool
+        tool: ToolEntry
         for tool in self.tools:
             if tool.number == number:
                 return tool
         raise KeyError(f"{self.name}: no tool {number} in the tool table")
 
-    # Method `SCMachine.named()`:
-    def named(self, name: str) -> SCTool:
+    # Method `Machine.named()`:
+    def named(self, name: str) -> ToolEntry:
         """Return a tool by its name.
 
         Arguments:
         * `name` (`str`): The tool's name.
 
         Returns:
-        * (`SCTool`): The tool.
+        * (`ToolEntry`): The tool.
 
         Raises:
         * `KeyError`: If the tool table has no such tool.
         """
-        tool: SCTool
+        tool: ToolEntry
         for tool in self.tools:
             if tool.name == name:
                 return tool
         raise KeyError(f'{self.name}: no tool "{name}" in the tool table')
 
-    # Method `SCMachine.rougher_for()`:
-    def rougher_for(self, end_mill: SCTool) -> SCTool | None:
+    # Method `Machine.rougher_for()`:
+    def rougher_for(self, end_mill: ToolEntry) -> ToolEntry | None:
         """Return the roughing end mill to use before an end mill.
 
         It is the largest roughing end mill no wider than the end mill,
         so it fits wherever the end mill finishes.
 
         Arguments:
-        * `end_mill` (`SCTool`): The end mill that finishes.
+        * `end_mill` (`ToolEntry`): The end mill that finishes.
 
         Returns:
-        * (`SCTool | None`): The rougher, or `None` if there is none.
+        * (`ToolEntry | None`): The rougher, or `None` if there is none.
         """
-        roughers: list[SCTool] = [
+        roughers: list[ToolEntry] = [
             tool
             for tool in self.tools
             if tool.kind == "roughing end mill"
@@ -294,23 +294,23 @@ class SCMachine:  # pylint: disable=too-many-instance-attributes
         ]
         return max(roughers, key=lambda tool: tool.diameter, default=None)
 
-    # Method `SCMachine.drill_for()`:
-    def drill_for(self, end_mill: SCTool) -> SCTool:
+    # Method `Machine.drill_for()`:
+    def drill_for(self, end_mill: ToolEntry) -> ToolEntry:
         """Return the drill to make entry holes for an end mill.
 
         It is the largest drill smaller than the end mill, so the end
         mill goes down the hole taking a light cut.
 
         Arguments:
-        * `end_mill` (`SCTool`): The end mill.
+        * `end_mill` (`ToolEntry`): The end mill.
 
         Returns:
-        * (`SCTool`): The drill.
+        * (`ToolEntry`): The drill.
 
         Raises:
         * `ValueError`: If no drill is smaller than the end mill.
         """
-        drills: list[SCTool] = [
+        drills: list[ToolEntry] = [
             tool
             for tool in self.tools
             if tool.kind == "drill" and tool.diameter < end_mill.diameter

@@ -24,7 +24,7 @@ python3 -m scraftcnc.tooling.tools 8080 421-0261
 ```
 """
 
-# A `SCMillTable` holds one number per dimension on the drawing, which
+# A `MillTable` holds one number per dimension on the drawing, which
 # runs past `pylint`'s limit on attributes.
 # pylint: disable=too-many-instance-attributes
 
@@ -40,10 +40,10 @@ from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any, ClassVar, cast
 
-from ..geometry import SCCorner, SCHole, SCRoundedPolygon
-from ..model_cache import SCCacheable, source_digest
+from ..geometry import Corner, Hole, RoundedPolygon
+from ..model_cache import Cacheable, source_digest
 from ..plot import send_batch
-from ..pybind.scraftpybind import JSON, SCPyBind, connect
+from ..pybind.scraftpybind import JSON, PyBind, connect
 from ..shops import LENGTH, measure
 from .cutter_models import (
     COUNTERSINK_TIP_FLAT,
@@ -52,7 +52,7 @@ from .cutter_models import (
     flute_runs,
     flute_steps,
 )
-from .registry import SCRegistry
+from .registry import Registry
 from .registry import key as registry_key
 
 # A point: `(x, y, z)`, in millimeters.
@@ -165,7 +165,7 @@ def tooling_shape(item: Any, section: str = "") -> JSON:
     * `section` (`str`): Which part of it, if it is cached in parts.
 
     Returns:
-    * (`JSON`): The tree, for `SCCacheable`.
+    * (`JSON`): The tree, for `Cacheable`.
     """
     return {
         "code": source_digest(TOOLING_SOURCES),
@@ -187,9 +187,9 @@ def _mm(length: str) -> float:
     return measure(length, LENGTH) * MM_PER_INCH
 
 
-# Class `SCMillTable`:
+# Class `MillTable`:
 @dataclass(frozen=True, slots=True)
-class SCMillTable:
+class MillTable:
     """A mill's table, with T-slots along its length.
 
     All lengths are in millimeters, as in the drawing they come from.
@@ -210,13 +210,13 @@ class SCMillTable:
     * `pocket_width` (`float`): An end pocket's size along Y.
 
     Constructor:
-    * `SCMillTable(name, length, width, thickness, slots, slot_spacing,
+    * `MillTable(name, length, width, thickness, slots, slot_spacing,
       slot_length, throat_width, throat_depth, head_width, slot_depth,
       pocket_length, pocket_width)`
     """
 
     # The mill tables by key (`registry.key()` of `name`), set below.
-    REGISTRY: ClassVar["SCRegistry[SCMillTable]"]
+    REGISTRY: ClassVar["Registry[MillTable]"]
 
     # Constructor arguments:
     name: str = field(init=True)
@@ -233,9 +233,9 @@ class SCMillTable:
     pocket_length: float = field(init=True)
     pocket_width: float = field(init=True)
 
-    # Method `SCMillTable.named()`:
+    # Method `MillTable.named()`:
     @classmethod
-    def named(cls, name: str) -> "SCMillTable":
+    def named(cls, name: str) -> "MillTable":
         """Return the mill table with a key or name.
 
         Arguments:
@@ -243,20 +243,20 @@ class SCMillTable:
           Its key (`registry.key()` of its name) or its name.
 
         Returns:
-        * (`SCMillTable`): The mill table.
+        * (`MillTable`): The mill table.
 
         Raises:
         * `KeyError`: If there is none, listing the known keys.
         """
         return cls.REGISTRY.named(name)
 
-    # Method `SCMillTable.key()`:
+    # Method `MillTable.key()`:
     @property
     def key(self) -> str:
         """Return its key in `REGISTRY` (e.g. `kurt_d688`)."""
         return registry_key(self.name)
 
-    # Method `SCMillTable.__post_init__()`:
+    # Method `MillTable.__post_init__()`:
     def __post_init__(self) -> None:
         """Check that the slots leave the plate in one piece.
 
@@ -278,7 +278,7 @@ class SCMillTable:
                 f"{self.slot_spacing=} do not fit {self.width=}"
             )
 
-    # Method `SCMillTable.slot_centers()`:
+    # Method `MillTable.slot_centers()`:
     def slot_centers(self) -> list[float]:
         """Return the Y of each slot's center, from the table's center.
 
@@ -290,7 +290,7 @@ class SCMillTable:
             first + index * self.slot_spacing for index in range(self.slots)
         ]
 
-    # Method `SCMillTable.slot_outline()`:
+    # Method `MillTable.slot_outline()`:
     def slot_outline(self) -> list[tuple[float, float]]:
         """Return a slot's cross section, as seen looking along X.
 
@@ -312,25 +312,25 @@ class SCMillTable:
             (throat, 0.0),
         ]
 
-    # Method `SCMillTable.prism()`:
-    def prism(self, center_y: float = 0.0) -> "SCPrism":
+    # Method `MillTable.prism()`:
+    def prism(self, center_y: float = 0.0) -> "Prism":
         """Return the rectangular prism that just encloses the table.
 
         Arguments:
         * `center_y` (`float`): The Y of its center (millimeters).
 
         Returns:
-        * (`SCPrism`): The prism, named for the table.
+        * (`Prism`): The prism, named for the table.
         """
         half_x: float = self.length / 2.0
         half_y: float = self.width / 2.0
-        return SCPrism(
+        return Prism(
             self.name,
             (-half_x, center_y - half_y, -self.thickness),
             (half_x, center_y + half_y, 0.0),
         )
 
-    # Method `SCMillTable.volume()`:
+    # Method `MillTable.volume()`:
     def volume(self) -> float:
         """Return the volume the model should have.
 
@@ -353,8 +353,8 @@ class SCMillTable:
 # but `thickness`, `pocket_length` and `pocket_width`, which were scaled
 # from it, so they are only good to a millimeter or two.  The pockets'
 # depth is not shown, and is taken to be the slots'.
-MILL_TABLES: tuple[SCMillTable, ...] = (
-    SCMillTable(
+MILL_TABLES: tuple[MillTable, ...] = (
+    MillTable(
         name="Tormach 440",
         length=460.0,
         width=160.0,
@@ -369,7 +369,7 @@ MILL_TABLES: tuple[SCMillTable, ...] = (
         pocket_length=25.0,
         pocket_width=135.0,
     ),
-    SCMillTable(
+    MillTable(
         name="Tormach 770",
         length=660.0,
         width=205.0,
@@ -384,7 +384,7 @@ MILL_TABLES: tuple[SCMillTable, ...] = (
         pocket_length=35.0,
         pocket_width=181.0,
     ),
-    SCMillTable(
+    MillTable(
         name="Tormach 1100",
         length=860.0,
         width=240.0,
@@ -409,7 +409,7 @@ MILL_TABLES: tuple[SCMillTable, ...] = (
 # 2-1/2 in of the published specifications puts the outer feet through the
 # edges.  There are taken to be no pockets, with the slots running the
 # table's whole length.
-MIKINI_1610L: SCMillTable = SCMillTable(
+MIKINI_1610L: MillTable = MillTable(
     name="Mikini 1610L",
     length=_mm("30 in"),
     width=_mm("10-1/2 in"),
@@ -431,9 +431,9 @@ MIKINI_X_TRAVEL: float = _mm("16.75 in")
 MIKINI_Y_TRAVEL: float = _mm("9.35 in")
 
 
-# Class `SCPrism`:
+# Class `Prism`:
 @dataclass(frozen=True, slots=True)
-class SCPrism:
+class Prism:
     """A rectangular prism, with its sides along the axes.
 
     Attributes:
@@ -442,7 +442,7 @@ class SCPrism:
     * `high` (`Point`): Its corner with the largest X, Y and Z (mm).
 
     Constructor:
-    * `SCPrism(name, low, high)`
+    * `Prism(name, low, high)`
     """
 
     # Constructor arguments:
@@ -450,7 +450,7 @@ class SCPrism:
     low: Point = field(init=True)
     high: Point = field(init=True)
 
-    # Method `SCPrism.__post_init__()`:
+    # Method `Prism.__post_init__()`:
     def __post_init__(self) -> None:
         """Check that the prism is not empty.
 
@@ -462,8 +462,8 @@ class SCPrism:
         ):
             raise ValueError(f"{self.low=} must be below {self.high=}")
 
-    # Method `SCPrism.quarter_turned()`:
-    def quarter_turned(self, x: float, y: float, turns: int = 1) -> "SCPrism":
+    # Method `Prism.quarter_turned()`:
+    def quarter_turned(self, x: float, y: float, turns: int = 1) -> "Prism":
         """Return the prism turned about a vertical axis.
 
         Turns follow the right hand rule about +Z (counterclockwise,
@@ -475,30 +475,30 @@ class SCPrism:
         * `turns` (`int`): How many quarter turns (any integer).
 
         Returns:
-        * (`SCPrism`): The turned prism, with the same name.
+        * (`Prism`): The turned prism, with the same name.
         """
-        prism: SCPrism = self
+        prism: Prism = self
         for _ in range(turns % 4):
-            prism = SCPrism(
+            prism = Prism(
                 self.name,
                 (x + y - prism.high[1], y - x + prism.low[0], prism.low[2]),
                 (x + y - prism.low[1], y - x + prism.high[0], prism.high[2]),
             )
         return prism
 
-    # Method `SCPrism.grown()`:
-    def grown(self, margin: float) -> "SCPrism":
+    # Method `Prism.grown()`:
+    def grown(self, margin: float) -> "Prism":
         """Return the prism grown on all six sides.
 
         Arguments:
         * `margin` (`float`): How far each side moves out (millimeters).
 
         Returns:
-        * (`SCPrism`): The larger prism, with the same name.
+        * (`Prism`): The larger prism, with the same name.
         """
         x0, y0, z0 = self.low
         x1, y1, z1 = self.high
-        return SCPrism(
+        return Prism(
             self.name,
             (x0 - margin, y0 - margin, z0 - margin),
             (x1 + margin, y1 + margin, z1 + margin),
@@ -547,7 +547,7 @@ def left_corner(
 
 
 # Function `box_prism()`:
-def box_prism(name: str, size: Point, center: Point) -> SCPrism:
+def box_prism(name: str, size: Point, center: Point) -> Prism:
     """Return the prism around a box, up from the center of its bottom.
 
     Arguments:
@@ -556,21 +556,21 @@ def box_prism(name: str, size: Point, center: Point) -> SCPrism:
     * `center` (`Point`): The center of its bottom face (millimeters).
 
     Returns:
-    * (`SCPrism`): The prism.
+    * (`Prism`): The prism.
     """
     x, y, z = center
     half_x: float = size[0] / 2.0
     half_y: float = size[1] / 2.0
-    return SCPrism(
+    return Prism(
         name,
         (x - half_x, y - half_y, z),
         (x + half_x, y + half_y, z + size[2]),
     )
 
 
-# Class `SCCylinder`:
+# Class `Cylinder`:
 @dataclass(frozen=True, slots=True)
-class SCCylinder:
+class Cylinder:
     """A cylinder standing along Z.
 
     Attributes:
@@ -581,7 +581,7 @@ class SCCylinder:
     * `radius` (`float`): Its radius (mm).
 
     Constructor:
-    * `SCCylinder(name, center, low, high, radius)`
+    * `Cylinder(name, center, low, high, radius)`
     """
 
     # Constructor arguments:
@@ -591,7 +591,7 @@ class SCCylinder:
     high: float = field(init=True)
     radius: float = field(init=True)
 
-    # Method `SCCylinder.__post_init__()`:
+    # Method `Cylinder.__post_init__()`:
     def __post_init__(self) -> None:
         """Check that the cylinder is not empty.
 
@@ -601,17 +601,17 @@ class SCCylinder:
         if self.low >= self.high or self.radius <= 0.0:
             raise ValueError(f"{self.low=}, {self.high=}, {self.radius=}")
 
-    # Method `SCCylinder.grown()`:
-    def grown(self, margin: float) -> "SCCylinder":
+    # Method `Cylinder.grown()`:
+    def grown(self, margin: float) -> "Cylinder":
         """Return the cylinder grown on its side and both ends.
 
         Arguments:
         * `margin` (`float`): How far each surface moves out (mm).
 
         Returns:
-        * (`SCCylinder`): The larger cylinder, with the same name.
+        * (`Cylinder`): The larger cylinder, with the same name.
         """
-        return SCCylinder(
+        return Cylinder(
             self.name,
             self.center,
             self.low - margin,
@@ -620,64 +620,64 @@ class SCCylinder:
         )
 
 
-# Class `SCKeepOut`:
+# Class `KeepOut`:
 @dataclass(slots=True)
-class SCKeepOut:
+class KeepOut:
     """The regions that a tool must not enter.
 
     Attributes:
-    * `cylinders` (`list[SCCylinder]`): The cylinders.
-    * `prisms` (`list[SCPrism]`): The rectangular prisms.
+    * `cylinders` (`list[Cylinder]`): The cylinders.
+    * `prisms` (`list[Prism]`): The rectangular prisms.
 
     Constructor:
-    * `SCKeepOut()`
+    * `KeepOut()`
     """
 
     # Attributes filled in later (alphabetized):
-    cylinders: list[SCCylinder] = field(init=False, default_factory=list)
-    prisms: list[SCPrism] = field(init=False, default_factory=list)
+    cylinders: list[Cylinder] = field(init=False, default_factory=list)
+    prisms: list[Prism] = field(init=False, default_factory=list)
 
-    # Method `SCKeepOut.add_prism()`:
-    def add_prism(self, prism: SCPrism, margin: str) -> SCPrism:
+    # Method `KeepOut.add_prism()`:
+    def add_prism(self, prism: Prism, margin: str) -> Prism:
         """Grow a prism and add it as a region to keep out of.
 
         Arguments:
-        * `prism` (`SCPrism`): The prism around the thing to protect.
+        * `prism` (`Prism`): The prism around the thing to protect.
         * `margin` (`str`):
           How far to grow it on all six sides, with its unit (such as
           `"1/8 in"`).
 
         Returns:
-        * (`SCPrism`): The grown prism that was added.
+        * (`Prism`): The grown prism that was added.
         """
-        grown: SCPrism = prism.grown(_mm(margin))
+        grown: Prism = prism.grown(_mm(margin))
         self.prisms.append(grown)
         return grown
 
-    # Method `SCKeepOut.add_cylinder()`:
-    def add_cylinder(self, cylinder: SCCylinder, margin: str) -> SCCylinder:
+    # Method `KeepOut.add_cylinder()`:
+    def add_cylinder(self, cylinder: Cylinder, margin: str) -> Cylinder:
         """Grow a cylinder and add it as a region to keep out of.
 
         Arguments:
-        * `cylinder` (`SCCylinder`):
+        * `cylinder` (`Cylinder`):
           The cylinder around the thing to protect.
         * `margin` (`str`):
           How far to grow its side and both ends, with its unit (such
           as `"1/8 in"`).
 
         Returns:
-        * (`SCCylinder`): The grown cylinder that was added.
+        * (`Cylinder`): The grown cylinder that was added.
         """
-        grown: SCCylinder = cylinder.grown(_mm(margin))
+        grown: Cylinder = cylinder.grown(_mm(margin))
         self.cylinders.append(grown)
         return grown
 
-    # Method `SCKeepOut.model()`:
-    def model(self, solidcraft: SCPyBind) -> list[str]:
+    # Method `KeepOut.model()`:
+    def model(self, solidcraft: PyBind) -> list[str]:
         """Model the regions in SolidCraft, as see-through bodies.
 
         Arguments:
-        * `solidcraft` (`SCPyBind`): The SolidCraft session.
+        * `solidcraft` (`PyBind`): The SolidCraft session.
 
         Returns:
         * (`list[str]`):
@@ -690,12 +690,12 @@ class SCKeepOut:
 
 
 # Function `_model_prism()`:
-def _model_prism(solidcraft: SCPyBind, prism: SCPrism) -> str:
+def _model_prism(solidcraft: PyBind, prism: Prism) -> str:
     """Model one keep-out prism as a see-through body.
 
     Arguments:
-    * `solidcraft` (`SCPyBind`): The SolidCraft session.
-    * `prism` (`SCPrism`): The prism.
+    * `solidcraft` (`PyBind`): The SolidCraft session.
+    * `prism` (`Prism`): The prism.
 
     Returns:
     * (`str`): The body's name.
@@ -713,12 +713,12 @@ def _model_prism(solidcraft: SCPyBind, prism: SCPrism) -> str:
 
 
 # Function `_model_cylinder()`:
-def _model_cylinder(solidcraft: SCPyBind, cylinder: SCCylinder) -> str:
+def _model_cylinder(solidcraft: PyBind, cylinder: Cylinder) -> str:
     """Model one keep-out cylinder as a see-through body.
 
     Arguments:
-    * `solidcraft` (`SCPyBind`): The SolidCraft session.
-    * `cylinder` (`SCCylinder`): The cylinder.
+    * `solidcraft` (`PyBind`): The SolidCraft session.
+    * `cylinder` (`Cylinder`): The cylinder.
 
     Returns:
     * (`str`): The body's name.
@@ -734,11 +734,11 @@ def _model_cylinder(solidcraft: SCPyBind, cylinder: SCCylinder) -> str:
 
 
 # Function `_extrude_keep_out()`:
-def _extrude_keep_out(solidcraft: SCPyBind, name: str, height: float) -> str:
+def _extrude_keep_out(solidcraft: PyBind, name: str, height: float) -> str:
     """Extrude the sketch just made into a see-through body.
 
     Arguments:
-    * `solidcraft` (`SCPyBind`): The SolidCraft session.
+    * `solidcraft` (`PyBind`): The SolidCraft session.
     * `name` (`str`): The body's name.
     * `height` (`float`): How far to extrude it up (millimeters).
 
@@ -758,9 +758,9 @@ def _extrude_keep_out(solidcraft: SCPyBind, name: str, height: float) -> str:
     return bodies[0]
 
 
-# Class `SCDrill`:
+# Class `Drill`:
 @dataclass(frozen=True, slots=True)
-class SCDrill:
+class Drill:
     """A generic twist drill, with straight grooves for its flutes.
 
     A picture rather than a true drill: each flute is a groove as deep
@@ -782,7 +782,7 @@ class SCDrill:
       The included angle at the tip (degrees); 180 makes it flat.
 
     Constructor:
-    * `SCDrill(name, diameter, overall_length, flutes, shank_length,
+    * `Drill(name, diameter, overall_length, flutes, shank_length,
       shank_diameter, point_angle)`
     """
 
@@ -795,7 +795,7 @@ class SCDrill:
     shank_diameter: float = field(init=True, default=0.0)
     point_angle: float = field(init=True, default=DRILL_POINT_ANGLE)
 
-    # Method `SCDrill.__post_init__()`:
+    # Method `Drill.__post_init__()`:
     def __post_init__(self) -> None:
         """Check that the numbers describe a drill.
 
@@ -815,7 +815,7 @@ class SCDrill:
                 f"{self.shank_length=} and {self.point_angle=}"
             )
 
-    # Method `SCDrill.point_height()`:
+    # Method `Drill.point_height()`:
     def point_height(self) -> float:
         """Return how far the cone at the tip reaches up the drill.
 
@@ -830,7 +830,7 @@ class SCDrill:
             self.diameter / 2.0 * math.cos(half_angle) / math.sin(half_angle)
         )
 
-    # Method `SCDrill.body_top()`:
+    # Method `Drill.body_top()`:
     def body_top(self) -> float:
         """Return how far above the tip the shank starts.
 
@@ -839,7 +839,7 @@ class SCDrill:
         """
         return self.overall_length - self.shank_length
 
-    # Method `SCDrill.section()`:
+    # Method `Drill.section()`:
     def section(self) -> list[Arc]:
         """Return the drill's grooved outline, as seen from above.
 
@@ -891,7 +891,7 @@ class SCDrill:
             )
         return arcs
 
-    # Method `SCDrill.point_cutter()`:
+    # Method `Drill.point_cutter()`:
     def point_cutter(self) -> list[tuple[float, float]]:
         """Return the outline of the inverse cone that makes the point.
 
@@ -906,7 +906,7 @@ class SCDrill:
         rise: float = reach * self.point_height() / (self.diameter / 2.0)
         return [(0.0, 0.0), (reach, rise), (reach, -1.0), (0.0, -1.0)]
 
-    # Method `SCDrill.groove_area()`:
+    # Method `Drill.groove_area()`:
     def groove_area(self) -> float:
         """Return the area one groove removes from the drill's section.
 
@@ -921,18 +921,18 @@ class SCDrill:
             - 0.5 * small * math.sqrt(4.0 * big**2 - small**2)
         )
 
-    # Method `SCDrill.cylinder()`:
-    def cylinder(self, tip: tuple[float, float, float]) -> SCCylinder:
+    # Method `Drill.cylinder()`:
+    def cylinder(self, tip: tuple[float, float, float]) -> Cylinder:
         """Return the cylinder that just encloses the drill.
 
         Arguments:
         * `tip` (`tuple[float, float, float]`): Where its tip is (mm).
 
         Returns:
-        * (`SCCylinder`): The cylinder, named for the drill.
+        * (`Cylinder`): The cylinder, named for the drill.
         """
         radius: float = max(self.diameter, self.shank_diameter) / 2.0
-        return SCCylinder(
+        return Cylinder(
             self.name,
             (tip[0], tip[1]),
             tip[2],
@@ -940,17 +940,17 @@ class SCDrill:
             radius,
         )
 
-    # Method `SCDrill.model()`:
+    # Method `Drill.model()`:
     def model(
         self,
-        solidcraft: SCPyBind,
+        solidcraft: PyBind,
         tip: tuple[float, float, float] = (0.0, 0.0, 0.0),
         color: str = DRILL_COLOR,
     ) -> str:
         """Model the drill, standing on its tip.
 
         Arguments:
-        * `solidcraft` (`SCPyBind`): The SolidCraft session.
+        * `solidcraft` (`PyBind`): The SolidCraft session.
         * `tip` (`tuple[float, float, float]`): Where its tip goes (mm).
         * `color` (`str`): Its color, as `"#rrggbb"`.
 
@@ -1019,10 +1019,10 @@ class SCDrill:
 
 
 # Sample drills, showing the variations.
-SAMPLE_DRILLS: tuple[SCDrill, ...] = (
-    SCDrill("Drill 1/4 x 4", _mm("1/4 in"), _mm("4 in"), 2, _mm("1-1/2 in")),
-    SCDrill("Drill 1/2 x 6", _mm("1/2 in"), _mm("6 in"), 2, _mm("2 in")),
-    SCDrill(
+SAMPLE_DRILLS: tuple[Drill, ...] = (
+    Drill("Drill 1/4 x 4", _mm("1/4 in"), _mm("4 in"), 2, _mm("1-1/2 in")),
+    Drill("Drill 1/2 x 6", _mm("1/2 in"), _mm("6 in"), 2, _mm("2 in")),
+    Drill(
         "Drill 1 x 6, 1/2 shank",
         _mm("1 in"),
         _mm("6 in"),
@@ -1030,28 +1030,28 @@ SAMPLE_DRILLS: tuple[SCDrill, ...] = (
         _mm("3 in"),
         _mm("1/2 in"),
     ),
-    SCDrill(
+    Drill(
         "Drill 3/4 x 8, 3 flute", _mm("3/4 in"), _mm("8 in"), 3, _mm("3 in")
     ),
-    SCDrill("Drill 1/2 x 4, 4 flute", _mm("1/2 in"), _mm("4 in"), 4),
+    Drill("Drill 1/2 x 4, 4 flute", _mm("1/2 in"), _mm("4 in"), 4),
 )
 
 
 # Function `sample_drills()`:
 def sample_drills(
-    solidcraft: SCPyBind,
-) -> tuple[list[str], SCKeepOut]:
+    solidcraft: PyBind,
+) -> tuple[list[str], KeepOut]:
     """Model `SAMPLE_DRILLS` in a row, each with a keep-out cylinder.
 
     Arguments:
-    * `solidcraft` (`SCPyBind`): The SolidCraft session.
+    * `solidcraft` (`PyBind`): The SolidCraft session.
 
     Returns:
-    * (`tuple[list[str], SCKeepOut]`):
+    * (`tuple[list[str], KeepOut]`):
       The names of the drills' bodies, and their keep-out regions.
     """
     bodies: list[str] = []
-    keep_out: SCKeepOut = SCKeepOut()
+    keep_out: KeepOut = KeepOut()
     for index, (drill, color) in enumerate(
         zip(SAMPLE_DRILLS, SAMPLE_DRILL_COLORS, strict=True)
     ):
@@ -1062,9 +1062,9 @@ def sample_drills(
     return bodies, keep_out
 
 
-# Class `SCDoubleEndCountersink`:
+# Class `DoubleEndCountersink`:
 @dataclass(frozen=True, slots=True)
-class SCDoubleEndCountersink:
+class DoubleEndCountersink:
     """A combined drill and countersink, cut at both ends (a center drill).
 
     A body with a small drill at each end, joined by a cone.  It stands
@@ -1091,7 +1091,7 @@ class SCDoubleEndCountersink:
       The included angle of the small drills' points (degrees).
 
     Constructor:
-    * `SCDoubleEndCountersink(order_number, family, size, body_diameter,
+    * `DoubleEndCountersink(order_number, family, size, body_diameter,
       drill_diameter, overall_length, angle, radius, left_hand,
       point_angle)`
     """
@@ -1108,7 +1108,7 @@ class SCDoubleEndCountersink:
     left_hand: bool = field(init=True, default=False)
     point_angle: float = field(init=True, default=COUNTERSINK_POINT_ANGLE)
 
-    # Method `SCDoubleEndCountersink.__post_init__()`:
+    # Method `DoubleEndCountersink.__post_init__()`:
     def __post_init__(self) -> None:
         """Check that both ends fit on the body.
 
@@ -1128,7 +1128,7 @@ class SCDoubleEndCountersink:
                 f"{2.0 * self.body_start():g} of {self.overall_length=}"
             )
 
-    # Method `SCDoubleEndCountersink.name()`:
+    # Method `DoubleEndCountersink.name()`:
     def name(self) -> str:
         """Return a name for its body.
 
@@ -1137,7 +1137,7 @@ class SCDoubleEndCountersink:
         """
         return f"Countersink {self.order_number}"
 
-    # Method `SCDoubleEndCountersink.step()`:
+    # Method `DoubleEndCountersink.step()`:
     def step(self) -> float:
         """Return how far the body's radius is past the small drill's.
 
@@ -1146,7 +1146,7 @@ class SCDoubleEndCountersink:
         """
         return (self.body_diameter - self.drill_diameter) / 2.0
 
-    # Method `SCDoubleEndCountersink.tip_radius()`:
+    # Method `DoubleEndCountersink.tip_radius()`:
     def tip_radius(self) -> float:
         """Return the radius of the flat on each tip.
 
@@ -1155,7 +1155,7 @@ class SCDoubleEndCountersink:
         """
         return COUNTERSINK_TIP_FLAT * self.drill_diameter / 2.0
 
-    # Method `SCDoubleEndCountersink.point_height()`:
+    # Method `DoubleEndCountersink.point_height()`:
     def point_height(self) -> float:
         """Return the height of the point, from the flat to the drill.
 
@@ -1166,7 +1166,7 @@ class SCDoubleEndCountersink:
         drop: float = self.drill_diameter / 2.0 - self.tip_radius()
         return drop / math.tan(half)
 
-    # Method `SCDoubleEndCountersink.body_start()`:
+    # Method `DoubleEndCountersink.body_start()`:
     def body_start(self) -> float:
         """Return how far the full body starts from a tip.
 
@@ -1176,7 +1176,7 @@ class SCDoubleEndCountersink:
         rise: float = self.step() / math.tan(math.radians(self.angle / 2.0))
         return self.drill_diameter + rise
 
-    # Method `SCDoubleEndCountersink.profile()`:
+    # Method `DoubleEndCountersink.profile()`:
     def profile(self) -> list[tuple[float, float]]:
         """Return its outline, from one tip along its side to the other.
 
@@ -1198,7 +1198,7 @@ class SCDoubleEndCountersink:
             for radius, height in reversed(side)
         ]
 
-    # Method `SCDoubleEndCountersink.flute_runs()`:
+    # Method `DoubleEndCountersink.flute_runs()`:
     def flute_runs(self) -> list[FluteRun]:
         """Return the lines that stand for the flutes at both ends.
 
@@ -1218,7 +1218,7 @@ class SCDoubleEndCountersink:
         ]
         return lower + upper
 
-    # Method `SCDoubleEndCountersink.volume()`:
+    # Method `DoubleEndCountersink.volume()`:
     def volume(self) -> float:
         """Return the volume the model should have.
 
@@ -1234,17 +1234,17 @@ class SCDoubleEndCountersink:
             for bottom, top in itertools.pairwise(points)
         )
 
-    # Method `SCDoubleEndCountersink.cylinder()`:
-    def cylinder(self, tip: Point) -> SCCylinder:
+    # Method `DoubleEndCountersink.cylinder()`:
+    def cylinder(self, tip: Point) -> Cylinder:
         """Return the cylinder that just encloses it.
 
         Arguments:
         * `tip` (`Point`): Where its lower tip is (millimeters).
 
         Returns:
-        * (`SCCylinder`): The cylinder, named for it.
+        * (`Cylinder`): The cylinder, named for it.
         """
-        return SCCylinder(
+        return Cylinder(
             self.name(),
             (tip[0], tip[1]),
             tip[2],
@@ -1252,17 +1252,17 @@ class SCDoubleEndCountersink:
             self.body_diameter / 2.0,
         )
 
-    # Method `SCDoubleEndCountersink.model()`:
+    # Method `DoubleEndCountersink.model()`:
     def model(
         self,
-        solidcraft: SCPyBind,
+        solidcraft: PyBind,
         tip: Point = (0.0, 0.0, 0.0),
         color: str = DRILL_COLOR,
     ) -> str:
         """Sketch its outline and revolve it about its axis.
 
         Arguments:
-        * `solidcraft` (`SCPyBind`): The SolidCraft session.
+        * `solidcraft` (`PyBind`): The SolidCraft session.
         * `tip` (`Point`): Where its lower tip is (millimeters).
         * `color` (`str`): How it looks.
 
@@ -1324,7 +1324,7 @@ def _inch_countersink(
     family: str,
     size: str,
     angle: float,
-) -> SCDoubleEndCountersink:
+) -> DoubleEndCountersink:
     """Return a countersink with one of the catalog's inch sizes.
 
     Arguments:
@@ -1334,10 +1334,10 @@ def _inch_countersink(
     * `angle` (`float`): Its included angle (degrees).
 
     Returns:
-    * (`SCDoubleEndCountersink`): The countersink.
+    * (`DoubleEndCountersink`): The countersink.
     """
     body, drill, length, radius = _COUNTERSINK_SIZES[size]
-    return SCDoubleEndCountersink(
+    return DoubleEndCountersink(
         order_number,
         family,
         size,
@@ -1353,7 +1353,7 @@ def _inch_countersink(
 # The Shars 2026 catalog's page 24, with both ends cut: the radius type,
 # the plain 82 and 90 degree type (a row has an order number for each),
 # the metric DIN 333 type and the left hand type, which stops at size 7.
-DOUBLE_END_COUNTERSINKS: dict[str, SCDoubleEndCountersink] = {
+DOUBLE_END_COUNTERSINKS: dict[str, DoubleEndCountersink] = {
     countersink.order_number: countersink
     for countersink in (
         *(
@@ -1387,7 +1387,7 @@ DOUBLE_END_COUNTERSINKS: dict[str, SCDoubleEndCountersink] = {
             for order_number, angle in ((order_82, 82.0), (order_90, 90.0))
         ),
         *(
-            SCDoubleEndCountersink(
+            DoubleEndCountersink(
                 order_number,
                 "Metric",
                 "",
@@ -1426,18 +1426,18 @@ DOUBLE_END_COUNTERSINKS: dict[str, SCDoubleEndCountersink] = {
 
 
 # Function `largest_countersinks()`:
-def largest_countersinks(solidcraft: SCPyBind) -> list[str]:
+def largest_countersinks(solidcraft: PyBind) -> list[str]:
     """Model the largest countersink of each table, side by side.
 
     Arguments:
-    * `solidcraft` (`SCPyBind`): The SolidCraft session.
+    * `solidcraft` (`PyBind`): The SolidCraft session.
 
     Returns:
     * (`list[str]`): The names of the bodies.
     """
     bodies: list[str] = []
     for column, (family, color) in enumerate(COUNTERSINK_COLORS.items()):
-        largest: SCDoubleEndCountersink = max(
+        largest: DoubleEndCountersink = max(
             (
                 countersink
                 for countersink in DOUBLE_END_COUNTERSINKS.values()
@@ -1452,19 +1452,19 @@ def largest_countersinks(solidcraft: SCPyBind) -> list[str]:
 
 # Function `countersink_rows()`:
 def countersink_rows(
-    solidcraft: SCPyBind,
+    solidcraft: PyBind,
 ) -> list[str]:
     """Model all of `DOUBLE_END_COUNTERSINKS`, a row for each table.
 
     Arguments:
-    * `solidcraft` (`SCPyBind`): The SolidCraft session.
+    * `solidcraft` (`PyBind`): The SolidCraft session.
 
     Returns:
     * (`list[str]`): The names of the bodies.
     """
     bodies: list[str] = []
     for row, (family, color) in enumerate(COUNTERSINK_COLORS.items()):
-        members: list[SCDoubleEndCountersink] = [
+        members: list[DoubleEndCountersink] = [
             countersink
             for countersink in DOUBLE_END_COUNTERSINKS.values()
             if countersink.family == family
@@ -1479,9 +1479,9 @@ def countersink_rows(
     return bodies
 
 
-# Class `SCViseNotches`:
+# Class `ViseNotches`:
 @dataclass(frozen=True, slots=True)
-class SCViseNotches:
+class ViseNotches:
     """The notches in both sides of one layer of a vise's base.
 
     Each side has one rectangular notch per center, so the notches on
@@ -1499,7 +1499,7 @@ class SCViseNotches:
       The radius of its two corners where it meets the side.
 
     Constructor:
-    * `SCViseNotches(centers, width, depth, inner_radius, outer_radius)`
+    * `ViseNotches(centers, width, depth, inner_radius, outer_radius)`
     """
 
     # Constructor arguments:
@@ -1509,7 +1509,7 @@ class SCViseNotches:
     inner_radius: float = field(init=True)
     outer_radius: float = field(init=True)
 
-    # Method `SCViseNotches.__post_init__()`:
+    # Method `ViseNotches.__post_init__()`:
     def __post_init__(self) -> None:
         """Check that the numbers describe notches.
 
@@ -1523,8 +1523,8 @@ class SCViseNotches:
         if list(self.centers) != sorted(self.centers):
             raise ValueError(f"{self.centers=} must be in order")
 
-    # Method `SCViseNotches.side_corners()`:
-    def side_corners(self, edge_y: float, direction: int) -> list[SCCorner]:
+    # Method `ViseNotches.side_corners()`:
+    def side_corners(self, edge_y: float, direction: int) -> list[Corner]:
         """Return the corners of the notches along one side of a block.
 
         Arguments:
@@ -1534,21 +1534,21 @@ class SCViseNotches:
           toward -X.  Either way, the block lies to the left.
 
         Returns:
-        * (`list[SCCorner]`): Four corners per notch, in walking order.
+        * (`list[Corner]`): Four corners per notch, in walking order.
         """
         half: float = direction * self.width / 2.0
         inner_y: float = edge_y + direction * self.depth
-        corners: list[SCCorner] = []
+        corners: list[Corner] = []
         for center in self.centers[::direction]:
             corners += [
-                SCCorner(center - half, edge_y, self.outer_radius),
-                SCCorner(center - half, inner_y, self.inner_radius),
-                SCCorner(center + half, inner_y, self.inner_radius),
-                SCCorner(center + half, edge_y, self.outer_radius),
+                Corner(center - half, edge_y, self.outer_radius),
+                Corner(center - half, inner_y, self.inner_radius),
+                Corner(center + half, inner_y, self.inner_radius),
+                Corner(center + half, edge_y, self.outer_radius),
             ]
         return corners
 
-    # Method `SCViseNotches.area()`:
+    # Method `ViseNotches.area()`:
     def area(self) -> float:
         """Return the area that all of the notches remove from a block.
 
@@ -1563,9 +1563,9 @@ class SCViseNotches:
         return 2.0 * len(self.centers) * one
 
 
-# Class `SCViseBlock`:
+# Class `ViseBlock`:
 @dataclass(frozen=True, slots=True)
-class SCViseBlock:
+class ViseBlock:
     """A block of a vise: a layer of its base, or a jaw.
 
     Its outline is a rectangle with rounded corners, and perhaps notches
@@ -1578,7 +1578,7 @@ class SCViseBlock:
     * `corner_radius` (`float`): The radius of its four corners.
 
     Constructor:
-    * `SCViseBlock(length, width, height, corner_radius)`
+    * `ViseBlock(length, width, height, corner_radius)`
     """
 
     # Constructor arguments:
@@ -1587,7 +1587,7 @@ class SCViseBlock:
     height: float = field(init=True)
     corner_radius: float = field(init=True, default=0.0)
 
-    # Method `SCViseBlock.__post_init__()`:
+    # Method `ViseBlock.__post_init__()`:
     def __post_init__(self) -> None:
         """Check that the numbers describe a block.
 
@@ -1599,22 +1599,22 @@ class SCViseBlock:
         if not 0.0 <= 2.0 * self.corner_radius <= min(self.length, self.width):
             raise ValueError(f"{self.corner_radius=} does not fit")
 
-    # Method `SCViseBlock.outline()`:
+    # Method `ViseBlock.outline()`:
     def outline(
         self,
         name: str,
         center: tuple[float, float] = (0.0, 0.0),
-        notches: SCViseNotches | None = None,
-    ) -> SCRoundedPolygon:
+        notches: ViseNotches | None = None,
+    ) -> RoundedPolygon:
         """Return the block's outline, as seen from above.
 
         Arguments:
         * `name` (`str`): The outline's name.
         * `center` (`tuple[float, float]`): Its center's X and Y (mm).
-        * `notches` (`SCViseNotches | None`): The notches in its sides.
+        * `notches` (`ViseNotches | None`): The notches in its sides.
 
         Returns:
-        * (`SCRoundedPolygon`): The outline, counter-clockwise.
+        * (`RoundedPolygon`): The outline, counter-clockwise.
 
         Raises:
         * `ValueError`: If the notches do not fit the block.
@@ -1625,35 +1625,35 @@ class SCViseBlock:
         radius: float = self.corner_radius
 
         # Walk around counter-clockwise, about the origin for now.
-        low_side: list[SCCorner] = []
-        high_side: list[SCCorner] = []
+        low_side: list[Corner] = []
+        high_side: list[Corner] = []
         if notches is not None:
             low_side = notches.side_corners(-half_y, 1)
             high_side = notches.side_corners(half_y, -1)
-        corners: list[SCCorner] = [
-            SCCorner(-half_x, -half_y, radius),
+        corners: list[Corner] = [
+            Corner(-half_x, -half_y, radius),
             *low_side,
-            SCCorner(half_x, -half_y, radius),
-            SCCorner(half_x, half_y, radius),
+            Corner(half_x, -half_y, radius),
+            Corner(half_x, half_y, radius),
             *high_side,
-            SCCorner(-half_x, half_y, radius),
+            Corner(-half_x, half_y, radius),
         ]
-        return SCRoundedPolygon(
+        return RoundedPolygon(
             name,
             [
-                SCCorner(x + corner.x, y + corner.y, corner.radius)
+                Corner(x + corner.x, y + corner.y, corner.radius)
                 for corner in corners
             ],
             0.0,
             self.height,
         )
 
-    # Method `SCViseBlock.volume()`:
-    def volume(self, notches: SCViseNotches | None = None) -> float:
+    # Method `ViseBlock.volume()`:
+    def volume(self, notches: ViseNotches | None = None) -> float:
         """Return the volume the model should have.
 
         Arguments:
-        * `notches` (`SCViseNotches | None`): The notches in its sides.
+        * `notches` (`ViseNotches | None`): The notches in its sides.
 
         Returns:
         * (`float`): The volume (cubic millimeters).
@@ -1662,21 +1662,21 @@ class SCViseBlock:
         removed: float = 0.0 if notches is None else notches.area()
         return (self.length * self.width - corners - removed) * self.height
 
-    # Method `SCViseBlock.model()`:
+    # Method `ViseBlock.model()`:
     def model(
         self,
-        solidcraft: SCPyBind,
+        solidcraft: PyBind,
         name: str,
         center: Point = (0.0, 0.0, 0.0),
-        notches: SCViseNotches | None = None,
+        notches: ViseNotches | None = None,
     ) -> str:
         """Model the block, up from the center of its bottom face.
 
         Arguments:
-        * `solidcraft` (`SCPyBind`): The SolidCraft session.
+        * `solidcraft` (`PyBind`): The SolidCraft session.
         * `name` (`str`): The body's name.
         * `center` (`Point`): The center of its bottom face (mm).
-        * `notches` (`SCViseNotches | None`): The notches in its sides.
+        * `notches` (`ViseNotches | None`): The notches in its sides.
 
         Returns:
         * (`str`): The body's name (SolidCraft may change it, if the
@@ -1697,9 +1697,9 @@ class SCViseBlock:
         return bodies[0]
 
 
-# Class `SCJawPlate`:
+# Class `JawPlate`:
 @dataclass(frozen=True, slots=True)
-class SCJawPlate:
+class JawPlate:
     """A jaw plate: the replaceable part of a vise's jaw that clamps.
 
     A machine vise's jaw plates are separate parts, each held to its jaw
@@ -1728,7 +1728,7 @@ class SCJawPlate:
       How deep the counterbores reach in from the clamping face.
 
     Constructor:
-    * `SCJawPlate(screw, length, width, height, hole_spacing,
+    * `JawPlate(screw, length, width, height, hole_spacing,
       hole_diameter, hole_height, counterbore_diameter,
       counterbore_depth)`
     """
@@ -1744,7 +1744,7 @@ class SCJawPlate:
     counterbore_diameter: float = field(init=True)
     counterbore_depth: float = field(init=True)
 
-    # Method `SCJawPlate.__post_init__()`:
+    # Method `JawPlate.__post_init__()`:
     def __post_init__(self) -> None:
         """Check that the holes and counterbores fit the plate.
 
@@ -1777,16 +1777,16 @@ class SCJawPlate:
                 f"and {self.hole_height=}, do not fit the plate"
             )
 
-    # Method `SCJawPlate.block()`:
-    def block(self) -> SCViseBlock:
+    # Method `JawPlate.block()`:
+    def block(self) -> ViseBlock:
         """Return the plate without its holes.
 
         Returns:
-        * (`SCViseBlock`): The block.
+        * (`ViseBlock`): The block.
         """
-        return SCViseBlock(self.length, self.width, self.height)
+        return ViseBlock(self.length, self.width, self.height)
 
-    # Method `SCJawPlate.volume()`:
+    # Method `JawPlate.volume()`:
     def volume(self) -> float:
         """Return the volume its model should have.
 
@@ -1799,10 +1799,10 @@ class SCJawPlate:
         each: float = hole * (self.length - deep) + counterbore * deep
         return self.block().volume() - 2.0 * each
 
-    # Method `SCJawPlate.model()`:
+    # Method `JawPlate.model()`:
     def model(
         self,
-        solidcraft: SCPyBind,
+        solidcraft: PyBind,
         name: str,
         center: Point = (0.0, 0.0, 0.0),
         facing: float = 1.0,
@@ -1812,7 +1812,7 @@ class SCJawPlate:
         Its thickness is along X, and its width along Y.
 
         Arguments:
-        * `solidcraft` (`SCPyBind`): The SolidCraft session.
+        * `solidcraft` (`PyBind`): The SolidCraft session.
         * `name` (`str`): The body's name.
         * `center` (`Point`): The center of its bottom face (mm).
         * `facing` (`float`):
@@ -1856,9 +1856,9 @@ class SCJawPlate:
         return body
 
 
-# Class `SCMachineVise`:
+# Class `MachineVise`:
 @dataclass(frozen=True, slots=True)
-class SCMachineVise:
+class MachineVise:
     """A machine vise, of the kind that Kurt makes.
 
     A picture rather than a true vise: enough to know what it is.  A real
@@ -1889,19 +1889,19 @@ class SCMachineVise:
 
     Attributes:
     * `name` (`str`): What it is.
-    * `base` (`SCViseBlock`): The bottom layer.
-    * `body` (`SCViseBlock`): The layer on the base.
-    * `base_notches` (`SCViseNotches`): The notches in the base.
-    * `body_notches` (`SCViseNotches`):
+    * `base` (`ViseBlock`): The bottom layer.
+    * `body` (`ViseBlock`): The layer on the base.
+    * `base_notches` (`ViseNotches`): The notches in the base.
+    * `body_notches` (`ViseNotches`):
       The notches in the body, at the same places but bigger.
     * `rail_width` (`float`): A bed rail's size along Y.
     * `rail_height` (`float`): The height of the bed: its rails and end
       blocks.
     * `rail_gap` (`float`): The distance between the rails.
     * `end_block_length` (`float`): An end block's size along X.
-    * `fixed_jaw` (`SCViseBlock`): The jaw that stays put.
-    * `movable_jaw` (`SCViseBlock`): The jaw that the lead screw moves.
-    * `jaw_plate` (`SCJawPlate`): The jaw plate on each jaw.
+    * `fixed_jaw` (`ViseBlock`): The jaw that stays put.
+    * `movable_jaw` (`ViseBlock`): The jaw that the lead screw moves.
+    * `jaw_plate` (`JawPlate`): The jaw plate on each jaw.
     * `max_opening` (`float`): The largest gap between the jaw plates.
     * `lead_screw_diameter` (`float`): The lead screw's diameter.
     * `lead_screw_stick_out` (`float`):
@@ -1915,7 +1915,7 @@ class SCMachineVise:
     * `hex_length` (`float`): The hexagon's size along X.
 
     Constructor:
-    * `SCMachineVise(name, base, body, base_notches, body_notches,
+    * `MachineVise(name, base, body, base_notches, body_notches,
       rail_width, rail_height, rail_gap, end_block_length, fixed_jaw,
       movable_jaw, jaw_plate, max_opening, lead_screw_diameter,
       lead_screw_stick_out, lead_screw_height, lead_screw_hole_diameter,
@@ -1923,21 +1923,21 @@ class SCMachineVise:
     """
 
     # The machine vises by key (`registry.key()` of `name`), set below.
-    REGISTRY: ClassVar["SCRegistry[SCMachineVise]"]
+    REGISTRY: ClassVar["Registry[MachineVise]"]
 
     # Constructor arguments:
     name: str = field(init=True)
-    base: SCViseBlock = field(init=True)
-    body: SCViseBlock = field(init=True)
-    base_notches: SCViseNotches = field(init=True)
-    body_notches: SCViseNotches = field(init=True)
+    base: ViseBlock = field(init=True)
+    body: ViseBlock = field(init=True)
+    base_notches: ViseNotches = field(init=True)
+    body_notches: ViseNotches = field(init=True)
     rail_width: float = field(init=True)
     rail_height: float = field(init=True)
     rail_gap: float = field(init=True)
     end_block_length: float = field(init=True)
-    fixed_jaw: SCViseBlock = field(init=True)
-    movable_jaw: SCViseBlock = field(init=True)
-    jaw_plate: SCJawPlate = field(init=True)
+    fixed_jaw: ViseBlock = field(init=True)
+    movable_jaw: ViseBlock = field(init=True)
+    jaw_plate: JawPlate = field(init=True)
     max_opening: float = field(init=True)
     lead_screw_diameter: float = field(init=True)
     lead_screw_stick_out: float = field(init=True)
@@ -1946,9 +1946,9 @@ class SCMachineVise:
     hex_size: float = field(init=True)
     hex_length: float = field(init=True)
 
-    # Method `SCMachineVise.named()`:
+    # Method `MachineVise.named()`:
     @classmethod
-    def named(cls, name: str) -> "SCMachineVise":
+    def named(cls, name: str) -> "MachineVise":
         """Return the machine vise with a key or name.
 
         Arguments:
@@ -1956,20 +1956,20 @@ class SCMachineVise:
           Its key (`registry.key()` of its name) or its name.
 
         Returns:
-        * (`SCMachineVise`): The machine vise.
+        * (`MachineVise`): The machine vise.
 
         Raises:
         * `KeyError`: If there is none, listing the known keys.
         """
         return cls.REGISTRY.named(name)
 
-    # Method `SCMachineVise.key()`:
+    # Method `MachineVise.key()`:
     @property
     def key(self) -> str:
         """Return its key in `REGISTRY` (e.g. `kurt_d688`)."""
         return registry_key(self.name)
 
-    # Method `SCMachineVise.__post_init__()`:
+    # Method `MachineVise.__post_init__()`:
     def __post_init__(self) -> None:
         """Check that the parts fit together.
 
@@ -2027,7 +2027,7 @@ class SCMachineVise:
         self._check_jaw_plate()
         self._check_lead_screw()
 
-    # Method `SCMachineVise._check_notches()`:
+    # Method `MachineVise._check_notches()`:
     def _check_notches(self) -> None:
         """Check that the notches line up and fit their layers.
 
@@ -2036,8 +2036,8 @@ class SCMachineVise:
           do not clear the base's or reach the pocket, or they do not
           fit their layers.
         """
-        base: SCViseNotches = self.base_notches
-        body: SCViseNotches = self.body_notches
+        base: ViseNotches = self.base_notches
+        body: ViseNotches = self.body_notches
         if base.centers != body.centers:
             raise ValueError(
                 f"{base.centers=} must line up with {body.centers=}"
@@ -2056,7 +2056,7 @@ class SCMachineVise:
         self.base.outline(self.name, notches=base)
         self.body.outline(self.name, notches=body)
 
-    # Method `SCMachineVise._check_jaw_plate()`:
+    # Method `MachineVise._check_jaw_plate()`:
     def _check_jaw_plate(self) -> None:
         """Check that a jaw plate fits its jaw.
 
@@ -2069,7 +2069,7 @@ class SCMachineVise:
         ):
             raise ValueError(f"{self.jaw_plate=} must fit {self.fixed_jaw=}")
 
-    # Method `SCMachineVise._check_lead_screw()`:
+    # Method `MachineVise._check_lead_screw()`:
     def _check_lead_screw(self) -> None:
         """Check that the lead screw fits its hole, and its hole the body.
 
@@ -2099,7 +2099,7 @@ class SCMachineVise:
                 f"{self.hex_length=}"
             )
 
-    # Method `SCMachineVise.bed_top()`:
+    # Method `MachineVise.bed_top()`:
     def bed_top(self) -> float:
         """Return the height of the top of the bed, above the base's bottom.
 
@@ -2108,7 +2108,7 @@ class SCMachineVise:
         """
         return self.base.height + self.body.height + self.rail_height
 
-    # Method `SCMachineVise.overall_length()`:
+    # Method `MachineVise.overall_length()`:
     def overall_length(self) -> float:
         """Return the vise's length, out to the end of the hexagon.
 
@@ -2117,7 +2117,7 @@ class SCMachineVise:
         """
         return self.body.length + self.lead_screw_stick_out + self.hex_length
 
-    # Method `SCMachineVise.opening_length()`:
+    # Method `MachineVise.opening_length()`:
     def opening_length(self) -> float:
         """Return the length of the opening between the end blocks.
 
@@ -2126,36 +2126,36 @@ class SCMachineVise:
         """
         return self.body.length - 2.0 * self.end_block_length
 
-    # Method `SCMachineVise.slider()`:
-    def slider(self) -> SCViseBlock:
+    # Method `MachineVise.slider()`:
+    def slider(self) -> ViseBlock:
         """Return the block under the movable jaw, between the rails.
 
         Returns:
-        * (`SCViseBlock`):
+        * (`ViseBlock`):
           The slider: as wide as the end blocks, shorter than the movable
           jaw by an end block's length, and reaching from the jaw's bottom
           down to the pocket's floor.  Its hole is not included.
         """
-        return SCViseBlock(
+        return ViseBlock(
             self.movable_jaw.length - self.end_block_length,
             self.rail_gap,
             self.body.height + self.rail_height,
         )
 
-    # Method `SCMachineVise.slider_volume()`:
+    # Method `MachineVise.slider_volume()`:
     def slider_volume(self) -> float:
         """Return the volume the slider's model should have.
 
         Returns:
         * (`float`): The volume (cubic millimeters).
         """
-        slider: SCViseBlock = self.slider()
+        slider: ViseBlock = self.slider()
         hole: float = (
             math.pi * (self.lead_screw_diameter / 2.0) ** 2 * slider.length
         )
         return slider.volume() - hole
 
-    # Method `SCMachineVise.jaw_plate_volume()`:
+    # Method `MachineVise.jaw_plate_volume()`:
     def jaw_plate_volume(self) -> float:
         """Return the volume a jaw plate's model should have.
 
@@ -2164,7 +2164,7 @@ class SCMachineVise:
         """
         return self.jaw_plate.volume()
 
-    # Method `SCMachineVise.movable_face()`:
+    # Method `MachineVise.movable_face()`:
     def movable_face(self, opening: float) -> float:
         """Return the X of the movable jaw's clamping face, behind its plate.
 
@@ -2188,7 +2188,7 @@ class SCMachineVise:
             + opening
         )
 
-    # Method `SCMachineVise.gap_center()`:
+    # Method `MachineVise.gap_center()`:
     def gap_center(self, opening: float) -> float:
         """Return the X of the middle of the gap between the jaw plates.
 
@@ -2205,7 +2205,7 @@ class SCMachineVise:
             self.movable_face(opening) - self.jaw_plate.length - opening / 2.0
         )
 
-    # Method `SCMachineVise.hexagon()`:
+    # Method `MachineVise.hexagon()`:
     def hexagon(self) -> list[tuple[float, float]]:
         """Return the corners of the lead screw's hexagon, flats up and down.
 
@@ -2222,7 +2222,7 @@ class SCMachineVise:
             for index in range(6)
         ]
 
-    # Method `SCMachineVise.body_volume()`:
+    # Method `MachineVise.body_volume()`:
     def body_volume(self) -> float:
         """Return the volume the body's model should have.
 
@@ -2239,7 +2239,7 @@ class SCMachineVise:
         )
         return self.body.volume(self.body_notches) - pocket - hole
 
-    # Method `SCMachineVise.lead_screw_volume()`:
+    # Method `MachineVise.lead_screw_volume()`:
     def lead_screw_volume(self) -> float:
         """Return the volume the lead screw's model should have.
 
@@ -2258,14 +2258,14 @@ class SCMachineVise:
         hexagon: float = math.sqrt(3.0) / 2.0 * self.hex_size**2
         return cylinder + hexagon * self.hex_length
 
-    # Method `SCMachineVise.keep_out()`:
+    # Method `MachineVise.keep_out()`:
     # Each edge of the three prisms gets a name, past `pylint`'s limit.
     def keep_out(  # pylint: disable=too-many-locals
         self,
         center: Point = (0.0, 0.0, 0.0),
         opening: float = 0.0,
         margin: str = VISE_MARGIN,
-    ) -> SCKeepOut:
+    ) -> KeepOut:
         """Return the regions around the vise that a tool must not enter.
 
         One prism holds the base and the hexagon, one the fixed jaw and
@@ -2280,7 +2280,7 @@ class SCMachineVise:
           How far to grow each prism, with its unit (such as `"1/8 in"`).
 
         Returns:
-        * (`SCKeepOut`): The three grown prisms, in that order.
+        * (`KeepOut`): The three grown prisms, in that order.
 
         Raises:
         * `ValueError`: If `opening` is out of range.
@@ -2301,7 +2301,7 @@ class SCMachineVise:
             x + self.movable_face(opening) - self.jaw_plate.length
         )
 
-        keep_out: SCKeepOut = SCKeepOut()
+        keep_out: KeepOut = KeepOut()
         for name, low, high in (
             (
                 "base to bed",
@@ -2319,15 +2319,13 @@ class SCMachineVise:
                 (hex_end, y + half_jaw, jaw_top),
             ),
         ):
-            keep_out.add_prism(
-                SCPrism(f"{self.name} {name}", low, high), margin
-            )
+            keep_out.add_prism(Prism(f"{self.name} {name}", low, high), margin)
         return keep_out
 
-    # Method `SCMachineVise.model()`:
+    # Method `MachineVise.model()`:
     def model(
         self,
-        solidcraft: SCPyBind,
+        solidcraft: PyBind,
         center: Point = (0.0, 0.0, 0.0),
         opening: float = 0.0,
         lift: float = 0.0,
@@ -2335,7 +2333,7 @@ class SCMachineVise:
         """Model the vise, up from the center of the base's bottom face.
 
         Arguments:
-        * `solidcraft` (`SCPyBind`): The SolidCraft session.
+        * `solidcraft` (`PyBind`): The SolidCraft session.
         * `center` (`Point`): The center of the bottom face (mm).
         * `opening` (`float`): The gap between the jaw plates (mm).
         * `lift` (`float`):
@@ -2356,14 +2354,14 @@ class SCMachineVise:
             *self._model_jaws(solidcraft, center, opening, lift),
         ]
 
-    # Method `SCMachineVise._model_stationary()`:
+    # Method `MachineVise._model_stationary()`:
     def _model_stationary(
-        self, solidcraft: SCPyBind, center: Point
+        self, solidcraft: PyBind, center: Point
     ) -> list[str]:
         """Model what never moves, but for the fixed jaw and its plate.
 
         Arguments:
-        * `solidcraft` (`SCPyBind`): The SolidCraft session.
+        * `solidcraft` (`PyBind`): The SolidCraft session.
         * `center` (`Point`): The center of the bottom face (mm).
 
         Returns:
@@ -2390,8 +2388,8 @@ class SCMachineVise:
             self._model_lead_screw(solidcraft, center),
         ]
 
-    # Method `SCMachineVise.cacheable()`:
-    def cacheable(self, opening: float) -> tuple[SCCacheable, ...]:
+    # Method `MachineVise.cacheable()`:
+    def cacheable(self, opening: float) -> tuple[Cacheable, ...]:
         """Return the vise as models that can be cached.
 
         What moves when the vise opens is one model, built closed, and
@@ -2401,11 +2399,11 @@ class SCMachineVise:
         * `opening` (`float`): The gap between the jaw plates (mm).
 
         Returns:
-        * (`tuple[SCCacheable, ...]`): The vise, then what moves.
+        * (`tuple[Cacheable, ...]`): The vise, then what moves.
         """
         origin: Point = (0.0, 0.0, 0.0)
         return (
-            SCCacheable(
+            Cacheable(
                 self.name,
                 tooling_shape(self, "fixed"),
                 lambda solidcraft: [
@@ -2417,7 +2415,7 @@ class SCMachineVise:
                     DRILL_COLOR if " screw" in body else VISE_COLOR
                 ),
             ),
-            SCCacheable(
+            Cacheable(
                 f"{self.name} movable",
                 tooling_shape(self, "movable"),
                 lambda solidcraft: [
@@ -2438,7 +2436,7 @@ class SCMachineVise:
             ),
         )
 
-    # Method `SCMachineVise._end_plane()`:
+    # Method `MachineVise._end_plane()`:
     def _end_plane(self, center: Point, end_x: float) -> dict[str, JSON]:
         """Return a plane across the vise that faces +X.
 
@@ -2459,14 +2457,14 @@ class SCMachineVise:
             "y_dir": [0.0, 0.0, 1.0],
         }
 
-    # Method `SCMachineVise._cut_pocket()`:
+    # Method `MachineVise._cut_pocket()`:
     def _cut_pocket(
-        self, solidcraft: SCPyBind, body: str, center: Point
+        self, solidcraft: PyBind, body: str, center: Point
     ) -> None:
         """Cut the pocket in the body, under the bed's opening.
 
         Arguments:
-        * `solidcraft` (`SCPyBind`): The SolidCraft session.
+        * `solidcraft` (`PyBind`): The SolidCraft session.
         * `body` (`str`): The body's SolidCraft body.
         * `center` (`Point`): The center of the base's bottom face (mm).
         """
@@ -2475,7 +2473,7 @@ class SCMachineVise:
         solidcraft.sketch.create(
             plane="XY", offset=z + self.base.height, name=name
         )
-        pocket: SCViseBlock = SCViseBlock(
+        pocket: ViseBlock = ViseBlock(
             self.opening_length(), self.rail_gap, self.body.height
         )
         pocket.outline(name, (x, y)).sketch(solidcraft)
@@ -2484,14 +2482,14 @@ class SCMachineVise:
             distance=self.body.height, operation="cut", targets=[body]
         )
 
-    # Method `SCMachineVise._cut_lead_screw_hole()`:
+    # Method `MachineVise._cut_lead_screw_hole()`:
     def _cut_lead_screw_hole(
-        self, solidcraft: SCPyBind, body: str, center: Point
+        self, solidcraft: PyBind, body: str, center: Point
     ) -> None:
         """Cut the hole for the lead screw, through the body's +X end.
 
         Arguments:
-        * `solidcraft` (`SCPyBind`): The SolidCraft session.
+        * `solidcraft` (`PyBind`): The SolidCraft session.
         * `body` (`str`): The body's SolidCraft body.
         * `center` (`Point`): The center of the base's bottom face (mm).
         """
@@ -2511,12 +2509,12 @@ class SCMachineVise:
             targets=[body],
         )
 
-    # Method `SCMachineVise._model_bed()`:
-    def _model_bed(self, solidcraft: SCPyBind, center: Point) -> list[str]:
+    # Method `MachineVise._model_bed()`:
+    def _model_bed(self, solidcraft: PyBind, center: Point) -> list[str]:
         """Model the bed: two rails, and two end blocks between them.
 
         Arguments:
-        * `solidcraft` (`SCPyBind`): The SolidCraft session.
+        * `solidcraft` (`PyBind`): The SolidCraft session.
         * `center` (`Point`): The center of the base's bottom face (mm).
 
         Returns:
@@ -2524,10 +2522,10 @@ class SCMachineVise:
         """
         x, y, z = center
         top: float = z + self.base.height + self.body.height
-        rail: SCViseBlock = SCViseBlock(
+        rail: ViseBlock = ViseBlock(
             self.body.length, self.rail_width, self.rail_height
         )
-        block: SCViseBlock = SCViseBlock(
+        block: ViseBlock = ViseBlock(
             self.end_block_length, self.rail_gap, self.rail_height
         )
         rail_y: float = (self.rail_gap + self.rail_width) / 2.0
@@ -2549,10 +2547,10 @@ class SCMachineVise:
             ),
         ]
 
-    # Method `SCMachineVise._model_jaws()`:
+    # Method `MachineVise._model_jaws()`:
     def _model_jaws(
         self,
-        solidcraft: SCPyBind,
+        solidcraft: PyBind,
         center: Point,
         opening: float,
         lift: float,
@@ -2560,7 +2558,7 @@ class SCMachineVise:
         """Model the jaws, the slider under one, and their plates.
 
         Arguments:
-        * `solidcraft` (`SCPyBind`): The SolidCraft session.
+        * `solidcraft` (`PyBind`): The SolidCraft session.
         * `center` (`Point`): The center of the base's bottom face (mm).
         * `opening` (`float`): The gap between the jaw plates (mm).
         * `lift` (`float`): How far to raise them all (mm).
@@ -2579,14 +2577,14 @@ class SCMachineVise:
             self._model_movable_jaw_plate(solidcraft, center, opening, lift),
         ]
 
-    # Method `SCMachineVise._model_fixed_jaw()`:
+    # Method `MachineVise._model_fixed_jaw()`:
     def _model_fixed_jaw(
-        self, solidcraft: SCPyBind, center: Point, lift: float
+        self, solidcraft: PyBind, center: Point, lift: float
     ) -> str:
         """Model the fixed jaw.
 
         Arguments:
-        * `solidcraft` (`SCPyBind`): The SolidCraft session.
+        * `solidcraft` (`PyBind`): The SolidCraft session.
         * `center` (`Point`): The center of the base's bottom face (mm).
         * `lift` (`float`): How far to raise it (mm).
 
@@ -2601,14 +2599,14 @@ class SCMachineVise:
             (x + fixed_x, y, z + self.bed_top() + lift),
         )
 
-    # Method `SCMachineVise._model_fixed_jaw_plate()`:
+    # Method `MachineVise._model_fixed_jaw_plate()`:
     def _model_fixed_jaw_plate(
-        self, solidcraft: SCPyBind, center: Point, lift: float
+        self, solidcraft: PyBind, center: Point, lift: float
     ) -> str:
         """Model the jaw plate on the fixed jaw.
 
         Arguments:
-        * `solidcraft` (`SCPyBind`): The SolidCraft session.
+        * `solidcraft` (`PyBind`): The SolidCraft session.
         * `center` (`Point`): The center of the base's bottom face (mm).
         * `lift` (`float`): How far to raise it (mm).
 
@@ -2627,10 +2625,10 @@ class SCMachineVise:
             ),
         )
 
-    # Method `SCMachineVise._model_movable_jaw()`:
+    # Method `MachineVise._model_movable_jaw()`:
     def _model_movable_jaw(
         self,
-        solidcraft: SCPyBind,
+        solidcraft: PyBind,
         center: Point,
         opening: float,
         lift: float,
@@ -2638,7 +2636,7 @@ class SCMachineVise:
         """Model the movable jaw.
 
         Arguments:
-        * `solidcraft` (`SCPyBind`): The SolidCraft session.
+        * `solidcraft` (`PyBind`): The SolidCraft session.
         * `center` (`Point`): The center of the base's bottom face (mm).
         * `opening` (`float`): The gap between the jaw plates (mm).
         * `lift` (`float`): How far to raise it (mm).
@@ -2658,10 +2656,10 @@ class SCMachineVise:
             ),
         )
 
-    # Method `SCMachineVise._model_movable_jaw_plate()`:
+    # Method `MachineVise._model_movable_jaw_plate()`:
     def _model_movable_jaw_plate(
         self,
-        solidcraft: SCPyBind,
+        solidcraft: PyBind,
         center: Point,
         opening: float,
         lift: float,
@@ -2669,7 +2667,7 @@ class SCMachineVise:
         """Model the jaw plate on the movable jaw.
 
         Arguments:
-        * `solidcraft` (`SCPyBind`): The SolidCraft session.
+        * `solidcraft` (`PyBind`): The SolidCraft session.
         * `center` (`Point`): The center of the base's bottom face (mm).
         * `opening` (`float`): The gap between the jaw plates (mm).
         * `lift` (`float`): How far to raise it (mm).
@@ -2690,10 +2688,10 @@ class SCMachineVise:
             facing=-1.0,
         )
 
-    # Method `SCMachineVise._model_slider()`:
+    # Method `MachineVise._model_slider()`:
     def _model_slider(
         self,
-        solidcraft: SCPyBind,
+        solidcraft: PyBind,
         center: Point,
         face: float,
         lift: float,
@@ -2701,7 +2699,7 @@ class SCMachineVise:
         """Model the slider, with the hole that the lead screw goes through.
 
         Arguments:
-        * `solidcraft` (`SCPyBind`): The SolidCraft session.
+        * `solidcraft` (`PyBind`): The SolidCraft session.
         * `center` (`Point`): The center of the base's bottom face (mm).
         * `face` (`float`): The X of the movable jaw's clamping face (mm).
         * `lift` (`float`): How far to raise it (mm).
@@ -2712,7 +2710,7 @@ class SCMachineVise:
         """
         # The block, with its bottom on the pocket's floor.
         x, y, z = center
-        slider: SCViseBlock = self.slider()
+        slider: ViseBlock = self.slider()
         body: str = slider.model(
             solidcraft,
             f"{self.name} slider",
@@ -2741,12 +2739,12 @@ class SCMachineVise:
         )
         return body
 
-    # Method `SCMachineVise._model_lead_screw()`:
-    def _model_lead_screw(self, solidcraft: SCPyBind, center: Point) -> str:
+    # Method `MachineVise._model_lead_screw()`:
+    def _model_lead_screw(self, solidcraft: PyBind, center: Point) -> str:
         """Model the lead screw: a cylinder, with a hexagon on its end.
 
         Arguments:
-        * `solidcraft` (`SCPyBind`): The SolidCraft session.
+        * `solidcraft` (`PyBind`): The SolidCraft session.
         * `center` (`Point`): The center of the base's bottom face (mm).
 
         Returns:
@@ -2810,7 +2808,7 @@ class SCMachineVise:
 # comes from the Shars 2026 catalog, page 317, which sells handles for it
 # (7/8 in for Kurt's 8 in vises).  Everything else is an estimate, good
 # enough to know what it is.
-KURT_JAW_PLATE: SCJawPlate = SCJawPlate(
+KURT_JAW_PLATE: JawPlate = JawPlate(
     screw="1/2-13 SHCS",
     length=_mm("0.725 in"),
     width=_mm("6 in"),
@@ -2821,22 +2819,20 @@ KURT_JAW_PLATE: SCJawPlate = SCJawPlate(
     counterbore_diameter=_mm("20 mm"),
     counterbore_depth=_mm("17/32 in"),
 )
-KURT_D688: SCMachineVise = SCMachineVise(
+KURT_D688: MachineVise = MachineVise(
     name="Kurt D688",
-    base=SCViseBlock(
-        _mm("15.75 in"), _mm("6 in"), _mm("0.5 in"), _mm("1/2 in")
-    ),
-    body=SCViseBlock(
+    base=ViseBlock(_mm("15.75 in"), _mm("6 in"), _mm("0.5 in"), _mm("1/2 in")),
+    body=ViseBlock(
         _mm("15.75 in"), _mm("5-1/4 in"), _mm("1.39 in"), _mm("1/2 in")
     ),
-    base_notches=SCViseNotches(
+    base_notches=ViseNotches(
         centers=(_mm("-4 in"), _mm("4 in")),
         width=_mm("7/8 in"),
         depth=_mm("7/8 in"),
         inner_radius=_mm("1/4 in"),
         outer_radius=_mm("1/8 in"),
     ),
-    body_notches=SCViseNotches(
+    body_notches=ViseNotches(
         centers=(_mm("-4 in"), _mm("4 in")),
         width=_mm("1-3/4 in"),
         depth=_mm("1 in"),
@@ -2847,8 +2843,8 @@ KURT_D688: SCMachineVise = SCMachineVise(
     rail_height=_mm("0.75 in"),
     rail_gap=_mm("2-1/2 in"),
     end_block_length=_mm("1-1/2 in"),
-    fixed_jaw=SCViseBlock(_mm("1 in"), _mm("6 in"), _mm("1.735 in")),
-    movable_jaw=SCViseBlock(_mm("3-3/4 in"), _mm("6 in"), _mm("1.735 in")),
+    fixed_jaw=ViseBlock(_mm("1 in"), _mm("6 in"), _mm("1.735 in")),
+    movable_jaw=ViseBlock(_mm("3-3/4 in"), _mm("6 in"), _mm("1.735 in")),
     jaw_plate=KURT_JAW_PLATE,
     max_opening=_mm("8.8 in"),
     lead_screw_diameter=_mm("1 in"),
@@ -2860,9 +2856,9 @@ KURT_D688: SCMachineVise = SCMachineVise(
 )
 
 
-# Class `SCParallel`:
+# Class `Parallel`:
 @dataclass(frozen=True, slots=True)
-class SCParallel:
+class Parallel:
     """A parallel: a thin steel bar that work sits on in a vise.
 
     Parallels come in matched pairs, one under each side of the work.
@@ -2886,12 +2882,12 @@ class SCParallel:
       Optional.  The diameter of its holes; 0 for no holes.
 
     Constructor:
-    * `SCParallel(name, height, thickness, length, hole_spacing,
+    * `Parallel(name, height, thickness, length, hole_spacing,
       hole_diameter)`
     """
 
     # The parallels by key (`registry.key()` of `name`), set below.
-    REGISTRY: ClassVar["SCRegistry[SCParallel]"]
+    REGISTRY: ClassVar["Registry[Parallel]"]
 
     # Constructor arguments:
     name: str = field(init=True)
@@ -2901,9 +2897,9 @@ class SCParallel:
     hole_spacing: float = field(init=True, default=0.0)
     hole_diameter: float = field(init=True, default=0.0)
 
-    # Method `SCParallel.named()`:
+    # Method `Parallel.named()`:
     @classmethod
-    def named(cls, name: str) -> "SCParallel":
+    def named(cls, name: str) -> "Parallel":
         """Return the parallel with a key or name.
 
         Arguments:
@@ -2911,20 +2907,20 @@ class SCParallel:
           Its key (`registry.key()` of its name) or its name.
 
         Returns:
-        * (`SCParallel`): The parallel.
+        * (`Parallel`): The parallel.
 
         Raises:
         * `KeyError`: If there is none, listing the known keys.
         """
         return cls.REGISTRY.named(name)
 
-    # Method `SCParallel.key()`:
+    # Method `Parallel.key()`:
     @property
     def key(self) -> str:
         """Return its key in `REGISTRY` (e.g. `kurt_d688`)."""
         return registry_key(self.name)
 
-    # Method `SCParallel.__post_init__()`:
+    # Method `Parallel.__post_init__()`:
     def __post_init__(self) -> None:
         """Check that the parallel has a size, and its holes fit.
 
@@ -2953,7 +2949,7 @@ class SCParallel:
                 f"fit {self.height=} and {self.length=}"
             )
 
-    # Method `SCParallel.has_holes()`:
+    # Method `Parallel.has_holes()`:
     def has_holes(self) -> bool:
         """Return True if the parallel has holes.
 
@@ -2962,7 +2958,7 @@ class SCParallel:
         """
         return self.hole_diameter != 0.0
 
-    # Method `SCParallel.volume()`:
+    # Method `Parallel.volume()`:
     def volume(self) -> float:
         """Return the volume its model should have.
 
@@ -2973,43 +2969,43 @@ class SCParallel:
         holes: float = 2.0 * hole * self.thickness if self.has_holes() else 0.0
         return self.height * self.thickness * self.length - holes
 
-    # Method `SCParallel.block()`:
-    def block(self) -> SCViseBlock:
+    # Method `Parallel.block()`:
+    def block(self) -> ViseBlock:
         """Return the parallel's shape.
 
         Returns:
-        * (`SCViseBlock`): A block with square corners.
+        * (`ViseBlock`): A block with square corners.
 
         Raises:
         * `ValueError`: If it has no size.
         """
-        return SCViseBlock(self.thickness, self.length, self.height)
+        return ViseBlock(self.thickness, self.length, self.height)
 
-    # Method `SCParallel.prism()`:
-    def prism(self, center: Point) -> SCPrism:
+    # Method `Parallel.prism()`:
+    def prism(self, center: Point) -> Prism:
         """Return the rectangular prism that just encloses the parallel.
 
         Arguments:
         * `center` (`Point`): The center of its bottom edge (mm).
 
         Returns:
-        * (`SCPrism`): The prism, named for the parallel.
+        * (`Prism`): The prism, named for the parallel.
         """
         x, y, z = center
         half_x: float = self.thickness / 2.0
         half_y: float = self.length / 2.0
-        return SCPrism(
+        return Prism(
             self.name,
             (x - half_x, y - half_y, z),
             (x + half_x, y + half_y, z + self.height),
         )
 
-    # Method `SCParallel.model()`:
-    def model(self, solidcraft: SCPyBind, center: Point) -> str:
+    # Method `Parallel.model()`:
+    def model(self, solidcraft: PyBind, center: Point) -> str:
         """Model the parallel, up from the center of its bottom edge.
 
         Arguments:
-        * `solidcraft` (`SCPyBind`): The SolidCraft session.
+        * `solidcraft` (`PyBind`): The SolidCraft session.
         * `center` (`Point`): The center of its bottom edge (mm).
 
         Returns:
@@ -3065,8 +3061,8 @@ PARALLEL_HEIGHTS: tuple[str, ...] = (
 # A whole set: two parallels of each height, since work sits on a pair.
 # Each has two holes 3 in apart, half as wide as it is tall; the holes
 # are Claude's estimate of a typical set.
-PARALLELS: tuple[SCParallel, ...] = tuple(
-    SCParallel(
+PARALLELS: tuple[Parallel, ...] = tuple(
+    Parallel(
         f"Parallel {height} {side}",
         _mm(height),
         _mm("1/8 in"),
@@ -3100,19 +3096,19 @@ def parallel_centers() -> list[float]:
 
 # Function `parallel_set()`:
 def parallel_set(
-    solidcraft: SCPyBind,
-) -> tuple[list[str], SCKeepOut]:
+    solidcraft: PyBind,
+) -> tuple[list[str], KeepOut]:
     """Model `PARALLELS` in a row, each with a keep-out prism.
 
     Arguments:
-    * `solidcraft` (`SCPyBind`): The SolidCraft session.
+    * `solidcraft` (`PyBind`): The SolidCraft session.
 
     Returns:
-    * (`tuple[list[str], SCKeepOut]`):
+    * (`tuple[list[str], KeepOut]`):
       The names of the parallels' bodies, and their keep-out regions.
     """
     bodies: list[str] = []
-    keep_out: SCKeepOut = SCKeepOut()
+    keep_out: KeepOut = KeepOut()
     for parallel, x in zip(PARALLELS, parallel_centers(), strict=True):
         center: Point = (x, PARALLEL_ROW_Y, 0.0)
         bodies.append(parallel.model(solidcraft, center))
@@ -3120,9 +3116,9 @@ def parallel_set(
     return bodies, keep_out
 
 
-# Class `SCScrewFit`:
+# Class `ScrewFit`:
 @dataclass(frozen=True, slots=True)
-class SCScrewFit:
+class ScrewFit:
     """The holes that a screw passes through.  Lengths are millimeters.
 
     Attributes:
@@ -3134,7 +3130,7 @@ class SCScrewFit:
     * `loose` (`float`): The diameter of a loose fit hole.
 
     Constructor:
-    * `SCScrewFit(screw, nominal, close_drill, close, loose_drill,
+    * `ScrewFit(screw, nominal, close_drill, close, loose_drill,
       loose)`
     """
 
@@ -3148,10 +3144,10 @@ class SCScrewFit:
 
 
 # The user's chart of close and loose holes for imperial screws.
-SCREW_FITS: dict[str, SCScrewFit] = {
+SCREW_FITS: dict[str, ScrewFit] = {
     fit.screw: fit
     for fit in (
-        SCScrewFit(
+        ScrewFit(
             "#2",
             _mm("0.0860 in"),
             "#43",
@@ -3159,7 +3155,7 @@ SCREW_FITS: dict[str, SCScrewFit] = {
             "#41",
             _mm("0.0960 in"),
         ),
-        SCScrewFit(
+        ScrewFit(
             "#4",
             _mm("0.1120 in"),
             "#32",
@@ -3167,7 +3163,7 @@ SCREW_FITS: dict[str, SCScrewFit] = {
             "#30",
             _mm("0.1285 in"),
         ),
-        SCScrewFit(
+        ScrewFit(
             "#6",
             _mm("0.1380 in"),
             "#27",
@@ -3175,7 +3171,7 @@ SCREW_FITS: dict[str, SCScrewFit] = {
             "#25",
             _mm("0.1495 in"),
         ),
-        SCScrewFit(
+        ScrewFit(
             "#8",
             _mm("0.1640 in"),
             "#18",
@@ -3183,7 +3179,7 @@ SCREW_FITS: dict[str, SCScrewFit] = {
             "#16",
             _mm("0.1770 in"),
         ),
-        SCScrewFit(
+        ScrewFit(
             "#10",
             _mm("0.1900 in"),
             "#9",
@@ -3191,7 +3187,7 @@ SCREW_FITS: dict[str, SCScrewFit] = {
             "#7",
             _mm("0.2010 in"),
         ),
-        SCScrewFit(
+        ScrewFit(
             "#12",
             _mm("0.2160 in"),
             "#2",
@@ -3203,9 +3199,9 @@ SCREW_FITS: dict[str, SCScrewFit] = {
 }
 
 
-# Class `SCGridPlate`:
+# Class `GridPlate`:
 @dataclass(frozen=True, slots=True)
-class SCGridPlate:
+class GridPlate:
     """A grid plate: a plate with a grid of holes, for holding work down.
 
     The grid has the same pitch along X and Y, and fills the plate, with
@@ -3220,7 +3216,7 @@ class SCGridPlate:
     plates are easy to make in pairs in a home shop, and pairs of them
     hold many parts made at the same time.
 
-    Its outline is an `SCRoundedPolygon` with its four corners rounded
+    Its outline is an `RoundedPolygon` with its four corners rounded
     and all of the holes inside, so that one extrude makes the plate;
     one chamfer command then does every chamfer.  All lengths are in
     millimeters.
@@ -3261,13 +3257,13 @@ class SCGridPlate:
       Optional.  The diameter of the close fit tooling holes.
 
     Constructor:
-    * `SCGridPlate(name, length, width, height, pitch, edge,
+    * `GridPlate(name, length, width, height, pitch, edge,
       hole_diameter, corner_radius, chamfer_depth, tooling_columns,
       tooling_rows, tooling_pitch, tap_diameter, close_diameter)`
     """
 
     # The grid plates by key (`registry.key()` of `name`), set below.
-    REGISTRY: ClassVar["SCRegistry[SCGridPlate]"]
+    REGISTRY: ClassVar["Registry[GridPlate]"]
 
     # Constructor arguments:
     name: str = field(init=True)
@@ -3285,9 +3281,9 @@ class SCGridPlate:
     tap_diameter: float = field(init=True, default=0.0)
     close_diameter: float = field(init=True, default=0.0)
 
-    # Method `SCGridPlate.named()`:
+    # Method `GridPlate.named()`:
     @classmethod
-    def named(cls, name: str, chamfer: bool = True) -> "SCGridPlate":
+    def named(cls, name: str, chamfer: bool = True) -> "GridPlate":
         """Return the grid plate with a key or name.
 
         Chamfering the grid's holes takes a lot of computing (above), so
@@ -3302,21 +3298,21 @@ class SCGridPlate:
           the shop describes it).
 
         Returns:
-        * (`SCGridPlate`): The grid plate.
+        * (`GridPlate`): The grid plate.
 
         Raises:
         * `KeyError`: If there is none, listing the known keys.
         """
-        plate: SCGridPlate = cls.REGISTRY.named(name)
+        plate: GridPlate = cls.REGISTRY.named(name)
         return plate if chamfer else replace(plate, chamfer_depth=0.0)
 
-    # Method `SCGridPlate.key()`:
+    # Method `GridPlate.key()`:
     @property
     def key(self) -> str:
         """Return its key in `REGISTRY` (e.g. `kurt_d688`)."""
         return registry_key(self.name)
 
-    # Method `SCGridPlate.__post_init__()`:
+    # Method `GridPlate.__post_init__()`:
     def __post_init__(self) -> None:
         """Check that the grid and the tooling holes fit the plate.
 
@@ -3346,9 +3342,9 @@ class SCGridPlate:
             )
         self._check_tooling()
 
-    # Method `SCGridPlate.from_shop()`:
+    # Method `GridPlate.from_shop()`:
     @staticmethod
-    def from_shop(plate: dict[str, object]) -> "SCGridPlate":
+    def from_shop(plate: dict[str, object]) -> "GridPlate":
         """Return a grid plate described in a shop's tooling file.
 
         Arguments:
@@ -3357,7 +3353,7 @@ class SCGridPlate:
           checked its keys and units.
 
         Returns:
-        * (`SCGridPlate`): The plate, in millimeters.
+        * (`GridPlate`): The plate, in millimeters.
 
         Raises:
         * `ValueError`: If its numbers do not make a grid plate.
@@ -3373,7 +3369,7 @@ class SCGridPlate:
             assert isinstance(value, int)
             return value
 
-        return SCGridPlate(
+        return GridPlate(
             name=str(plate["name"]),
             length=size("length"),
             width=size("width"),
@@ -3390,7 +3386,7 @@ class SCGridPlate:
             close_diameter=size("close_diameter"),
         )
 
-    # Method `SCGridPlate._check_tooling()`:
+    # Method `GridPlate._check_tooling()`:
     def _check_tooling(self) -> None:
         """Check that the tooling holes are as described.
 
@@ -3441,7 +3437,7 @@ class SCGridPlate:
                 f"{self.tooling_pitch=} do not fit the grid"
             )
 
-    # Method `SCGridPlate._tooling_places()`:
+    # Method `GridPlate._tooling_places()`:
     def _tooling_places(self, count: int) -> list[float]:
         """Return the places of tooling holes along one side.
 
@@ -3455,7 +3451,7 @@ class SCGridPlate:
         first: float = -self.tooling_pitch * (count - 1) / 2.0
         return [first + index * self.tooling_pitch for index in range(count)]
 
-    # Method `SCGridPlate.chamfered_diameter()`:
+    # Method `GridPlate.chamfered_diameter()`:
     def chamfered_diameter(self) -> float:
         """Return the diameter of a grid hole at the plate's top.
 
@@ -3464,7 +3460,7 @@ class SCGridPlate:
         """
         return self.hole_diameter + 2.0 * self.chamfer_depth
 
-    # Method `SCGridPlate.hole_centers()`:
+    # Method `GridPlate.hole_centers()`:
     def hole_centers(self) -> list[tuple[float, float]]:
         """Return where the grid's holes are, from the plate's center.
 
@@ -3476,7 +3472,7 @@ class SCGridPlate:
         rows: list[float] = _grid(self.width, self.edge, self.pitch)
         return [(x, y) for y in rows for x in columns]
 
-    # Method `SCGridPlate.tooling_holes()`:
+    # Method `GridPlate.tooling_holes()`:
     def tooling_holes(self) -> list[tuple[float, float, float]]:
         """Return where the tooling holes are, and their sizes.
 
@@ -3502,7 +3498,7 @@ class SCGridPlate:
             for i, x in enumerate(columns)
         ]
 
-    # Method `SCGridPlate.volume()`:
+    # Method `GridPlate.volume()`:
     def volume(self) -> float:
         """Return the volume the model should have.
 
@@ -3527,7 +3523,7 @@ class SCGridPlate:
         whole: float = (self.length * self.width - corners) * self.height
         return whole - grid - tooling
 
-    # Method `SCGridPlate.seat()`:
+    # Method `GridPlate.seat()`:
     def seat(self) -> Point:
         """Return the middle of the plate's top.
 
@@ -3536,7 +3532,7 @@ class SCGridPlate:
         """
         return (0.0, 0.0, self.height)
 
-    # Method `SCGridPlate.origin()`:
+    # Method `GridPlate.origin()`:
     def origin(self, turns: int = 0) -> Point:
         """Return the point handed up to the next item.
 
@@ -3556,15 +3552,15 @@ class SCGridPlate:
         ]
         return left_corner(corners, turns)
 
-    # Method `SCGridPlate.outline()`:
-    def outline(self, center: tuple[float, float]) -> SCRoundedPolygon:
+    # Method `GridPlate.outline()`:
+    def outline(self, center: tuple[float, float]) -> RoundedPolygon:
         """Return the plate's outline and holes, as seen from above.
 
         Arguments:
         * `center` (`tuple[float, float]`): Its center's X and Y (mm).
 
         Returns:
-        * (`SCRoundedPolygon`): The outline, counter-clockwise, with the
+        * (`RoundedPolygon`): The outline, counter-clockwise, with the
           grid's holes and then the tooling holes as its children.
         """
         x, y = center
@@ -3575,28 +3571,28 @@ class SCGridPlate:
             (hole_x, hole_y, self.hole_diameter)
             for hole_x, hole_y in self.hole_centers()
         ] + self.tooling_holes()
-        return SCRoundedPolygon(
+        return RoundedPolygon(
             self.name,
             [
-                SCCorner(x - half_x, y - half_y, radius),
-                SCCorner(x + half_x, y - half_y, radius),
-                SCCorner(x + half_x, y + half_y, radius),
-                SCCorner(x - half_x, y + half_y, radius),
+                Corner(x - half_x, y - half_y, radius),
+                Corner(x + half_x, y - half_y, radius),
+                Corner(x + half_x, y + half_y, radius),
+                Corner(x - half_x, y + half_y, radius),
             ],
             0.0,
             self.height,
             [
-                SCHole(x + hole_x, y + hole_y, diameter, self.height, 0.0)
+                Hole(x + hole_x, y + hole_y, diameter, self.height, 0.0)
                 for hole_x, hole_y, diameter in holes
             ],
         )
 
-    # Method `SCGridPlate.model()`:
-    def model(self, solidcraft: SCPyBind, center: Point) -> list[str]:
+    # Method `GridPlate.model()`:
+    def model(self, solidcraft: PyBind, center: Point) -> list[str]:
         """Model the plate, up from the center of its bottom face.
 
         Arguments:
-        * `solidcraft` (`SCPyBind`): The SolidCraft session.
+        * `solidcraft` (`PyBind`): The SolidCraft session.
         * `center` (`Point`): The center of its bottom face (mm).
 
         Returns:
@@ -3632,15 +3628,15 @@ class SCGridPlate:
         solidcraft.appearance.assign(bodies=[body], color=ALUMINUM_COLOR)
         return [body]
 
-    # Method `SCGridPlate.cacheable()`:
-    def cacheable(self) -> tuple[SCCacheable, ...]:
+    # Method `GridPlate.cacheable()`:
+    def cacheable(self) -> tuple[Cacheable, ...]:
         """Return the plate as a model that can be cached.
 
         Returns:
-        * (`tuple[SCCacheable, ...]`): The plate.
+        * (`tuple[Cacheable, ...]`): The plate.
         """
         return (
-            SCCacheable(
+            Cacheable(
                 self.name,
                 tooling_shape(self),
                 lambda solidcraft: self.model(solidcraft, (0.0, 0.0, 0.0)),
@@ -3648,31 +3644,31 @@ class SCGridPlate:
             ),
         )
 
-    # Method `SCGridPlate.prism()`:
-    def prism(self, center: Point) -> SCPrism:
+    # Method `GridPlate.prism()`:
+    def prism(self, center: Point) -> Prism:
         """Return the rectangular prism that just encloses the plate.
 
         Arguments:
         * `center` (`Point`): The center of its bottom face (mm).
 
         Returns:
-        * (`SCPrism`): The prism, named for the plate.
+        * (`Prism`): The prism, named for the plate.
         """
         return box_prism(
             self.name, (self.length, self.width, self.height), center
         )
 
-    # Method `SCGridPlate.keep_out()`:
-    def keep_out(self, center: Point) -> SCKeepOut:
+    # Method `GridPlate.keep_out()`:
+    def keep_out(self, center: Point) -> KeepOut:
         """Return the prism around the plate.
 
         Arguments:
         * `center` (`Point`): The center of its bottom face (mm).
 
         Returns:
-        * (`SCKeepOut`): One grown prism.
+        * (`KeepOut`): One grown prism.
         """
-        keep_out: SCKeepOut = SCKeepOut()
+        keep_out: KeepOut = KeepOut()
         keep_out.add_prism(self.prism(center), GRID_PLATE_MARGIN)
         return keep_out
 
@@ -3700,7 +3696,7 @@ def _grid(size: float, edge: float, spacing: float) -> list[float]:
 # close fit for a #6 screw, with a 1/32 in chamfer.  Its tooling holes,
 # 2 by 4 on 3 in centers, are for #10-32 screws: #21 (0.159 in), the tap
 # drill, and a close fit; Claude's choice.
-GRID_PLATE: SCGridPlate = SCGridPlate(
+GRID_PLATE: GridPlate = GridPlate(
     name="Grid plate",
     length=_mm("5-1/2 in"),
     width=_mm("10-1/2 in"),
@@ -3737,28 +3733,28 @@ def table_centers() -> list[float]:
 
 # The registries of the tooling above, by key (`registry.key()`),
 # filled from the shop in use by `shop_registries.use_shop()`.
-SCMillTable.REGISTRY = SCRegistry("mill table")
-SCMachineVise.REGISTRY = SCRegistry("machine vise")
-SCParallel.REGISTRY = SCRegistry("parallel")
-SCGridPlate.REGISTRY = SCRegistry("grid plate")
+MillTable.REGISTRY = Registry("mill table")
+MachineVise.REGISTRY = Registry("machine vise")
+Parallel.REGISTRY = Registry("parallel")
+GridPlate.REGISTRY = Registry("grid plate")
 
 
-# Class `SCTormach`:
+# Class `Tormach`:
 @dataclass(slots=True)
-class SCTormach:
+class Tormach:
     """Models of Tormach's equipment.
 
     Attributes:
-    * `solidcraft` (`SCPyBind`): The SolidCraft session.
+    * `solidcraft` (`PyBind`): The SolidCraft session.
 
     Constructor:
-    * `SCTormach(solidcraft)`
+    * `Tormach(solidcraft)`
     """
 
     # Constructor arguments:
-    solidcraft: SCPyBind = field(init=True)
+    solidcraft: PyBind = field(init=True)
 
-    # Method `SCTormach.mill_tables()`:
+    # Method `Tormach.mill_tables()`:
     def mill_tables(self) -> list[str]:
         """Model the tables of the 440, 770 and 1100, side by side.
 
@@ -3772,8 +3768,8 @@ class SCTormach:
             )
         ]
 
-    # Method `SCTormach.mill_table_keep_out()`:
-    def mill_table_keep_out(self, margin: str = TABLE_MARGIN) -> SCKeepOut:
+    # Method `Tormach.mill_table_keep_out()`:
+    def mill_table_keep_out(self, margin: str = TABLE_MARGIN) -> KeepOut:
         """Return the tables' keep-out regions, laid out as `mill_tables()`.
 
         Arguments:
@@ -3781,19 +3777,19 @@ class SCTormach:
           How far to grow each table's prism, with its unit.
 
         Returns:
-        * (`SCKeepOut`): One grown prism per table.
+        * (`KeepOut`): One grown prism per table.
         """
-        keep_out: SCKeepOut = SCKeepOut()
+        keep_out: KeepOut = KeepOut()
         for table, center_y in zip(MILL_TABLES, table_centers(), strict=True):
             keep_out.add_prism(table.prism(center_y), margin)
         return keep_out
 
-    # Method `SCTormach.mill_table()`:
-    def mill_table(self, table: SCMillTable, center_y: float = 0.0) -> str:
+    # Method `Tormach.mill_table()`:
+    def mill_table(self, table: MillTable, center_y: float = 0.0) -> str:
         """Model one mill table.
 
         Arguments:
-        * `table` (`SCMillTable`): The table.
+        * `table` (`MillTable`): The table.
         * `center_y` (`float`): The Y of its center (millimeters).
 
         Returns:
@@ -3801,7 +3797,7 @@ class SCTormach:
           name is taken).
         """
         # The plate, from the top down.
-        solidcraft: SCPyBind = self.solidcraft
+        solidcraft: PyBind = self.solidcraft
         solidcraft.sketch.create(plane="XY", name=f"{table.name} plate")
         solidcraft.sketch.rectangle_center(
             center=(0.0, center_y),
@@ -3830,19 +3826,17 @@ class SCTormach:
         solidcraft.appearance.assign(bodies=[body], color=TABLE_COLOR)
         return body
 
-    # Method `SCTormach._cut_slot()`:
-    def _cut_slot(
-        self, table: SCMillTable, body: str, center_y: float
-    ) -> None:
+    # Method `Tormach._cut_slot()`:
+    def _cut_slot(self, table: MillTable, body: str, center_y: float) -> None:
         """Cut one T-slot.
 
         Arguments:
-        * `table` (`SCMillTable`): The table.
+        * `table` (`MillTable`): The table.
         * `body` (`str`): The table's body.
         * `center_y` (`float`): The Y of the slot's center (millimeters).
         """
         # The plane looks along +X, with sketch X along Y and sketch Y up.
-        solidcraft: SCPyBind = self.solidcraft
+        solidcraft: PyBind = self.solidcraft
         solidcraft.sketch.create(
             plane={
                 "origin": [0.0, center_y, 0.0],
@@ -3862,19 +3856,19 @@ class SCTormach:
             targets=[body],
         )
 
-    # Method `SCTormach._cut_pocket()`:
+    # Method `Tormach._cut_pocket()`:
     def _cut_pocket(
-        self, table: SCMillTable, body: str, center_x: float, center_y: float
+        self, table: MillTable, body: str, center_x: float, center_y: float
     ) -> None:
         """Cut one of the pockets at the ends of the slots.
 
         Arguments:
-        * `table` (`SCMillTable`): The table.
+        * `table` (`MillTable`): The table.
         * `body` (`str`): The table's body.
         * `center_x` (`float`): The X of the pocket's center (millimeters).
         * `center_y` (`float`): The Y of the pocket's center (millimeters).
         """
-        solidcraft: SCPyBind = self.solidcraft
+        solidcraft: PyBind = self.solidcraft
         solidcraft.sketch.create(plane="XY", name=f"{table.name} pocket")
         solidcraft.sketch.rectangle_center(
             center=(center_x, center_y),
@@ -3897,7 +3891,7 @@ def main() -> None:
     """Show tables, drills, a vise and keep-outs, in a new design."""
     target: str = sys.argv[1] if len(sys.argv) > 1 else "8080"
     with connect(target) as transport:
-        solidcraft: SCPyBind = SCPyBind(transport)
+        solidcraft: PyBind = PyBind(transport)
         solidcraft.file.new()
         if sys.argv[2:] == ["countersinks"]:
             print(countersink_rows(solidcraft))
@@ -3915,7 +3909,7 @@ def main() -> None:
             print(largest_countersinks(solidcraft))
             solidcraft.view.apply(view="iso")
             return
-        tormach: SCTormach = SCTormach(solidcraft)
+        tormach: Tormach = Tormach(solidcraft)
         print(tormach.mill_tables())
         print(tormach.mill_table_keep_out().model(solidcraft))
         drills, keep_out = sample_drills(solidcraft)

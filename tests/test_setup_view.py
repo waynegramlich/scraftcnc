@@ -12,22 +12,22 @@ from typing import Any, cast
 from unittest.mock import patch
 
 from scraftcnc.assembly import (
-    SCAssembly,
-    SCItem,
-    SCStock,
+    Assembly,
+    AssemblyItem,
+    Stock,
     millimeters,
     resolve,
 )
-from scraftcnc.demo import SCDemoPart, demo_assembly
-from scraftcnc.model_cache import SCCacheable, SCInserted
+from scraftcnc.demo import DemoPart, demo_assembly
+from scraftcnc.model_cache import Cacheable, InsertedModel
 from scraftcnc.pybind.scraftpybind import (
-    SCHeadlessTransport,
-    SCPyBind,
-    SCSolidCraftError,
+    HeadlessTransport,
+    PyBind,
+    SolidCraftError,
 )
 from scraftcnc.setup_view import (
-    SCPlaced,
-    SCSetupView,
+    PlacedItem,
+    SetupView,
     box_edges,
     display_keys,
     keep_out_prisms,
@@ -36,9 +36,9 @@ from scraftcnc.setup_view import (
 )
 from scraftcnc.shops import read
 from scraftcnc.tooling.cutter_models import EXAMPLE_SHOP
-from scraftcnc.tooling.mount import SCParallelLayer
+from scraftcnc.tooling.mount import ParallelLayer
 from scraftcnc.tooling.shop_registries import use_shop
-from scraftcnc.tooling.tools import Point, SCGridPlate, quarter_turn
+from scraftcnc.tooling.tools import GridPlate, Point, quarter_turn
 from tests.flat_plate import FLAT_PLATE
 
 # The demonstration's setup file.
@@ -68,19 +68,19 @@ class _Fake:  # pylint: disable=too-few-public-methods
         return quarter_turn(self.point, turns)
 
 
-def _resolver(fakes: dict[str, Any]) -> Callable[[SCItem], Any]:
+def _resolver(fakes: dict[str, Any]) -> Callable[[AssemblyItem], Any]:
     """Return a resolver that finds each item's object by its name."""
 
-    def found(item: SCItem) -> Any:
+    def found(item: AssemblyItem) -> Any:
         """Return the item's object."""
         return fakes[item.name]
 
     return found
 
 
-def _item(name: str, location: Point, turns: int = 0) -> SCItem:
+def _item(name: str, location: Point, turns: int = 0) -> AssemblyItem:
     """Return a tooling item."""
-    return SCItem(
+    return AssemblyItem(
         kind="tooling",
         name=name,
         call="fake:thing",
@@ -93,7 +93,7 @@ def _item(name: str, location: Point, turns: int = 0) -> SCItem:
 class TestPlace(unittest.TestCase):
     """Tests for `place()`."""
 
-    def check(self, placed: SCPlaced, expected: Point) -> None:
+    def check(self, placed: PlacedItem, expected: Point) -> None:
         """Check where an item was placed."""
         got: Point = (placed.x, placed.y, placed.z)
         axis: int
@@ -111,7 +111,7 @@ class TestPlace(unittest.TestCase):
         ]
         for turns in range(4):
             with self.subTest(turns=turns):
-                assembly: SCAssembly = SCAssembly(
+                assembly: Assembly = Assembly(
                     [
                         _item("base", (10.0, 20.0, 0.0), turns),
                         _item("top", (0.0, 0.0, 0.0)),
@@ -120,14 +120,14 @@ class TestPlace(unittest.TestCase):
                 fakes: dict[str, Any] = {
                     "base": _Fake((1.0, 2.0, 3.0)),
                 }
-                placed: list[SCPlaced] = place(assembly, _resolver(fakes))
+                placed: list[PlacedItem] = place(assembly, _resolver(fakes))
                 self.assertEqual(placed[0].turns, turns)
                 self.check(placed[0], (10.0, 20.0, 0.0))
                 self.check(placed[1], expected[turns])
 
     def test_chain(self) -> None:
         """Offsets chain up the stack; the top item is never built."""
-        assembly: SCAssembly = SCAssembly(
+        assembly: Assembly = Assembly(
             [
                 _item("a", (100.0, 0.0, -50.0)),
                 _item("b", (5.0, 6.0, 0.0), 1),
@@ -138,17 +138,15 @@ class TestPlace(unittest.TestCase):
             "a": _Fake((-10.0, 10.0, 20.0)),
             "b": _Fake((1.0, 0.0, 2.0)),
         }
-        placed: list[SCPlaced] = place(assembly, _resolver(fakes))
+        placed: list[PlacedItem] = place(assembly, _resolver(fakes))
         self.check(placed[0], (100.0, 0.0, -50.0))
         self.check(placed[1], (95.0, 16.0, -30.0))
         self.check(placed[2], (96.0, 18.0, -27.0))
 
     def test_parallels_pass_through(self) -> None:
         """Parallels do not change the origin handed up."""
-        parallel: SCParallelLayer = SCParallelLayer.named(
-            "parallel_1_1_2_in_a"
-        )
-        assembly: SCAssembly = SCAssembly(
+        parallel: ParallelLayer = ParallelLayer.named("parallel_1_1_2_in_a")
+        assembly: Assembly = Assembly(
             [
                 _item("vise", (0.0, 0.0, 0.0)),
                 _item("parallel A", (3.0, 4.0, -5.0)),
@@ -161,7 +159,7 @@ class TestPlace(unittest.TestCase):
             "parallel A": parallel,
             "parallel B": parallel,
         }
-        placed: list[SCPlaced] = place(assembly, _resolver(fakes))
+        placed: list[PlacedItem] = place(assembly, _resolver(fakes))
         self.check(placed[1], (13.0, 24.0, 25.0))
         self.check(placed[2], (13.0, 16.0, 25.0))
         self.check(placed[3], (11.0, 22.0, 33.0))
@@ -179,9 +177,9 @@ class TestPlace(unittest.TestCase):
             millimeters("2 in", "x"),
             millimeters("1-1/2 in", "y"),
         )
-        placed: list[SCPlaced] = place(demo_assembly(), resolve)
+        placed: list[PlacedItem] = place(demo_assembly(), resolve)
         layer: dict[str, Any]
-        here: SCPlaced
+        here: PlacedItem
         for here, layer in zip(placed, stack["tooling"], strict=False):
             with self.subTest(item=here.item.name):
                 self.check(
@@ -197,7 +195,7 @@ class TestPlace(unittest.TestCase):
         half: float = millimeters("1/2 in", "z")
         self.check(placed[-2], (middle[0], middle[1], -half))
         self.check(placed[-1], (middle[0], middle[1], -half))
-        plate: SCPlaced = placed[-3]
+        plate: PlacedItem = placed[-3]
         self.check(plate, (middle[0], middle[1], plate.z))
 
     def test_named_origins(self) -> None:
@@ -286,7 +284,7 @@ class _Cache:  # pylint: disable=too-few-public-methods
     def insert(self, _solidcraft: Any, model: Any, _matrix: Any) -> Any:
         """Return one new body for the model."""
         self.count += 1
-        return SCInserted(
+        return InsertedModel(
             bodies=[f"{model.name}_{self.count}"],
             component=self.count,
             occurrence=self.count,
@@ -297,9 +295,9 @@ class _Cache:  # pylint: disable=too-few-public-methods
 class _Tooling(_Fake):
     """A tooling object with one cacheable model."""
 
-    def cacheable(self) -> tuple[SCCacheable, ...]:
+    def cacheable(self) -> tuple[Cacheable, ...]:
         """Return its one model."""
-        return (SCCacheable(name="tool", shape={}, build=lambda _: []),)
+        return (Cacheable(name="tool", shape={}, build=lambda _: []),)
 
 
 # A stand-in part, built in the session.
@@ -312,7 +310,7 @@ class _Part:  # pylint: disable=too-few-public-methods
 
 
 class TestSetupView(unittest.TestCase):
-    """Tests for `SCSetupView`."""
+    """Tests for `SetupView`."""
 
     def setUp(self) -> None:
         """A view on a fake session, with three tooling items."""
@@ -321,21 +319,21 @@ class TestSetupView(unittest.TestCase):
             "vise": _Tooling((0.0, 0.0, 10.0)),
             "parallel A": _Tooling((0.0, 0.0, 5.0)),
             "parallel B": _Tooling((0.0, 0.0, 5.0)),
-            "stock": SCStock("aluminum_6061", ("4 in", "3 in", "1/2 in")),
+            "stock": Stock("aluminum_6061", ("4 in", "3 in", "1/2 in")),
             "part": _Part(),
         }
-        self.view: SCSetupView = SCSetupView(
+        self.view: SetupView = SetupView(
             cast(Any, self.session), cast(Any, _Cache()), _resolver(fakes)
         )
 
     @staticmethod
-    def assembly(part_x: float = 0.0, *, part: bool = True) -> SCAssembly:
+    def assembly(part_x: float = 0.0, *, part: bool = True) -> Assembly:
         """Return the test assembly."""
-        items: list[SCItem] = [
+        items: list[AssemblyItem] = [
             _item("vise", (0.0, 0.0, 0.0)),
             _item("parallel A", (0.0, 4.0, 0.0)),
             _item("parallel B", (0.0, 0.0, 0.0)),
-            SCItem(
+            AssemblyItem(
                 kind="stock",
                 name="stock",
                 call="fake:stock",
@@ -346,7 +344,7 @@ class TestSetupView(unittest.TestCase):
         ]
         if part:
             items.append(
-                SCItem(
+                AssemblyItem(
                     kind="part",
                     name="part",
                     call="fake:part",
@@ -355,7 +353,7 @@ class TestSetupView(unittest.TestCase):
                     orientation=0,
                 )
             )
-        return SCAssembly(items)
+        return Assembly(items)
 
     def test_first_show(self) -> None:
         """The first show draws everything."""
@@ -419,11 +417,11 @@ class TestSetupView(unittest.TestCase):
 
         def refuse(**_arguments: Any) -> Any:
             """Refuse, as SolidCraft does when it can not."""
-            raise SCSolidCraftError("timeline.delete", "no", False, False)
+            raise SolidCraftError("timeline.delete", "no", False, False)
 
         self.session.timeline = cast(Any, _Refusing(refuse))
         with self.assertRaisesRegex(RuntimeError, "not taken out"):
-            self.view.show(SCAssembly(self.assembly().items[:3]))
+            self.view.show(Assembly(self.assembly().items[:3]))
         self.assertTrue(all(key in self.view.shown for key in stock_keys))
         self.assertEqual(self.view.counts, (0, 3, 1))
 
@@ -431,7 +429,7 @@ class TestSetupView(unittest.TestCase):
         """A stock outline goes as a whole sketch, by name."""
         self.view.show(self.assembly())
         self.session.names()
-        self.view.show(SCAssembly(self.assembly().items[:3]))
+        self.view.show(Assembly(self.assembly().items[:3]))
         self.assertIn(
             ("timeline.delete", {"features": ["stock_1"]}),
             self.session.calls,
@@ -439,9 +437,9 @@ class TestSetupView(unittest.TestCase):
 
     def test_keep_outs(self) -> None:
         """Keep-outs come as one sketch per item, and go when off."""
-        items: list[SCItem] = self.assembly().items
+        items: list[AssemblyItem] = self.assembly().items
         items[0] = replace(items[0], keep_out=((0, 0, 0, 1, 2, 3),))
-        assembly: SCAssembly = SCAssembly(items)
+        assembly: Assembly = Assembly(items)
         self.view.show(assembly)
         self.session.names()
         self.view.keep_outs = True
@@ -456,7 +454,7 @@ class TestSetupView(unittest.TestCase):
 
     def test_keep_out_prisms(self) -> None:
         """A box from the origin, turned once and placed."""
-        here: SCPlaced = SCPlaced(
+        here: PlacedItem = PlacedItem(
             replace(self.assembly().items[0], keep_out=((0, 0, 0, 1, 2, 3),)),
             10.0,
             20.0,
@@ -484,36 +482,36 @@ class TestSetupView(unittest.TestCase):
 
     def test_steps(self) -> None:
         """Showing items 1..N, N growing, adds one item at a time."""
-        items: list[SCItem] = self.assembly().items
+        items: list[AssemblyItem] = self.assembly().items
         count: int
         for count in range(1, len(items) + 1):
-            self.view.show(SCAssembly(items[:count]))
+            self.view.show(Assembly(items[:count]))
             self.assertEqual(self.view.counts, (1, count - 1, 0))
-        self.view.show(SCAssembly(items))
+        self.view.show(Assembly(items))
         self.assertEqual(self.view.counts, (0, len(items), 0))
 
     def test_demo_part(self) -> None:
-        """The demonstration's part item reaches `SCDemoPart.model()`."""
-        built: list[tuple[SCDemoPart, Point]] = []
+        """The demonstration's part item reaches `DemoPart.model()`."""
+        built: list[tuple[DemoPart, Point]] = []
 
-        def model(part: SCDemoPart, _solidcraft: Any, point: Point) -> Any:
+        def model(part: DemoPart, _solidcraft: Any, point: Point) -> Any:
             """Record the part and where it goes."""
             built.append((part, point))
             return ["plate"]
 
-        def resolver(item: SCItem) -> Any:
+        def resolver(item: AssemblyItem) -> Any:
             """Fake the tooling; resolve the stock and the part."""
             if item.kind == "tooling":
                 return _Tooling((0.0, 0.0, 0.0))
             return resolve(item)
 
-        view: SCSetupView = SCSetupView(
+        view: SetupView = SetupView(
             cast(Any, self.session), cast(Any, _Cache()), resolver
         )
-        with patch.object(SCDemoPart, "model", model):
+        with patch.object(DemoPart, "model", model):
             view.show(demo_assembly())
         self.assertEqual(len(built), 1)
-        part: SCDemoPart = built[0][0]
+        part: DemoPart = built[0][0]
         self.assertEqual(part.material, "6061 aluminum")
         self.assertAlmostEqual(part.thickness, 12.7)
         self.assertIn(
@@ -523,7 +521,7 @@ class TestSetupView(unittest.TestCase):
 
     def test_twins(self) -> None:
         """Two items alike in every way are both kept apart."""
-        twin: SCPlaced = SCPlaced(
+        twin: PlacedItem = PlacedItem(
             _item("twin", (0.0, 0.0, 0.0)), 1.0, 2.0, 3.0, 0
         )
         keys: list[Any] = display_keys([twin, twin])
@@ -544,15 +542,15 @@ class TestLive(unittest.TestCase):
     def test_demo_setup(self) -> None:
         """Bodies appear, in the stock, and a second show does nothing."""
         assert CLI is not None
-        assembly: SCAssembly = demo_assembly()
+        assembly: Assembly = demo_assembly()
         with (
             tempfile.TemporaryDirectory() as directory,
-            SCHeadlessTransport(CLI, (directory,)) as transport,
+            HeadlessTransport(CLI, (directory,)) as transport,
             # The chamfers take minutes to build and add nothing here.
-            patch.dict(SCGridPlate.REGISTRY.items, {"grid_plate": FLAT_PLATE}),
+            patch.dict(GridPlate.REGISTRY.items, {"grid_plate": FLAT_PLATE}),
         ):
-            solidcraft: SCPyBind = SCPyBind(transport)
-            view: SCSetupView = SCSetupView(solidcraft)
+            solidcraft: PyBind = PyBind(transport)
+            view: SetupView = SetupView(solidcraft)
             view.show(assembly)
             first: tuple[int, int, int] = view.counts
             bodies: list[str] = [
@@ -569,14 +567,14 @@ class TestLive(unittest.TestCase):
         self.assertIn("Plate", bodies)
 
         # The part's face centroids lie inside the stock's box.
-        placed: list[SCPlaced] = place(assembly, resolve)
-        stock_at: SCPlaced = next(
+        placed: list[PlacedItem] = place(assembly, resolve)
+        stock_at: PlacedItem = next(
             here for here in placed if here.item.kind == "stock"
         )
         corners: list[list[float]] = [
             point
             for loop in box_edges(
-                stock_at, cast(SCStock, resolve(stock_at.item))
+                stock_at, cast(Stock, resolve(stock_at.item))
             )
             for point in loop
         ]

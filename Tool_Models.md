@@ -19,7 +19,7 @@ from `solidcraft --control 8080`, or `headless` for `solidcraft-cli`.
 They add the model to the design at the origin, standing on its tip.
 A description with a problem is refused before SolidCraft is touched:
 the JSON form prints every problem and exits with 1, and the Python
-form raises `SCShopError`.
+form raises `ShopError`.
 
 ## Contents
 
@@ -42,40 +42,40 @@ form raises `SCShopError`.
 
 ```python
 scraftcnc.tooling.cutter_models.model_description(
-    solidcraft: SCPyBind,
+    solidcraft: PyBind,
     description: dict[str, object],
     at: tuple[float, float, float] = (0.0, 0.0, 0.0),
-    cache: SCModelCache | None = None,
-) -> SCModeledTool
+    cache: ModelCache | None = None,
+) -> ModeledTool
 ```
 
 Model one tool from its description.
 
 Arguments:
-* `solidcraft` (`SCPyBind`): The SolidCraft session.
+* `solidcraft` (`PyBind`): The SolidCraft session.
 * `description` (`dict[str, object]`):
   The tool, with its `kind`, as `shops.check_tool()` takes it.  Its
   `name`, if any, names the body.
 * `at` (`tuple[float, float, float]`):
   Where its tip goes (inches).
-* `cache` (`SCModelCache | None`):
+* `cache` (`ModelCache | None`):
   Where to keep its body between runs, or `None` to build it.
 
 Returns:
-* (`SCModeledTool`): What was made, free to move.
+* (`ModeledTool`): What was made, free to move.
 
 Raises:
-* `SCShopError`:
+* `ShopError`:
   If the description has any problem, before SolidCraft is touched.
-* `SCSolidCraftError`: If SolidCraft refuses a command.
+* `SolidCraftError`: If SolidCraft refuses a command.
 * `FileNotFoundError`: If no SolidCraft has the port.
 * `ConnectionError`:
   If nothing listens on the port, or SolidCraft goes away.
 
-### `scraftcnc.tooling.cutter_models.SCModeledTool`
+### `scraftcnc.tooling.cutter_models.ModeledTool`
 
 ```python
-scraftcnc.tooling.cutter_models.SCModeledTool(
+scraftcnc.tooling.cutter_models.ModeledTool(
     body: str,
     sketch: str,
     occurrence: str,
@@ -90,7 +90,7 @@ Attributes:
 * `occurrence` (`str`): Its component's occurrence, for moving it.
 
 ```python
-SCModeledTool.items() -> list[str]
+ModeledTool.items() -> list[str]
 ```
 
 Return what `browser.visibility` shows or hides for the tool.
@@ -119,12 +119,12 @@ Returns:
   the tool, as `read()` gives it.
 
 Raises:
-* `SCShopError`: With every problem found.
+* `ShopError`: With every problem found.
 
-### `scraftcnc.shops.SCShopError`
+### `scraftcnc.shops.ShopError`
 
 ```python
-scraftcnc.shops.SCShopError(problems: list[str])
+scraftcnc.shops.ShopError(problems: list[str])
 ```
 
 The problems found in a shop description.
@@ -136,7 +136,7 @@ Attributes:
 ### `scraftcnc.pybind.scraftpybind.connect`
 
 ```python
-scraftcnc.pybind.scraftpybind.connect(where: str) -> SCTransport
+scraftcnc.pybind.scraftpybind.connect(where: str) -> Transport
 ```
 
 Return a transport for a port number, or for `headless`.
@@ -147,23 +147,23 @@ Arguments:
   with no window.
 
 Returns:
-* (`SCTransport`): The transport, which connects on first use.
+* (`Transport`): The transport, which connects on first use.
 
 Raises:
 * `ValueError`: If `where` is neither.
 
-### `scraftcnc.pybind.scraftpybind.SCPyBind`
+### `scraftcnc.pybind.scraftpybind.PyBind`
 
 ```python
-scraftcnc.pybind.scraftpybind.SCPyBind(transport: SCTransport)
+scraftcnc.pybind.scraftpybind.PyBind(transport: Transport)
 ```
 
 The top level of `scraftpybind`: SolidCraft's commands.
 
-### `scraftcnc.pybind.scraftpybind.SCSolidCraftError`
+### `scraftcnc.pybind.scraftpybind.SolidCraftError`
 
 ```python
-scraftcnc.pybind.scraftpybind.SCSolidCraftError(
+scraftcnc.pybind.scraftpybind.SolidCraftError(
     method: str,
     error: str,
     running: bool,
@@ -226,12 +226,12 @@ python3 -m scraftcnc.tooling.cutter_models 8080 '{
 Python:
 
 ```python
-from scraftcnc.pybind.scraftpybind import SCPyBind, connect
+from scraftcnc.pybind.scraftpybind import PyBind, connect
 from scraftcnc.tooling.cutter_models import model_description
 
 with connect("8080") as transport:
     model_description(
-        SCPyBind(transport),
+        PyBind(transport),
         {
             "kind": "end_mill",
             "material": "carbide",
@@ -307,12 +307,12 @@ python3 -m scraftcnc.tooling.cutter_models 8080 '{
 Python:
 
 ```python
-from scraftcnc.pybind.scraftpybind import SCPyBind, connect
+from scraftcnc.pybind.scraftpybind import PyBind, connect
 from scraftcnc.tooling.cutter_models import model_description
 
 with connect("8080") as transport:
     model_description(
-        SCPyBind(transport),
+        PyBind(transport),
         {
             "kind": "drill",
             "material": "HSS",
@@ -382,12 +382,12 @@ python3 -m scraftcnc.tooling.cutter_models 8080 '{
 Python:
 
 ```python
-from scraftcnc.pybind.scraftpybind import SCPyBind, connect
+from scraftcnc.pybind.scraftpybind import PyBind, connect
 from scraftcnc.tooling.cutter_models import model_description
 
 with connect("8080") as transport:
     model_description(
-        SCPyBind(transport),
+        PyBind(transport),
         {
             "kind": "chamfer_mill",
             "material": "carbide",
@@ -454,12 +454,12 @@ python3 -m scraftcnc.tooling.cutter_models 8080 '{
 Python:
 
 ```python
-from scraftcnc.pybind.scraftpybind import SCPyBind, connect
+from scraftcnc.pybind.scraftpybind import PyBind, connect
 from scraftcnc.tooling.cutter_models import model_description
 
 with connect("8080") as transport:
     model_description(
-        SCPyBind(transport),
+        PyBind(transport),
         {
             "kind": "corner_rounding_mill",
             "material": "carbide",
@@ -532,12 +532,12 @@ python3 -m scraftcnc.tooling.cutter_models 8080 '{
 Python:
 
 ```python
-from scraftcnc.pybind.scraftpybind import SCPyBind, connect
+from scraftcnc.pybind.scraftpybind import PyBind, connect
 from scraftcnc.tooling.cutter_models import model_description
 
 with connect("8080") as transport:
     model_description(
-        SCPyBind(transport),
+        PyBind(transport),
         {
             "kind": "double_angle_cutter",
             "material": "carbide",
@@ -617,12 +617,12 @@ python3 -m scraftcnc.tooling.cutter_models 8080 '{
 Python:
 
 ```python
-from scraftcnc.pybind.scraftpybind import SCPyBind, connect
+from scraftcnc.pybind.scraftpybind import PyBind, connect
 from scraftcnc.tooling.cutter_models import model_description
 
 with connect("8080") as transport:
     model_description(
-        SCPyBind(transport),
+        PyBind(transport),
         {
             "kind": "single_countersink",
             "material": "HSS",
@@ -701,12 +701,12 @@ python3 -m scraftcnc.tooling.cutter_models 8080 '{
 Python:
 
 ```python
-from scraftcnc.pybind.scraftpybind import SCPyBind, connect
+from scraftcnc.pybind.scraftpybind import PyBind, connect
 from scraftcnc.tooling.cutter_models import model_description
 
 with connect("8080") as transport:
     model_description(
-        SCPyBind(transport),
+        PyBind(transport),
         {
             "kind": "double_countersink",
             "material": "HSS",
@@ -860,11 +860,11 @@ A machine vise has no tools file entry yet, so it is made in
 Python, in millimeters, like `tools.KURT_D688`:
 
 ```python
-from scraftcnc.pybind.scraftpybind import SCPyBind, connect
+from scraftcnc.pybind.scraftpybind import PyBind, connect
 from scraftcnc.tooling.tools import KURT_D688
 
 with connect("8080") as transport:
-    KURT_D688.model(SCPyBind(transport), opening=76.2)
+    KURT_D688.model(PyBind(transport), opening=76.2)
 ```
 
 A setup file (`examples/setup/`) names one by its `type`:
@@ -883,22 +883,22 @@ A setup file (`examples/setup/`) names one by its `type`:
 }
 ```
 
-### `scraftcnc.tooling.tools.SCMachineVise`
+### `scraftcnc.tooling.tools.MachineVise`
 
 ```python
-scraftcnc.tooling.tools.SCMachineVise(
+scraftcnc.tooling.tools.MachineVise(
     name: str,
-    base: SCViseBlock,
-    body: SCViseBlock,
-    base_notches: SCViseNotches,
-    body_notches: SCViseNotches,
+    base: ViseBlock,
+    body: ViseBlock,
+    base_notches: ViseNotches,
+    body_notches: ViseNotches,
     rail_width: float,
     rail_height: float,
     rail_gap: float,
     end_block_length: float,
-    fixed_jaw: SCViseBlock,
-    movable_jaw: SCViseBlock,
-    jaw_plate: SCJawPlate,
+    fixed_jaw: ViseBlock,
+    movable_jaw: ViseBlock,
+    jaw_plate: JawPlate,
     max_opening: float,
     lead_screw_diameter: float,
     lead_screw_stick_out: float,
@@ -939,19 +939,19 @@ All lengths are in millimeters.
 
 Attributes:
 * `name` (`str`): What it is.
-* `base` (`SCViseBlock`): The bottom layer.
-* `body` (`SCViseBlock`): The layer on the base.
-* `base_notches` (`SCViseNotches`): The notches in the base.
-* `body_notches` (`SCViseNotches`):
+* `base` (`ViseBlock`): The bottom layer.
+* `body` (`ViseBlock`): The layer on the base.
+* `base_notches` (`ViseNotches`): The notches in the base.
+* `body_notches` (`ViseNotches`):
   The notches in the body, at the same places but bigger.
 * `rail_width` (`float`): A bed rail's size along Y.
 * `rail_height` (`float`): The height of the bed: its rails and end
   blocks.
 * `rail_gap` (`float`): The distance between the rails.
 * `end_block_length` (`float`): An end block's size along X.
-* `fixed_jaw` (`SCViseBlock`): The jaw that stays put.
-* `movable_jaw` (`SCViseBlock`): The jaw that the lead screw moves.
-* `jaw_plate` (`SCJawPlate`): The jaw plate on each jaw.
+* `fixed_jaw` (`ViseBlock`): The jaw that stays put.
+* `movable_jaw` (`ViseBlock`): The jaw that the lead screw moves.
+* `jaw_plate` (`JawPlate`): The jaw plate on each jaw.
 * `max_opening` (`float`): The largest gap between the jaw plates.
 * `lead_screw_diameter` (`float`): The lead screw's diameter.
 * `lead_screw_stick_out` (`float`):
@@ -965,96 +965,96 @@ Attributes:
 * `hex_length` (`float`): The hexagon's size along X.
 
 ```python
-SCMachineVise.named(name: str) -> 'SCMachineVise'
+MachineVise.named(name: str) -> 'MachineVise'
 ```
 
 Return the machine vise with a key or name.
 
 ```python
-SCMachineVise.key() -> str
+MachineVise.key() -> str
 ```
 
 Return its key in `REGISTRY` (e.g. `kurt_d688`).
 
 ```python
-SCMachineVise.bed_top() -> float
+MachineVise.bed_top() -> float
 ```
 
 Return the height of the top of the bed, above the base's bottom.
 
 ```python
-SCMachineVise.overall_length() -> float
+MachineVise.overall_length() -> float
 ```
 
 Return the vise's length, out to the end of the hexagon.
 
 ```python
-SCMachineVise.opening_length() -> float
+MachineVise.opening_length() -> float
 ```
 
 Return the length of the opening between the end blocks.
 
 ```python
-SCMachineVise.slider() -> SCViseBlock
+MachineVise.slider() -> ViseBlock
 ```
 
 Return the block under the movable jaw, between the rails.
 
 ```python
-SCMachineVise.slider_volume() -> float
+MachineVise.slider_volume() -> float
 ```
 
 Return the volume the slider's model should have.
 
 ```python
-SCMachineVise.jaw_plate_volume() -> float
+MachineVise.jaw_plate_volume() -> float
 ```
 
 Return the volume a jaw plate's model should have.
 
 ```python
-SCMachineVise.movable_face(opening: float) -> float
+MachineVise.movable_face(opening: float) -> float
 ```
 
 Return the X of the movable jaw's clamping face, behind its plate.
 
 ```python
-SCMachineVise.gap_center(opening: float) -> float
+MachineVise.gap_center(opening: float) -> float
 ```
 
 Return the X of the middle of the gap between the jaw plates.
 
 ```python
-SCMachineVise.hexagon() -> list[tuple[float, float]]
+MachineVise.hexagon() -> list[tuple[float, float]]
 ```
 
 Return the corners of the lead screw's hexagon, flats up and down.
 
 ```python
-SCMachineVise.body_volume() -> float
+MachineVise.body_volume() -> float
 ```
 
 Return the volume the body's model should have.
 
 ```python
-SCMachineVise.lead_screw_volume() -> float
+MachineVise.lead_screw_volume() -> float
 ```
 
 Return the volume the lead screw's model should have.
 
 ```python
-SCMachineVise.keep_out(
+MachineVise.keep_out(
     center: Point = (0.0, 0.0, 0.0),
     opening: float = 0.0,
     margin: str = VISE_MARGIN,
-) -> SCKeepOut
+) -> KeepOut
 ```
 
 Return the regions around the vise that a tool must not enter.
 
 ```python
-SCMachineVise.model(
-    solidcraft: SCPyBind,
+MachineVise.model(
+    solidcraft: PyBind,
     center: Point = (0.0, 0.0, 0.0),
     opening: float = 0.0,
     lift: float = 0.0,
@@ -1064,15 +1064,15 @@ SCMachineVise.model(
 Model the vise, up from the center of the base's bottom face.
 
 ```python
-SCMachineVise.cacheable(opening: float) -> tuple[SCCacheable, ...]
+MachineVise.cacheable(opening: float) -> tuple[Cacheable, ...]
 ```
 
 Return the vise as models that can be cached.
 
-### `scraftcnc.tooling.tools.SCViseBlock`
+### `scraftcnc.tooling.tools.ViseBlock`
 
 ```python
-scraftcnc.tooling.tools.SCViseBlock(
+scraftcnc.tooling.tools.ViseBlock(
     length: float,
     width: float,
     height: float,
@@ -1092,36 +1092,36 @@ Attributes:
 * `corner_radius` (`float`): The radius of its four corners.
 
 ```python
-SCViseBlock.outline(
+ViseBlock.outline(
     name: str,
     center: tuple[float, float] = (0.0, 0.0),
-    notches: SCViseNotches | None = None,
-) -> SCRoundedPolygon
+    notches: ViseNotches | None = None,
+) -> RoundedPolygon
 ```
 
 Return the block's outline, as seen from above.
 
 ```python
-SCViseBlock.volume(notches: SCViseNotches | None = None) -> float
+ViseBlock.volume(notches: ViseNotches | None = None) -> float
 ```
 
 Return the volume the model should have.
 
 ```python
-SCViseBlock.model(
-    solidcraft: SCPyBind,
+ViseBlock.model(
+    solidcraft: PyBind,
     name: str,
     center: Point = (0.0, 0.0, 0.0),
-    notches: SCViseNotches | None = None,
+    notches: ViseNotches | None = None,
 ) -> str
 ```
 
 Model the block, up from the center of its bottom face.
 
-### `scraftcnc.tooling.tools.SCViseNotches`
+### `scraftcnc.tooling.tools.ViseNotches`
 
 ```python
-scraftcnc.tooling.tools.SCViseNotches(
+scraftcnc.tooling.tools.ViseNotches(
     centers: tuple[float, ...],
     width: float,
     depth: float,
@@ -1147,13 +1147,13 @@ Attributes:
   The radius of its two corners where it meets the side.
 
 ```python
-SCViseNotches.side_corners(edge_y: float, direction: int) -> list[SCCorner]
+ViseNotches.side_corners(edge_y: float, direction: int) -> list[Corner]
 ```
 
 Return the corners of the notches along one side of a block.
 
 ```python
-SCViseNotches.area() -> float
+ViseNotches.area() -> float
 ```
 
 Return the area that all of the notches remove from a block.
@@ -1204,17 +1204,17 @@ Not a size:
 Like the vise, it is made in Python, in millimeters:
 
 ```python
-from scraftcnc.pybind.scraftpybind import SCPyBind, connect
+from scraftcnc.pybind.scraftpybind import PyBind, connect
 from scraftcnc.tooling.tools import KURT_JAW_PLATE
 
 with connect("8080") as transport:
-    KURT_JAW_PLATE.model(SCPyBind(transport), "Jaw plate")
+    KURT_JAW_PLATE.model(PyBind(transport), "Jaw plate")
 ```
 
-### `scraftcnc.tooling.tools.SCJawPlate`
+### `scraftcnc.tooling.tools.JawPlate`
 
 ```python
-scraftcnc.tooling.tools.SCJawPlate(
+scraftcnc.tooling.tools.JawPlate(
     screw: str,
     length: float,
     width: float,
@@ -1255,20 +1255,20 @@ Attributes:
   How deep the counterbores reach in from the clamping face.
 
 ```python
-SCJawPlate.block() -> SCViseBlock
+JawPlate.block() -> ViseBlock
 ```
 
 Return the plate without its holes.
 
 ```python
-SCJawPlate.volume() -> float
+JawPlate.volume() -> float
 ```
 
 Return the volume its model should have.
 
 ```python
-SCJawPlate.model(
-    solidcraft: SCPyBind,
+JawPlate.model(
+    solidcraft: PyBind,
     name: str,
     center: Point = (0.0, 0.0, 0.0),
     facing: float = 1.0,
@@ -1320,11 +1320,11 @@ A or B (`Parallel 3/4 in A`).
 It is made in Python, in millimeters:
 
 ```python
-from scraftcnc.pybind.scraftpybind import SCPyBind, connect
-from scraftcnc.tooling.tools import SCParallel
+from scraftcnc.pybind.scraftpybind import PyBind, connect
+from scraftcnc.tooling.tools import Parallel
 
 # Its sizes in millimeters; the holes are optional.
-parallel = SCParallel(
+parallel = Parallel(
     "Parallel 3/4 in",
     height=19.050,
     thickness=3.175,
@@ -1333,7 +1333,7 @@ parallel = SCParallel(
     hole_diameter=9.525,
 )
 with connect("8080") as transport:
-    parallel.model(SCPyBind(transport), (0.0, 0.0, 0.0))
+    parallel.model(PyBind(transport), (0.0, 0.0, 0.0))
 ```
 
 A setup file (`examples/setup/`) names one of the set by its
@@ -1352,10 +1352,10 @@ A setup file (`examples/setup/`) names one of the set by its
 }
 ```
 
-### `scraftcnc.tooling.tools.SCParallel`
+### `scraftcnc.tooling.tools.Parallel`
 
 ```python
-scraftcnc.tooling.tools.SCParallel(
+scraftcnc.tooling.tools.Parallel(
     name: str,
     height: float,
     thickness: float,
@@ -1388,43 +1388,43 @@ Attributes:
   Optional.  The diameter of its holes; 0 for no holes.
 
 ```python
-SCParallel.named(name: str) -> 'SCParallel'
+Parallel.named(name: str) -> 'Parallel'
 ```
 
 Return the parallel with a key or name.
 
 ```python
-SCParallel.key() -> str
+Parallel.key() -> str
 ```
 
 Return its key in `REGISTRY` (e.g. `kurt_d688`).
 
 ```python
-SCParallel.has_holes() -> bool
+Parallel.has_holes() -> bool
 ```
 
 Return True if the parallel has holes.
 
 ```python
-SCParallel.volume() -> float
+Parallel.volume() -> float
 ```
 
 Return the volume its model should have.
 
 ```python
-SCParallel.block() -> SCViseBlock
+Parallel.block() -> ViseBlock
 ```
 
 Return the parallel's shape.
 
 ```python
-SCParallel.prism(center: Point) -> SCPrism
+Parallel.prism(center: Point) -> Prism
 ```
 
 Return the rectangular prism that just encloses the parallel.
 
 ```python
-SCParallel.model(solidcraft: SCPyBind, center: Point) -> str
+Parallel.model(solidcraft: PyBind, center: Point) -> str
 ```
 
 Model the parallel, up from the center of its bottom edge.
@@ -1445,10 +1445,9 @@ X and Y are the other size.  With them, grid plates are easy to make in
 pairs in a home shop, and pairs of them hold many parts made at the same
 time.
 
-Its outline is an `SCRoundedPolygon` with its four corners rounded and
-all of the holes inside, so that one extrude makes the plate; one
-chamfer command then does every chamfer.  All lengths are in
-millimeters.
+Its outline is an `RoundedPolygon` with its four corners rounded and all
+of the holes inside, so that one extrude makes the plate; one chamfer
+command then does every chamfer.  All lengths are in millimeters.
 
 Chamfers take a lot of computing, once.  `GRID_PLATE`'s 200 took
 SolidCraft about 4-1/2 minutes, keeping four processors busy, against 2
@@ -1466,7 +1465,7 @@ Chamfering the grid's holes is currently very slow to compute
 (about 4-1/2 minutes for `tools.GRID_PLATE`'s 200, against
 seconds without them), and is done again whenever the cache
 key changes.  Turning it off is recommended:
-`SCGridPlate.named(name, chamfer=False)` (in a setup's
+`GridPlate.named(name, chamfer=False)` (in a setup's
 `args`, `chamfer = false`), as the demonstration does.
 
 Top:
@@ -1529,14 +1528,14 @@ close_diameter = "0.196 in"
 Or it is made in Python, in millimeters:
 
 ```python
-from scraftcnc.model_cache import SCModelCache
-from scraftcnc.pybind.scraftpybind import SCPyBind, connect
+from scraftcnc.model_cache import ModelCache
+from scraftcnc.pybind.scraftpybind import PyBind, connect
 from scraftcnc.tooling.tools import GRID_PLATE
 
 # Through the cache: slow the first time, then about a second.
 with connect("8080") as transport:
     (plate,) = GRID_PLATE.cacheable()
-    SCModelCache().insert(SCPyBind(transport), plate)
+    ModelCache().insert(PyBind(transport), plate)
 ```
 
 A setup file (`examples/setup/`) names one by its `type`, from
@@ -1555,10 +1554,10 @@ the shop's tooling files or `tools.py`:
 }
 ```
 
-### `scraftcnc.tooling.tools.SCGridPlate`
+### `scraftcnc.tooling.tools.GridPlate`
 
 ```python
-scraftcnc.tooling.tools.SCGridPlate(
+scraftcnc.tooling.tools.GridPlate(
     name: str,
     length: float,
     width: float,
@@ -1590,7 +1589,7 @@ hole's neighbors along X and Y are the other size.  With them, grid
 plates are easy to make in pairs in a home shop, and pairs of them
 hold many parts made at the same time.
 
-Its outline is an `SCRoundedPolygon` with its four corners rounded
+Its outline is an `RoundedPolygon` with its four corners rounded
 and all of the holes inside, so that one extrude makes the plate;
 one chamfer command then does every chamfer.  All lengths are in
 millimeters.
@@ -1631,85 +1630,85 @@ Attributes:
   Optional.  The diameter of the close fit tooling holes.
 
 ```python
-SCGridPlate.named(name: str, chamfer: bool = True) -> 'SCGridPlate'
+GridPlate.named(name: str, chamfer: bool = True) -> 'GridPlate'
 ```
 
 Return the grid plate with a key or name.
 
 ```python
-SCGridPlate.key() -> str
+GridPlate.key() -> str
 ```
 
 Return its key in `REGISTRY` (e.g. `kurt_d688`).
 
 ```python
-SCGridPlate.from_shop(plate: dict[str, object]) -> 'SCGridPlate'
+GridPlate.from_shop(plate: dict[str, object]) -> 'GridPlate'
 ```
 
 Return a grid plate described in a shop's tooling file.
 
 ```python
-SCGridPlate.chamfered_diameter() -> float
+GridPlate.chamfered_diameter() -> float
 ```
 
 Return the diameter of a grid hole at the plate's top.
 
 ```python
-SCGridPlate.hole_centers() -> list[tuple[float, float]]
+GridPlate.hole_centers() -> list[tuple[float, float]]
 ```
 
 Return where the grid's holes are, from the plate's center.
 
 ```python
-SCGridPlate.tooling_holes() -> list[tuple[float, float, float]]
+GridPlate.tooling_holes() -> list[tuple[float, float, float]]
 ```
 
 Return where the tooling holes are, and their sizes.
 
 ```python
-SCGridPlate.volume() -> float
+GridPlate.volume() -> float
 ```
 
 Return the volume the model should have.
 
 ```python
-SCGridPlate.seat() -> Point
+GridPlate.seat() -> Point
 ```
 
 Return the middle of the plate's top.
 
 ```python
-SCGridPlate.origin(turns: int = 0) -> Point
+GridPlate.origin(turns: int = 0) -> Point
 ```
 
 Return the point handed up to the next item.
 
 ```python
-SCGridPlate.outline(center: tuple[float, float]) -> SCRoundedPolygon
+GridPlate.outline(center: tuple[float, float]) -> RoundedPolygon
 ```
 
 Return the plate's outline and holes, as seen from above.
 
 ```python
-SCGridPlate.model(solidcraft: SCPyBind, center: Point) -> list[str]
+GridPlate.model(solidcraft: PyBind, center: Point) -> list[str]
 ```
 
 Model the plate, up from the center of its bottom face.
 
 ```python
-SCGridPlate.cacheable() -> tuple[SCCacheable, ...]
+GridPlate.cacheable() -> tuple[Cacheable, ...]
 ```
 
 Return the plate as a model that can be cached.
 
 ```python
-SCGridPlate.prism(center: Point) -> SCPrism
+GridPlate.prism(center: Point) -> Prism
 ```
 
 Return the rectangular prism that just encloses the plate.
 
 ```python
-SCGridPlate.keep_out(center: Point) -> SCKeepOut
+GridPlate.keep_out(center: Point) -> KeepOut
 ```
 
 Return the prism around the plate.

@@ -13,7 +13,7 @@ from typing import Any
 from unittest import mock
 
 from scraftcnc.lcnc import lcnc_bridge, lcnc_client, serve_linuxcnc
-from scraftcnc.lcnc.install_linuxcnc import SCTarget
+from scraftcnc.lcnc.install_linuxcnc import InstallTarget
 
 Tool = namedtuple("Tool", "id zoffset")
 
@@ -71,7 +71,7 @@ class TestBridge(unittest.TestCase):
 
     def setUp(self) -> None:
         self.stops: list[bool] = []
-        self.bridge = lcnc_bridge.SCBridge(
+        self.bridge = lcnc_bridge.Bridge(
             fake_module(), lambda: self.stops.append(True)
         )
 
@@ -231,10 +231,10 @@ class TestClient(unittest.TestCase):
     """The client against the real server code, over a real socket."""
 
     def setUp(self) -> None:
-        self.server = lcnc_bridge.SCServer(
-            ("127.0.0.1", 0), lcnc_bridge.SCHandler
+        self.server = lcnc_bridge.BridgeServer(
+            ("127.0.0.1", 0), lcnc_bridge.BridgeHandler
         )
-        self.server.bridge = lcnc_bridge.SCBridge(fake_module(), lambda: None)
+        self.server.bridge = lcnc_bridge.Bridge(fake_module(), lambda: None)
         self.thread = threading.Thread(target=self.server.serve_forever)
         self.thread.start()
         self.port = self.server.server_address[1]
@@ -248,10 +248,10 @@ class TestClient(unittest.TestCase):
 
     def test_calls(self) -> None:
         """Results come back, and errors become exceptions."""
-        with lcnc_client.SCClient("127.0.0.1", self.port) as lcnc:
+        with lcnc_client.BridgeClient("127.0.0.1", self.port) as lcnc:
             self.assertEqual(lcnc.call("ping")["version"], "2.9.10")
             self.assertEqual(lcnc.stat("file"), {"file": "name"})
-            with self.assertRaises(lcnc_client.SCBridgeError) as caught:
+            with self.assertRaises(lcnc_client.BridgeError) as caught:
                 lcnc.call("eval")
             self.assertEqual(caught.exception.kind, "ValueError")
             self.assertEqual(
@@ -264,15 +264,15 @@ class TestClient(unittest.TestCase):
             assert self.server.bridge is not None
             self.server.bridge.stat.ini_filename = f"{directory}/x.ini"
             text = "G0 X1\n" * 200000
-            with lcnc_client.SCClient("127.0.0.1", self.port) as lcnc:
+            with lcnc_client.BridgeClient("127.0.0.1", self.port) as lcnc:
                 path = lcnc.call("program.write", "big.ngc", text)
             self.assertEqual(os.path.getsize(path), len(text))
 
     def test_two_connections(self) -> None:
         """Two clients can be connected at once."""
         with (
-            lcnc_client.SCClient("127.0.0.1", self.port) as one,
-            lcnc_client.SCClient("127.0.0.1", self.port) as two,
+            lcnc_client.BridgeClient("127.0.0.1", self.port) as one,
+            lcnc_client.BridgeClient("127.0.0.1", self.port) as two,
         ):
             self.assertEqual(one.call("ping"), two.call("ping"))
 
@@ -281,8 +281,8 @@ class TestClient(unittest.TestCase):
         assert self.server.bridge is not None
         command = self.server.bridge.command
         with (
-            lcnc_client.SCClient("127.0.0.1", self.port) as one,
-            lcnc_client.SCClient("127.0.0.1", self.port) as two,
+            lcnc_client.BridgeClient("127.0.0.1", self.port) as one,
+            lcnc_client.BridgeClient("127.0.0.1", self.port) as two,
         ):
             results: list[int] = []
             waiter = threading.Thread(
@@ -315,7 +315,7 @@ class TestServe(unittest.TestCase):
 
     def test_start_command(self) -> None:
         """LinuxCNC starts in the bridge's directory, with no display."""
-        target = SCTarget("t", ("r",), ("u",), "/home/x", True, "e")
+        target = InstallTarget("t", ("r",), ("u",), "/home/x", True, "e")
         command = serve_linuxcnc.start_command(target)
         self.assertEqual(command[:3], ["u", "env", "-u"])
         self.assertEqual(command[3], "DISPLAY")
@@ -325,7 +325,7 @@ class TestServe(unittest.TestCase):
 
     def test_refuses_when_port_is_in_use(self) -> None:
         """A second LinuxCNC is not started."""
-        target = SCTarget("t", ("r",), ("u",), "/home/x", True, "e")
+        target = InstallTarget("t", ("r",), ("u",), "/home/x", True, "e")
         with (
             mock.patch.object(serve_linuxcnc, "serving", return_value=True),
             mock.patch.object(serve_linuxcnc, "run") as run,

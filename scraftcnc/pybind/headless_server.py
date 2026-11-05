@@ -8,7 +8,7 @@ one JSON line per request, `{"id", "method", "params"}` (the first
 on a connection with the launch's `token`), and one JSON line per
 reply.  Several programs (the panel, the watcher) can then share it.
 Requests are run one at a time; only `engine.execute` works, as in
-`SCHeadlessTransport`.
+`HeadlessTransport`.
 
 ```
 python3 -m scraftcnc.pybind.headless_server PORT
@@ -29,24 +29,24 @@ from types import FrameType
 
 from .scraftpybind import (
     JSON,
-    SCHeadlessTransport,
-    SCSolidCraftError,
+    HeadlessTransport,
+    SolidCraftError,
     control_dir,
 )
 
 
-# Class `SCHeadlessServer`:
-class SCHeadlessServer:
+# Class `HeadlessServer`:
+class HeadlessServer:
     """One headless session, served on a control port.
 
     Attributes:
     * `lock` (`threading.Lock`): Lets one request at a time through.
     * `port` (`int`): The control port.
     * `token` (`str`): The token each connection must send first.
-    * `transport` (`SCHeadlessTransport`): The session.
+    * `transport` (`HeadlessTransport`): The session.
     """
 
-    # Method `SCHeadlessServer.__init__()`:
+    # Method `HeadlessServer.__init__()`:
     def __init__(self, port: int, allow_paths: tuple[str, ...]) -> None:
         """Make the server; nothing starts yet.
 
@@ -58,11 +58,11 @@ class SCHeadlessServer:
         self.lock: threading.Lock = threading.Lock()
         self.port: int = port
         self.token: str = secrets.token_hex(16)
-        self.transport: SCHeadlessTransport = SCHeadlessTransport(
+        self.transport: HeadlessTransport = HeadlessTransport(
             allow_paths=allow_paths
         )
 
-    # Method `SCHeadlessServer.answer()`:
+    # Method `HeadlessServer.answer()`:
     def answer(self, line: str, trusted: bool) -> tuple[str, bool]:
         """Answer one request line.
 
@@ -90,7 +90,7 @@ class SCHeadlessServer:
                 )
             reply.update(ok=True, result=result)
         except (
-            SCSolidCraftError,
+            SolidCraftError,
             ConnectionError,
             OSError,
             ValueError,
@@ -98,7 +98,7 @@ class SCHeadlessServer:
             reply.update(ok=False, error=str(error))
         return json.dumps(reply), True
 
-    # Method `SCHeadlessServer.run()`:
+    # Method `HeadlessServer.run()`:
     def run(self, method: str, params: dict[str, JSON]) -> JSON:
         """Run one request in the session.
 
@@ -113,7 +113,7 @@ class SCHeadlessServer:
         * (`JSON`): The result.
 
         Raises:
-        * `SCSolidCraftError`: If it fails.
+        * `SolidCraftError`: If it fails.
         """
         if method != "engine.batch":
             return self.transport.request(method, params)
@@ -130,11 +130,11 @@ class SCHeadlessServer:
                 if isinstance(first, dict):
                     text = str(first.get("text", ""))
             if result.get("isError") is True:
-                raise SCSolidCraftError(method, text, False, False)
+                raise SolidCraftError(method, text, False, False)
         parsed: JSON = json.loads(text)
         return parsed
 
-    # Method `SCHeadlessServer.serve_one()`:
+    # Method `HeadlessServer.serve_one()`:
     def serve_one(self, connection: socket.socket) -> None:
         """Answer one connection's requests until it closes.
 
@@ -154,7 +154,7 @@ class SCHeadlessServer:
                 if not trusted:
                     return
 
-    # Method `SCHeadlessServer.serve()`:
+    # Method `HeadlessServer.serve()`:
     def serve(self) -> None:
         """Start the session, write the token, and serve forever."""
         self.transport.start()
@@ -199,7 +199,7 @@ def main(arguments: list[str]) -> int:
         print("usage: headless_server PORT", file=sys.stderr)
         return 2
     signal.signal(signal.SIGTERM, stop)
-    server: SCHeadlessServer = SCHeadlessServer(
+    server: HeadlessServer = HeadlessServer(
         int(arguments[0]), (str(Path.home()),)
     )
     try:

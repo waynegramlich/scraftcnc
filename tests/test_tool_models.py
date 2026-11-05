@@ -8,7 +8,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from scraftcnc import shops
-from scraftcnc.pybind.scraftpybind import SCHeadlessTransport, SCPyBind
+from scraftcnc.pybind.scraftpybind import HeadlessTransport, PyBind
 from scraftcnc.tooling import cutter_models, tool_models
 
 
@@ -71,10 +71,10 @@ class TestFiles(unittest.TestCase):
     def test_interface_has_types_and_exceptions(self) -> None:
         """The main function shows its type hints and exceptions."""
         text = tool_models.document()
-        self.assertIn("    solidcraft: SCPyBind,\n", text)
-        self.assertIn(") -> SCModeledTool\n", text)
-        self.assertIn("* `SCShopError`:", text)
-        self.assertIn("SCModeledTool.items() -> list[str]", text)
+        self.assertIn("    solidcraft: PyBind,\n", text)
+        self.assertIn(") -> ModeledTool\n", text)
+        self.assertIn("* `ShopError`:", text)
+        self.assertIn("ModeledTool.items() -> list[str]", text)
 
     def test_letters_mean_one_size(self) -> None:
         """A letter means one key, in every kind."""
@@ -140,7 +140,7 @@ class TestCheckTool(unittest.TestCase):
         """A description with no material is refused."""
         sample = dict(tool_models.PAGES[0].sample)
         del sample["material"]
-        with self.assertRaisesRegex(shops.SCShopError, "`material`"):
+        with self.assertRaisesRegex(shops.ShopError, "`material`"):
             shops.check_tool(sample)
 
     def test_good(self) -> None:
@@ -151,12 +151,12 @@ class TestCheckTool(unittest.TestCase):
 
     def test_unknown_kind(self) -> None:
         """A kind that is not a tool is refused."""
-        with self.assertRaisesRegex(shops.SCShopError, "kind: 'lathe'"):
+        with self.assertRaisesRegex(shops.ShopError, "kind: 'lathe'"):
             shops.check_tool({"kind": "lathe"})
 
     def test_every_problem(self) -> None:
         """A missing key and a wrong unit are both reported."""
-        with self.assertRaises(shops.SCShopError) as caught:
+        with self.assertRaises(shops.ShopError) as caught:
             shops.check_tool(
                 {
                     "kind": "end_mill",
@@ -179,8 +179,8 @@ class TestModelDescription(unittest.TestCase):
     def test_models_each_sample(self) -> None:
         """Each sample becomes a body, named for its kind."""
         for page in tool_models.PAGES:
-            with SCHeadlessTransport() as transport:
+            with HeadlessTransport() as transport:
                 modeled = cutter_models.model_description(
-                    SCPyBind(transport), page.sample
+                    PyBind(transport), page.sample
                 )
             self.assertEqual(modeled.body, page.kind.replace("_", " "))

@@ -4,8 +4,8 @@
 On Linux, this starts LinuxCNC's simulator (`serve_linuxcnc`, from
 `scraftcnc/lcnc/`, in its `lcnc` box), a SolidCraft window, the
 watcher that moves the tool in SolidCraft (`sim_linuxcnc --watch`, in
-the box), and last the panel (`lcnc_hmi.py`), stopped, with the
-demonstration's program open.  The panel draws the program's setup
+the box), and last the HMI (`lcnc_hmi.py`), stopped, with the
+demonstration's program open.  The HMI draws the program's setup
 (table, vise, parallels, grid plate, stock and the plate) in
 SolidCraft from its `(SCC: ...)` lines alone:
 
@@ -13,9 +13,9 @@ SolidCraft from its `(SCC: ...)` lines alone:
 ./show_demo.py
 ```
 
-Press Start in the panel; the tool cuts the plate in SolidCraft.  The
-panel's slider starts at `SPEED`.  The panel's Quit button (or closing
-the panel or SolidCraft, or Control-C here) closes everything.
+Press Start in the HMI; the tool cuts the plate in SolidCraft.  The
+HMI's slider starts at `SPEED`.  The HMI's Quit button (or closing
+the HMI or SolidCraft, or Control-C here) closes everything.
 What each program prints goes to
 `~/.cache/scraftcnc/show/`, and the end of it is shown after a failure.
 
@@ -50,8 +50,8 @@ from typing import Any, cast
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from scraftcnc.lcnc.lcnc_client import PORT as LINUXCNC_PORT
-from scraftcnc.lcnc.lcnc_client import SCBridgeError, SCClient
-from scraftcnc.pybind.scraftpybind import SCPyBind, connect
+from scraftcnc.lcnc.lcnc_client import BridgeClient, BridgeError
+from scraftcnc.pybind.scraftpybind import PyBind, connect
 
 # Where everything is.
 PROJECT: Path = Path(__file__).resolve().parent
@@ -65,11 +65,11 @@ SOLIDCRAFT_DATA: Path = Path.home() / ".local" / "share" / "solidcraft"
 # The `distrobox` box that LinuxCNC is in.
 BOX: str = "lcnc"
 
-# The usual ports, of SolidCraft and of the panel's commands.
+# The usual ports, of SolidCraft and of the HMI's commands.
 SOLIDCRAFT_PORT: int = 8080
 PANEL_PORT: int = 5007
 
-# The panel's speed to start with: a whole run in about 75 seconds.
+# The HMI's speed to start with: a whole run in about 75 seconds.
 SPEED: float = 10.0
 
 # How long each thing may take to come up, and to close (seconds).
@@ -90,8 +90,8 @@ DRAW_SECONDS: float = 400.0
 LOG_LINES: int = 15
 
 
-# Class `SCShowFailed`:
-class SCShowFailed(Exception):
+# Class `DemoShowFailed`:
+class DemoShowFailed(Exception):
     """Something could not be brought up; its message says what."""
 
 
@@ -134,7 +134,7 @@ def find_solidcraft(named: str) -> str:
       `../solidcraft`.
 
     Raises:
-    * `SCShowFailed`: If there is none.
+    * `DemoShowFailed`: If there is none.
     """
     if named:
         found: str | None = shutil.which(named)
@@ -143,7 +143,7 @@ def find_solidcraft(named: str) -> str:
         if found is None and SOLIDCRAFT_BESIDE.is_file():
             found = str(SOLIDCRAFT_BESIDE)
     if found is None:
-        raise SCShowFailed(
+        raise DemoShowFailed(
             "No SolidCraft found: put `solidcraft` on the PATH, "
             f"or use --solidcraft (looked for {SOLIDCRAFT_BESIDE})."
         )
@@ -159,17 +159,17 @@ def check_ready(ports: dict[str, int]) -> None:
       program that wants each.
 
     Raises:
-    * `SCShowFailed`: If something is missing, or a port is in use.
+    * `DemoShowFailed`: If something is missing, or a port is in use.
     """
     if not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
-        raise SCShowFailed("There is no display to show this on.")
+        raise DemoShowFailed("There is no display to show this on.")
     if not (SERVER_PROJECT / "scraftcnc" / "lcnc").is_dir():
-        raise SCShowFailed(f"{SERVER_PROJECT} is not there.")
+        raise DemoShowFailed(f"{SERVER_PROJECT} is not there.")
     if shutil.which("podman") is None:
-        raise SCShowFailed("`podman` is not installed.")
+        raise DemoShowFailed("`podman` is not installed.")
     for name, port in ports.items():
         if port_open(port):
-            raise SCShowFailed(
+            raise DemoShowFailed(
                 f"Port {port}, for {name}, is in use: close what is on it "
                 "(an earlier SolidCraft or LinuxCNC, say)."
             )
@@ -384,10 +384,10 @@ def session_report(
     return lines
 
 
-# Class `SCShow`:
+# Class `DemoShow`:
 # One method per step of the show, GUI and headless, so many of them.
 @dataclass(slots=True)
-class SCShow:  # pylint: disable=too-many-public-methods
+class DemoShow:  # pylint: disable=too-many-public-methods
     """The programs of one show, and what it takes to close them.
 
     Attributes:
@@ -398,7 +398,7 @@ class SCShow:  # pylint: disable=too-many-public-methods
       by name, in the order it started.
 
     Constructor:
-    * `SCShow(options)`
+    * `DemoShow(options)`
     """
 
     # Constructor arguments:
@@ -411,7 +411,7 @@ class SCShow:  # pylint: disable=too-many-public-methods
         init=False, default_factory=dict
     )
 
-    # Method `SCShow.log_end()`:
+    # Method `DemoShow.log_end()`:
     def log_end(self, name: str) -> str:
         """Return the end of a program's output, to show after a failure.
 
@@ -430,7 +430,7 @@ class SCShow:  # pylint: disable=too-many-public-methods
         tail: str = "\n".join(lines[-LOG_LINES:])
         return f"--- The end of {path}:\n{tail}"
 
-    # Method `SCShow.start()`:
+    # Method `DemoShow.start()`:
     def start(
         self, name: str, command: list[str], directory: Path = PROJECT
     ) -> None:
@@ -458,7 +458,7 @@ class SCShow:  # pylint: disable=too-many-public-methods
                 start_new_session=True,
             )
 
-    # Method `SCShow.check_alive()`:
+    # Method `DemoShow.check_alive()`:
     def check_alive(self, name: str) -> None:
         """Check that a program has not stopped while coming up.
 
@@ -466,15 +466,15 @@ class SCShow:  # pylint: disable=too-many-public-methods
         * `name` (`str`): The program.
 
         Raises:
-        * `SCShowFailed`: If it has stopped.
+        * `DemoShowFailed`: If it has stopped.
         """
         status: int | None = self.running[name].poll()
         if status is not None:
-            raise SCShowFailed(
+            raise DemoShowFailed(
                 f"{name} stopped, with status {status}.\n{self.log_end(name)}"
             )
 
-    # Method `SCShow.wait_for_port()`:
+    # Method `DemoShow.wait_for_port()`:
     def wait_for_port(self, name: str, port: int, hint: str = "") -> None:
         """Wait until a program answers on its port.
 
@@ -484,7 +484,7 @@ class SCShow:  # pylint: disable=too-many-public-methods
         * `hint` (`str`): What to say if it is slow.
 
         Raises:
-        * `SCShowFailed`: If it stops, or takes too long.
+        * `DemoShowFailed`: If it stops, or takes too long.
         """
         end: float = time.monotonic() + START_SECONDS
         warned: bool = False
@@ -495,17 +495,17 @@ class SCShow:  # pylint: disable=too-many-public-methods
                 say(hint)
                 warned = True
             if time.monotonic() > end:
-                raise SCShowFailed(
+                raise DemoShowFailed(
                     f"{name} did not open port {port}.\n{self.log_end(name)}"
                 )
             time.sleep(POLL)
 
-    # Method `SCShow.start_box()`:
+    # Method `DemoShow.start_box()`:
     def start_box(self) -> None:
         """Make sure that the box is running, as after a reboot it is not.
 
         Raises:
-        * `SCShowFailed`: If it will not start.
+        * `DemoShowFailed`: If it will not start.
         """
         state: subprocess.CompletedProcess[str] = subprocess.run(
             ["podman", "inspect", "-f", "{{.State.Running}}", BOX],
@@ -528,18 +528,18 @@ class SCShow:  # pylint: disable=too-many-public-methods
                 timeout=BOX_SECONDS,
             )
         except subprocess.TimeoutExpired as error:
-            raise SCShowFailed(f"The {BOX} box did not start.") from error
+            raise DemoShowFailed(f"The {BOX} box did not start.") from error
         if done.returncode != 0:
-            raise SCShowFailed(
+            raise DemoShowFailed(
                 f"The {BOX} box did not start.\n{done.stdout}{done.stderr}"
             )
 
-    # Method `SCShow.update_linuxcnc()`:
+    # Method `DemoShow.update_linuxcnc()`:
     def update_linuxcnc(self) -> None:
         """Run the installer, which checks all and updates the bridge.
 
         Raises:
-        * `SCShowFailed`: If it fails.
+        * `DemoShowFailed`: If it fails.
         """
         say("Checking the LinuxCNC installation.")
         self.logs["install_linuxcnc"] = WORK / "install_linuxcnc.log"
@@ -555,18 +555,18 @@ class SCShow:  # pylint: disable=too-many-public-methods
                 timeout=INSTALL_SECONDS,
             )  # fmt: skip
         if done.returncode != 0:
-            raise SCShowFailed(
+            raise DemoShowFailed(
                 "The LinuxCNC installation is not right; run "
                 "`python3 -m scraftcnc.lcnc.install_linuxcnc` in "
                 f"{SERVER_PROJECT}.\n{self.log_end('install_linuxcnc')}"
             )
 
-    # Method `SCShow.start_solidcraft()`:
+    # Method `DemoShow.start_solidcraft()`:
     def start_solidcraft(self) -> None:
         """Start SolidCraft, clearing only what a dead one left behind.
 
         Raises:
-        * `SCShowFailed`: If it does not come up.
+        * `DemoShowFailed`: If it does not come up.
         """
         port: int = self.options.solidcraft_port
         for stale in stale_pid_files(SOLIDCRAFT_DATA / "control", port):
@@ -588,15 +588,15 @@ class SCShow:  # pylint: disable=too-many-public-methods
         while not token.is_file():
             self.check_alive("solidcraft")
             if time.monotonic() > end:
-                raise SCShowFailed(f"SolidCraft never wrote {token}.")
+                raise DemoShowFailed(f"SolidCraft never wrote {token}.")
             time.sleep(POLL)
 
-    # Method `SCShow.write_program()`:
+    # Method `DemoShow.write_program()`:
     def write_program(self) -> None:
         """Write the program, with its setup as `(SCC: ...)` lines.
 
         Raises:
-        * `SCShowFailed`: If it fails.
+        * `DemoShowFailed`: If it fails.
         """
         say("Writing the program.")
         self.logs["program"] = WORK / "program.log"
@@ -613,16 +613,16 @@ class SCShow:  # pylint: disable=too-many-public-methods
                 check=False,
             )
         if done.returncode != 0:
-            raise SCShowFailed(
+            raise DemoShowFailed(
                 f"Writing the program failed.\n{self.log_end('program')}"
             )
 
-    # Method `SCShow.start_watcher()`:
+    # Method `DemoShow.start_watcher()`:
     def start_watcher(self) -> None:
         """Start the watcher, and wait until the tools are modeled.
 
         Raises:
-        * `SCShowFailed`: If it stops, or takes too long.
+        * `DemoShowFailed`: If it stops, or takes too long.
         """
         say("Modeling the tools and their paths in SolidCraft.")
         self.start(
@@ -638,22 +638,22 @@ class SCShow:  # pylint: disable=too-many-public-methods
         while b"watching" not in log.read_bytes():
             self.check_alive("watcher")
             if time.monotonic() > end:
-                raise SCShowFailed(
+                raise DemoShowFailed(
                     "The watcher never got ready.\n" + self.log_end("watcher")
                 )
             time.sleep(POLL)
 
-    # Method `SCShow.start_panel()`:
+    # Method `DemoShow.start_panel()`:
     def start_panel(self) -> None:
-        """Start the panel, stopped, with the program open.
+        """Start the HMI, stopped, with the program open.
 
-        The panel draws the program's setup in SolidCraft.
+        The HMI draws the program's setup in SolidCraft.
 
         Raises:
-        * `SCShowFailed`: If it does not come up.
+        * `DemoShowFailed`: If it does not come up.
         """
         port: int = self.options.panel_port
-        say("Starting the panel.")
+        say("Starting the HMI.")
         self.start(
             "panel",
             [sys.executable, "-m", "scraftcnc.hmi.lcnc_hmi",
@@ -667,15 +667,15 @@ class SCShow:  # pylint: disable=too-many-public-methods
             panel.sendall(f"speed {self.options.speed}\n".encode())
             panel.makefile().readline()
 
-    # Method `SCShow.bring_up()`:
+    # Method `DemoShow.bring_up()`:
     def bring_up(self) -> None:
         """Bring up the whole chain, in order.
 
-        The panel comes last, so that Start can not be pressed until
+        The HMI comes last, so that Start can not be pressed until
         SolidCraft can show the run.
 
         Raises:
-        * `SCShowFailed`: If any part of it fails.
+        * `DemoShowFailed`: If any part of it fails.
         """
         check_ready(
             {
@@ -705,12 +705,12 @@ class SCShow:  # pylint: disable=too-many-public-methods
         self.start_watcher()
         self.start_panel()
 
-    # Method `SCShow.start_headless_solidcraft()`:
+    # Method `DemoShow.start_headless_solidcraft()`:
     def start_headless_solidcraft(self) -> None:
         """Serve a headless SolidCraft session on the control port.
 
         Raises:
-        * `SCShowFailed`: If it does not come up.
+        * `DemoShowFailed`: If it does not come up.
         """
         port: int = self.options.solidcraft_port
         say("Starting a headless SolidCraft.")
@@ -721,9 +721,9 @@ class SCShow:  # pylint: disable=too-many-public-methods
         )  # fmt: skip
         self.wait_for_port("solidcraft_headless", port)
 
-    # Method `SCShow.ask()`:
+    # Method `DemoShow.ask()`:
     def ask(self, line: str) -> str:
-        """Send one line to the panel's port, and return its answer.
+        """Send one line to the HMI's port, and return its answer.
 
         Arguments:
         * `line` (`str`): The command.
@@ -736,24 +736,24 @@ class SCShow:  # pylint: disable=too-many-public-methods
             panel.sendall(f"{line}\n".encode())
             return panel.makefile().readline().strip()
 
-    # Method `SCShow.watch()`:
+    # Method `DemoShow.watch()`:
     def watch(
         self,
         what: str,
         done: Callable[[dict[str, str]], bool],
         stall: float = STALL_SECONDS,
     ) -> None:
-        """Poll the panel until something is done, printing messages.
+        """Poll the HMI until something is done, printing messages.
 
         Arguments:
         * `what` (`str`): What is waited for, for the messages.
         * `done` (`Callable[[dict[str, str]], bool]`): Given the
-          panel's status words and its `message` and `drawing`,
+          HMI's status words and its `message` and `drawing`,
           whether it is done.
         * `stall` (`float`): How long nothing may change (seconds).
 
         Raises:
-        * `SCShowFailed`: If nothing changes for `stall` seconds.
+        * `DemoShowFailed`: If nothing changes for `stall` seconds.
         """
         message: str = ""
         last: str = ""
@@ -770,7 +770,7 @@ class SCShow:  # pylint: disable=too-many-public-methods
             words["message"] = str(shown["message"])
             words["drawing"] = str(shown["drawing"])
             if words["message"] and words["message"] != message:
-                say(f"Panel: {words['message']}")
+                say(f"HMI: {words['message']}")
             message = words["message"]
             if done(words):
                 return
@@ -778,14 +778,14 @@ class SCShow:  # pylint: disable=too-many-public-methods
             if now != last:
                 last, moved = now, time.monotonic()
             elif time.monotonic() - moved > stall:
-                raise SCShowFailed(f"Stalled waiting for {what}: {now}")
+                raise DemoShowFailed(f"Stalled waiting for {what}: {now}")
             time.sleep(POLL)
 
-    # Method `SCShow.report()`:
+    # Method `DemoShow.report()`:
     def report(self) -> None:
         """Print every body and sketch in the headless session."""
         with connect(str(self.options.solidcraft_port)) as transport:
-            solidcraft: SCPyBind = SCPyBind(transport)
+            solidcraft: PyBind = PyBind(transport)
             document: Any = solidcraft.document.inspect(measure=True)
 
             # World boxes, from each body's edges (see `edge_box()`).
@@ -803,18 +803,18 @@ class SCShow:  # pylint: disable=too-many-public-methods
         for line in session_report(document["bodies"], sketches):
             say(line)
 
-    # Method `SCShow.step_through()`:
+    # Method `DemoShow.step_through()`:
     def step_through(self) -> None:
         """Press Next Step through every setup item, and once more.
 
         Raises:
-        * `SCShowFailed`: If the panel refuses, or it stalls.
+        * `DemoShowFailed`: If the HMI refuses, or it stalls.
         """
         count: int = -1
         while count != 0:
             answer: str = self.ask("press Next Step")
             if answer != "ok":
-                raise SCShowFailed(f"Next Step: {answer}")
+                raise DemoShowFailed(f"Next Step: {answer}")
             time.sleep(0.5)
             self.watch(
                 "a step", lambda words: words["drawing"] == "False", 120.0
@@ -823,7 +823,7 @@ class SCShow:  # pylint: disable=too-many-public-methods
             count = int(shown["setup_step"])
             say(f"Step shown: {shown['message']}")
 
-    # Method `SCShow.set_origin()`:
+    # Method `DemoShow.set_origin()`:
     def set_origin(self, name: str) -> None:
         """Press Set Origin, pick a named origin, and say what it did.
 
@@ -831,12 +831,12 @@ class SCShow:  # pylint: disable=too-many-public-methods
         * `name` (`str`): The origin the tool tip is taken to be at.
 
         Raises:
-        * `SCShowFailed`: If the panel refuses, or it stalls.
+        * `DemoShowFailed`: If the HMI refuses, or it stalls.
         """
         # Move the tool tip there first, as an operator would jog it.
         shown: dict[str, Any] = json.loads(self.ask("show"))
         if name not in shown["origins"]:
-            raise SCShowFailed(f"No origin {name!r}: {shown['origins']}")
+            raise DemoShowFailed(f"No origin {name!r}: {shown['origins']}")
         x, y, z = shown["origins"][name]
         move: str
         for move in (f"G21 G0 X{x:.3f} Y{y:.3f}", f"G0 Z{z:.3f}"):
@@ -848,7 +848,7 @@ class SCShow:  # pylint: disable=too-many-public-methods
         self.ask("answer yes")
         answer: str = self.ask("press Set Origin")
         if answer != "ok":
-            raise SCShowFailed(f"Set Origin: {answer}")
+            raise DemoShowFailed(f"Set Origin: {answer}")
         self.watch("Set Origin", lambda words: words.get("state") == "idle")
         mdi: list[str] = [
             line
@@ -858,12 +858,12 @@ class SCShow:  # pylint: disable=too-many-public-methods
         say(f"Set Origin ran: {mdi[-1] if mdi else 'nothing'}")
         say(f"After Set Origin: {self.ask('status')}")
 
-    # Method `SCShow.drive()`:
+    # Method `DemoShow.drive()`:
     def drive(self) -> None:
-        """Run the demo through the panel's port, then press Quit.
+        """Run the demo through the HMI's port, then press Quit.
 
         Raises:
-        * `SCShowFailed`: If it stalls, or a program stops.
+        * `DemoShowFailed`: If it stalls, or a program stops.
         """
         begun: float = time.monotonic()
         say("Waiting for the setup to be drawn.")
@@ -882,7 +882,7 @@ class SCShow:  # pylint: disable=too-many-public-methods
             self.watch(
                 "keep-outs", lambda words: words["drawing"] == "False", 120.0
             )
-            say(f"Panel: {json.loads(self.ask('show'))['message']}")
+            say(f"HMI: {json.loads(self.ask('show'))['message']}")
         if self.options.origin:
             self.set_origin(self.options.origin)
         say("Pressing Start.")
@@ -896,15 +896,15 @@ class SCShow:  # pylint: disable=too-many-public-methods
         self.running["panel"].wait(timeout=CLOSE_SECONDS)
         say(f"Total {time.monotonic() - begun:.0f} s.")
 
-    # Method `SCShow.wait_until_closed()`:
+    # Method `DemoShow.wait_until_closed()`:
     def wait_until_closed(self) -> None:
         """Wait until any one of the programs stops.
 
         A program that closes with status 0 was closed by the person
         showing this, so only another status is reported.
         """
-        say("Ready.  Press Start in the panel.")
-        say("Press Quit in the panel to end the show.")
+        say("Ready.  Press Start in the HMI.")
+        say("Press Quit in the HMI to end the show.")
         while True:
             for name, program in self.running.items():
                 status: int | None = program.poll()
@@ -915,7 +915,7 @@ class SCShow:  # pylint: disable=too-many-public-methods
                     return
             time.sleep(POLL)
 
-    # Method `SCShow.close_one()`:
+    # Method `DemoShow.close_one()`:
     def close_one(self, name: str) -> None:
         """Close one program by `SIGTERM`, or kill it if it will not go.
 
@@ -939,7 +939,7 @@ class SCShow:  # pylint: disable=too-many-public-methods
                 pass
             program.wait()
 
-    # Method `SCShow.close_watcher()`:
+    # Method `DemoShow.close_watcher()`:
     def close_watcher(self) -> None:
         """Stop the watcher, which runs in the box.
 
@@ -954,20 +954,20 @@ class SCShow:  # pylint: disable=too-many-public-methods
             )  # fmt: skip
             self.close_one("watcher")
 
-    # Method `SCShow.close_linuxcnc()`:
+    # Method `DemoShow.close_linuxcnc()`:
     def close_linuxcnc(self) -> None:
         """Ask LinuxCNC to shut down, or else signal it."""
         program: subprocess.Popen[bytes] | None = self.running.get("linuxcnc")
         if program is None or program.poll() is not None:
             return
         try:
-            with SCClient(timeout=10.0) as lcnc:
+            with BridgeClient(timeout=10.0) as lcnc:
                 lcnc.call("shutdown")
             program.wait(timeout=60.0)
-        except (OSError, SCBridgeError, subprocess.TimeoutExpired):
+        except (OSError, BridgeError, subprocess.TimeoutExpired):
             self.close_one("linuxcnc")
 
-    # Method `SCShow.remove_leftovers()`:
+    # Method `DemoShow.remove_leftovers()`:
     def remove_leftovers(self) -> None:
         """Remove what the `SIGTERM` left of this show's SolidCraft."""
         if "solidcraft" not in self.running:
@@ -988,7 +988,7 @@ class SCShow:  # pylint: disable=too-many-public-methods
             ):
                 path.unlink()
 
-    # Method `SCShow.close()`:
+    # Method `DemoShow.close()`:
     def close(self) -> None:
         """Close everything, the last started first."""
         say("Closing.")
@@ -1019,7 +1019,7 @@ def main() -> int:
     * (`int`): The exit status.
     """
     parser: argparse.ArgumentParser = argparse.ArgumentParser(
-        description="Bring up SolidCraft, LinuxCNC and the panel, connected."
+        description="Bring up SolidCraft, LinuxCNC and the HMI, connected."
     )
     parser.add_argument(
         "--solidcraft", default="", help="the SolidCraft program to run"
@@ -1034,18 +1034,18 @@ def main() -> int:
         "--panel-port",
         type=int,
         default=PANEL_PORT,
-        help="the panel's command port (default: %(default)s)",
+        help="the HMI's command port (default: %(default)s)",
     )
     parser.add_argument(
         "--speed",
         type=float,
         default=SPEED,
-        help="the panel's speed to start with (default: %(default)s)",
+        help="the HMI's speed to start with (default: %(default)s)",
     )
     parser.add_argument(
         "--headless",
         action="store_true",
-        help="no windows: run the demo through the panel's port, and report",
+        help="no windows: run the demo through the HMI's port, and report",
     )
     parser.add_argument(
         "--origin",
@@ -1063,7 +1063,7 @@ def main() -> int:
         action="store_true",
         help="with --headless: show the setup's keep-outs",
     )
-    show: SCShow = SCShow(parser.parse_args())
+    show: DemoShow = DemoShow(parser.parse_args())
     signal.signal(signal.SIGTERM, interrupted)
     status: int = 0
     try:
@@ -1072,7 +1072,7 @@ def main() -> int:
             show.drive()
         else:
             show.wait_until_closed()
-    except SCShowFailed as error:
+    except DemoShowFailed as error:
         print(f"show_demo.py: {error}", file=sys.stderr)
         status = 1
     except KeyboardInterrupt:

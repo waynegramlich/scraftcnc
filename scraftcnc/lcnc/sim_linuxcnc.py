@@ -10,11 +10,11 @@ runs a program (the one it has loaded, or `PROGRAM`) at a feed
 override (`--speed`, 10 times the programmed feeds by default; rapids
 stay at the machine's), and polls the position 20 times a second,
 printing a line every second and writing every sample (time, G-code
-line, X, Y, Z) to `--out`.  Each sample (a `SCSample`, which also has
-the tool in the spindle) is handed to listeners (`SCListener`); when one
+line, X, Y, Z) to `--out`.  Each sample (a `Sample`, which also has
+the tool in the spindle) is handed to listeners (`SampleListener`); when one
 fails, or on Ctrl-C, the program is stopped.
 
-The one listener so far is `sim_solidcraft.py`'s `SCSolidCraftDisplay`
+The one listener so far is `sim_solidcraft.py`'s `SolidCraftDisplay`
 (`T.rlg~3.3`), turned on by `--solidcraft PORT` (or `headless`):
 every tool of the machine is modeled in SolidCraft, where
 `demo.py` has modeled the part, and the one in the
@@ -31,7 +31,7 @@ distrobox enter lcnc -- python3 -m scraftcnc.lcnc.sim_linuxcnc demo.ngc \
 
 With `--watch`, it sends LinuxCNC nothing and only follows what
 another program runs (`lcnc_hmi.py`, say), until Ctrl-C; the program
-whose paths are drawn is the one named, or else the one the panel has
+whose paths are drawn is the one named, or else the one the HMI has
 open:
 
 ```
@@ -63,7 +63,7 @@ from typing import Protocol
 # pylint: disable-next=import-error
 import linuxcnc  # type: ignore[import-not-found]
 
-from ..pybind.scraftpybind import SCSolidCraftError
+from ..pybind.scraftpybind import SolidCraftError
 from ..shops import read, tool_table_text
 from . import sim_solidcraft
 
@@ -95,9 +95,9 @@ ORIGIN: tuple[float, float, float] = (4.0, 3.0, -6.0)
 Position = tuple[float, float, float]
 
 
-# Class `SCSample`:
+# Class `Sample`:
 @dataclass(frozen=True, slots=True)
-class SCSample:
+class Sample:
     """One poll of LinuxCNC: where the tool was, and when.
 
     Attributes:
@@ -110,7 +110,7 @@ class SCSample:
       none).
 
     Constructor:
-    * `SCSample(time, line, position, tool)`
+    * `Sample(time, line, position, tool)`
     """
 
     # Constructor arguments:
@@ -119,7 +119,7 @@ class SCSample:
     position: Position = field(init=True)
     tool: int = field(init=True)
 
-    # Method `SCSample.text()`:
+    # Method `Sample.text()`:
     def text(self) -> str:
         """Return the sample as a line of `--out` (no tool).
 
@@ -130,33 +130,33 @@ class SCSample:
         return f"{self.time:8.3f} {self.line:5d} {x:9.4f} {y:9.4f} {z:9.4f}"
 
 
-# Class `SCListener`:
-class SCListener(Protocol):
+# Class `SampleListener`:
+class SampleListener(Protocol):
     """Something that follows the samples (such as a display).
 
     An exception from either method stops the program.
     """
 
-    # Method `SCListener.sample()`:
-    def sample(self, sample: SCSample) -> None:
+    # Method `SampleListener.sample()`:
+    def sample(self, sample: Sample) -> None:
         """Take one sample.
 
         Arguments:
-        * `sample` (`SCSample`): The sample.
+        * `sample` (`Sample`): The sample.
         """
 
-    # Method `SCListener.finish()`:
+    # Method `SampleListener.finish()`:
     def finish(self) -> None:
         """Take the end of the program (after its last sample)."""
 
 
-# Class `SCListenerFailed`:
-class SCListenerFailed(Exception):
+# Class `SampleListenerFailed`:
+class SampleListenerFailed(Exception):
     """A listener failed, so the program was stopped."""
 
 
-# Class `SCSimulator`:
-class SCSimulator:
+# Class `Simulator`:
+class Simulator:
     """A connection to a running LinuxCNC.
 
     Attributes:
@@ -165,14 +165,14 @@ class SCSimulator:
     * `stat` (`linuxcnc.stat`): Its status, read by `stat.poll()`.
     """
 
-    # Method `SCSimulator.__init__()`:
+    # Method `Simulator.__init__()`:
     def __init__(self) -> None:
         """Connect to the running LinuxCNC."""
         self.command = linuxcnc.command()
         self.errors = linuxcnc.error_channel()
         self.stat = linuxcnc.stat()
 
-    # Method `SCSimulator.report_errors()`:
+    # Method `Simulator.report_errors()`:
     def report_errors(self) -> None:
         """Print any error messages LinuxCNC has sent."""
         error = self.errors.poll()
@@ -180,7 +180,7 @@ class SCSimulator:
             print(f"error: {error[1]}", file=sys.stderr)
             error = self.errors.poll()
 
-    # Method `SCSimulator.wait_for()`:
+    # Method `Simulator.wait_for()`:
     def wait_for(
         self, test: Callable[[], bool], what: str, timeout: float = 60.0
     ) -> None:
@@ -206,7 +206,7 @@ class SCSimulator:
             time.sleep(POLL)
         raise TimeoutError(f"timed out waiting for {what}")
 
-    # Method `SCSimulator.home()`:
+    # Method `Simulator.home()`:
     def home(self) -> None:
         """Take it out of E-stop, turn it on, and home every joint.
 
@@ -236,7 +236,7 @@ class SCSimulator:
             "homing",
         )
 
-    # Method `SCSimulator.load_tools()`:
+    # Method `Simulator.load_tools()`:
     def load_tools(self, shop: Path, machine: str) -> Path:
         """Give LinuxCNC the tool table of a shop's machine.
 
@@ -269,7 +269,7 @@ class SCSimulator:
         self.command.wait_complete()
         return table
 
-    # Method `SCSimulator.set_origin()`:
+    # Method `Simulator.set_origin()`:
     def set_origin(self, origin: tuple[float, float, float]) -> None:
         """Set the G54 work origin, as the operator would touch off.
 
@@ -284,7 +284,7 @@ class SCSimulator:
         self.command.mdi(f"G20 G10 L2 P1 X{x} Y{y} Z{z}")
         self.command.wait_complete()
 
-    # Method `SCSimulator.start()`:
+    # Method `Simulator.start()`:
     def start(self, program: str, speed: float) -> str:
         """Load a program and start running it.
 
@@ -308,13 +308,13 @@ class SCSimulator:
         self.command.auto(linuxcnc.AUTO_RUN, 0)
         return path
 
-    # Method `SCSimulator.stop()`:
+    # Method `Simulator.stop()`:
     def stop(self) -> None:
         """Stop the program, as the operator's stop button would."""
         self.command.abort()
         self.command.wait_complete()
 
-    # Method `SCSimulator.work_position()`:
+    # Method `Simulator.work_position()`:
     def work_position(self) -> tuple[float, float, float]:
         """Return the polled position in work (program) coordinates.
 
@@ -333,8 +333,8 @@ class SCSimulator:
         )
         return (x, y, z)
 
-    # Method `SCSimulator.follow()`:
-    def follow(self, out: Path, listeners: Sequence[SCListener]) -> int:
+    # Method `Simulator.follow()`:
+    def follow(self, out: Path, listeners: Sequence[SampleListener]) -> int:
         """Poll the position until the program ends.
 
         The polls keep to a fixed schedule, so that the time each one
@@ -344,14 +344,14 @@ class SCSimulator:
         Arguments:
         * `out` (`Path`):
           The file every sample is written to.
-        * `listeners` (`Sequence[SCListener]`):
+        * `listeners` (`Sequence[SampleListener]`):
           What each sample is handed to, in order.
 
         Returns:
         * (`int`): The number of samples.
 
         Raises:
-        * `SCListenerFailed`: If a listener raised an exception.
+        * `SampleListenerFailed`: If a listener raised an exception.
         """
         # Let the interpreter leave its idle state first.
         start: float = time.monotonic()
@@ -362,7 +362,7 @@ class SCSimulator:
             while True:
                 # Write a sample, and print one each second.
                 self.stat.poll()
-                sample: SCSample = SCSample(
+                sample: Sample = Sample(
                     time.monotonic() - start,
                     self.stat.motion_line,
                     self.work_position(),
@@ -382,8 +382,8 @@ class SCSimulator:
                 tick = max(tick + POLL, time.monotonic())
                 time.sleep(max(0.0, tick - time.monotonic()))
 
-    # Method `SCSimulator.watch()`:
-    def watch(self, listeners: Sequence[SCListener]) -> int:
+    # Method `Simulator.watch()`:
+    def watch(self, listeners: Sequence[SampleListener]) -> int:
         """Poll the position for ever, while something else drives.
 
         Nothing is sent to LinuxCNC: the program is opened, started,
@@ -392,7 +392,7 @@ class SCSimulator:
         schedule as `follow()`, until Ctrl-C or a listener fails.
 
         Arguments:
-        * `listeners` (`Sequence[SCListener]`):
+        * `listeners` (`Sequence[SampleListener]`):
           What each sample is handed to, in order.
 
         Returns:
@@ -400,14 +400,14 @@ class SCSimulator:
           caught by the caller, so never in practice).
 
         Raises:
-        * `SCListenerFailed`: If a listener raised an exception.
+        * `SampleListenerFailed`: If a listener raised an exception.
         """
         start: float = time.monotonic()
         tick: float = start
         samples: int = 0
         while True:
             self.stat.poll()
-            sample: SCSample = SCSample(
+            sample: Sample = Sample(
                 time.monotonic() - start,
                 self.stat.motion_line,
                 self.work_position(),
@@ -422,27 +422,27 @@ class SCSimulator:
 
 
 # Function `watch()`:
-def watch(listeners: Sequence[SCListener]) -> int:
+def watch(listeners: Sequence[SampleListener]) -> int:
     """Follow whatever LinuxCNC's display runs, until Ctrl-C.
 
     When a listener fails (SolidCraft closed, say), the program is
     stopped, since nobody could then see what it does.
 
     Arguments:
-    * `listeners` (`Sequence[SCListener]`):
+    * `listeners` (`Sequence[SampleListener]`):
       What each sample is handed to.
 
     Returns:
     * (`int`): The exit status.
     """
-    simulator: SCSimulator = SCSimulator()
+    simulator: Simulator = Simulator()
     print("watching (Ctrl-C to stop)", flush=True)
     try:
         simulator.watch(listeners)
     except KeyboardInterrupt:
         print("done watching")
         return 0
-    except SCListenerFailed as error:
+    except SampleListenerFailed as error:
         simulator.stop()
         print(f"{error}: the program is stopped", file=sys.stderr)
         return 1
@@ -451,46 +451,48 @@ def watch(listeners: Sequence[SCListener]) -> int:
 
 # Function `_tell()`:
 def _tell(
-    listeners: Sequence[SCListener], call: Callable[[SCListener], None]
+    listeners: Sequence[SampleListener], call: Callable[[SampleListener], None]
 ) -> None:
-    """Call each listener, turning its failure into `SCListenerFailed`.
+    """Call each listener, turning its failure into `SampleListenerFailed`.
 
     Arguments:
-    * `listeners` (`Sequence[SCListener]`): The listeners.
-    * `call` (`Callable[[SCListener], None]`): What to call on each.
+    * `listeners` (`Sequence[SampleListener]`): The listeners.
+    * `call` (`Callable[[SampleListener], None]`): What to call on each.
 
     Raises:
-    * `SCListenerFailed`: If a listener raised an exception (any kind,
+    * `SampleListenerFailed`: If a listener raised an exception (any kind,
       since whatever it is, the program must stop).
     """
     for listener in listeners:
         try:
             call(listener)
         except Exception as error:  # pylint: disable=broad-exception-caught
-            raise SCListenerFailed(
+            raise SampleListenerFailed(
                 f"{type(listener).__name__} failed "
                 f"({type(error).__name__}: {error})"
             ) from error
 
 
 # Function `run()`:
-def run(options: argparse.Namespace, listeners: Sequence[SCListener]) -> int:
+def run(
+    options: argparse.Namespace, listeners: Sequence[SampleListener]
+) -> int:
     """Set the simulator up, run the program and follow it.
 
-    When a listener fails (as `sim_solidcraft.SCSolidCraftDisplay` does
+    When a listener fails (as `sim_solidcraft.SolidCraftDisplay` does
     when SolidCraft stops answering, or its window is closed), when the
     samples can not be written, or on Ctrl-C, the program is stopped.
 
     Arguments:
     * `options` (`argparse.Namespace`):
       The command line arguments.
-    * `listeners` (`Sequence[SCListener]`):
+    * `listeners` (`Sequence[SampleListener]`):
       What each sample is handed to.
 
     Returns:
     * (`int`): The exit status.
     """
-    simulator: SCSimulator = SCSimulator()
+    simulator: Simulator = Simulator()
     simulator.home()
     print("tools:", simulator.load_tools(options.shop, options.machine))
     simulator.set_origin(tuple(options.origin))
@@ -500,7 +502,7 @@ def run(options: argparse.Namespace, listeners: Sequence[SCListener]) -> int:
     # A failed listener (or Ctrl-C) stops the program too.
     try:
         samples: int = simulator.follow(options.out, listeners)
-    except (SCListenerFailed, OSError, KeyboardInterrupt) as error:
+    except (SampleListenerFailed, OSError, KeyboardInterrupt) as error:
         simulator.stop()
         why: str = (
             "interrupted"
@@ -594,7 +596,7 @@ def main() -> int:
 
     # Run it, with the tool in SolidCraft if asked to.  A LinuxCNC or a
     # SolidCraft that is not there is reported in one line.
-    go: Callable[[Sequence[SCListener]], int] = (
+    go: Callable[[Sequence[SampleListener]], int] = (
         watch if options.watch else lambda found: run(options, found)
     )
     try:
@@ -606,7 +608,7 @@ def main() -> int:
             return go([display])
     except (
         linuxcnc.error,
-        SCSolidCraftError,
+        SolidCraftError,
         TimeoutError,
         OSError,
         ValueError,

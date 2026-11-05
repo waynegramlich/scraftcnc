@@ -6,7 +6,7 @@ link.  It runs on the host (Linux or Windows), outside the target that
 LinuxCNC is in:
 
 ```python
-with SCClient() as lcnc:
+with BridgeClient() as lcnc:
     lcnc.call("command.state", constant("STATE_ESTOP_RESET"))
     print(lcnc.stat("task_state"))
 ```
@@ -21,15 +21,15 @@ from typing import Any, Self
 PORT: int = 5008
 
 
-# Class `SCBridgeError`:
-class SCBridgeError(Exception):
+# Class `BridgeError`:
+class BridgeError(Exception):
     """The bridge answered a request with an error.
 
     Attributes:
     * `kind` (`str`): The name of the exception in the bridge.
     """
 
-    # Method `SCBridgeError.__init__()`:
+    # Method `BridgeError.__init__()`:
     def __init__(self, kind: str, message: str) -> None:
         """Keep what the bridge said.
 
@@ -49,13 +49,13 @@ def constant(name: str) -> dict[str, str]:
     * `name` (`str`): Its name (e.g. `MODE_MDI`).
 
     Returns:
-    * (`dict[str, str]`): The argument for `SCClient.call()`.
+    * (`dict[str, str]`): The argument for `BridgeClient.call()`.
     """
     return {"constant": name}
 
 
-# Class `SCClient`:
-class SCClient:
+# Class `BridgeClient`:
+class BridgeClient:
     """One connection to `lcnc_bridge.py`.
 
     Attributes:
@@ -64,7 +64,7 @@ class SCClient:
     * `next_id` (`int`): The next request's `id`.
     """
 
-    # Method `SCClient.__init__()`:
+    # Method `BridgeClient.__init__()`:
     def __init__(
         self, host: str = "localhost", port: int = PORT, timeout: float = 60.0
     ) -> None:
@@ -84,7 +84,7 @@ class SCClient:
         self.lines: Any = self.connection.makefile("rb")
         self.next_id: int = 1
 
-    # Method `SCClient.__enter__()`:
+    # Method `BridgeClient.__enter__()`:
     def __enter__(self) -> Self:
         """Start a `with` block.
 
@@ -93,7 +93,7 @@ class SCClient:
         """
         return self
 
-    # Method `SCClient.__exit__()`:
+    # Method `BridgeClient.__exit__()`:
     def __exit__(
         self,
         _kind: type[BaseException] | None,
@@ -103,13 +103,13 @@ class SCClient:
         """Close the connection at the end of a `with` block."""
         self.close()
 
-    # Method `SCClient.close()`:
+    # Method `BridgeClient.close()`:
     def close(self) -> None:
         """Close the connection."""
         self.lines.close()
         self.connection.close()
 
-    # Method `SCClient.call()`:
+    # Method `BridgeClient.call()`:
     def call(self, name: str, *args: Any) -> Any:
         """Send one request and wait for its reply.
 
@@ -121,7 +121,7 @@ class SCClient:
         * (`Any`): The call's result.
 
         Raises:
-        * `SCBridgeError`: If the bridge answered with an error.
+        * `BridgeError`: If the bridge answered with an error.
         * `ConnectionError`: If the connection closed first.
         """
         # Send it.
@@ -141,10 +141,10 @@ class SCClient:
         reply: dict[str, Any] = json.loads(line)
         if "error" in reply:
             error: dict[str, str] = reply["error"]
-            raise SCBridgeError(error["type"], error["message"])
+            raise BridgeError(error["type"], error["message"])
         return reply["result"]
 
-    # Method `SCClient.stat()`:
+    # Method `BridgeClient.stat()`:
     def stat(self, *names: str) -> dict[str, Any]:
         """Read `linuxcnc.stat`.
 

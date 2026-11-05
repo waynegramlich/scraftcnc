@@ -22,7 +22,7 @@ reads and writes only where it is allowed to, so it has no cache
 (`cache_for()`).
 
 When anything goes wrong with the cache, a message is printed, the
-cache is not used for the rest of the run, and `SCModelCache.insert()`
+cache is not used for the rest of the run, and `ModelCache.insert()`
 returns `None`, so that the caller can build the model as if there were
 no cache.  (SolidCraft may not be able to see the directory, if it runs
 on another system, such as Windows with the caller in WSL.)
@@ -42,13 +42,13 @@ from typing import TYPE_CHECKING, cast
 
 from .pybind.scraftpybind import (
     JSON,
-    SCHeadlessTransport,
-    SCPyBind,
-    SCSolidCraftError,
+    HeadlessTransport,
+    PyBind,
+    SolidCraftError,
 )
 
 if TYPE_CHECKING:
-    from .assembly import SCItem
+    from .assembly import AssemblyItem
 
 # Where the files go.
 CACHE_DIRECTORY: Path = Path.home() / ".scraftcnc" / "tool_cache"
@@ -112,7 +112,7 @@ def source_digest(paths: Sequence[Path]) -> str:
 
 
 # Function `item_shape()`:
-def item_shape(item: "SCItem") -> JSON:
+def item_shape(item: "AssemblyItem") -> JSON:
     """Return the tree an assembly item's models are hashed from.
 
     It is the item's `call` and `args`, as the setup comments write
@@ -120,7 +120,7 @@ def item_shape(item: "SCItem") -> JSON:
     color and its note are no part of it.
 
     Arguments:
-    * `item` (`SCItem`): The item.
+    * `item` (`AssemblyItem`): The item.
 
     Returns:
     * (`JSON`): The tree.
@@ -133,11 +133,11 @@ def item_shape(item: "SCItem") -> JSON:
 
 
 # Function `item_key()`:
-def item_key(item: "SCItem") -> str:
+def item_key(item: "AssemblyItem") -> str:
     """Return the hash an assembly item's models are cached under.
 
     Arguments:
-    * `item` (`SCItem`): The item.
+    * `item` (`AssemblyItem`): The item.
 
     Returns:
     * (`str`): `HASH_DIGITS` hex digits, from `item_shape()`.
@@ -146,7 +146,7 @@ def item_key(item: "SCItem") -> str:
 
 
 # Function `keyed_by_item()`:
-def keyed_by_item(model: "SCCacheable", item: "SCItem") -> "SCCacheable":
+def keyed_by_item(model: "Cacheable", item: "AssemblyItem") -> "Cacheable":
     """Return a model of an item, cached by the item's key.
 
     The model's own tree is replaced by `item_shape()`.  A model made
@@ -154,11 +154,11 @@ def keyed_by_item(model: "SCCacheable", item: "SCItem") -> "SCCacheable":
     their names, which start their file names.
 
     Arguments:
-    * `model` (`SCCacheable`): A model built from `resolve(item)`.
-    * `item` (`SCItem`): The item.
+    * `model` (`Cacheable`): A model built from `resolve(item)`.
+    * `item` (`AssemblyItem`): The item.
 
     Returns:
-    * (`SCCacheable`): The model, with the item's tree.
+    * (`Cacheable`): The model, with the item's tree.
     """
     return replace(model, shape=item_shape(item))
 
@@ -189,15 +189,15 @@ def no_color(_body: str) -> str:
     return ""
 
 
-# Class `SCCacheable`:
+# Class `Cacheable`:
 @dataclass(frozen=True, slots=True)
-class SCCacheable:
+class Cacheable:
     """A model that can be cached.
 
     Attributes:
     * `name` (`str`): What it is; it starts the file's name.
     * `shape` (`JSON`): What affects its shape, for the hash.
-    * `build` (`Callable[[SCPyBind], list[str]]`):
+    * `build` (`Callable[[PyBind], list[str]]`):
       Builds it in a SolidCraft session, around its origin, and returns
       the names of its bodies.
     * `offset` (`tuple[float, float, float]`):
@@ -208,13 +208,13 @@ class SCCacheable:
       each time the model is inserted.
 
     Constructor:
-    * `SCCacheable(name, shape, build, offset, color_of)`
+    * `Cacheable(name, shape, build, offset, color_of)`
     """
 
     # Constructor arguments:
     name: str = field(init=True)
     shape: JSON = field(init=True)
-    build: Callable[[SCPyBind], list[str]] = field(init=True)
+    build: Callable[[PyBind], list[str]] = field(init=True)
     offset: tuple[float, float, float] = field(
         init=True, default=(0.0, 0.0, 0.0)
     )
@@ -223,7 +223,7 @@ class SCCacheable:
 
 # Function `export_model()`:
 def export_model(
-    solidcraft: SCPyBind, model: SCCacheable, path: Path
+    solidcraft: PyBind, model: Cacheable, path: Path
 ) -> list[str]:
     """Build a model and export it to its file.
 
@@ -231,8 +231,8 @@ def export_model(
     another program using the cache, never sees part of one.
 
     Arguments:
-    * `solidcraft` (`SCPyBind`): The session to build it in.
-    * `model` (`SCCacheable`): The model.
+    * `solidcraft` (`PyBind`): The session to build it in.
+    * `model` (`Cacheable`): The model.
     * `path` (`Path`): Its file.
 
     Returns:
@@ -240,7 +240,7 @@ def export_model(
 
     Raises:
     * `OSError`: If the file can not be written.
-    * `SCSolidCraftError`: If SolidCraft fails.
+    * `SolidCraftError`: If SolidCraft fails.
     """
     bodies: list[str] = model.build(solidcraft)
     partial: Path = path.with_name(f"{path.stem}.{os.getpid()}.step")
@@ -256,13 +256,13 @@ def export_model(
 
 # Function `assign_colors()`:
 def assign_colors(
-    solidcraft: SCPyBind, model: SCCacheable, bodies: list[str]
+    solidcraft: PyBind, model: Cacheable, bodies: list[str]
 ) -> None:
     """Give an inserted model's bodies their colors, one command a color.
 
     Arguments:
-    * `solidcraft` (`SCPyBind`): The SolidCraft session.
-    * `model` (`SCCacheable`): The model.
+    * `solidcraft` (`PyBind`): The SolidCraft session.
+    * `model` (`Cacheable`): The model.
     * `bodies` (`list[str]`): The names of its bodies.
     """
     by_color: dict[str, list[str]] = {}
@@ -275,9 +275,9 @@ def assign_colors(
             )
 
 
-# Class `SCInserted`:
+# Class `InsertedModel`:
 @dataclass(frozen=True, slots=True)
-class SCInserted:
+class InsertedModel:
     """A model in a design, in a component of its own, which is grounded.
 
     Attributes:
@@ -286,7 +286,7 @@ class SCInserted:
     * `occurrence` (`int`): The id of its component's occurrence.
 
     Constructor:
-    * `SCInserted(bodies, component, occurrence)`
+    * `InsertedModel(bodies, component, occurrence)`
     """
 
     # Constructor arguments:
@@ -295,9 +295,9 @@ class SCInserted:
     occurrence: int = field(init=True)
 
 
-# Class `SCModelCache`:
+# Class `ModelCache`:
 @dataclass(slots=True)
-class SCModelCache:
+class ModelCache:
     """A directory of models as STEP files.
 
     Attributes:
@@ -306,7 +306,7 @@ class SCModelCache:
     * `swept` (`bool`): True once the old files have been deleted.
 
     Constructor:
-    * `SCModelCache(directory)`
+    * `ModelCache(directory)`
     """
 
     # Constructor arguments:
@@ -316,12 +316,12 @@ class SCModelCache:
     broken: bool = field(init=False, default=False)
     swept: bool = field(init=False, default=False)
 
-    # Method `SCModelCache.path()`:
-    def path(self, model: SCCacheable) -> Path:
+    # Method `ModelCache.path()`:
+    def path(self, model: Cacheable) -> Path:
         """Return a model's file, which may not exist yet.
 
         Arguments:
-        * `model` (`SCCacheable`): The model.
+        * `model` (`Cacheable`): The model.
 
         Returns:
         * (`Path`): `MODEL_NAME__HASH.step`, in the directory.
@@ -329,7 +329,7 @@ class SCModelCache:
         name: str = f"{safe_name(model.name)}__{shape_hash(model.shape)}.step"
         return self.directory / name
 
-    # Method `SCModelCache.sweep()`:
+    # Method `ModelCache.sweep()`:
     def sweep(self) -> None:
         """Delete the files that have not been used for `MAX_AGE`, once.
 
@@ -345,26 +345,26 @@ class SCModelCache:
                 path.unlink(missing_ok=True)
         self.swept = True
 
-    # Method `SCModelCache.create()`:
+    # Method `ModelCache.create()`:
     def create(
         self,
-        solidcraft: SCPyBind,
-        model: SCCacheable,
+        solidcraft: PyBind,
+        model: Cacheable,
         path: Path,
         before_building: Callable[[], None],
     ) -> None:
         """Make a model's file, with no window if that can be done.
 
         Arguments:
-        * `solidcraft` (`SCPyBind`): The session the model is wanted in.
-        * `model` (`SCCacheable`): The model.
+        * `solidcraft` (`PyBind`): The session the model is wanted in.
+        * `model` (`Cacheable`): The model.
         * `path` (`Path`): Its file.
         * `before_building` (`Callable[[], None]`):
           Called before it is built in `solidcraft`.
 
         Raises:
         * `OSError`: If the file can not be written.
-        * `SCSolidCraftError`: If SolidCraft fails.
+        * `SolidCraftError`: If SolidCraft fails.
         """
         if self.create_headless(model, path):
             return
@@ -372,8 +372,8 @@ class SCModelCache:
         bodies: list[str] = export_model(solidcraft, model, path)
         solidcraft.solid.remove(bodies=cast(JSON, bodies))
 
-    # Method `SCModelCache.create_headless()`:
-    def create_headless(self, model: SCCacheable, path: Path) -> bool:
+    # Method `ModelCache.create_headless()`:
+    def create_headless(self, model: Cacheable, path: Path) -> bool:
         """Make a model's file in a headless session of its own.
 
         That is several times faster than in a window, starts in
@@ -381,7 +381,7 @@ class SCModelCache:
         in a few hundredths of a second, so none is kept.
 
         Arguments:
-        * `model` (`SCCacheable`): The model.
+        * `model` (`Cacheable`): The model.
         * `path` (`Path`): Its file.
 
         Returns:
@@ -395,11 +395,11 @@ class SCModelCache:
         if program is None:
             return False
         try:
-            with SCHeadlessTransport(
+            with HeadlessTransport(
                 program, (str(self.directory),)
             ) as transport:
-                export_model(SCPyBind(transport), model, path)
-        except (OSError, SCSolidCraftError) as error:
+                export_model(PyBind(transport), model, path)
+        except (OSError, SolidCraftError) as error:
             # Warn: the CLI is there, so building here is not expected.
             print(
                 f"model_cache: headless build of {model.name} failed "
@@ -409,29 +409,29 @@ class SCModelCache:
             return False
         return True
 
-    # Method `SCModelCache.insert()`:
+    # Method `ModelCache.insert()`:
     def insert(
         self,
-        solidcraft: SCPyBind,
-        model: SCCacheable,
+        solidcraft: PyBind,
+        model: Cacheable,
         matrix: Matrix | None = None,
         before_building: Callable[[], None] = lambda: None,
-    ) -> SCInserted | None:
+    ) -> InsertedModel | None:
         """Put a model in the design, from its file.
 
         The file is made first if it does not exist, and freshened if
         it does.
 
         Arguments:
-        * `solidcraft` (`SCPyBind`): The SolidCraft session.
-        * `model` (`SCCacheable`): The model.
+        * `solidcraft` (`PyBind`): The SolidCraft session.
+        * `model` (`Cacheable`): The model.
         * `matrix` (`Matrix | None`):
           Where it goes, or `None` to leave it around the origin.
         * `before_building` (`Callable[[], None]`):
           Called before it is built in `solidcraft`, if it must be.
 
         Returns:
-        * (`SCInserted | None`):
+        * (`InsertedModel | None`):
           What was inserted, or `None` if the cache could not be used,
           so that the caller should build the model itself.
         """
@@ -449,7 +449,7 @@ class SCModelCache:
                 name=model.name,
                 matrix=cast(JSON, matrix),
             )
-        except (OSError, SCSolidCraftError) as error:
+        except (OSError, SolidCraftError) as error:
             self.give_up(path, error)
             return None
         assert isinstance(made, dict)
@@ -460,9 +460,9 @@ class SCModelCache:
         assert isinstance(component, int) and isinstance(occurrence, int)
         names: list[str] = [str(body) for body in bodies]
         assign_colors(solidcraft, model, names)
-        return SCInserted(names, component, occurrence)
+        return InsertedModel(names, component, occurrence)
 
-    # Method `SCModelCache.give_up()`:
+    # Method `ModelCache.give_up()`:
     def give_up(self, path: Path, error: Exception) -> None:
         """Stop using the cache, and delete a file that may be bad.
 
@@ -482,16 +482,16 @@ class SCModelCache:
 
 
 # Function `cache_for()`:
-def cache_for(target: str) -> SCModelCache | None:
+def cache_for(target: str) -> ModelCache | None:
     """Return the cache for a session, if it should have one.
 
     Arguments:
     * `target` (`str`): What `connect()` is given.
 
     Returns:
-    * (`SCModelCache | None`): The cache, or `None` for `headless`.
+    * (`ModelCache | None`): The cache, or `None` for `headless`.
     """
-    return None if target == "headless" else SCModelCache()
+    return None if target == "headless" else ModelCache()
 
 
 # Function `placement_matrix()`:

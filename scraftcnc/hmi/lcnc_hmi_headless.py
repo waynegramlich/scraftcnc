@@ -4,7 +4,7 @@
 `tkinter`, `ttk`, `filedialog` and `messagebox`, so the same code runs
 as with a real window, and tests can press its buttons through its
 command port.  Each widget keeps its options and its contents, and
-behaves as the real one does where the panel depends on that: a
+behaves as the real one does where the HMI depends on that: a
 disabled button does nothing, and a disabled `Text` ignores changes.
 Nothing is drawn, so layout options are kept but mean nothing.
 
@@ -55,7 +55,7 @@ def askyesno(title: str, message: str, **_options: Any) -> bool:
 
 # Function `askchoice()`:
 def askchoice(title: str, message: str, choices: list[str]) -> str:
-    """Stand in for the panel's list window: pick one of the choices.
+    """Stand in for the HMI's list window: pick one of the choices.
 
     Arguments:
     * `title` (`str`): The window's title.

@@ -79,7 +79,7 @@ class TestChecks(unittest.TestCase):
                     Path(__file__).parent.parent,
                 ),
                 self.assertRaisesRegex(
-                    show_demo.SCShowFailed, "for SolidCraft"
+                    show_demo.DemoShowFailed, "for SolidCraft"
                 ),
             ):
                 show_demo.check_ready({"SolidCraft": port})
@@ -88,7 +88,7 @@ class TestChecks(unittest.TestCase):
         """With no display, nothing can be shown."""
         with (
             mock.patch.dict(os.environ, clear=True),
-            self.assertRaisesRegex(show_demo.SCShowFailed, "no display"),
+            self.assertRaisesRegex(show_demo.DemoShowFailed, "no display"),
         ):
             show_demo.check_ready({})
 
@@ -97,7 +97,7 @@ class TestChecks(unittest.TestCase):
         with (
             mock.patch("shutil.which", return_value=None),
             mock.patch.object(show_demo, "SOLIDCRAFT_BESIDE", Path("/no/x")),
-            self.assertRaisesRegex(show_demo.SCShowFailed, "No SolidCraft"),
+            self.assertRaisesRegex(show_demo.DemoShowFailed, "No SolidCraft"),
         ):
             show_demo.find_solidcraft("")
 
@@ -162,7 +162,7 @@ class TestHeadlessServer(unittest.TestCase):
     """The headless server's token and request handling."""
 
     def setUp(self) -> None:
-        self.server = headless_server.SCHeadlessServer(0, ())
+        self.server = headless_server.HeadlessServer(0, ())
         self.calls: list[tuple[str, object]] = []
 
         def request(method: str, params: object) -> object:

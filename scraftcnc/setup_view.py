@@ -1,6 +1,6 @@
 """Where each item of a setup goes, and drawing it in SolidCraft.
 
-`place()` turns an `SCAssembly`'s relative locations into absolute
+`place()` turns an `Assembly`'s relative locations into absolute
 positions in the setup frame (millimeters), with no SolidCraft.  The
 first item's location is absolute.  Each later item's location is the
 center of its bottom, measured from the origin handed up by the item
@@ -9,7 +9,7 @@ absolute position plus its object's `origin(turns)`; parallels hand up
 nothing new, so the item above them is placed from the origin below
 the parallels (the vise's, #29).
 
-`SCSetupView` draws the placed items in a SolidCraft session, and on
+`SetupView` draws the placed items in a SolidCraft session, and on
 the next assembly changes only the items that differ (#68).
 """
 
@@ -18,21 +18,21 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, cast
 
-from .assembly import SCAssembly, SCItem, SCStock, resolve
+from .assembly import Assembly, AssemblyItem, Stock, resolve
 from .model_cache import (
-    SCCacheable,
-    SCInserted,
-    SCModelCache,
+    Cacheable,
+    InsertedModel,
+    ModelCache,
     item_key,
     keyed_by_item,
     placement_matrix,
 )
-from .pybind.scraftpybind import JSON, SCPyBind, SCSolidCraftError
-from .tooling.mount import SCParallelLayer
+from .pybind.scraftpybind import JSON, PyBind, SolidCraftError
+from .tooling.mount import ParallelLayer
 from .tooling.tools import Point, quarter_turn
 
 # What builds an item's object from it (`assembly.resolve()`).
-Resolver = Callable[[SCItem], Any]
+Resolver = Callable[[AssemblyItem], Any]
 
 # How opaque each kind of item is unless it says otherwise (#13a).
 OPACITY: dict[str, float] = {"tooling": 0.35, "stock": 0.35, "part": 1.0}
@@ -45,24 +45,24 @@ DisplayKey = tuple[str, str, float, float, float, int, str, float, int]
 PLACES: int = 6
 
 
-# Class `SCPlaced`:
+# Class `PlacedItem`:
 @dataclass(frozen=True, slots=True)
-class SCPlaced:
+class PlacedItem:
     """An item of a setup, placed in the setup frame.
 
     Attributes:
-    * `item` (`SCItem`): The item.
+    * `item` (`AssemblyItem`): The item.
     * `x` (`float`): The X of the center of its bottom (millimeters).
     * `y` (`float`): The Y of the center of its bottom (millimeters).
     * `z` (`float`): The Z of the center of its bottom (millimeters).
     * `turns` (`int`): Quarter turns counterclockwise about Z (0-3).
 
     Constructor:
-    * `SCPlaced(item, x, y, z, turns)`
+    * `PlacedItem(item, x, y, z, turns)`
     """
 
     # Constructor arguments:
-    item: SCItem = field(init=True)
+    item: AssemblyItem = field(init=True)
     x: float = field(init=True)
     y: float = field(init=True)
     z: float = field(init=True)
@@ -71,33 +71,33 @@ class SCPlaced:
 
 # Function `place()`:
 def place(
-    assembly: SCAssembly, resolver: Resolver = resolve
-) -> list[SCPlaced]:
+    assembly: Assembly, resolver: Resolver = resolve
+) -> list[PlacedItem]:
     """Place every item of an assembly in the setup frame.
 
     Only items with an item above them are resolved (for their
     `origin()`), so the top item (the part) is never built.
 
     Arguments:
-    * `assembly` (`SCAssembly`): The items, bottom first.
+    * `assembly` (`Assembly`): The items, bottom first.
     * `resolver` (`Resolver`):
       What builds an item's object (`assembly.resolve()` by default).
 
     Returns:
-    * (`list[SCPlaced]`): The items, in the same order, placed.
+    * (`list[PlacedItem]`): The items, in the same order, placed.
 
     Raises:
     * `ValueError`: If an item can not be built (from `resolver`).
     """
-    placed: list[SCPlaced] = []
+    placed: list[PlacedItem] = []
     origin: Point = (0.0, 0.0, 0.0)
-    items: list[SCItem] = assembly.items
+    items: list[AssemblyItem] = assembly.items
     index: int
-    item: SCItem
+    item: AssemblyItem
     for index, item in enumerate(items):
         # The center of its bottom, from the origin handed up.
         dx, dy, dz = item.location
-        here: SCPlaced = SCPlaced(
+        here: PlacedItem = PlacedItem(
             item=item,
             x=origin[0] + dx,
             y=origin[1] + dy,
@@ -109,7 +109,7 @@ def place(
         # The origin handed up, unless this is the top or a parallel.
         if index + 1 < len(items):
             thing: Any = resolver(item)
-            if not isinstance(thing, SCParallelLayer):
+            if not isinstance(thing, ParallelLayer):
                 offset: Point = thing.origin(here.turns)
                 origin = (
                     here.x + offset[0],
@@ -128,17 +128,17 @@ VIEW_FOV: float = 0.7
 # What each kind of item's handed-up origin is (by class name), for
 # the operator's list (`T.emsagc~5.2` #36, #38).
 ORIGIN_NAMES: dict[str, str] = {
-    "SCTableLayer": "top upper left",
-    "SCMachineViseLayer": "fixed jaw top left inner",
-    "SCGridPlate": "top left outer",
-    "SCPlate": "top left outer",
-    "SCStock": "top left outer",
+    "TableLayer": "top upper left",
+    "MachineViseLayer": "fixed jaw top left inner",
+    "GridPlate": "top left outer",
+    "Plate": "top left outer",
+    "Stock": "top left outer",
 }
 
 
 # Function `named_origins()`:
 def named_origins(
-    assembly: SCAssembly, resolver: Resolver = resolve
+    assembly: Assembly, resolver: Resolver = resolve
 ) -> list[tuple[str, Point]]:
     """Return the setup's named origins, in work coordinates.
 
@@ -148,7 +148,7 @@ def named_origins(
     underscores as spaces (#58).
 
     Arguments:
-    * `assembly` (`SCAssembly`): The items, bottom first.
+    * `assembly` (`Assembly`): The items, bottom first.
     * `resolver` (`Resolver`): What builds an item's object.
 
     Returns:
@@ -159,10 +159,10 @@ def named_origins(
     * `ValueError`: If an item can not be built (from `resolver`).
     """
     origins: list[tuple[str, Point]] = []
-    here: SCPlaced
+    here: PlacedItem
     for here in place(assembly, resolver)[:-1]:
         thing: Any = resolver(here.item)
-        if isinstance(thing, SCParallelLayer):
+        if isinstance(thing, ParallelLayer):
             continue
         offset: Point = thing.origin(here.turns)
         what: str = ORIGIN_NAMES.get(type(thing).__name__, "origin")
@@ -177,9 +177,9 @@ def named_origins(
     return origins
 
 
-# Class `SCShown`:
+# Class `ShownItem`:
 @dataclass(slots=True)
-class SCShown:
+class ShownItem:
     """What one item put in the SolidCraft design.
 
     Attributes:
@@ -188,7 +188,7 @@ class SCShown:
       deleted whole with what depends on them.
 
     Constructor:
-    * `SCShown(bodies, sketches)`
+    * `ShownItem(bodies, sketches)`
     """
 
     # Constructor arguments:
@@ -197,23 +197,23 @@ class SCShown:
 
 
 # Function `display_keys()`:
-def display_keys(placed: list[SCPlaced]) -> list[DisplayKey]:
+def display_keys(placed: list[PlacedItem]) -> list[DisplayKey]:
     """Return what tells each placed item from the others.
 
     Two items alike in every way (cache key, place, looks) are told
     apart by a count, so both are shown.
 
     Arguments:
-    * `placed` (`list[SCPlaced]`): The placed items.
+    * `placed` (`list[PlacedItem]`): The placed items.
 
     Returns:
     * (`list[DisplayKey]`): One key per item, in the same order.
     """
     seen: Counter[tuple[Any, ...]] = Counter()
     keys: list[DisplayKey] = []
-    here: SCPlaced
+    here: PlacedItem
     for here in placed:
-        item: SCItem = here.item
+        item: AssemblyItem = here.item
         base: tuple[str, str, float, float, float, int, str, float] = (
             item.kind,
             item_key(item),
@@ -230,14 +230,14 @@ def display_keys(placed: list[SCPlaced]) -> list[DisplayKey]:
 
 
 # Function `opacity()`:
-def opacity(item: SCItem) -> float:
+def opacity(item: AssemblyItem) -> float:
     """Return how opaque an item is drawn.
 
     A `transparency` of 0.0 (the default) means the kind's default
     (`OPACITY`); anything more overrides it.
 
     Arguments:
-    * `item` (`SCItem`): The item.
+    * `item` (`AssemblyItem`): The item.
 
     Returns:
     * (`float`): From 0.0 (clear) to 1.0 (solid).
@@ -275,12 +275,12 @@ def prism_edges(low: Point, high: Point) -> list[list[list[float]]]:
 
 # Function `keep_out_prisms()`:
 def keep_out_prisms(
-    here: SCPlaced, origin: Point
+    here: PlacedItem, origin: Point
 ) -> list[tuple[Point, Point]]:
     """Return an item's keep-out boxes in the setup (work) frame.
 
     Arguments:
-    * `here` (`SCPlaced`): The item, placed.
+    * `here` (`PlacedItem`): The item, placed.
     * `origin` (`Point`): Its unturned origin (`origin(0)`), from the
       center of its bottom, which its boxes are measured from.
 
@@ -317,12 +317,12 @@ def keep_out_prisms(
 
 
 # Function `box_edges()`:
-def box_edges(here: SCPlaced, stock: SCStock) -> list[list[list[float]]]:
+def box_edges(here: PlacedItem, stock: Stock) -> list[list[list[float]]]:
     """Return the edges of a stock's box as 3D polylines.
 
     Arguments:
-    * `here` (`SCPlaced`): Where the stock is (center of its bottom).
-    * `stock` (`SCStock`): The stock.
+    * `here` (`PlacedItem`): Where the stock is (center of its bottom).
+    * `stock` (`Stock`): The stock.
 
     Returns:
     * (`list[list[list[float]]]`): Two closed loops of 5 points
@@ -337,15 +337,15 @@ def box_edges(here: SCPlaced, stock: SCStock) -> list[list[list[float]]]:
     )
 
 
-# Class `SCSetupView`:
+# Class `SetupView`:
 # Its state is what is shown, how far, and how; all of it is needed.
 @dataclass(slots=True)
-class SCSetupView:  # pylint: disable=too-many-instance-attributes
+class SetupView:  # pylint: disable=too-many-instance-attributes
     """A setup shown in a SolidCraft session, changed only where needed.
 
     Attributes:
-    * `solidcraft` (`SCPyBind`): The SolidCraft session.
-    * `cache` (`SCModelCache | None`):
+    * `solidcraft` (`PyBind`): The SolidCraft session.
+    * `cache` (`ModelCache | None`):
       Where models are kept between runs, or `None` to build them.
     * `resolver` (`Resolver`): What builds an item's object.
     * `keep_outs` (`bool`): True to draw the items' keep-outs too.
@@ -354,16 +354,16 @@ class SCSetupView:  # pylint: disable=too-many-instance-attributes
       changes are done, of how many (read by other threads).
     * `counts` (`tuple[int, int, int]`): How many items the last
       `show()` added, kept and removed.
-    * `shown` (`dict[DisplayKey, SCShown]`): What is in the design.
+    * `shown` (`dict[DisplayKey, ShownItem]`): What is in the design.
     * `sketches` (`int`): How many stock sketches have been made.
 
     Constructor:
-    * `SCSetupView(solidcraft, cache, resolver)`
+    * `SetupView(solidcraft, cache, resolver)`
     """
 
     # Constructor arguments:
-    solidcraft: SCPyBind = field(init=True)
-    cache: SCModelCache | None = field(init=True, default=None)
+    solidcraft: PyBind = field(init=True)
+    cache: ModelCache | None = field(init=True, default=None)
     resolver: Resolver = field(init=True, default=resolve)
 
     # Remaining attributes (alphabetized):
@@ -371,23 +371,25 @@ class SCSetupView:  # pylint: disable=too-many-instance-attributes
     keep_outs: bool = field(init=False, default=False)
     progress: tuple[int, int] = field(init=False, default=(0, 0))
     viewed: bool = field(init=False, default=False)
-    shown: dict[DisplayKey, SCShown] = field(init=False, default_factory=dict)
+    shown: dict[DisplayKey, ShownItem] = field(
+        init=False, default_factory=dict
+    )
     sketches: int = field(init=False, default=0)
 
-    # Method `SCSetupView.show()`:
-    def show(self, assembly: SCAssembly) -> None:
+    # Method `SetupView.show()`:
+    def show(self, assembly: Assembly) -> None:
         """Show an assembly, changing only what differs from the last.
 
         Arguments:
-        * `assembly` (`SCAssembly`): The items, bottom first.
+        * `assembly` (`Assembly`): The items, bottom first.
 
         Raises:
         * `ValueError`: If an item can not be built (from `resolver`).
         * `RuntimeError`: If an item could not be taken out; it stays
           in `shown`, and the rest is still shown.
         """
-        placed: list[SCPlaced] = place(assembly, self.resolver)
-        wanted: dict[DisplayKey, SCPlaced] = dict(
+        placed: list[PlacedItem] = place(assembly, self.resolver)
+        wanted: dict[DisplayKey, PlacedItem] = dict(
             zip(display_keys(placed), placed, strict=True)
         )
 
@@ -413,7 +415,7 @@ class SCSetupView:  # pylint: disable=too-many-instance-attributes
             try:
                 self.erase(self.shown[key])
                 del self.shown[key]
-            except SCSolidCraftError as error:
+            except SolidCraftError as error:
                 failed.append(str(error))
             done += 1
             self.progress = (done, total)
@@ -435,8 +437,8 @@ class SCSetupView:  # pylint: disable=too-many-instance-attributes
         if failed:
             raise RuntimeError(f"not taken out: {'; '.join(failed)}")
 
-    # Method `SCSetupView.operator_view()`:
-    def operator_view(self, placed: list[SCPlaced]) -> None:
+    # Method `SetupView.operator_view()`:
+    def operator_view(self, placed: list[PlacedItem]) -> None:
         """Look at the stock as the operator does, once (#75).
 
         From the front (-Y), `VIEW_PITCH` above level, in perspective
@@ -444,16 +446,16 @@ class SCSetupView:  # pylint: disable=too-many-instance-attributes
         SolidCraft's front view, framing everything, with no stock).
 
         Arguments:
-        * `placed` (`list[SCPlaced]`): The items shown, placed.
+        * `placed` (`list[PlacedItem]`): The items shown, placed.
         """
         self.viewed = True
-        stocks: list[SCPlaced] = [
+        stocks: list[PlacedItem] = [
             here for here in placed if here.item.kind == "stock"
         ]
         if not stocks:
             self.solidcraft.view.apply(view="front")
             return
-        here: SCPlaced = stocks[0]
+        here: PlacedItem = stocks[0]
         stock: Any = self.resolver(here.item)
         self.solidcraft.view.apply(
             camera={
@@ -465,12 +467,12 @@ class SCSetupView:  # pylint: disable=too-many-instance-attributes
             }
         )
 
-    # Method `SCSetupView.erase()`:
-    def erase(self, shown: SCShown) -> None:
+    # Method `SetupView.erase()`:
+    def erase(self, shown: ShownItem) -> None:
         """Take one item out of the design.
 
         Arguments:
-        * `shown` (`SCShown`): What the item put there.
+        * `shown` (`ShownItem`): What the item put there.
         """
         if shown.bodies:
             self.solidcraft.solid.remove(bodies=cast(JSON, shown.bodies))
@@ -481,15 +483,15 @@ class SCSetupView:  # pylint: disable=too-many-instance-attributes
             )
             shown.sketches = []
 
-    # Method `SCSetupView.draw_keep_out()`:
-    def draw_keep_out(self, here: SCPlaced) -> SCShown:
+    # Method `SetupView.draw_keep_out()`:
+    def draw_keep_out(self, here: PlacedItem) -> ShownItem:
         """Draw an item's keep-outs as wire boxes, in a sketch of their own.
 
         Arguments:
-        * `here` (`SCPlaced`): The item, placed.
+        * `here` (`PlacedItem`): The item, placed.
 
         Returns:
-        * (`SCShown`): The sketch.
+        * (`ShownItem`): The sketch.
         """
         origin: Point = self.resolver(here.item).origin(0)
         self.sketches += 1
@@ -503,24 +505,24 @@ class SCSetupView:  # pylint: disable=too-many-instance-attributes
             for points in prism_edges(low, high):
                 self.solidcraft.sketch.line3d(points=cast(JSON, points))
         self.solidcraft.sketch.finish()
-        return SCShown(bodies=[], sketches=[name])
+        return ShownItem(bodies=[], sketches=[name])
 
-    # Method `SCSetupView.draw()`:
-    def draw(self, here: SCPlaced) -> SCShown:
+    # Method `SetupView.draw()`:
+    def draw(self, here: PlacedItem) -> ShownItem:
         """Put one placed item in the design.
 
         Stock is a wire outline (#45); tooling and parts are bodies,
         from the cache when they can be.
 
         Arguments:
-        * `here` (`SCPlaced`): The item, placed.
+        * `here` (`PlacedItem`): The item, placed.
 
         Returns:
-        * (`SCShown`): What it put there.
+        * (`ShownItem`): What it put there.
         """
         thing: Any = self.resolver(here.item)
-        if isinstance(thing, SCStock):
-            return SCShown(bodies=[], sketches=[self.outline(here, thing)])
+        if isinstance(thing, Stock):
+            return ShownItem(bodies=[], sketches=[self.outline(here, thing)])
         sketches: list[str] = []
         bodies: list[str] | None = self.inserted(here, thing)
         if bodies is None:
@@ -535,9 +537,9 @@ class SCSetupView:  # pylint: disable=too-many-instance-attributes
             self.solidcraft.appearance.assign(
                 bodies=cast(JSON, bodies), **look
             )
-        return SCShown(bodies=bodies, sketches=sketches)
+        return ShownItem(bodies=bodies, sketches=sketches)
 
-    # Method `SCSetupView.sketch_ids()`:
+    # Method `SetupView.sketch_ids()`:
     def sketch_ids(self) -> set[str]:
         """Return the ids of every sketch in the design.
 
@@ -552,13 +554,13 @@ class SCSetupView:  # pylint: disable=too-many-instance-attributes
         )
         return {str(sketch["id"]) for sketch in sketches}
 
-    # Method `SCSetupView.outline()`:
-    def outline(self, here: SCPlaced, stock: SCStock) -> str:
+    # Method `SetupView.outline()`:
+    def outline(self, here: PlacedItem, stock: Stock) -> str:
         """Draw a stock as the 12 edges of its box, in a 3D sketch.
 
         Arguments:
-        * `here` (`SCPlaced`): Where it is.
-        * `stock` (`SCStock`): The stock.
+        * `here` (`PlacedItem`): Where it is.
+        * `stock` (`Stock`): The stock.
 
         Returns:
         * (`str`): The sketch's name.
@@ -574,12 +576,12 @@ class SCSetupView:  # pylint: disable=too-many-instance-attributes
         self.solidcraft.sketch.finish()
         return f"stock_{self.sketches}"
 
-    # Method `SCSetupView.inserted()`:
-    def inserted(self, here: SCPlaced, thing: Any) -> list[str] | None:
+    # Method `SetupView.inserted()`:
+    def inserted(self, here: PlacedItem, thing: Any) -> list[str] | None:
         """Put an item's models in from the cache.
 
         Arguments:
-        * `here` (`SCPlaced`): Where it goes.
+        * `here` (`PlacedItem`): Where it goes.
         * `thing` (`Any`): Its object (with `cacheable()`, if cached).
 
         Returns:
@@ -588,13 +590,13 @@ class SCSetupView:  # pylint: disable=too-many-instance-attributes
         """
         if self.cache is None or not hasattr(thing, "cacheable"):
             return None
-        models: tuple[SCCacheable, ...] = thing.cacheable()
+        models: tuple[Cacheable, ...] = thing.cacheable()
         if not models:
             return None
         bodies: list[str] = []
-        model: SCCacheable
+        model: Cacheable
         for model in models:
-            got: SCInserted | None = self.cache.insert(
+            got: InsertedModel | None = self.cache.insert(
                 self.solidcraft,
                 keyed_by_item(model, here.item),
                 placement_matrix(
@@ -609,12 +611,12 @@ class SCSetupView:  # pylint: disable=too-many-instance-attributes
             bodies.extend(got.bodies)
         return bodies
 
-    # Method `SCSetupView.built()`:
-    def built(self, here: SCPlaced, thing: Any) -> list[str]:
-        """Build an item in the session, as `SCPlacement.model()` does.
+    # Method `SetupView.built()`:
+    def built(self, here: PlacedItem, thing: Any) -> list[str]:
+        """Build an item in the session, as `Placement.model()` does.
 
         Arguments:
-        * `here` (`SCPlaced`): Where it goes.
+        * `here` (`PlacedItem`): Where it goes.
         * `thing` (`Any`): Its object, with `model(solidcraft, point)`.
 
         Returns:

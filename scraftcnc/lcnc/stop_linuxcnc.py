@@ -26,7 +26,7 @@ from pathlib import Path
 
 # The programs of a running LinuxCNC (2.9, uspace), by name: the
 # `linuxcnc` script, its server, task, I/O, HAL user interface, realtime
-# and the displays, which include `scraftcnc`'s panel and, in a box with
+# and the displays, which include `scraftcnc`'s HMI and, in a box with
 # LinuxCNC's whole package, AXIS.
 PROGRAMS: frozenset[str] = frozenset(
     {

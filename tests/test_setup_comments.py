@@ -6,7 +6,7 @@ import warnings
 from pathlib import Path
 
 from scraftcnc import __version__, demo, setup_comments
-from scraftcnc.assembly import SCAssembly, SCItem
+from scraftcnc.assembly import Assembly, AssemblyItem
 from scraftcnc.shops import read
 from scraftcnc.tooling.cutter_models import EXAMPLE_SHOP
 from scraftcnc.tooling.shop_registries import use_shop
@@ -19,14 +19,14 @@ def setUpModule() -> None:
     use_shop(read(EXAMPLE_SHOP))
 
 
-def _assembly() -> SCAssembly:
+def _assembly() -> Assembly:
     """Return an assembly with a bit of everything in it."""
-    return SCAssembly(
+    return Assembly(
         [
-            SCItem(
+            AssemblyItem(
                 kind="tooling",
                 name="vise (6 in)",
-                call="scraftcnc.tooling.tools:SCMachineVise.make",
+                call="scraftcnc.tooling.tools:MachineVise.make",
                 args={
                     "width": "6 in",
                     "opening": "6 in",
@@ -54,10 +54,10 @@ def _assembly() -> SCAssembly:
                     for i in range(4)
                 ),
             ),
-            SCItem(
+            AssemblyItem(
                 kind="stock",
                 name="stock",
-                call="scraftcnc.assembly:SCStock",
+                call="scraftcnc.assembly:Stock",
                 args={
                     "material": "aluminum_6061",
                     "size": ["4 in", "3 in", "1/2 in"],
@@ -68,7 +68,7 @@ def _assembly() -> SCAssembly:
 
 
 # Function `_read()`:
-def _read(assembly: SCAssembly | None) -> SCAssembly:
+def _read(assembly: Assembly | None) -> Assembly:
     """Return an assembly that was read, which must not be `None`."""
     assert assembly is not None
     return assembly
@@ -79,7 +79,7 @@ class TestSetupComments(unittest.TestCase):
 
     def test_round_trip(self) -> None:
         """Write then read gives the same assembly."""
-        assembly: SCAssembly = _assembly()
+        assembly: Assembly = _assembly()
         lines: list[str] = setup_comments.write(assembly)
         self.assertEqual(lines[0], f'(SCC: version = "{__version__}")')
         line: str
@@ -92,8 +92,8 @@ class TestSetupComments(unittest.TestCase):
 
     def test_optional_fields_absent(self) -> None:
         """An item with only the needed fields reads back the same."""
-        assembly: SCAssembly = SCAssembly(
-            [SCItem("part", "plate", "scraftcnc.demo:model", {})]
+        assembly: Assembly = Assembly(
+            [AssemblyItem("part", "plate", "scraftcnc.demo:model", {})]
         )
         lines: list[str] = setup_comments.write(assembly)
         self.assertFalse(any("note" in line for line in lines))
@@ -152,12 +152,12 @@ class TestSetupComments(unittest.TestCase):
             warnings.simplefilter("always")
             assert_same(self, _read(setup_comments.read(lines)), _assembly())
         self.assertEqual(len(caught), 1)
-        self.assertIs(caught[0].category, setup_comments.SCSetupVersionWarning)
+        self.assertIs(caught[0].category, setup_comments.SetupVersionWarning)
 
     def test_no_toml_form(self) -> None:
         """A value TOML can not hold is a `TypeError`."""
-        assembly: SCAssembly = SCAssembly(
-            [SCItem("part", "p", "m:f", {"none": None})]
+        assembly: Assembly = Assembly(
+            [AssemblyItem("part", "p", "m:f", {"none": None})]
         )
         with self.assertRaises(TypeError):
             setup_comments.write(assembly)
@@ -168,12 +168,12 @@ class TestDemoSetup(unittest.TestCase):
 
     def test_demo_round_trip(self) -> None:
         """The demo's program reads back into the same assembly."""
-        assembly: SCAssembly = demo.demo_assembly()
+        assembly: Assembly = demo.demo_assembly()
         program: str = demo.with_setup(demo.cut_demo()[0].gcode(), assembly)
         lines: list[str] = program.splitlines()
         self.assertEqual(lines[0], "(SolidCraftCNC demo)")
         self.assertTrue(lines[1].startswith("(SCC: version"))
-        back: SCAssembly | None = setup_comments.read(lines)
+        back: Assembly | None = setup_comments.read(lines)
         assert back is not None
         assert_same(self, back, assembly)
         setup: list[str] = [line for line in lines if "(SCC:" in line]

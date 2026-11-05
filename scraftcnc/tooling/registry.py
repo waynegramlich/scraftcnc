@@ -1,7 +1,7 @@
 """Name registries: look tooling up by a short identifier.
 
-Each tooling class (`SCMillTable`, `SCMachineVise`, `SCParallel`,
-`SCGridPlate`) keeps an `SCRegistry` of its objects, keyed by a short
+Each tooling class (`MillTable`, `MachineVise`, `Parallel`,
+`GridPlate`) keeps an `Registry` of its objects, keyed by a short
 identifier made from each object's name (`key()`: "Kurt D688" is
 `kurt_d688`).  `named()` takes either the identifier or the name, so
 setups that give display names keep working.  A user interface shows
@@ -33,9 +33,9 @@ def key(name: str) -> str:
     return _NOT_KEY.sub("_", name.lower()).strip("_")
 
 
-# Class `SCRegistry`:
+# Class `Registry`:
 @dataclass(slots=True)
-class SCRegistry(Generic[T]):
+class Registry(Generic[T]):
     """The objects of one class, by key.
 
     Attributes:
@@ -44,7 +44,7 @@ class SCRegistry(Generic[T]):
     * `items` (`dict[str, T]`): The objects, by key.
 
     Constructor:
-    * `SCRegistry(kind)`
+    * `Registry(kind)`
     """
 
     # Constructor arguments:
@@ -53,7 +53,7 @@ class SCRegistry(Generic[T]):
     # Remaining attributes (alphabetized):
     items: dict[str, T] = field(init=False, default_factory=dict)
 
-    # Method `SCRegistry.add()`:
+    # Method `Registry.add()`:
     def add(self, name: str, item: T) -> T:
         """Add an object under the key of its name.
 
@@ -82,7 +82,7 @@ class SCRegistry(Generic[T]):
             self.items[name_key] = item
         return item
 
-    # Method `SCRegistry.named()`:
+    # Method `Registry.named()`:
     def named(self, name: str) -> T:
         """Return the object with a key or name.
 

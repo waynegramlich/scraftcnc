@@ -8,8 +8,8 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from unittest import mock
 
-from scraftcnc.geometry import SCCorner, SCHole, SCRoundedPolygon
-from scraftcnc.pybind.scraftpybind import SCHeadlessTransport, SCPyBind
+from scraftcnc.geometry import Corner, Hole, RoundedPolygon
+from scraftcnc.pybind.scraftpybind import HeadlessTransport, PyBind
 from scraftcnc.shops import read
 from scraftcnc.tooling import mount, tools
 from scraftcnc.tooling.cutter_models import EXAMPLE_SHOP
@@ -25,9 +25,9 @@ INCH = 25.4
 
 
 # A small grid plate, 5 by 5 holes, with chamfers and 2 by 2 tooling
-# holes: all of `SCGridPlate`, modeled in seconds rather than the
+# holes: all of `GridPlate`, modeled in seconds rather than the
 # minutes that `GRID_PLATE`'s 200 chamfers take.
-SMALL_PLATE = tools.SCGridPlate(
+SMALL_PLATE = tools.GridPlate(
     name="Small grid plate",
     length=2.5 * INCH,
     width=2.5 * INCH,
@@ -53,9 +53,9 @@ def setUpModule() -> None:
 
 def work(
     length: float = 5.5, width: float = 12.0, thick: float = 0.5
-) -> mount.SCPlate:
+) -> mount.Plate:
     """Return a plate, from its size in inches."""
-    return mount.SCPlate("Work", length * INCH, width * INCH, thick * INCH)
+    return mount.Plate("Work", length * INCH, width * INCH, thick * INCH)
 
 
 class TestFirstMount(unittest.TestCase):
@@ -84,7 +84,7 @@ class TestFirstMount(unittest.TestCase):
     def test_parallels_under_work(self) -> None:
         """The parallels' outer faces are flush with the work's edges."""
         pair = mount.FIRST_MOUNT.layers[2]
-        assert isinstance(pair, mount.SCParallelPair)
+        assert isinstance(pair, mount.ParallelPair)
         center = mount.FIRST_MOUNT.places()[2]
         low, high = pair.centers(center)
         half = pair.first.thickness / 2.0
@@ -119,8 +119,8 @@ class TestViseMount(unittest.TestCase):
     """Other stacks in a vise."""
 
     def build(
-        self, opening: float, height: str, plate: mount.SCPlate
-    ) -> mount.SCMount:
+        self, opening: float, height: str, plate: mount.Plate
+    ) -> mount.Mount:
         """Return a stack, with the opening in inches."""
         return mount.vise_mount(TABLE, VISE, opening * INCH, height, plate)
 
@@ -132,8 +132,8 @@ class TestViseMount(unittest.TestCase):
     def test_no_grip(self) -> None:
         """Parallels as tall as the jaws leave nothing to grip."""
         # The set stops at 1-5/8 in, so make a taller pair.
-        tall = tools.SCParallel("Tall", 1.875 * INCH, 3.175, 6.0 * INCH)
-        pair = mount.SCParallelPair(tall, tall, 5.0 * INCH)
+        tall = tools.Parallel("Tall", 1.875 * INCH, 3.175, 6.0 * INCH)
+        pair = mount.ParallelPair(tall, tall, 5.0 * INCH)
         notes = "\n".join(
             mount.vise_notes(TABLE, VISE, 6.0 * INCH, pair, work())
         )
@@ -155,9 +155,9 @@ class TestViseMount(unittest.TestCase):
         """A pair must match in height and not overlap."""
         low, high = tools.PARALLELS[0], tools.PARALLELS[2]
         with self.assertRaises(ValueError):
-            mount.SCParallelPair(low, high, 100.0)
+            mount.ParallelPair(low, high, 100.0)
         with self.assertRaises(ValueError):
-            mount.SCParallelPair(low, tools.PARALLELS[1], 1.0)
+            mount.ParallelPair(low, tools.PARALLELS[1], 1.0)
 
 
 class TestGarage(unittest.TestCase):
@@ -183,7 +183,7 @@ class TestGarage(unittest.TestCase):
 
     def test_turned_prism(self) -> None:
         """Three quarter turns send +X to -Y, about the axis given."""
-        prism = tools.SCPrism("P", (10.0, -1.0, 0.0), (20.0, 1.0, 5.0))
+        prism = tools.Prism("P", (10.0, -1.0, 0.0), (20.0, 1.0, 5.0))
         turned = prism.quarter_turned(10.0, 0.0, 3)
         self.assertEqual(turned.low, (9.0, -10.0, 0.0))
         self.assertEqual(turned.high, (11.0, 0.0, 5.0))
@@ -224,7 +224,7 @@ class TestGridPlate(unittest.TestCase):
         self.assertAlmostEqual(centers[1][0] - centers[0][0], 0.5 * INCH)
 
     def test_outline(self) -> None:
-        """The outline is an `SCRoundedPolygon` with four 1/4 in corners."""
+        """The outline is an `RoundedPolygon` with four 1/4 in corners."""
         outline = tools.GRID_PLATE.outline((1.0, 2.0))
         self.assertEqual(len(outline.corners), 4)
         self.assertTrue(outline.is_ccw())
@@ -237,7 +237,7 @@ class TestGridPlate(unittest.TestCase):
         """The outline holds all of the grid, moved with its center."""
         holes = tools.GRID_PLATE.outline((1.0, 2.0)).children
         self.assertEqual(len(holes), 200 + 8)
-        assert isinstance(holes[0], SCHole)
+        assert isinstance(holes[0], Hole)
         self.assertAlmostEqual(holes[0].x, 1.0 - 2.25 * INCH)
         self.assertAlmostEqual(holes[0].y, 2.0 - 4.75 * INCH)
         self.assertAlmostEqual(holes[0].diameter, 0.144 * INCH)
@@ -326,8 +326,8 @@ class TestModel(unittest.TestCase):
     def test_no_overlaps(self) -> None:
         """No two bodies of the stack overlap."""
         program = shutil.which("solidcraft-cli") or str(CLI)
-        with SCHeadlessTransport(program) as transport:
-            solidcraft = SCPyBind(transport)
+        with HeadlessTransport(program) as transport:
+            solidcraft = PyBind(transport)
             names = mount.FIRST_MOUNT.model(solidcraft)
             self.assertEqual(len(names), 1 + 12 + 2 + 1)
             result = solidcraft.inspect.interference(bodies=names)
@@ -339,8 +339,8 @@ class TestModel(unittest.TestCase):
     def test_garage(self) -> None:
         """The table's volume is right; the turned vise lands in place."""
         program = shutil.which("solidcraft-cli") or str(CLI)
-        with SCHeadlessTransport(program) as transport:
-            solidcraft = SCPyBind(transport)
+        with HeadlessTransport(program) as transport:
+            solidcraft = PyBind(transport)
             names = mount.GARAGE_MOUNT.model(solidcraft)
             result = solidcraft.inspect.center_of_mass(bodies=[names[0]])
             assert isinstance(result, dict)
@@ -364,10 +364,10 @@ class TestModel(unittest.TestCase):
     def test_grid_plate(self) -> None:
         """All of the holes are cut, and the plate sits on the table."""
         program = shutil.which("solidcraft-cli") or str(CLI)
-        with SCHeadlessTransport(program) as transport:
-            solidcraft = SCPyBind(transport)
+        with HeadlessTransport(program) as transport:
+            solidcraft = PyBind(transport)
             plate = SMALL_PLATE
-            stack = mount.SCMount(
+            stack = mount.Mount(
                 "Small", (mount.PLATE_MOUNT.layers[0], SMALL_PLATE)
             )
             names = stack.model(solidcraft)
@@ -420,8 +420,8 @@ class TestModel(unittest.TestCase):
     def test_one_extrude(self) -> None:
         """The plate takes one extrude, and no cut, and makes one body."""
         program = shutil.which("solidcraft-cli") or str(CLI)
-        with SCHeadlessTransport(program) as transport:
-            solidcraft = SCPyBind(transport)
+        with HeadlessTransport(program) as transport:
+            solidcraft = PyBind(transport)
             commands = type(solidcraft.solid)
             with mock.patch.object(
                 commands, "extrude", autospec=True, wraps=commands.extrude
@@ -439,27 +439,27 @@ class TestModel(unittest.TestCase):
             half: float,
             z_start: float,
             z_end: float,
-            children: Sequence[SCRoundedPolygon] = (),
+            children: Sequence[RoundedPolygon] = (),
             x: float = 0.0,
-        ) -> SCRoundedPolygon:
+        ) -> RoundedPolygon:
             corners = [
-                SCCorner(x - half, -half),
-                SCCorner(x + half, -half),
-                SCCorner(x + half, half),
-                SCCorner(x - half, half),
+                Corner(x - half, -half),
+                Corner(x + half, -half),
+                Corner(x + half, half),
+                Corner(x - half, half),
             ]
-            return SCRoundedPolygon(name, corners, z_start, z_end, children)
+            return RoundedPolygon(name, corners, z_start, z_end, children)
 
         island = square(
-            "Island", 15.0, 5.0, 10.0, [SCHole(0.0, 0.0, 10.0, 10.0, 0.0)]
+            "Island", 15.0, 5.0, 10.0, [Hole(0.0, 0.0, 10.0, 10.0, 0.0)]
         )
         pocket = square("Pocket", 30.0, 10.0, 5.0, [island])
-        through = SCHole(40.0, 40.0, 10.0, 10.0, 0.0)
+        through = Hole(40.0, 40.0, 10.0, 10.0, 0.0)
         boss = square("Boss", 5.0, 10.0, 15.0, x=-40.0)
         plate = square("Plate", 50.0, 0.0, 10.0, [pocket, through, boss])
         program = shutil.which("solidcraft-cli") or str(CLI)
-        with SCHeadlessTransport(program) as transport:
-            solidcraft = SCPyBind(transport)
+        with HeadlessTransport(program) as transport:
+            solidcraft = PyBind(transport)
             self.assertEqual(plate.model(solidcraft), "Plate")
             mass = solidcraft.inspect.center_of_mass(bodies=["Plate"])
         assert isinstance(mass, Mapping)
@@ -482,30 +482,28 @@ class TestNamedLayers(unittest.TestCase):
     def test_named(self) -> None:
         """`named()` gives the layer built from the objects."""
         self.assertEqual(
-            mount.SCTableLayer.named("mikini_1610l"),
-            mount.SCTableLayer(tools.MIKINI_1610L),
+            mount.TableLayer.named("mikini_1610l"),
+            mount.TableLayer(tools.MIKINI_1610L),
         )
         self.assertEqual(
-            mount.SCMachineViseLayer.named("kurt_d688", "5-1/2 in"),
-            mount.SCMachineViseLayer(tools.KURT_D688, 139.7),
+            mount.MachineViseLayer.named("kurt_d688", "5-1/2 in"),
+            mount.MachineViseLayer(tools.KURT_D688, 139.7),
         )
         self.assertEqual(
-            mount.SCMachineViseLayer.named("Kurt D688", 100.0).opening, 100.0
+            mount.MachineViseLayer.named("Kurt D688", 100.0).opening, 100.0
         )
-        parallel: tools.SCParallel = tools.SCParallel.named(
-            "parallel_1_1_2_in_a"
-        )
+        parallel: tools.Parallel = tools.Parallel.named("parallel_1_1_2_in_a")
         self.assertEqual(
-            mount.SCParallelLayer.named("Parallel 1-1/2 in A"),
-            mount.SCParallelLayer(parallel),
+            mount.ParallelLayer.named("Parallel 1-1/2 in A"),
+            mount.ParallelLayer(parallel),
         )
 
     def test_bad_opening(self) -> None:
         """An opening past the vise's most is a `ValueError`."""
         with self.assertRaisesRegex(ValueError, "Kurt D688"):
-            mount.SCMachineViseLayer.named("kurt_d688", "20 in")
+            mount.MachineViseLayer.named("kurt_d688", "20 in")
         with self.assertRaises(KeyError):
-            mount.SCTableLayer.named("no_such_table")
+            mount.TableLayer.named("no_such_table")
 
 
 class TestOrigins(unittest.TestCase):
@@ -524,27 +522,25 @@ class TestOrigins(unittest.TestCase):
 
     def test_table(self) -> None:
         """The table's top, upper left corner."""
-        table: mount.SCTableLayer = mount.SCTableLayer(tools.MIKINI_1610L)
+        table: mount.TableLayer = mount.TableLayer(tools.MIKINI_1610L)
         self.assert_point(table.origin(), (-381.0, 133.35, 63.5))
         self.assert_point(table.origin(1), (-133.35, 381.0, 63.5))
 
     def test_vise(self) -> None:
         """The fixed jaw's top, left, inner corner."""
-        vise: mount.SCMachineViseLayer = mount.SCMachineViseLayer.named(
+        vise: mount.MachineViseLayer = mount.MachineViseLayer.named(
             "kurt_d688", "5-1/2 in"
         )
         self.assert_point(vise.origin(), (-156.21, -76.2, 111.125))
 
         # Turned 3 (`demo_stack.json`'s -90 deg): the fixed jaw is +Y.
         self.assert_point(vise.origin(3), (-76.2, 156.21, 111.125))
-        turned: mount.SCMachineViseLayer = dataclasses.replace(
-            vise, turned=True
-        )
+        turned: mount.MachineViseLayer = dataclasses.replace(vise, turned=True)
         self.assert_point(turned.origin(), vise.origin(3))
 
     def test_parallel(self) -> None:
         """A parallel gives the middle of its top edge, at any turn."""
-        layer: mount.SCParallelLayer = mount.SCParallelLayer.named(
+        layer: mount.ParallelLayer = mount.ParallelLayer.named(
             "parallel_1_1_2_in_a"
         )
         self.assert_point(layer.origin(), (0.0, 0.0, 38.1))
@@ -552,7 +548,7 @@ class TestOrigins(unittest.TestCase):
 
     def test_grid_plate(self) -> None:
         """The plate's top, left, outer corner, turned."""
-        plate: tools.SCGridPlate = tools.GRID_PLATE
+        plate: tools.GridPlate = tools.GRID_PLATE
         self.assert_point(plate.origin(), (-69.85, -133.35, 12.7))
         self.assert_point(plate.origin(1), (-133.35, -69.85, 12.7))
 

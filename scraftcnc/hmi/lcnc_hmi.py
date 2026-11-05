@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A minimal LinuxCNC control panel, in place of AXIS (`T.mlcp~3.4`).
+"""A minimal LinuxCNC HMI, in place of AXIS (`T.mlcp~3.4`).
 
 A small `tkinter` window that drives the LinuxCNC back end through its
 Python API: the G-code already run, one line of G-code to run as MDI
@@ -10,11 +10,11 @@ line (-Tool and +Tool, which move the line Start runs from to the
 previous or next tool change; Start, Pause and Reset), a speed slider
 (the feed override) with Open, and the work
 position and tool in the spindle.  The LinuxCNC calls are kept in
-`SCPanelMachine`, a client (through `scraftcnc.lcnc.lcnc_client`) of
+`HMIMachine`, a client (through `scraftcnc.lcnc.lcnc_client`) of
 `serve_linuxcnc` from `scraftcnc/lcnc/`, which runs LinuxCNC in its
 `lcnc` box, or in WSL on Windows.  So this runs outside the box, and
 needs only `tkinter`.  Closing it leaves LinuxCNC running, for another
-panel.  When it starts, the machine is taken out of E-stop, turned on
+HMI.  When it starts, the machine is taken out of E-stop, turned on
 and homed if it needs to be (G54 is then set to `ORIGIN`), it is sent
 the shop's tool table, and the INI file's `MAX_FEED_OVERRIDE` limits
 the slider:
@@ -28,7 +28,7 @@ python3 -m scraftcnc.hmi.lcnc_hmi --dry-run demo.ngc
 python3 -m scraftcnc.hmi.lcnc_hmi --headless --port 5007
 ```
 
-With `--headless`, the panel is built from `lcnc_hmi_headless.py` in
+With `--headless`, the HMI is built from `lcnc_hmi_headless.py` in
 place of `tkinter`, so it needs no display and no `tkinter`, and
 otherwise runs the same code, with its buttons pressed through the
 command port.
@@ -72,12 +72,12 @@ from pathlib import Path
 from typing import Any, Protocol, cast
 
 from .. import shops
-from ..assembly import SCAssembly, SCItem
-from ..lcnc.lcnc_client import PORT, SCBridgeError, SCClient, constant
-from ..model_cache import SCModelCache
-from ..pybind.scraftpybind import SCPyBind, connect
+from ..assembly import Assembly, AssemblyItem
+from ..lcnc.lcnc_client import PORT, BridgeClient, BridgeError, constant
+from ..model_cache import ModelCache
+from ..pybind.scraftpybind import PyBind, connect
 from ..setup_comments import read_file
-from ..setup_view import SCSetupView, named_origins
+from ..setup_view import SetupView, named_origins
 from ..tooling.shop_registries import use_shop
 from ..tooling.tools import Point
 from . import lcnc_hmi_headless
@@ -116,7 +116,7 @@ STEP_CHOSEN: str = "#a8c8f0"
 # How close to the work origin counts as there (inches).
 AT_ORIGIN: float = 0.00005
 
-# How often the panel polls LinuxCNC and the command port
+# How often the HMI polls LinuxCNC and the command port
 # (milliseconds).
 POLL_MS: int = 100
 
@@ -248,10 +248,10 @@ def tool_changes(lines: list[str]) -> list[int]:
     ]
 
 
-# Class `SCStatus`:
+# Class `HMIStatus`:
 @dataclass(slots=True)
-class SCStatus:
-    """What the panel shows of the machine, from one poll.
+class HMIStatus:
+    """What the HMI shows of the machine, from one poll.
 
     Attributes:
     * `file` (`str`): The open program ("" for none).
@@ -261,10 +261,10 @@ class SCStatus:
     * `tool` (`int`): The T number in the spindle (0 for none).
     * `messages` (`list[str]`): LinuxCNC's new error messages.
     * `state` (`str`): `idle`, `running` or `paused` (`""` for a dry
-      run, where the panel's own idea of it stands).
+      run, where the HMI's own idea of it stands).
 
     Constructor:
-    * `SCStatus(file, line, position, tool, messages, state)`
+    * `HMIStatus(file, line, position, tool, messages, state)`
     """
 
     # Constructor arguments:
@@ -276,9 +276,9 @@ class SCStatus:
     state: str = field(init=True)
 
 
-# Class `SCPanelMachine`:
-class SCPanelMachine:
-    """The LinuxCNC back end, as the panel sees it.
+# Class `HMIMachine`:
+class HMIMachine:
+    """The LinuxCNC back end, as the HMI sees it.
 
     It is a client of `scraftcnc.lcnc`'s `serve_linuxcnc`, which runs
     LinuxCNC wherever that is installed.  With `dry_run`, nothing is
@@ -294,13 +294,13 @@ class SCPanelMachine:
     * `dry_run` (`bool`): True when no LinuxCNC is used.
     * `file` (`str`): The program opened: where it is on the server,
       or its own path for a dry run.
-    * `lcnc` (`SCClient | None`): The connection, or `None`.
+    * `lcnc` (`BridgeClient | None`): The connection, or `None`.
     * `log` (`list[str]`): What was asked of the machine, in order.
     * `mdi_lines` (`list[str]`): The MDI lines waiting to be run.
     * `messages` (`list[str]`): Every message LinuxCNC has sent.
     """
 
-    # Method `SCPanelMachine.__init__()`:
+    # Method `HMIMachine.__init__()`:
     def __init__(self, dry_run: bool, port: int = PORT) -> None:
         """Connect to `serve_linuxcnc`, unless `dry_run`.
 
@@ -316,7 +316,7 @@ class SCPanelMachine:
         self.constants: dict[str, Any] = {}
         self.dry_run: bool = dry_run
         self.file: str = ""
-        self.lcnc: SCClient | None = None
+        self.lcnc: BridgeClient | None = None
         self.log: list[str] = []
         self.mdi_lines: list[str] = []
         self.messages: list[str] = []
@@ -325,7 +325,7 @@ class SCPanelMachine:
 
         # Connect, and check that it knows the calls used here.
         try:
-            self.lcnc = SCClient(port=port)
+            self.lcnc = BridgeClient(port=port)
         except OSError as error:
             raise RuntimeError(
                 f"No LinuxCNC on port {port} ({error}); "
@@ -339,7 +339,7 @@ class SCPanelMachine:
             )
         self.constants = self.lcnc.call("constants")
 
-    # Method `SCPanelMachine._mode()`:
+    # Method `HMIMachine._mode()`:
     def _mode(self, name: str) -> None:
         """Switch LinuxCNC to a mode (`MODE_AUTO`, `MODE_MDI`, ...).
 
@@ -351,7 +351,7 @@ class SCPanelMachine:
             self.lcnc.call("command.mode", constant(name))
             self.lcnc.call("command.wait_complete")
 
-    # Method `SCPanelMachine._wait_for()`:
+    # Method `HMIMachine._wait_for()`:
     def _wait_for(self, what: str, test: Callable[[], bool]) -> None:
         """Wait, as LinuxCNC starts up, until something is true.
 
@@ -368,17 +368,17 @@ class SCPanelMachine:
                 raise TimeoutError(f"Timed out waiting for {what}.")
             time.sleep(POLL_MS / 1000.0)
 
-    # Method `SCPanelMachine._home()`:
+    # Method `HMIMachine._home()`:
     def _home(self) -> bool:
         """Take it out of E-stop, turn it on, and home every joint.
 
         A machine already on and homed is left alone, since it may be
-        running a program for a panel that has since closed.
+        running a program for an HMI that has since closed.
 
         Returns:
         * (`bool`): True if it had to be homed, as a new LinuxCNC does.
         """
-        lcnc: SCClient = cast(SCClient, self.lcnc)
+        lcnc: BridgeClient = cast(BridgeClient, self.lcnc)
         state_on: int = self.constants["STATE_ON"]
 
         def homed() -> bool:
@@ -404,14 +404,14 @@ class SCPanelMachine:
         self._wait_for("homing", homed)
         return True
 
-    # Method `SCPanelMachine.start()`:
+    # Method `HMIMachine.start()`:
     def start(self) -> None:
         """Get LinuxCNC ready, keeping what it has if already running.
 
         It is turned on and homed if it needs to be, and then has
         just started, so G54 is set to `ORIGIN`, whatever LinuxCNC kept
         from its last run or another client set.  `serve_linuxcnc`
-        outlives the panel, so a panel opened later keeps the origin.
+        outlives the HMI, so an HMI opened later keeps the origin.
         The shop's tool table is sent unless a program is running.
 
         Raises:
@@ -443,7 +443,7 @@ class SCPanelMachine:
             self.lcnc.call("command.mdi", f"G20 G10 L2 P1 X{x} Y{y} Z{z}")
             self.lcnc.call("command.wait_complete")
 
-    # Method `SCPanelMachine.max_speed()`:
+    # Method `HMIMachine.max_speed()`:
     def max_speed(self) -> float:
         """Return the highest feed override the INI file allows.
 
@@ -458,13 +458,13 @@ class SCPanelMachine:
         )
         return float(found) if found else MAX_SPEED
 
-    # Method `SCPanelMachine.open()`:
+    # Method `HMIMachine.open()`:
     def open(self, path: str) -> None:
         """Send a program to LinuxCNC, ready to run from its start.
 
         Arguments:
         * `path` (`str`): The G-code file, here (a relative path is
-          from the panel's directory).
+          from the HMI's directory).
 
         Raises:
         * `FileNotFoundError`: If there is no such file.
@@ -482,7 +482,7 @@ class SCPanelMachine:
             self.lcnc.call("command.program_open", self.file)
             self.lcnc.call("command.wait_complete")
 
-    # Method `SCPanelMachine.program_lines()`:
+    # Method `HMIMachine.program_lines()`:
     def program_lines(self, file: str) -> list[str]:
         """Return the lines of the program that LinuxCNC has open.
 
@@ -498,11 +498,11 @@ class SCPanelMachine:
                 if self.lcnc is None
                 else self.lcnc.call("program.read", file)
             )
-        except (OSError, SCBridgeError):
+        except (OSError, BridgeError):
             return []
         return text.splitlines()
 
-    # Method `SCPanelMachine.run()`:
+    # Method `HMIMachine.run()`:
     def run(self, start: int) -> None:
         """Run the open program from a line.
 
@@ -516,14 +516,14 @@ class SCPanelMachine:
             self._mode("MODE_AUTO")
             self.lcnc.call("command.auto", constant("AUTO_RUN"), start)
 
-    # Method `SCPanelMachine.pause()`:
+    # Method `HMIMachine.pause()`:
     def pause(self) -> None:
         """Pause the running program."""
         self.log.append("pause")
         if self.lcnc is not None:
             self.lcnc.call("command.auto", constant("AUTO_PAUSE"))
 
-    # Method `SCPanelMachine.resume()`:
+    # Method `HMIMachine.resume()`:
     def resume(self) -> None:
         """Resume a paused program.
 
@@ -534,7 +534,7 @@ class SCPanelMachine:
         if self.lcnc is not None:
             self.lcnc.call("command.auto", constant("AUTO_RESUME"))
 
-    # Method `SCPanelMachine.stop()`:
+    # Method `HMIMachine.stop()`:
     def stop(self) -> None:
         """Stop at once (`command.abort()`), with any MDI lines waiting."""
         self.log.append("stop")
@@ -543,7 +543,7 @@ class SCPanelMachine:
             self.lcnc.call("command.abort")
             self.lcnc.call("command.wait_complete")
 
-    # Method `SCPanelMachine.mdi()`:
+    # Method `HMIMachine.mdi()`:
     def mdi(self, *lines: str) -> None:
         """Start lines of G-code as manual (MDI) commands, one at a time.
 
@@ -567,12 +567,12 @@ class SCPanelMachine:
             self.mdi_lines = list(lines[1:])
             self.lcnc.call("command.mdi", lines[0])
 
-    # Method `SCPanelMachine.set_origin()`:
+    # Method `HMIMachine.set_origin()`:
     def set_origin(self) -> None:
         """Make the current position the program's zero (G54)."""
         self.mdi("G10 L20 P1 X0 Y0 Z0")
 
-    # Method `SCPanelMachine.jog()`:
+    # Method `HMIMachine.jog()`:
     def jog(self, axis: int, direction: int, step: float) -> None:
         """Jog one axis by one step.
 
@@ -597,7 +597,7 @@ class SCPanelMachine:
                 direction * step,
             )
 
-    # Method `SCPanelMachine.go_origin()`:
+    # Method `HMIMachine.go_origin()`:
     def go_origin(self, z: float) -> None:
         """Rapid to the work origin, never moving sideways below Z0.
 
@@ -606,7 +606,7 @@ class SCPanelMachine:
         """
         self.mdi(f"G20 G90 G0 Z{max(z, 0.0):.4f}", "G0 X0 Y0", "G0 Z0")
 
-    # Method `SCPanelMachine.set_speed()`:
+    # Method `HMIMachine.set_speed()`:
     def set_speed(self, speed: float) -> None:
         """Set the feed override.
 
@@ -618,7 +618,7 @@ class SCPanelMachine:
         if self.lcnc is not None:
             self.lcnc.call("command.feedrate", speed)
 
-    # Method `SCPanelMachine.top_z()`:
+    # Method `HMIMachine.top_z()`:
     def top_z(self) -> float:
         """Return the highest work Z the tool's tip can reach.
 
@@ -626,7 +626,7 @@ class SCPanelMachine:
         * (`float`): Z's upper travel limit less the G5x, G92 and tool
           length offsets (inches).
         """
-        stat: dict[str, Any] = cast(SCClient, self.lcnc).stat(
+        stat: dict[str, Any] = cast(BridgeClient, self.lcnc).stat(
             "axis", "g5x_offset", "g92_offset", "tool_offset"
         )
         return float(
@@ -636,14 +636,14 @@ class SCPanelMachine:
             - stat["tool_offset"][2]
         )
 
-    # Method `SCPanelMachine._read_messages()`:
+    # Method `HMIMachine._read_messages()`:
     def _read_messages(self) -> list[str]:
         """Read LinuxCNC's new messages, and keep them.
 
         Returns:
         * (`list[str]`): The new messages.
         """
-        lcnc: SCClient = cast(SCClient, self.lcnc)
+        lcnc: BridgeClient = cast(BridgeClient, self.lcnc)
         messages: list[str] = []
         error: Any = lcnc.call("error_channel.poll")
         while error:
@@ -663,7 +663,7 @@ class SCPanelMachine:
         self.messages += messages
         return messages
 
-    # Method `SCPanelMachine._next_mdi()`:
+    # Method `HMIMachine._next_mdi()`:
     def _next_mdi(self, idle: bool, messages: list[str]) -> bool:
         """Start the next MDI line waiting, if its time has come.
 
@@ -677,7 +677,7 @@ class SCPanelMachine:
         Returns:
         * (`bool`): True if lines are still to be finished.
         """
-        lcnc: SCClient = cast(SCClient, self.lcnc)
+        lcnc: BridgeClient = cast(BridgeClient, self.lcnc)
         if messages:
             self.mdi_lines.clear()
         if not self.mdi_lines:
@@ -686,15 +686,15 @@ class SCPanelMachine:
             lcnc.call("command.mdi", self.mdi_lines.pop(0))
         return True
 
-    # Method `SCPanelMachine.status()`:
-    def status(self) -> SCStatus:
+    # Method `HMIMachine.status()`:
+    def status(self) -> HMIStatus:
         """Poll LinuxCNC, and start the next MDI line when it is time.
 
         Returns:
-        * (`SCStatus`): The program, line, position, tool and messages.
+        * (`HMIStatus`): The program, line, position, tool and messages.
         """
         if self.lcnc is None:
-            return SCStatus(self.file, 0, (0.0, 0.0, 0.0), 0, [], "")
+            return HMIStatus(self.file, 0, (0.0, 0.0, 0.0), 0, [], "")
         stat: dict[str, Any] = self.lcnc.stat(
             "actual_position",
             "file",
@@ -719,7 +719,7 @@ class SCPanelMachine:
             - stat["tool_offset"][axis]
             for axis in range(3)
         )
-        return SCStatus(
+        return HMIStatus(
             str(stat["file"]),
             int(stat["motion_line"]),
             (x, y, z),
@@ -733,15 +733,15 @@ class SCPanelMachine:
         )
 
 
-# Class `SCCommandPort`:
-class SCCommandPort:  # pylint: disable=too-few-public-methods
+# Class `CommandPort`:
+class CommandPort:  # pylint: disable=too-few-public-methods
     """A command port on 127.0.0.1: one line in, one line back.
 
     Attributes:
     * `server` (`socket.socket`): The listening socket (not blocking).
     """
 
-    # Method `SCCommandPort.__init__()`:
+    # Method `CommandPort.__init__()`:
     def __init__(self, port: int) -> None:
         """Listen on a port.
 
@@ -754,7 +754,7 @@ class SCCommandPort:  # pylint: disable=too-few-public-methods
         self.server.listen()
         self.server.setblocking(False)
 
-    # Method `SCCommandPort.poll()`:
+    # Method `CommandPort.poll()`:
     def poll(self, handle: Any) -> None:
         """Answer each waiting connection.
 
@@ -827,7 +827,7 @@ def ask_choice(
     """Ask the operator to pick one of a list, in a window of its own.
 
     Arguments:
-    * `root` (`tk.Tk`): The panel's window.
+    * `root` (`tk.Tk`): The HMI's window.
     * `title` (`str`): The window's title.
     * `message` (`str`): The question.
     * `choices` (`list[str]`): What may be picked.
@@ -865,9 +865,9 @@ def ask_choice(
     return chosen.get()
 
 
-# Class `SCView`:
-class SCView(Protocol):  # pylint: disable=too-few-public-methods
-    """What shows an assembly (`setup_view.SCSetupView`, or a fake).
+# Class `View`:
+class View(Protocol):  # pylint: disable=too-few-public-methods
+    """What shows an assembly (`setup_view.SetupView`, or a fake).
 
     Attributes:
     * `keep_outs` (`bool`): True to show the items' keep-outs too.
@@ -877,41 +877,41 @@ class SCView(Protocol):  # pylint: disable=too-few-public-methods
     keep_outs: bool
     progress: tuple[int, int]
 
-    # Method `SCView.show()`:
-    def show(self, assembly: SCAssembly) -> None:
+    # Method `View.show()`:
+    def show(self, assembly: Assembly) -> None:
         """Show an assembly.
 
         Arguments:
-        * `assembly` (`SCAssembly`): The items, bottom first.
+        * `assembly` (`Assembly`): The items, bottom first.
         """
 
 
-# Class `SCSetupDrawer`:
+# Class `SetupDrawer`:
 @dataclass(slots=True)
-class SCSetupDrawer:
+class SetupDrawer:
     """Draws setups one at a time, on a thread, the newest first.
 
     A setup handed in while another is drawn waits; a newer one
     replaces it, so only the newest is drawn next.  Tk is not thread
-    safe, so errors wait in `errors` for the panel's poll.
+    safe, so errors wait in `errors` for the HMI's poll.
 
     Attributes:
-    * `view` (`SCView`): What draws an assembly; kept for the whole
+    * `view` (`View`): What draws an assembly; kept for the whole
       run, so a new setup changes only what differs (`T.emsagc~5.2`
       #68).
     * `busy` (`bool`): True while the thread is drawing.
     * `keep_outs` (`bool`): Whether the next drawing shows keep-outs.
-    * `errors` (`queue.SimpleQueue[str]`): Messages for the panel.
+    * `errors` (`queue.SimpleQueue[str]`): Messages for the HMI.
     * `lock` (`threading.Lock`): Guards `busy`, `pending`, `thread`.
-    * `pending` (`SCAssembly | None`): The next setup to draw.
+    * `pending` (`Assembly | None`): The next setup to draw.
     * `thread` (`threading.Thread | None`): The drawing thread.
 
     Constructor:
-    * `SCSetupDrawer(view)`
+    * `SetupDrawer(view)`
     """
 
     # Constructor arguments:
-    view: SCView = field(init=True)
+    view: View = field(init=True)
 
     # Remaining attributes (alphabetized):
     busy: bool = field(init=False, default=False)
@@ -920,15 +920,15 @@ class SCSetupDrawer:
         init=False, default_factory=queue.SimpleQueue
     )
     lock: threading.Lock = field(init=False, default_factory=threading.Lock)
-    pending: SCAssembly | None = field(init=False, default=None)
+    pending: Assembly | None = field(init=False, default=None)
     thread: threading.Thread | None = field(init=False, default=None)
 
-    # Method `SCSetupDrawer.draw()`:
-    def draw(self, assembly: SCAssembly) -> None:
+    # Method `SetupDrawer.draw()`:
+    def draw(self, assembly: Assembly) -> None:
         """Draw a setup when the thread is free, dropping older ones.
 
         Arguments:
-        * `assembly` (`SCAssembly`): The setup to draw.
+        * `assembly` (`Assembly`): The setup to draw.
         """
         with self.lock:
             self.pending = assembly
@@ -939,12 +939,12 @@ class SCSetupDrawer:
                 )
                 self.thread.start()
 
-    # Method `SCSetupDrawer.work()`:
+    # Method `SetupDrawer.work()`:
     def work(self) -> None:
         """Draw the pending setups until there are none (the thread)."""
         while True:
             # Take the newest setup, or stop when there is none.
-            assembly: SCAssembly | None
+            assembly: Assembly | None
             with self.lock:
                 assembly = self.pending
                 self.pending = None
@@ -952,7 +952,7 @@ class SCSetupDrawer:
                     self.busy = False
                     return
 
-            # Draw it; any error goes to the panel.
+            # Draw it; any error goes to the HMI.
             try:
                 self.view.keep_outs = self.keep_outs
                 self.view.show(assembly)
@@ -960,7 +960,7 @@ class SCSetupDrawer:
             except Exception as error:  # noqa: BLE001
                 self.errors.put(f"Setup not drawn: {error}")
 
-    # Method `SCSetupDrawer.wait()`:
+    # Method `SetupDrawer.wait()`:
     def wait(self) -> None:
         """Wait until every setup handed in is drawn (for tests)."""
         while True:
@@ -971,7 +971,7 @@ class SCSetupDrawer:
                 return
             thread.join()
 
-    # Method `SCSetupDrawer.message()`:
+    # Method `SetupDrawer.message()`:
     def message(self) -> str:
         """Return the newest error message, or "" when there is none.
 
@@ -984,28 +984,28 @@ class SCSetupDrawer:
         return text
 
 
-# Class `SCPanel`:
+# Class `HMI`:
 # pylint: disable-next=too-many-instance-attributes,too-many-public-methods
-class SCPanel:
-    """The control panel window, laid out as in `T.mlcp~3.4`.
+class HMI:
+    """The HMI window, laid out as in `T.mlcp~3.4`.
 
     Attributes:
     * `coming` (`tk.Text`): The G-code coming next (read only).
     * `inches` (`bool`): True when the open program is in inches.
-    * `assembly` (`SCAssembly | None`): The open program's setup.
+    * `assembly` (`Assembly | None`): The open program's setup.
     * `next_step_button` (`ttk.Button`): Shows the setup's next item.
     * `note` (`str`): The setup step shown, kept ahead of any error.
     * `drawing` (`bool`): True while a setup is drawn (Start is
       greyed out).
     * `progress` (`ttk.Progressbar`): How much of the setup is drawn.
-    * `drawn` (`SCAssembly | None`): The setup (or the steps of it)
+    * `drawn` (`Assembly | None`): The setup (or the steps of it)
       last handed to `drawer`.
     * `keep_outs_button` (`ttk.Button`): Shows or hides keep-outs.
     * `setup_step` (`int`): How many of the setup's items Next Step
       has shown (0: the whole setup).
     * `origins` (`list[tuple[str, Point]]`): The open program's
       setup's named origins (work millimeters), or none.
-    * `drawer` (`SCSetupDrawer | None`): What draws an opened
+    * `drawer` (`SetupDrawer | None`): What draws an opened
       program's setup in SolidCraft, or `None` to draw nothing.
     * `execute_button` (`ttk.Button`): Runs the MDI line.
     * `executed` (`tk.Text`): The G-code already run (read only).
@@ -1014,14 +1014,14 @@ class SCPanel:
       -Y, +Y, -Z, +Z, and the step buttons.
     * `lines` (`list[str]`): The open program's lines.
     * `lines_file` (`str`): The file `lines` was read from.
-    * `machine` (`SCPanelMachine`): The LinuxCNC back end.
+    * `machine` (`HMIMachine`): The LinuxCNC back end.
     * `mdi` (`tk.StringVar`): The MDI line's text.
     * `mdi_entry` (`tk.Entry`): The MDI line, colored as it is typed.
     * `message` (`ttk.Label`): LinuxCNC's last error message.
     * `origin_button` (`ttk.Button`): The Set Origin button.
     * `paused` (`bool`): True while the program is paused.
     * `pause_button` (`ttk.Button`): The Pause button.
-    * `port` (`SCCommandPort | None`): The command port, if any.
+    * `port` (`CommandPort | None`): The command port, if any.
     * `position` (`ttk.Label`): The work position and the tool.
     * `root` (`tk.Tk`): The window.
     * `run_button` (`ttk.Button`): The Start button (Resume while
@@ -1039,14 +1039,14 @@ class SCPanel:
     * `tool_buttons` (`list[ttk.Button]`): -Tool and +Tool.
     """
 
-    # Method `SCPanel.__init__()`:
+    # Method `HMI.__init__()`:
     # pylint: disable-next=too-many-locals,too-many-statements
     def __init__(
         self,
         root: tk.Tk,
-        machine: SCPanelMachine,
+        machine: HMIMachine,
         max_speed: float,
-        port: SCCommandPort | None,
+        port: CommandPort | None,
     ) -> None:
         """Build the window.
 
@@ -1056,29 +1056,29 @@ class SCPanel:
         Arguments:
         * `root` (`tk.Tk`):
           The window to build in.
-        * `machine` (`SCPanelMachine`):
+        * `machine` (`HMIMachine`):
           The LinuxCNC back end.
         * `max_speed` (`float`):
           The speed slider's highest setting.
-        * `port` (`SCCommandPort | None`):
+        * `port` (`CommandPort | None`):
           The command port, if any.
         """
         self.root: tk.Tk = root
-        self.machine: SCPanelMachine = machine
-        self.port: SCCommandPort | None = port
+        self.machine: HMIMachine = machine
+        self.port: CommandPort | None = port
         self.paused: bool = False
         self.running: bool = False
         self.start: int = 0
         self.lines: list[str] = []
         self.lines_file: str = ""
         self.scrolling: bool = False
-        self.drawer: SCSetupDrawer | None = None
+        self.drawer: SetupDrawer | None = None
         self.origins: list[tuple[str, Point]] = []
         self.inches: bool = False
-        self.assembly: SCAssembly | None = None
+        self.assembly: Assembly | None = None
         self.setup_step: int = 0
         self.note: str = ""
-        self.drawn: SCAssembly | None = None
+        self.drawn: Assembly | None = None
         self.drawing: bool = False
         root.title("SolidCraft LinuxCNC")
 
@@ -1222,7 +1222,7 @@ class SCPanel:
         )
         root.after(POLL_MS, self.poll)
 
-    # Method `SCPanel.scrolled_text()`:
+    # Method `HMI.scrolled_text()`:
     @staticmethod
     def scrolled_text(root: tk.Tk, row: int) -> tk.Text:
         """Make a read only text window with a scroll bar.
@@ -1243,7 +1243,7 @@ class SCPanel:
         scroll.pack(side="left", fill="y")
         return text
 
-    # Method `SCPanel.set_speed()`:
+    # Method `HMI.set_speed()`:
     def set_speed(self, speed: float) -> None:
         """Set the feed override, the slider and the number shown.
 
@@ -1256,7 +1256,7 @@ class SCPanel:
         self.speed_text.set(f"{speed:.2g}x")
         self.machine.set_speed(speed)
 
-    # Method `SCPanel.set_text()`:
+    # Method `HMI.set_text()`:
     @staticmethod
     def set_text(text: tk.Text, lines: list[str]) -> None:
         """Replace the contents of a read only text window.
@@ -1272,7 +1272,7 @@ class SCPanel:
         text.insert("1.0", "\n".join(lines))
         text.configure(state="disabled")
 
-    # Method `SCPanel.set_running()`:
+    # Method `HMI.set_running()`:
     def set_running(self, running: bool, paused: bool) -> None:
         """Grey out the buttons that can not be pressed now.
 
@@ -1302,7 +1302,7 @@ class SCPanel:
             widget.configure(state="disabled" if running else "normal")
         self.check_mdi()
 
-    # Method `SCPanel.check_mdi()`:
+    # Method `HMI.check_mdi()`:
     def check_mdi(self) -> None:
         """Color the MDI line; allow Execute when stopped and good.
 
@@ -1319,7 +1319,7 @@ class SCPanel:
             else "disabled"
         )
 
-    # Method `SCPanel.open()`:
+    # Method `HMI.open()`:
     def open(self, path: str) -> None:
         """Open a program.
 
@@ -1332,7 +1332,7 @@ class SCPanel:
         self.set_running(False, False)
         self.open_setup(path)
 
-    # Method `SCPanel.open_setup()`:
+    # Method `HMI.open_setup()`:
     def open_setup(self, path: str) -> None:
         """Draw a program's setup (its `SCC:` lines), if it has one.
 
@@ -1347,7 +1347,7 @@ class SCPanel:
         self.setup_step = 0
         self.note = ""
         try:
-            assembly: SCAssembly | None = read_file(path)
+            assembly: Assembly | None = read_file(path)
             text: str = Path(path).read_text(encoding="utf-8")
         except (OSError, ValueError) as error:
             self.message.configure(text=f"Setup not read: {error}")
@@ -1368,7 +1368,7 @@ class SCPanel:
             self.drawing = True
             self.set_running(self.running, self.paused)
 
-    # Method `SCPanel.on_open()`:
+    # Method `HMI.on_open()`:
     def on_open(self) -> None:
         """Choose a program with a file window, and open it."""
         path: str = filedialog.askopenfilename(
@@ -1378,7 +1378,7 @@ class SCPanel:
         if path:
             self.open(path)
 
-    # Method `SCPanel.on_tools()`:
+    # Method `HMI.on_tools()`:
     def on_tools(self) -> None:
         """Show the tools' speeds and feeds for a material chosen."""
         # The shop is read again each time, so edits to it show.
@@ -1415,7 +1415,7 @@ class SCPanel:
         chooser.bind("<<ComboboxSelected>>", show)
         show()
 
-    # Method `SCPanel.on_run()`:
+    # Method `HMI.on_run()`:
     def on_run(self) -> None:
         """Run the program, or resume it after a pause."""
         self.message.configure(text="")
@@ -1425,13 +1425,13 @@ class SCPanel:
             self.machine.run(self.start)
         self.set_running(True, False)
 
-    # Method `SCPanel.on_pause()`:
+    # Method `HMI.on_pause()`:
     def on_pause(self) -> None:
         """Pause the program; the editable lines may then be run."""
         self.machine.pause()
         self.set_running(True, True)
 
-    # Method `SCPanel.on_tool()`:
+    # Method `HMI.on_tool()`:
     def on_tool(self, step: int) -> None:
         """Move the start line to the next or previous tool change.
 
@@ -1448,7 +1448,7 @@ class SCPanel:
             ]
             self.start = earlier[-1] if earlier else 0
 
-    # Method `SCPanel.on_execute()`:
+    # Method `HMI.on_execute()`:
     def on_execute(self) -> None:
         """Run the MDI line."""
         try:
@@ -1456,7 +1456,7 @@ class SCPanel:
         except RuntimeError as error:
             self.message.configure(text=str(error))
 
-    # Method `SCPanel.on_stop()`:
+    # Method `HMI.on_stop()`:
     def on_stop(self) -> None:
         """Stop at once, ready to run again from the program's start."""
         self.message.configure(text="")
@@ -1464,7 +1464,7 @@ class SCPanel:
         self.start = 0
         self.set_running(False, False)
 
-    # Method `SCPanel.on_jog()`:
+    # Method `HMI.on_jog()`:
     def on_jog(self, axis: int, direction: int) -> None:
         """Jog one axis by the chosen step.
 
@@ -1474,7 +1474,7 @@ class SCPanel:
         """
         self.machine.jog(axis, direction, float(self.step.get()))
 
-    # Method `SCPanel.on_home()`:
+    # Method `HMI.on_home()`:
     def on_home(self) -> None:
         """Rapid to the work origin."""
         try:
@@ -1482,7 +1482,7 @@ class SCPanel:
         except RuntimeError as error:
             self.message.configure(text=str(error))
 
-    # Method `SCPanel.on_set_origin()`:
+    # Method `HMI.on_set_origin()`:
     def on_set_origin(self) -> None:
         """Make the current position zero, after asking (No first).
 
@@ -1502,7 +1502,7 @@ class SCPanel:
             except RuntimeError as error:
                 self.message.configure(text=str(error))
 
-    # Method `SCPanel.on_next_step()`:
+    # Method `HMI.on_next_step()`:
     def on_next_step(self) -> None:
         """Show the setup's next item, with its note (`T.emsagc~5.2` #14).
 
@@ -1512,16 +1512,16 @@ class SCPanel:
         if self.assembly is None:
             self.message.configure(text="This program has no setup.")
             return
-        items: list[SCItem] = self.assembly.items
+        items: list[AssemblyItem] = self.assembly.items
         self.setup_step += 1
-        shown: SCAssembly
+        shown: Assembly
         if self.setup_step > len(items):
             self.setup_step = 0
             shown = self.assembly
             text: str = f"Setup: all {len(items)} items."
         else:
-            item: SCItem = items[self.setup_step - 1]
-            shown = SCAssembly(items[: self.setup_step])
+            item: AssemblyItem = items[self.setup_step - 1]
+            shown = Assembly(items[: self.setup_step])
             text = (
                 f"Step {self.setup_step}/{len(items)}, "
                 f"{item.name.replace('_', ' ')}: {item.note}"
@@ -1532,7 +1532,7 @@ class SCPanel:
             self.drawn = shown
             self.drawer.draw(shown)
 
-    # Method `SCPanel.on_keep_outs()`:
+    # Method `HMI.on_keep_outs()`:
     def on_keep_outs(self) -> None:
         """Show the setup's keep-outs, or hide them again."""
         if self.drawer is None:
@@ -1545,7 +1545,7 @@ class SCPanel:
         if self.drawn is not None:
             self.drawer.draw(self.drawn)
 
-    # Method `SCPanel.set_named_origin()`:
+    # Method `HMI.set_named_origin()`:
     def set_named_origin(self) -> None:
         """Pick the origin the tool tip is at, confirm, and set G54."""
         names: list[str] = [name for name, _ in self.origins]
@@ -1566,7 +1566,7 @@ class SCPanel:
             except RuntimeError as error:
                 self.message.configure(text=str(error))
 
-    # Method `SCPanel.widgets()`:
+    # Method `HMI.widgets()`:
     def widgets(self, parent: Any = None) -> Iterator[Any]:
         """Walk every widget, top windows and their insides.
 
@@ -1580,7 +1580,7 @@ class SCPanel:
             yield widget
             yield from self.widgets(widget)
 
-    # Method `SCPanel.press()`:
+    # Method `HMI.press()`:
     def press(self, label: str) -> str:
         """Press a button, as a person would.
 
@@ -1602,7 +1602,7 @@ class SCPanel:
                 return "ok"
         return f"error: no button {label}"
 
-    # Method `SCPanel.show()`:
+    # Method `HMI.show()`:
     def show(self) -> dict[str, Any]:
         """Return what the window shows.
 
@@ -1645,7 +1645,7 @@ class SCPanel:
             ],
         }
 
-    # Method `SCPanel.handle()`:
+    # Method `HMI.handle()`:
     # A flat list of commands reads best, so it has many returns.
     # pylint: disable-next=too-many-return-statements
     def handle(self, line: str) -> str:
@@ -1685,7 +1685,7 @@ class SCPanel:
             elif word == "speed" and rest:
                 self.set_speed(float(rest))
             elif word == "status":
-                status: SCStatus = self.machine.status()
+                status: HMIStatus = self.machine.status()
                 x, y, z = status.position
                 return (
                     f"file={status.file} line={status.line} "
@@ -1698,11 +1698,11 @@ class SCPanel:
                 return f"log: {' | '.join(self.machine.log)}"
             else:
                 return f"error: unknown command {line!r}"
-        except (ValueError, OSError, SCBridgeError) as error:
+        except (ValueError, OSError, BridgeError) as error:
             return f"error: {error}"
         return "ok"
 
-    # Method `SCPanel.poll()`:
+    # Method `HMI.poll()`:
     # One pass over everything the window shows, so many branches.
     def poll(self) -> None:  # pylint: disable=too-many-branches
         """Show the machine's state, answer the port, then poll again."""
@@ -1726,8 +1726,8 @@ class SCPanel:
         # A LinuxCNC that has gone is reported, while the port still
         # answers, and the window stays up to be read.
         try:
-            status: SCStatus = self.machine.status()
-        except (OSError, SCBridgeError) as error:
+            status: HMIStatus = self.machine.status()
+        except (OSError, BridgeError) as error:
             self.message.configure(text=f"LinuxCNC is not answering: {error}")
             if self.port is not None:
                 self.port.poll(self.handle)
@@ -1739,7 +1739,7 @@ class SCPanel:
             self.lines_file = status.file
             self.lines = self.machine.program_lines(status.file)
         # The buttons follow LinuxCNC's state (a program may end, or be
-        # stopped, without the panel).
+        # stopped, without the HMI).
         if status.state and (
             (status.state != "idle", status.state == "paused")
             != (self.running, self.paused)
@@ -1787,7 +1787,7 @@ class SCPanel:
 
 # Function `main()`:
 def main(arguments: list[str]) -> int:
-    """Show the panel until its window is closed.
+    """Show the HMI until its window is closed.
 
     Arguments:
     * `arguments` (`list[str]`):
@@ -1836,40 +1836,36 @@ def main(arguments: list[str]) -> int:
 
     # The machine, on and homed, and the command port.
     try:
-        machine: SCPanelMachine = SCPanelMachine(
-            options.dry_run, options.lcnc_port
-        )
+        machine: HMIMachine = HMIMachine(options.dry_run, options.lcnc_port)
         machine.start()
         top_speed: float = machine.max_speed()
-    except (OSError, RuntimeError, ValueError, SCBridgeError) as error:
+    except (OSError, RuntimeError, ValueError, BridgeError) as error:
         print(f"lcnc_hmi.py: {error}", file=sys.stderr)
         return 1
-    port: SCCommandPort | None = (
-        SCCommandPort(options.port) if options.port else None
+    port: CommandPort | None = (
+        CommandPort(options.port) if options.port else None
     )
 
     # The shop that names the tooling (`T.emsagc~5.2` #63), and the
     # SolidCraft the setups are drawn in, if any.
     try:
         use_shop(shops.read(options.shop))
-    except shops.SCShopError as error:
+    except shops.ShopError as error:
         print(f"lcnc_hmi.py: {error}", file=sys.stderr)
         return 1
-    drawer: SCSetupDrawer | None = (
-        SCSetupDrawer(
-            SCSetupView(
-                SCPyBind(connect(str(options.solidcraft))), SCModelCache()
-            )
+    drawer: SetupDrawer | None = (
+        SetupDrawer(
+            SetupView(PyBind(connect(str(options.solidcraft))), ModelCache())
         )
         if options.solidcraft
         else None
     )
 
     # The window.  A `SIGTERM` closes it as its close button does.  An
-    # earlier panel may have left another speed, and the slider starts
+    # earlier HMI may have left another speed, and the slider starts
     # at the programmed feed.
     root: tk.Tk = tk.Tk()
-    panel: SCPanel = SCPanel(root, machine, top_speed, port)
+    panel: HMI = HMI(root, machine, top_speed, port)
     panel.set_speed(1.0)
     panel.drawer = drawer
     signal.signal(signal.SIGTERM, lambda *_: root.destroy())

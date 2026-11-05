@@ -7,11 +7,11 @@ from scraftcnc.shops import read
 from scraftcnc.tooling import tools
 from scraftcnc.tooling.cutter_models import (
     EXAMPLE_SHOP,
-    SCCutter,
+    Cutter,
     register_cutters,
     shop_tools,
 )
-from scraftcnc.tooling.registry import SCRegistry, key
+from scraftcnc.tooling.registry import Registry, key
 from scraftcnc.tooling.shop_registries import use_shop
 
 
@@ -22,7 +22,7 @@ def setUpModule() -> None:
 
 
 class TestRegistry(unittest.TestCase):
-    """`key()` and `SCRegistry`."""
+    """`key()` and `Registry`."""
 
     def test_key(self) -> None:
         """Names become short identifiers."""
@@ -32,14 +32,14 @@ class TestRegistry(unittest.TestCase):
 
     def test_named(self) -> None:
         """An object is found by its key or its name."""
-        registry: SCRegistry[int] = SCRegistry("number")
+        registry: Registry[int] = Registry("number")
         self.assertEqual(registry.add("Forty Two", 42), 42)
         self.assertEqual(registry.named("forty_two"), 42)
         self.assertEqual(registry.named("Forty Two"), 42)
 
     def test_unknown(self) -> None:
         """An unknown name lists the known keys."""
-        registry: SCRegistry[int] = SCRegistry("number")
+        registry: Registry[int] = Registry("number")
         registry.add("One", 1)
         registry.add("Two", 2)
         with self.assertRaises(KeyError) as caught:
@@ -48,7 +48,7 @@ class TestRegistry(unittest.TestCase):
 
     def test_duplicate(self) -> None:
         """A different object with the same key names both."""
-        registry: SCRegistry[str] = SCRegistry("word")
+        registry: Registry[str] = Registry("word")
         registry.add("A b", "first")
         registry.add("a_b", "first")
         with self.assertRaises(ValueError) as caught:
@@ -74,18 +74,18 @@ class TestTooling(unittest.TestCase):
             self.assertIs(named(key(item.name)), item)
 
         # The grid plate is the shop's own, equal to the built-in one.
-        plate: tools.SCGridPlate = tools.GRID_PLATE
-        self.assertEqual(tools.SCGridPlate.named(plate.name), plate)
-        self.assertEqual(tools.SCGridPlate.named(key(plate.name)), plate)
-        self.assertIs(tools.SCMachineVise.named("kurt_d688"), tools.KURT_D688)
+        plate: tools.GridPlate = tools.GRID_PLATE
+        self.assertEqual(tools.GridPlate.named(plate.name), plate)
+        self.assertEqual(tools.GridPlate.named(key(plate.name)), plate)
+        self.assertIs(tools.MachineVise.named("kurt_d688"), tools.KURT_D688)
         self.assertIs(
-            tools.SCMillTable.named("mikini_1610l"), tools.MIKINI_1610L
+            tools.MillTable.named("mikini_1610l"), tools.MIKINI_1610L
         )
 
     def test_unknown(self) -> None:
         """An unknown vise is a `KeyError`."""
         with self.assertRaises(KeyError):
-            tools.SCMachineVise.named("no_such_vise")
+            tools.MachineVise.named("no_such_vise")
 
 
 class TestKeyProperty(unittest.TestCase):
@@ -96,10 +96,10 @@ class TestKeyProperty(unittest.TestCase):
         self.assertEqual(tools.KURT_D688.key, "kurt_d688")
         self.assertEqual(tools.GRID_PLATE.key, "grid_plate")
         for registry in (
-            tools.SCMillTable.REGISTRY,
-            tools.SCMachineVise.REGISTRY,
-            tools.SCParallel.REGISTRY,
-            tools.SCGridPlate.REGISTRY,
+            tools.MillTable.REGISTRY,
+            tools.MachineVise.REGISTRY,
+            tools.Parallel.REGISTRY,
+            tools.GridPlate.REGISTRY,
         ):
             for name_key, item in registry.items.items():
                 with self.subTest(key=name_key):
@@ -117,30 +117,30 @@ class TestCutters(unittest.TestCase):
         """Test that every tool of the example shop is found by name."""
         shop: dict[str, object] = read(EXAMPLE_SHOP)
         found: list[tuple[str, dict[str, object]]] = shop_tools(shop)
-        self.assertEqual(len(SCCutter.REGISTRY.items), len(found))
+        self.assertEqual(len(Cutter.REGISTRY.items), len(found))
         kind: str
         tool: dict[str, object]
         for kind, tool in found:
-            cutter: SCCutter = SCCutter.named(str(tool["name"]))
-            self.assertEqual(cutter, SCCutter(kind, tool))
-            self.assertIs(SCCutter.named(cutter.key), cutter)
+            cutter: Cutter = Cutter.named(str(tool["name"]))
+            self.assertEqual(cutter, Cutter(kind, tool))
+            self.assertIs(Cutter.named(cutter.key), cutter)
 
     def test_unknown_name(self) -> None:
         """Test that an unknown name lists the known keys."""
         with self.assertRaises(KeyError) as caught:
-            SCCutter.named("No such bit")
+            Cutter.named("No such bit")
         message: str = str(caught.exception)
         self.assertIn("No cutter is named 'No such bit'", message)
         self.assertIn("1_4_in_2_flute_carbide_end_mill", message)
 
     def test_duplicate_names(self) -> None:
         """Test that two different tools with one key are an error."""
-        cutters: SCRegistry[SCCutter] = SCRegistry("cutter")
+        cutters: Registry[Cutter] = Registry("cutter")
         shop: dict[str, object] = read(EXAMPLE_SHOP)
         register_cutters(shop, cutters)
         register_cutters(shop, cutters)
-        first: SCCutter = next(iter(cutters.items.values()))
-        other: SCCutter = SCCutter("drills", first.tool)
+        first: Cutter = next(iter(cutters.items.values()))
+        other: Cutter = Cutter("drills", first.tool)
         with self.assertRaises(ValueError) as caught:
             cutters.add(first.name, other)
         self.assertIn(first.key, str(caught.exception))
@@ -153,12 +153,12 @@ class TestUseShop(unittest.TestCase):
         """An entry only an earlier shop had is gone after `use_shop()`."""
         shop: dict[str, object] = read(EXAMPLE_SHOP)
         use_shop(shop)
-        registries: tuple[SCRegistry[Any], ...] = (
-            SCCutter.REGISTRY,
-            tools.SCMillTable.REGISTRY,
-            tools.SCMachineVise.REGISTRY,
-            tools.SCParallel.REGISTRY,
-            tools.SCGridPlate.REGISTRY,
+        registries: tuple[Registry[Any], ...] = (
+            Cutter.REGISTRY,
+            tools.MillTable.REGISTRY,
+            tools.MachineVise.REGISTRY,
+            tools.Parallel.REGISTRY,
+            tools.GridPlate.REGISTRY,
         )
         counts: list[int] = [len(found.items) for found in registries]
         for found in registries:

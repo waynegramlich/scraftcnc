@@ -7,11 +7,11 @@ turns each of those commands into a typed Python method, so a design
 can be written as an ordinary Python program:
 
 ```python
-from scraftcnc.pybind.scraftpybind import SCPyBind, connect
+from scraftcnc.pybind.scraftpybind import PyBind, connect
 
 # A GUI started with `solidcraft --control 8080`; or "headless".
 with connect("8080") as transport:
-    solidcraft = SCPyBind(transport)
+    solidcraft = PyBind(transport)
 
     # A 100 x 60 mm rectangle with a 20 mm hole, extruded 10 mm.
     solidcraft.sketch.create(plane="XY", name="Plate")
@@ -40,15 +40,15 @@ Python bindings; comments are welcome in the issues.
 
 ## How It Works
 
-* `SCPyBind` holds one object per command namespace:
-  `sketch.rectangle.center` is `SCPyBind.sketch.rectangle_center()`.
+* `PyBind` holds one object per command namespace:
+  `sketch.rectangle.center` is `PyBind.sketch.rectangle_center()`.
   Parameters left at `None` are not sent, so SolidCraft uses its own
   defaults.
-* An `SCTransport` carries the requests:
-  * `SCControlTransport` talks to a running SolidCraft GUI started with
+* An `Transport` carries the requests:
+  * `ControlTransport` talks to a running SolidCraft GUI started with
     `solidcraft --control PORT`, so the design can be watched as it is
     built.
-  * `SCHeadlessTransport` runs `solidcraft-cli mcp --headless`, a design
+  * `HeadlessTransport` runs `solidcraft-cli mcp --headless`, a design
     session with no window (useful with `file.export`).
 * `connect("8080")` or `connect("headless")` picks one.
 * The command classes are generated: `scraftpybind_generate.py` reads
@@ -59,8 +59,8 @@ Python bindings; comments are welcome in the issues.
 ## Requirements
 
 * Python 3.11 or newer; nothing outside the standard library.
-* SolidCraft: the GUI for `SCControlTransport`, and `solidcraft-cli` on
-  the `PATH` for `SCHeadlessTransport`.  The commands were generated from
+* SolidCraft: the GUI for `ControlTransport`, and `solidcraft-cli` on
+  the `PATH` for `HeadlessTransport`.  The commands were generated from
   `solidcraft-cli` 0.20.0.
 
 ## Trying It

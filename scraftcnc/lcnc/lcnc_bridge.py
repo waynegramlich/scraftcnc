@@ -154,8 +154,8 @@ def wait_until_ready(stat: Any, timeout: float = READY_SECONDS) -> None:
         time.sleep(0.02)
 
 
-# Class `SCBridge`:
-class SCBridge:
+# Class `Bridge`:
+class Bridge:
     """Answers requests by calling the `linuxcnc` module.
 
     Attributes:
@@ -167,7 +167,7 @@ class SCBridge:
     * `error_channel` (`Any`): The `linuxcnc.error_channel` object.
     """
 
-    # Method `SCBridge.__init__()`:
+    # Method `Bridge.__init__()`:
     def __init__(
         self, linuxcnc: ModuleType, on_shutdown: Callable[[], None]
     ) -> None:
@@ -184,7 +184,7 @@ class SCBridge:
         self.command: Any = linuxcnc.command()
         self.error_channel: Any = linuxcnc.error_channel()
 
-    # Method `SCBridge.constant()`:
+    # Method `Bridge.constant()`:
     def constant(self, argument: Any) -> Any:
         """Replace a `{"constant": NAME}` argument by its value.
 
@@ -198,7 +198,7 @@ class SCBridge:
             return public_name(self.linuxcnc, str(argument["constant"]))
         return argument
 
-    # Method `SCBridge.constants()`:
+    # Method `Bridge.constants()`:
     def constants(self) -> dict[str, Any]:
         """Return the `linuxcnc` module's numbers and strings.
 
@@ -212,7 +212,7 @@ class SCBridge:
             and isinstance(value, (int, float, str))
         }
 
-    # Method `SCBridge.read_stat()`:
+    # Method `Bridge.read_stat()`:
     def read_stat(self, names: list[str] | None = None) -> dict[str, Any]:
         """Return attributes of `linuxcnc.stat`, after a `poll()`.
 
@@ -233,7 +233,7 @@ class SCBridge:
             ]
         return {name: public_name(self.stat, name) for name in names}
 
-    # Method `SCBridge.programs()`:
+    # Method `Bridge.programs()`:
     def programs(self) -> Path:
         """Return the directory that programs are written to.
 
@@ -243,7 +243,7 @@ class SCBridge:
         self.stat.poll()
         return Path(self.stat.ini_filename).parent / "programs"
 
-    # Method `SCBridge.write_program()`:
+    # Method `Bridge.write_program()`:
     def write_program(self, name: str, text: str) -> str:
         """Write a file into `programs/`, beside the INI file.
 
@@ -265,7 +265,7 @@ class SCBridge:
         path.write_text(text, encoding="utf-8", newline="\n")
         return str(path)
 
-    # Method `SCBridge.read_program()`:
+    # Method `Bridge.read_program()`:
     def read_program(self, path: str) -> str:
         """Return the text of a file in `programs/`.
 
@@ -284,7 +284,7 @@ class SCBridge:
             raise ValueError(f"{path!r} is not in programs/")
         return file.read_text(encoding="utf-8")
 
-    # Method `SCBridge.write_tool_table()`:
+    # Method `Bridge.write_tool_table()`:
     def write_tool_table(self, text: str) -> str:
         """Replace the tool table that the INI file names.
 
@@ -308,7 +308,7 @@ class SCBridge:
         path.write_text(text, encoding="utf-8", newline="\n")
         return str(path)
 
-    # Method `SCBridge.wait_complete()`:
+    # Method `Bridge.wait_complete()`:
     def wait_complete(self, timeout: float = WAIT_SECONDS) -> int:
         """Wait for the last command, letting other requests go between.
 
@@ -329,7 +329,7 @@ class SCBridge:
                 return status
             time.sleep(WAIT_POLL)
 
-    # Method `SCBridge.dispatch()`:
+    # Method `Bridge.dispatch()`:
     # A flat list of calls reads best, so it has many returns.
     # pylint: disable-next=too-many-return-statements
     def dispatch(self, call: str, args: list[Any]) -> Any:
@@ -375,7 +375,7 @@ class SCBridge:
             return method(*[self.constant(item) for item in args])
         raise ValueError(f"no call named {call!r}")
 
-    # Method `SCBridge.answer()`:
+    # Method `Bridge.answer()`:
     def answer(self, line: bytes) -> dict[str, Any]:
         """Answer one request line.
 
@@ -415,28 +415,28 @@ class SCBridge:
         return reply
 
 
-# Class `SCServer`:
-class SCServer(socketserver.ThreadingTCPServer):
+# Class `BridgeServer`:
+class BridgeServer(socketserver.ThreadingTCPServer):
     """The listening socket, with a thread for each connection.
 
     Attributes:
-    * `bridge` (`SCBridge | None`): What answers the requests.
+    * `bridge` (`Bridge | None`): What answers the requests.
     """
 
     allow_reuse_address = True
     daemon_threads = True
-    bridge: SCBridge | None = None
+    bridge: Bridge | None = None
 
 
-# Class `SCHandler`:
-class SCHandler(socketserver.StreamRequestHandler):
+# Class `BridgeHandler`:
+class BridgeHandler(socketserver.StreamRequestHandler):
     """Answers the request lines of one connection."""
 
-    # Method `SCHandler.handle()`:
+    # Method `BridgeHandler.handle()`:
     def handle(self) -> None:
         """Answer each line until the client closes the connection."""
-        assert isinstance(self.server, SCServer)
-        bridge: SCBridge | None = self.server.bridge
+        assert isinstance(self.server, BridgeServer)
+        bridge: Bridge | None = self.server.bridge
         assert bridge is not None
         while True:
             line: bytes = self.rfile.readline(MAX_LINE + 1)
@@ -469,7 +469,7 @@ def main() -> int:
     import linuxcnc  # type: ignore[import-not-found]
 
     wait_until_ready(linuxcnc.stat())
-    with SCServer(("127.0.0.1", options.port), SCHandler) as server:
+    with BridgeServer(("127.0.0.1", options.port), BridgeHandler) as server:
         # `server.shutdown()` waits for `serve_forever()` to return, so
         # it can not be called from the thread running that.
         def stop() -> None:
@@ -480,7 +480,7 @@ def main() -> int:
 
         signal.signal(signal.SIGTERM, on_signal)
         signal.signal(signal.SIGINT, on_signal)
-        server.bridge = SCBridge(linuxcnc, stop)
+        server.bridge = Bridge(linuxcnc, stop)
         server.serve_forever()
     return 0
 

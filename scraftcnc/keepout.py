@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Check a program's moves against where the tool must not go.
 
-The zones are the keep-outs of a `SCSetup`'s tooling, as root
-`SCRoundedPolygon`s moved into the G-code's coordinates (inches, from
+The zones are the keep-outs of a `Setup`'s tooling, as root
+`RoundedPolygon`s moved into the G-code's coordinates (inches, from
 the middle of the material's top).  Tooling is checked and material is
 not, since material is what gets cut.
 
-`check_program()` walks the finished `SCCNC.commands`, so it does not
+`check_program()` walks the finished `CNC.commands`, so it does not
 depend on how they were made, and reports every violation:
 
 * `keep out`: the tool, a vertical cylinder of its widest radius
@@ -27,7 +27,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Literal, TypeAlias
 
-from .assembly import SCAssembly, resolve
+from .assembly import Assembly, resolve
 from .demo import (
     END_MILL,
     MACHINE,
@@ -36,15 +36,21 @@ from .demo import (
     cut_demo,
     demo_assembly,
 )
-from .gcode import RS274, SCCNC
-from .geometry import SCArc, SCCorner, SCLine, SCRoundedPolygon, SCSegment
-from .machine import SCMachine, SCTool
-from .setup_view import SCPlaced, keep_out_prisms, place
-from .setups import EXAMPLE, SCPlacedWork, SCSetup
+from .gcode import CNC, RS274
+from .geometry import (
+    ArcSegment,
+    Corner,
+    LineSegment,
+    RoundedPolygon,
+    XYSegment,
+)
+from .machine import Machine, ToolEntry
+from .setup_view import PlacedItem, keep_out_prisms, place
+from .setups import EXAMPLE, PlacedWork, Setup
 from .shops import cnc_machine, read
 from .tooling.cutter_models import MM_PER_INCH
 from .tooling.shop_registries import use_shop
-from .tooling.tools import GRID_PLATE, Point, SCCylinder, SCPrism
+from .tooling.tools import GRID_PLATE, Cylinder, Point, Prism
 
 # What a violation can be.
 ViolationKind: TypeAlias = Literal["keep out", "rapid", "unchecked"]
@@ -63,14 +69,14 @@ SAME: float = 1e-9
 
 # The drill for the grid plate's holes (`tools.SCREW_FITS`: #6,
 # close).
-HOLE_DRILL: SCTool = SCTool(
+HOLE_DRILL: ToolEntry = ToolEntry(
     50, "#27 drill", "drill", 0.144, 3000, 6.0, 6.0, 0.05
 )
 
 
-# Class `SCViolation`:
+# Class `Violation`:
 @dataclass(frozen=True, slots=True)
-class SCViolation:
+class Violation:
     """Something wrong with one line of a program.
 
     Attributes:
@@ -80,7 +86,7 @@ class SCViolation:
     * `text` (`str`): What the problem is.
 
     Constructor:
-    * `SCViolation(line, kind, zone, text)`
+    * `Violation(line, kind, zone, text)`
     """
 
     # Constructor arguments:
@@ -91,15 +97,15 @@ class SCViolation:
 
 
 # Function `prism_zone()`:
-def prism_zone(prism: SCPrism, origin: Point) -> SCRoundedPolygon:
+def prism_zone(prism: Prism, origin: Point) -> RoundedPolygon:
     """Return a prism as a zone in the G-code's coordinates.
 
     Arguments:
-    * `prism` (`SCPrism`): The prism (millimeters, in the setup).
+    * `prism` (`Prism`): The prism (millimeters, in the setup).
     * `origin` (`Point`): Where the G-code's origin is (same).
 
     Returns:
-    * (`SCRoundedPolygon`): The zone (inches), going up, sharp cornered.
+    * (`RoundedPolygon`): The zone (inches), going up, sharp cornered.
     """
     x0, y0, z0 = (
         (low - zero) / MM_PER_INCH
@@ -109,13 +115,13 @@ def prism_zone(prism: SCPrism, origin: Point) -> SCRoundedPolygon:
         (high - zero) / MM_PER_INCH
         for high, zero in zip(prism.high, origin, strict=True)
     )
-    return SCRoundedPolygon(
+    return RoundedPolygon(
         prism.name,
         [
-            SCCorner(x0, y0),
-            SCCorner(x1, y0),
-            SCCorner(x1, y1),
-            SCCorner(x0, y1),
+            Corner(x0, y0),
+            Corner(x1, y0),
+            Corner(x1, y1),
+            Corner(x0, y1),
         ],
         z0,
         z1,
@@ -123,18 +129,18 @@ def prism_zone(prism: SCPrism, origin: Point) -> SCRoundedPolygon:
 
 
 # Function `cylinder_zone()`:
-def cylinder_zone(cylinder: SCCylinder, origin: Point) -> SCRoundedPolygon:
+def cylinder_zone(cylinder: Cylinder, origin: Point) -> RoundedPolygon:
     """Return a cylinder as a zone in the G-code's coordinates.
 
     Arguments:
-    * `cylinder` (`SCCylinder`):
+    * `cylinder` (`Cylinder`):
       The cylinder (millimeters, in the setup).
     * `origin` (`Point`): Where the G-code's origin is (same).
 
     Returns:
-    * (`SCRoundedPolygon`): The zone (inches), going up.
+    * (`RoundedPolygon`): The zone (inches), going up.
     """
-    return SCRoundedPolygon.circle(
+    return RoundedPolygon.circle(
         cylinder.name,
         (cylinder.center[0] - origin[0]) / MM_PER_INCH,
         (cylinder.center[1] - origin[1]) / MM_PER_INCH,
@@ -145,20 +151,18 @@ def cylinder_zone(cylinder: SCCylinder, origin: Point) -> SCRoundedPolygon:
 
 
 # Function `work_zones()`:
-def work_zones(
-    setup: SCSetup, material: SCPlacedWork
-) -> list[SCRoundedPolygon]:
+def work_zones(setup: Setup, material: PlacedWork) -> list[RoundedPolygon]:
     """Return a setup's zones, from the middle of a material's top.
 
     Overlapping zones are left that way, since a move is bad if it
     enters any of them, so each can simply be tested in turn.
 
     Arguments:
-    * `setup` (`SCSetup`): The setup.
-    * `material` (`SCPlacedWork`): The material being cut.
+    * `setup` (`Setup`): The setup.
+    * `material` (`PlacedWork`): The material being cut.
 
     Returns:
-    * (`list[SCRoundedPolygon]`): The zones, as roots.
+    * (`list[RoundedPolygon]`): The zones, as roots.
     """
     origin: Point = material.work_origin()
     regions = setup.keep_out()
@@ -168,19 +172,19 @@ def work_zones(
 
 
 # Function `assembly_zones()`:
-def assembly_zones(assembly: SCAssembly) -> list[SCRoundedPolygon]:
+def assembly_zones(assembly: Assembly) -> list[RoundedPolygon]:
     """Return the zones of an assembly's own keep-outs (`.nc` setups).
 
     The setup frame is the work frame, so no origin is moved.
 
     Arguments:
-    * `assembly` (`SCAssembly`): The setup, as written to the `.nc`.
+    * `assembly` (`Assembly`): The setup, as written to the `.nc`.
 
     Returns:
-    * (`list[SCRoundedPolygon]`): The zones, as roots.
+    * (`list[RoundedPolygon]`): The zones, as roots.
     """
-    zones: list[SCRoundedPolygon] = []
-    here: SCPlaced
+    zones: list[RoundedPolygon] = []
+    here: PlacedItem
     for here in place(assembly):
         if not here.item.keep_out:
             continue
@@ -189,7 +193,7 @@ def assembly_zones(assembly: SCAssembly) -> list[SCRoundedPolygon]:
         high: Point
         for low, high in keep_out_prisms(here, origin):
             zones.append(
-                prism_zone(SCPrism(here.item.name, low, high), (0, 0, 0))
+                prism_zone(Prism(here.item.name, low, high), (0, 0, 0))
             )
     return zones
 
@@ -215,7 +219,7 @@ def arc_segments(
     end: tuple[float, float],
     offset: tuple[float, float],
     code: int,
-) -> list[SCSegment]:
+) -> list[XYSegment]:
     """Return the arcs of a `G2` or `G3`, with a whole circle in halves.
 
     Arguments:
@@ -225,7 +229,7 @@ def arc_segments(
     * `code` (`int`): 2 for clockwise, 3 for counter-clockwise.
 
     Returns:
-    * (`list[SCSegment]`): One arc, or two for a whole circle.
+    * (`list[XYSegment]`): One arc, or two for a whole circle.
     """
     center: tuple[float, float] = (start[0] + offset[0], start[1] + offset[1])
     radius: float = math.hypot(*offset)
@@ -237,44 +241,44 @@ def arc_segments(
             2.0 * center[1] - start[1],
         )
         return [
-            SCArc(start, far, center, radius, sign * math.pi),
-            SCArc(far, start, center, radius, sign * math.pi),
+            ArcSegment(start, far, center, radius, sign * math.pi),
+            ArcSegment(far, start, center, radius, sign * math.pi),
         ]
     first: float = math.atan2(start[1] - center[1], start[0] - center[0])
     last: float = math.atan2(end[1] - center[1], end[0] - center[0])
     sweep: float = sign * ((sign * (last - first)) % turn)
-    return [SCArc(start, end, center, radius, sweep)]
+    return [ArcSegment(start, end, center, radius, sweep)]
 
 
-# Class `_SCChecker`:
+# Class `_Checker`:
 @dataclass(slots=True)
-class _SCChecker:
+class _Checker:
     """Walks a program, keeping track of where the tool is.
 
     Attributes:
-    * `cnc` (`SCCNC`): The program.
-    * `zones` (`Sequence[SCRoundedPolygon]`):
+    * `cnc` (`CNC`): The program.
+    * `zones` (`Sequence[RoundedPolygon]`):
       Where the tool must not go.
     * `position` (`list[float | None]`): Where the tool is (X, Y, Z).
-    * `tool` (`SCTool | None`): The tool in the spindle.
-    * `violations` (`list[SCViolation]`): What has been found so far.
+    * `tool` (`ToolEntry | None`): The tool in the spindle.
+    * `violations` (`list[Violation]`): What has been found so far.
 
     Constructor:
-    * `_SCChecker(cnc, zones)`
+    * `_Checker(cnc, zones)`
     """
 
     # Constructor arguments:
-    cnc: SCCNC = field(init=True)
-    zones: Sequence[SCRoundedPolygon] = field(init=True)
+    cnc: CNC = field(init=True)
+    zones: Sequence[RoundedPolygon] = field(init=True)
 
     # The program's state (alphabetized):
     position: list[float | None] = field(
         init=False, default_factory=lambda: [None, None, None]
     )
-    tool: SCTool | None = field(init=False, default=None)
-    violations: list[SCViolation] = field(init=False, default_factory=list)
+    tool: ToolEntry | None = field(init=False, default=None)
+    violations: list[Violation] = field(init=False, default_factory=list)
 
-    # Method `_SCChecker.problem()`:
+    # Method `_Checker.problem()`:
     def problem(
         self, line: int, kind: ViolationKind, text: str, zone: str = ""
     ) -> None:
@@ -286,14 +290,14 @@ class _SCChecker:
         * `text` (`str`): What the problem is.
         * `zone` (`str`): The zone it enters, if any.
         """
-        self.violations.append(SCViolation(line, kind, zone, text))
+        self.violations.append(Violation(line, kind, zone, text))
 
-    # Method `_SCChecker.run()`:
-    def run(self) -> list[SCViolation]:
+    # Method `_Checker.run()`:
+    def run(self) -> list[Violation]:
         """Check every command of the program.
 
         Returns:
-        * (`list[SCViolation]`): Everything found, in program order.
+        * (`list[Violation]`): Everything found, in program order.
         """
         line: int
         command: RS274
@@ -314,22 +318,22 @@ class _SCChecker:
                 self.problem(line, "unchecked", f"not understood: {command}")
         return self.violations
 
-    # Method `_SCChecker.enter()`:
-    def enter(self, line: int, moves: Sequence[SCSegment], z: float) -> None:
+    # Method `_Checker.enter()`:
+    def enter(self, line: int, moves: Sequence[XYSegment], z: float) -> None:
         """Test moves at a height against every zone.
 
         Arguments:
         * `line` (`int`): The G-code line.
-        * `moves` (`Sequence[SCSegment]`):
+        * `moves` (`Sequence[XYSegment]`):
           The path of the tool's center.
         * `z` (`float`): The lowest height of its tip.
         """
-        tool: SCTool | None = self.tool
+        tool: ToolEntry | None = self.tool
         if tool is None:
             self.problem(line, "unchecked", "no tool is known")
             return
         radius: float = tool.widest_radius()
-        zone: SCRoundedPolygon
+        zone: RoundedPolygon
         for zone in self.zones:
             if any(zone.hits(move, z, radius) for move in moves):
                 self.problem(
@@ -340,7 +344,7 @@ class _SCChecker:
                     zone.name,
                 )
 
-    # Method `_SCChecker.move()`:
+    # Method `_Checker.move()`:
     def move(self, line: int, command: RS274, code: int) -> None:
         """Check a `G0`, `G1`, `G2` or `G3`.
 
@@ -370,11 +374,11 @@ class _SCChecker:
             if z1 < self.cnc.z_safe - SAME:
                 self.problem(line, "unchecked", "where it was, is not known")
             elif self.tool is not None:
-                self.enter(line, [SCLine((x1, y1), (x1, y1))], z1)
+                self.enter(line, [LineSegment((x1, y1), (x1, y1))], z1)
             return
 
         # Test its whole path at its lowest height.
-        moves: list[SCSegment] = [SCLine((x0, y0), (x1, y1))]
+        moves: list[XYSegment] = [LineSegment((x0, y0), (x1, y1))]
         if code in (2, 3):
             offset: tuple[float, float] = (
                 _word(command, "I") or 0.0,
@@ -383,7 +387,7 @@ class _SCChecker:
             moves = arc_segments((x0, y0), (x1, y1), offset, code)
         self.enter(line, moves, min(z0, z1))
 
-    # Method `_SCChecker.rapid_rule()`:
+    # Method `_Checker.rapid_rule()`:
     def rapid_rule(
         self,
         line: int,
@@ -414,7 +418,7 @@ class _SCChecker:
                     line, "rapid", f"going down below z_safe to Z{z1:g}"
                 )
 
-    # Method `_SCChecker.cycle()`:
+    # Method `_Checker.cycle()`:
     def cycle(self, line: int, command: RS274) -> None:
         """Check a canned cycle: a vertical move at the tool's X and Y.
 
@@ -440,40 +444,40 @@ class _SCChecker:
                 "rapid",
                 f"the cycle's R{retract:g} is not above the work",
             )
-        self.enter(line, [SCLine((x, y), (x, y))], bottom)
+        self.enter(line, [LineSegment((x, y), (x, y))], bottom)
 
 
 # Function `check_program()`:
 def check_program(
-    cnc: SCCNC, zones: Sequence[SCRoundedPolygon]
-) -> list[SCViolation]:
+    cnc: CNC, zones: Sequence[RoundedPolygon]
+) -> list[Violation]:
     """Return everything wrong with a program.
 
     Arguments:
-    * `cnc` (`SCCNC`): The program, in the zones' coordinates.
-    * `zones` (`Sequence[SCRoundedPolygon]`):
+    * `cnc` (`CNC`): The program, in the zones' coordinates.
+    * `zones` (`Sequence[RoundedPolygon]`):
       Where the tool must not go.
 
     Returns:
-    * (`list[SCViolation]`): Every violation, in program order.
+    * (`list[Violation]`): Every violation, in program order.
     """
-    return _SCChecker(cnc, zones).run()
+    return _Checker(cnc, zones).run()
 
 
 # Function `report()`:
-def report(cnc: SCCNC, violations: Sequence[SCViolation]) -> str:
+def report(cnc: CNC, violations: Sequence[Violation]) -> str:
     """Return a report of a program's violations.
 
     Arguments:
-    * `cnc` (`SCCNC`): The program.
-    * `violations` (`Sequence[SCViolation]`): What was found.
+    * `cnc` (`CNC`): The program.
+    * `violations` (`Sequence[Violation]`): What was found.
 
     Returns:
     * (`str`): A count by kind and zone, then each with its G-code line.
     """
     lines: list[str] = cnc.gcode().splitlines()
     counts: dict[tuple[str, str], int] = {}
-    violation: SCViolation
+    violation: Violation
     for violation in violations:
         key: tuple[str, str] = (violation.kind, violation.zone)
         counts[key] = counts.get(key, 0) + 1
@@ -491,35 +495,35 @@ def report(cnc: SCCNC, violations: Sequence[SCViolation]) -> str:
 
 
 # Function `grid_plate_program()`:
-def grid_plate_program(turns: int, machine: SCMachine) -> SCCNC:
+def grid_plate_program(turns: int, machine: Machine) -> CNC:
     """Return a program that drills and cuts out the grid plate.
 
-    `SCCNC` does not cut an `SCRoundedPolygon`'s children yet, so it
+    `CNC` does not cut an `RoundedPolygon`'s children yet, so it
     drills the holes and profiles the outline directly.
 
     Arguments:
     * `turns` (`int`): The part's quarter turns counterclockwise.
-    * `machine` (`SCMachine`): The machine, with `HOLE_DRILL` loaded.
+    * `machine` (`Machine`): The machine, with `HOLE_DRILL` loaded.
 
     Returns:
-    * (`SCCNC`): The program, from the middle of the plate's top.
+    * (`CNC`): The program, from the middle of the plate's top.
     """
     half_x: float = GRID_PLATE.length / 2.0 / MM_PER_INCH
     half_y: float = GRID_PLATE.width / 2.0 / MM_PER_INCH
     radius: float = GRID_PLATE.corner_radius / MM_PER_INCH
     bottom: float = -GRID_PLATE.height / MM_PER_INCH
-    outline: SCRoundedPolygon = SCRoundedPolygon(
+    outline: RoundedPolygon = RoundedPolygon(
         GRID_PLATE.name,
         [
-            SCCorner(-half_x, -half_y, radius),
-            SCCorner(half_x, -half_y, radius),
-            SCCorner(half_x, half_y, radius),
-            SCCorner(-half_x, half_y, radius),
+            Corner(-half_x, -half_y, radius),
+            Corner(half_x, -half_y, radius),
+            Corner(half_x, half_y, radius),
+            Corner(-half_x, half_y, radius),
         ],
         bottom,
         0.0,
     )
-    cnc: SCCNC = SCCNC("Grid plate", machine)
+    cnc: CNC = CNC("Grid plate", machine)
     cnc.change_tool(HOLE_DRILL.number)
     cnc.drill(
         [
@@ -537,13 +541,13 @@ def grid_plate_program(turns: int, machine: SCMachine) -> SCCNC:
 
 
 # Function `shop_machine_with_hole_drill()`:
-def shop_machine_with_hole_drill() -> SCMachine:
+def shop_machine_with_hole_drill() -> Machine:
     """Return the example shop's mill with `HOLE_DRILL` loaded as well.
 
     Returns:
-    * (`SCMachine`): The machine.
+    * (`Machine`): The machine.
     """
-    machine: SCMachine = cnc_machine(read(SHOP_FILE), MACHINE, MATERIAL)
+    machine: Machine = cnc_machine(read(SHOP_FILE), MACHINE, MATERIAL)
     return replace(machine, tools=(*machine.tools, HOLE_DRILL))
 
 
@@ -558,19 +562,19 @@ def main() -> int:
     use_shop(read(SHOP_FILE))
 
     # The demonstration plate's corner is at the origin, so it is moved.
-    demo: SCSetup = SCSetup(json.loads(DEMO_SETUP.read_text(encoding="utf-8")))
-    cnc: SCCNC = cut_demo()[0]
+    demo: Setup = Setup(json.loads(DEMO_SETUP.read_text(encoding="utf-8")))
+    cnc: CNC = cut_demo()[0]
     cnc.remap(0, -2.0, -1.5)
     print(report(cnc, check_program(cnc, work_zones(demo, demo.materials[0]))))
 
     # The same program against the `.nc` setup's own keep-outs.
-    plate: SCCNC = cut_demo()[0]
+    plate: CNC = cut_demo()[0]
     plate.name = "Demo plate, setup keep-outs"
     print(report(plate, check_program(plate, assembly_zones(demo_assembly()))))
 
     # The grid plate is placed turned.
-    setup: SCSetup = SCSetup(json.loads(EXAMPLE.read_text(encoding="utf-8")))
-    material: SCPlacedWork = setup.materials[0]
+    setup: Setup = Setup(json.loads(EXAMPLE.read_text(encoding="utf-8")))
+    material: PlacedWork = setup.materials[0]
     cnc = grid_plate_program(
         material.parts[0].placement.turns, shop_machine_with_hole_drill()
     )

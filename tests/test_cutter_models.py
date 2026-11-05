@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import cast
 
 from scraftcnc import shops
-from scraftcnc.pybind.scraftpybind import SCHeadlessTransport, SCPyBind
+from scraftcnc.pybind.scraftpybind import HeadlessTransport, PyBind
 from scraftcnc.shops import read
 from scraftcnc.tooling import cutter_models
 from scraftcnc.tooling.cutter_models import EXAMPLE_SHOP
@@ -214,8 +214,8 @@ class TestModel(unittest.TestCase):
         """The 15/64 in drill stands on its tip at the origin."""
         key, tool = example_tools()[4]
         cli = "solidcraft-cli" if shutil.which("solidcraft-cli") else str(CLI)
-        with SCHeadlessTransport(cli=cli) as transport:
-            solidcraft = SCPyBind(transport)
+        with HeadlessTransport(cli=cli) as transport:
+            solidcraft = PyBind(transport)
             body = cutter_models.model(
                 solidcraft, "Drill", cutter_models.profile(key, tool)
             )
@@ -438,8 +438,8 @@ class TestEveryShopTool(unittest.TestCase):
 
         tools = cutter_models.shop_tools(shops.read(SHOP))
         cli = shutil.which("solidcraft-cli") or str(CLI)
-        with SCHeadlessTransport(cli=cli) as transport:
-            solidcraft = SCPyBind(transport)
+        with HeadlessTransport(cli=cli) as transport:
+            solidcraft = PyBind(transport)
             for index, (key, tool) in enumerate(tools):
                 with self.subTest(tool=tool["name"]):
                     made = cutter_models.model_tool(

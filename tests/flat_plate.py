@@ -12,7 +12,7 @@ from unittest import mock
 from scraftcnc.tooling import tools
 
 # `GRID_PLATE` without its chamfers: the same shape for every check.
-FLAT_PLATE: tools.SCGridPlate = dataclasses.replace(
+FLAT_PLATE: tools.GridPlate = dataclasses.replace(
     tools.GRID_PLATE, chamfer_depth=0.0
 )
 
@@ -25,7 +25,7 @@ def use_flat_plate() -> None:
     `use_shop()`, which would put the chamfered plate back.
     """
     patcher = mock.patch.dict(
-        tools.SCGridPlate.REGISTRY.items, {"grid_plate": FLAT_PLATE}
+        tools.GridPlate.REGISTRY.items, {"grid_plate": FLAT_PLATE}
     )
     patcher.start()
     unittest.addModuleCleanup(patcher.stop)

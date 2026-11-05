@@ -51,7 +51,7 @@ HERE: Path = Path(__file__).resolve().parent
 TARGET: Path = HERE / "scraftpybind.py"
 CACHE: Path = HERE / "scraftpybind_commands.json"
 # The `solidcraft-cli` program, looked up on the `PATH` (as
-# `scraftpybind.SCHeadlessTransport` does) unless `--cli` names another.
+# `scraftpybind.HeadlessTransport` does) unless `--cli` names another.
 DEFAULT_CLI: str = "solidcraft-cli"
 
 # The lines that bracket the generated region of `scraftpybind.py`.
@@ -592,7 +592,7 @@ def make_command(
     * `ValueError`: If the id has no namespace.
     """
     # `sketch.rectangle.center` is `Sketch.rectangle_center()`; the
-    # names `SCNamespace` itself uses are avoided.
+    # names `CommandNamespace` itself uses are avoided.
     command_id: str = str(entry["id"])
     parts: list[str] = command_id.split(".")
     if len(parts) < 2:  # pragma: no cover
@@ -723,7 +723,7 @@ def docstring(command: Command, indent: str) -> list[str]:
         indent + "  ",
     )
     lines += ["", f"{indent}Raises:"]
-    lines.append(f"{indent}* `SCSolidCraftError`: If the command fails.")
+    lines.append(f"{indent}* `SolidCraftError`: If the command fails.")
     lines.append(f'{indent}"""')
     return lines
 
@@ -841,8 +841,7 @@ def generate(data: dict[str, JSON]) -> list[str]:
     for command in sorted(commands, key=lambda c: c.id):
         namespaces.setdefault(command.namespace, []).append(command)
     class_names: dict[str, str] = {
-        namespace: "SC"
-        + "".join(
+        namespace: "".join(
             part.capitalize() for part in python_name(namespace).split("_")
         )
         + "Commands"
@@ -871,7 +870,7 @@ def generate(data: dict[str, JSON]) -> list[str]:
             "",
             f"# Class `{class_name}`:",
             "@dataclass(slots=True)",
-            f"class {class_name}(SCNamespace):",
+            f"class {class_name}(CommandNamespace):",
             f'    """The `{namespace}.*` commands.',
             "",
             "    Constructor:",
@@ -883,7 +882,7 @@ def generate(data: dict[str, JSON]) -> list[str]:
             lines += method_lines(command, class_name)
         lines.append("")
 
-    # `SCPyBind`, with one attribute per namespace.
+    # `PyBind`, with one attribute per namespace.
     lines += scraftpybind_lines(class_names)
     lines.append(END)
     return lines
@@ -891,7 +890,7 @@ def generate(data: dict[str, JSON]) -> list[str]:
 
 # Function `scraftpybind_lines()`:
 def scraftpybind_lines(class_names: dict[str, str]) -> list[str]:
-    """Write the `SCPyBind` class.
+    """Write the `PyBind` class.
 
     Arguments:
     * `class_names` (`dict[str, str]`): Each namespace's class name.
@@ -908,16 +907,16 @@ def scraftpybind_lines(class_names: dict[str, str]) -> list[str]:
     }
     lines: list[str] = [
         "",
-        "# Class `SCPyBind`:",
+        "# Class `PyBind`:",
         "@dataclass(slots=True)",
-        "class SCPyBind:",
+        "class PyBind:",
         '    """The top level of `scraftpybind`: SolidCraft\'s commands.',
         "",
         "    The commands are grouped by namespace, so `sketch.create` is",
-        "    `SCPyBind.sketch.create()`.",
+        "    `PyBind.sketch.create()`.",
         "",
         "    Attributes:",
-        "    * `transport` (`SCTransport`): How the commands are sent.",
+        "    * `transport` (`Transport`): How the commands are sent.",
     ]
     attribute: str
     class_name: str
@@ -927,11 +926,11 @@ def scraftpybind_lines(class_names: dict[str, str]) -> list[str]:
     lines += [
         "",
         "    Constructor:",
-        "    * `SCPyBind(transport)`",
+        "    * `PyBind(transport)`",
         '    """',
         "",
         "    # Constructor arguments:",
-        "    transport: SCTransport = field(init=True)",
+        "    transport: Transport = field(init=True)",
         "",
         "    # The namespaces, made by `__post_init__()` (alphabetized):",
     ]
@@ -941,7 +940,7 @@ def scraftpybind_lines(class_names: dict[str, str]) -> list[str]:
     # `__post_init__()` makes the namespaces.
     lines += [
         "",
-        "    # Method `SCPyBind.__post_init__()`:",
+        "    # Method `PyBind.__post_init__()`:",
         "    def __post_init__(self) -> None:",
         '        """Make the namespaces, all sharing the one transport."""',
     ]
@@ -953,7 +952,7 @@ def scraftpybind_lines(class_names: dict[str, str]) -> list[str]:
     # `execute()`, for any command by its id.
     lines += [
         "",
-        "    # Method `SCPyBind.execute()`:",
+        "    # Method `PyBind.execute()`:",
         # A generated line, kept whole so that it can be searched for.
         "    def execute(self, command: str, params: Mapping[str, JSON]) -> JSON:",  # noqa: E501
         '        """Run any SolidCraft command by its id (`engine.execute`).',
@@ -968,9 +967,12 @@ def scraftpybind_lines(class_names: dict[str, str]) -> list[str]:
         "        * (`JSON`): The command's result.",
         "",
         "        Raises:",
-        "        * `SCSolidCraftError`: If the command fails.",
+        "        * `SolidCraftError`: If the command fails.",
         '        """',
-        "        return SCNamespace(self.transport).execute(command, params)",
+        (
+            "        return CommandNamespace(self.transport)"
+            ".execute(command, params)"
+        ),
         "",
         "",
         "",

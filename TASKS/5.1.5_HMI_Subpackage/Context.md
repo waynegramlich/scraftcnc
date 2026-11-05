@@ -117,3 +117,21 @@ Next: S2, drop the `SC` prefix.
 The trace baseline was dropped (the user).  `SCRAFTCNC_LINUXCNC=1
 python3 -m unittest -v tests.test_lcnc_end_to_end`: all 10 tests pass
 (134 s wall time), the first run since the one-tree reorganization.
+
+## 2026-11-05: S2
+
+The `SC` class prefix is gone from `scraftcnc/`, `tests/`, `show_demo.py`
+and the docs, renamed by a whole-word script from
+`S2_rename_map.txt` (149 names; 33 non-mechanical, marked `(*)`, e.g.
+`SCPanel` -> `HMI`, `SCArc` -> `ArcSegment`, `SCTool` -> `ToolEntry`,
+`SCNamespace` -> `CommandNamespace`, `SCSegment` -> `XYSegment`).
+`scraftpybind_generate.py` writes the new names; the regenerated
+`scraftpybind.py` matches the scripted renaming exactly.  "panel" is
+"HMI" in prose; the `--panel-port` flag and the `"panel"` process keys
+in `show_demo.py` are unchanged.  ruff and mypy are clean; pylint shows
+only findings that were there before (the same 20 file and message
+counts as on the pre-S2 tree, hg rev 540).  Unit suite: 603 tests, 13
+skipped, 193 s, with one failure, `TestFiles.test_document_is_current`:
+the top level `Tool_Models.md` (written from the code) still had the
+`SC` names, and was rewritten from `tool_models.document()`;
+`test_tool_models` then passes.

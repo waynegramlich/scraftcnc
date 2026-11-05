@@ -15,10 +15,10 @@ from typing import Any, cast
 from unittest import mock
 
 from scraftcnc import shops
-from scraftcnc.assembly import SCAssembly
+from scraftcnc.assembly import Assembly
 from scraftcnc.demo import demo_assembly, with_setup
 from scraftcnc.hmi import lcnc_hmi, lcnc_hmi_headless
-from scraftcnc.lcnc.lcnc_client import SCBridgeError
+from scraftcnc.lcnc.lcnc_client import BridgeError
 from scraftcnc.setups import SHOP as EXAMPLE_SHOP
 from scraftcnc.tooling.shop_registries import use_shop
 
@@ -57,7 +57,7 @@ class TestToolSpeeds(unittest.TestCase):
 
 # pylint: disable-next=too-many-instance-attributes
 class FakeClient:
-    """Stands in for `lcnc_client.SCClient`, and records the calls."""
+    """Stands in for `lcnc_client.BridgeClient`, and records the calls."""
 
     def __init__(self) -> None:
         self.calls: list[tuple[Any, ...]] = []
@@ -103,9 +103,9 @@ class FakeClient:
         return [call[1:] for call in self.calls if call[0] == name]
 
 
-def client_machine() -> tuple[lcnc_hmi.SCPanelMachine, FakeClient]:
+def client_machine() -> tuple[lcnc_hmi.HMIMachine, FakeClient]:
     """Return a machine connected to a `FakeClient`."""
-    machine = lcnc_hmi.SCPanelMachine(True)
+    machine = lcnc_hmi.HMIMachine(True)
     lcnc = FakeClient()
     machine.lcnc = cast(Any, lcnc)
     machine.constants = {
@@ -125,17 +125,17 @@ class TestConnecting(unittest.TestCase):
             unused.bind(("127.0.0.1", 0))
             port = unused.getsockname()[1]
         with self.assertRaisesRegex(RuntimeError, "serve_linuxcnc"):
-            lcnc_hmi.SCPanelMachine(False, port)
+            lcnc_hmi.HMIMachine(False, port)
 
     def test_old_server(self) -> None:
         """A server of an older protocol says what to do."""
         client = mock.MagicMock()
         client.call.return_value = {"protocol": 1}
         with (
-            mock.patch.object(lcnc_hmi, "SCClient", return_value=client),
+            mock.patch.object(lcnc_hmi, "BridgeClient", return_value=client),
             self.assertRaisesRegex(RuntimeError, "install_linuxcnc"),
         ):
-            lcnc_hmi.SCPanelMachine(False)
+            lcnc_hmi.HMIMachine(False)
 
 
 class TestStart(unittest.TestCase):
@@ -209,7 +209,7 @@ class TestPrograms(unittest.TestCase):
         self.assertEqual(lcnc.calls, [])
 
     def test_lines_come_from_the_server(self) -> None:
-        """The panel shows what LinuxCNC has open."""
+        """The HMI shows what LinuxCNC has open."""
         machine, _ = client_machine()
         self.assertEqual(machine.program_lines("/x.ngc"), ["G0 X1", "M2"])
 
@@ -217,13 +217,13 @@ class TestPrograms(unittest.TestCase):
         """A program the server will not give shows no lines."""
         machine, lcnc = client_machine()
         lcnc.call = mock.MagicMock(  # type: ignore[method-assign]
-            side_effect=SCBridgeError("ValueError", "no")
+            side_effect=BridgeError("ValueError", "no")
         )
         self.assertEqual(machine.program_lines("/x.ngc"), [])
 
 
 class TestMdi(unittest.TestCase):
-    """MDI lines never hold the panel up."""
+    """MDI lines never hold the HMI up."""
 
     def test_home_goes_a_line_at_a_time(self) -> None:
         """Each line waits for the one before it to finish."""
@@ -327,7 +327,7 @@ class TestMessages(unittest.TestCase):
 
         # The port shows them, and something when there are none.
         panel = mock.MagicMock(machine=machine)
-        handle = lcnc_hmi.SCPanel.handle
+        handle = lcnc_hmi.HMI.handle
         self.assertEqual(handle(panel, "messages"), "messages: first")
         machine.messages = []
         self.assertEqual(handle(panel, "messages"), "messages: ")
@@ -340,9 +340,9 @@ class TestHeadless(unittest.TestCase):
         lcnc_hmi.use_headless()
         lcnc_hmi_headless.ANSWERS.clear()
         lcnc_hmi_headless.ASKED.clear()
-        self.machine = lcnc_hmi.SCPanelMachine(True)
+        self.machine = lcnc_hmi.HMIMachine(True)
         self.root: Any = lcnc_hmi_headless.Tk()
-        self.panel = lcnc_hmi.SCPanel(
+        self.panel = lcnc_hmi.HMI(
             cast(Any, self.root), self.machine, 10.0, None
         )
         # pylint: disable-next=consider-using-with
@@ -353,7 +353,7 @@ class TestHeadless(unittest.TestCase):
         self.file.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     def tick(self) -> dict[str, Any]:
-        """Run the panel's next poll, and return what it shows."""
+        """Run the HMI's next poll, and return what it shows."""
         self.root.run_one()
         return self.panel.show()
 
@@ -422,7 +422,7 @@ class TestHeadless(unittest.TestCase):
     def test_set_origin_asks(self) -> None:
         """Set Origin does nothing unless the answer is yes."""
         self.machine.status = mock.MagicMock(  # type: ignore[method-assign]
-            return_value=lcnc_hmi.SCStatus("", 0, (1.0, 0.0, 0.0), 0, [], "")
+            return_value=lcnc_hmi.HMIStatus("", 0, (1.0, 0.0, 0.0), 0, [], "")
         )
         self.tick()
         self.assertEqual(self.ask("press Set Origin"), "ok")
@@ -453,7 +453,7 @@ class TestHeadless(unittest.TestCase):
         self.assertEqual(self.machine.log[-1], "speed 10.00")
 
     def test_quit_button(self) -> None:
-        """Quit closes the window, which ends the panel."""
+        """Quit closes the window, which ends the HMI."""
         self.assertTrue(self.root.alive)
         self.assertEqual(self.ask("press Quit"), "ok")
         self.assertFalse(self.root.alive)
@@ -464,7 +464,7 @@ class TestHeadless(unittest.TestCase):
         self.assertIn("no button", self.ask("press Nope"))
 
     def test_lost_server(self) -> None:
-        """A LinuxCNC that goes away is shown; the panel keeps polling."""
+        """A LinuxCNC that goes away is shown; the HMI keeps polling."""
         self.machine.status = mock.MagicMock(  # type: ignore[method-assign]
             side_effect=BrokenPipeError("gone")
         )
@@ -474,16 +474,16 @@ class TestHeadless(unittest.TestCase):
 
 # A stand-in, which needs only `show()`.
 class FakeView:  # pylint: disable=too-few-public-methods
-    """Stands in for `SCSetupView`: records each assembly shown."""
+    """Stands in for `SetupView`: records each assembly shown."""
 
     def __init__(self, fail: bool = False) -> None:
         self.fail: bool = fail
         self.keep_outs: bool = False
         self.progress: tuple[int, int] = (0, 0)
         self.keep_out_shows: list[bool] = []
-        self.shown: list[SCAssembly] = []
+        self.shown: list[Assembly] = []
 
-    def show(self, assembly: SCAssembly) -> None:
+    def show(self, assembly: Assembly) -> None:
         """Record an assembly, or fail."""
         if self.fail:
             raise ValueError("no such vise")
@@ -497,13 +497,13 @@ class TestSetupDrawing(unittest.TestCase):
     def setUp(self) -> None:
         use_shop(shops.read(EXAMPLE_SHOP))
         lcnc_hmi.use_headless()
-        self.machine = lcnc_hmi.SCPanelMachine(True)
+        self.machine = lcnc_hmi.HMIMachine(True)
         self.root: Any = lcnc_hmi_headless.Tk()
-        self.panel = lcnc_hmi.SCPanel(
+        self.panel = lcnc_hmi.HMI(
             cast(Any, self.root), self.machine, 10.0, None
         )
         self.view = FakeView()
-        self.panel.drawer = lcnc_hmi.SCSetupDrawer(self.view)
+        self.panel.drawer = lcnc_hmi.SetupDrawer(self.view)
         # pylint: disable-next=consider-using-with
         scratch = tempfile.TemporaryDirectory()
         self.addCleanup(scratch.cleanup)
@@ -597,7 +597,7 @@ class TestSetupDrawing(unittest.TestCase):
         started = threading.Event()
         shown = self.view.show
 
-        def slow(assembly: SCAssembly) -> None:
+        def slow(assembly: Assembly) -> None:
             self.view.progress = (1, 7)
             started.set()
             gate.wait(5.0)
@@ -645,13 +645,13 @@ class TestSetupDrawing(unittest.TestCase):
         view = FakeView()
         shown = view.show
 
-        def slow(assembly: SCAssembly) -> None:
+        def slow(assembly: Assembly) -> None:
             started.set()
             gate.wait(5.0)
             shown(assembly)
 
-        drawer = lcnc_hmi.SCSetupDrawer(cast(Any, mock.Mock(show=slow)))
-        first, second, third = SCAssembly(), SCAssembly(), SCAssembly()
+        drawer = lcnc_hmi.SetupDrawer(cast(Any, mock.Mock(show=slow)))
+        first, second, third = Assembly(), Assembly(), Assembly()
         drawer.draw(first)
         self.assertTrue(started.wait(5.0))
         drawer.draw(second)
@@ -670,8 +670,8 @@ class TestSetOrigin(unittest.TestCase):
         use_shop(shops.read(EXAMPLE_SHOP))
         lcnc_hmi.use_headless()
         lcnc_hmi_headless.ANSWERS.clear()
-        self.machine = lcnc_hmi.SCPanelMachine(True)
-        self.panel = lcnc_hmi.SCPanel(
+        self.machine = lcnc_hmi.HMIMachine(True)
+        self.panel = lcnc_hmi.HMI(
             cast(Any, lcnc_hmi_headless.Tk()), self.machine, 10.0, None
         )
         # pylint: disable-next=consider-using-with
@@ -739,9 +739,9 @@ class TestMainSolidCraft(unittest.TestCase):
         with (
             mock.patch.object(lcnc_hmi_headless.Tk, "mainloop"),
             mock.patch.object(lcnc_hmi, "connect"),
-            mock.patch.object(lcnc_hmi, "SCPyBind"),
-            mock.patch.object(lcnc_hmi, "SCModelCache"),
-            mock.patch.object(lcnc_hmi, "SCSetupView") as view,
+            mock.patch.object(lcnc_hmi, "PyBind"),
+            mock.patch.object(lcnc_hmi, "ModelCache"),
+            mock.patch.object(lcnc_hmi, "SetupView") as view,
         ):
             code = lcnc_hmi.main(["--headless", "--dry-run", *extra])
         self.assertEqual(code, 0)
@@ -806,7 +806,7 @@ class TestHeadlessProgram(unittest.TestCase):
 
 
 def ask_port(port: int, line: str) -> str:
-    """Send a line to a panel's port, waiting for it to start."""
+    """Send a line to an HMI's port, waiting for it to start."""
     end = time.monotonic() + 20.0
     while True:
         try:

@@ -29,7 +29,7 @@ from types import FrameType
 from . import install_linuxcnc
 from .install_linuxcnc import (
     INI_FILE,
-    SCTarget,
+    InstallTarget,
     capture,
     run,
     sim_directory,
@@ -59,14 +59,14 @@ def serving(port: int = PORT) -> bool:
 
 
 # Function `start_command()`:
-def start_command(target: SCTarget) -> list[str]:
+def start_command(target: InstallTarget) -> list[str]:
     """Return the command that runs LinuxCNC in the target.
 
     A command run by `wsl.exe --exec` or `podman exec` may have no
     `HOME`, which LinuxCNC needs, and WSL sets `DISPLAY`.
 
     Arguments:
-    * `target` (`SCTarget`): The target.
+    * `target` (`InstallTarget`): The target.
 
     Returns:
     * (`list[str]`): The command to run here.
@@ -79,11 +79,11 @@ def start_command(target: SCTarget) -> list[str]:
 
 
 # Function `show_logs()`:
-def show_logs(target: SCTarget) -> None:
+def show_logs(target: InstallTarget) -> None:
     """Print what the `linuxcnc` script wrote to its files.
 
     Arguments:
-    * `target` (`SCTarget`): The target.
+    * `target` (`InstallTarget`): The target.
     """
     for log in LOGS:
         path: str = f"{target.home}/{log}"
@@ -92,25 +92,25 @@ def show_logs(target: SCTarget) -> None:
 
 
 # Function `stop_in_target()`:
-def stop_in_target(target: SCTarget) -> None:
+def stop_in_target(target: InstallTarget) -> None:
     """Make sure that LinuxCNC is gone from the target.
 
     A signal stops the command here, which may not stop what it
     started in the target.
 
     Arguments:
-    * `target` (`SCTarget`): The target.
+    * `target` (`InstallTarget`): The target.
     """
     script: str = f"{sim_directory(target)}/stop_linuxcnc.py"
     run(target.command(["python3", script]))
 
 
 # Function `serve()`:
-def serve(target: SCTarget) -> int:
+def serve(target: InstallTarget) -> int:
     """Run LinuxCNC until it stops.
 
     Arguments:
-    * `target` (`SCTarget`): The target.
+    * `target` (`InstallTarget`): The target.
 
     Returns:
     * (`int`): The exit status.

@@ -1,7 +1,7 @@
 """Tests of which way a quarter turn about Z goes.
 
 Quarter turns follow the right hand rule: counterclockwise about +Z,
-so one turn sends +X to +Y.  `setups.py` (`SCPlacement`) hands
+so one turn sends +X to +Y.  `setups.py` (`Placement`) hands
 SolidCraft `90 * turns` degrees, and `model_cache.placement_matrix()`
 builds the same turn as a matrix; both assume that SolidCraft's angle
 is counterclockwise-positive.  (`T.emsagc~5.2` #52.)
@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from scraftcnc import model_cache
-from scraftcnc.pybind.scraftpybind import SCHeadlessTransport, SCPyBind
+from scraftcnc.pybind.scraftpybind import HeadlessTransport, PyBind
 
 HERE: Path = Path(__file__).resolve().parent.parent
 CLI: Path = HERE / "solidcraft/squashfs-root/usr/bin/solidcraft-cli"
@@ -47,12 +47,12 @@ class TestSolidCraft(unittest.TestCase):
         assert PROGRAM is not None
         with (
             tempfile.TemporaryDirectory() as directory,
-            SCHeadlessTransport(PROGRAM, (directory,)) as transport,
+            HeadlessTransport(PROGRAM, (directory,)) as transport,
         ):
-            solidcraft: SCPyBind = SCPyBind(transport)
+            solidcraft: PyBind = PyBind(transport)
 
             # A lopsided box, from the origin along +X, turned as
-            # `SCPlacement` turns one.
+            # `Placement` turns one.
             solidcraft.solid.box(30, 10, 5, body_name="Lopsided")
             solidcraft.solid.move(
                 bodies=["Lopsided"], axis=(0, 0, 1), angle="90 deg"

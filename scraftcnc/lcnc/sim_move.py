@@ -27,9 +27,9 @@ import time
 from pathlib import Path
 
 from ..pybind.scraftpybind import (
-    SCHeadlessTransport,
-    SCPyBind,
-    SCTransport,
+    HeadlessTransport,
+    PyBind,
+    Transport,
     connect,
 )
 
@@ -85,11 +85,11 @@ def arguments() -> argparse.Namespace:
 
 
 # Function `setup()`:
-def setup(solidcraft: SCPyBind, method: str) -> None:
+def setup(solidcraft: PyBind, method: str) -> None:
     """Make the moving cube and the reference cube, and fix the view.
 
     Arguments:
-    * `solidcraft` (`SCPyBind`):
+    * `solidcraft` (`PyBind`):
       The SolidCraft session.
     * `method` (`str`):
       The move method; all but `solid` move a component.
@@ -114,11 +114,11 @@ def setup(solidcraft: SCPyBind, method: str) -> None:
 
 
 # Function `move()`:
-def move(solidcraft: SCPyBind, method: str, dx: float) -> None:
+def move(solidcraft: PyBind, method: str, dx: float) -> None:
     """Move the cube along X.
 
     Arguments:
-    * `solidcraft` (`SCPyBind`):
+    * `solidcraft` (`PyBind`):
       The SolidCraft session.
     * `method` (`str`):
       `pending`, `captured` or `solid`.
@@ -137,11 +137,11 @@ def move(solidcraft: SCPyBind, method: str, dx: float) -> None:
 
 
 # Function `cube_x()`:
-def cube_x(solidcraft: SCPyBind, method: str) -> str:
+def cube_x(solidcraft: PyBind, method: str) -> str:
     """Read the moving cube's lowest X back from SolidCraft.
 
     Arguments:
-    * `solidcraft` (`SCPyBind`):
+    * `solidcraft` (`PyBind`):
       The SolidCraft session.
     * `method` (`str`):
       The move method; a body (`solid`) is not read back.
@@ -163,14 +163,14 @@ def cube_x(solidcraft: SCPyBind, method: str) -> str:
 
 
 # Function `run()`:
-def run(solidcraft: SCPyBind, options: argparse.Namespace) -> None:
+def run(solidcraft: PyBind, options: argparse.Namespace) -> None:
     """Slide the cube back and forth, and print the timing.
 
     Each move is sent on a fixed schedule, so slow answers do not
     stretch the run; a move sent after its time is counted as late.
 
     Arguments:
-    * `solidcraft` (`SCPyBind`):
+    * `solidcraft` (`PyBind`):
       The SolidCraft session.
     * `options` (`argparse.Namespace`):
       The command line arguments.
@@ -230,18 +230,18 @@ def main() -> int:
     # Connect, using the extracted `solidcraft-cli` when there is none
     # on the `PATH`.
     options: argparse.Namespace = arguments()
-    transport: SCTransport = connect(options.where)
+    transport: Transport = connect(options.where)
     if (
-        isinstance(transport, SCHeadlessTransport)
+        isinstance(transport, HeadlessTransport)
         and shutil.which(transport.cli) is None
         and SOLIDCRAFT_CLI.exists()
     ):
-        transport = SCHeadlessTransport(cli=str(SOLIDCRAFT_CLI))
+        transport = HeadlessTransport(cli=str(SOLIDCRAFT_CLI))
 
     # A SolidCraft that is not there is reported in one line.
     try:
         with transport:
-            run(SCPyBind(transport), options)
+            run(PyBind(transport), options)
     except OSError as error:
         print(f"sim_move.py: {error}", file=sys.stderr)
         return 1

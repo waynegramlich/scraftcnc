@@ -1,1 +1,1 @@
-"""The operator's panel (human machine interface) for LinuxCNC."""
+"""The operator's HMI (human machine interface) for LinuxCNC."""

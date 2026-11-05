@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Mounts: how work is held on a machine, as a stack of layers.
 
-A `SCMount` is a list of layers, each of them tooling or material, and
+A `Mount` is a list of layers, each of them tooling or material, and
 each standing where the layer below says the next one goes.  The top
 of the first layer is at `Z = 0`.  Tooling has keep-out regions;
 material does not, since it is what gets cut.
@@ -23,8 +23,8 @@ import sys
 from dataclasses import dataclass, field
 from typing import Protocol
 
-from ..model_cache import SCCacheable
-from ..pybind.scraftpybind import SCPyBind, connect
+from ..model_cache import Cacheable
+from ..pybind.scraftpybind import PyBind, connect
 from ..shops import LENGTH, measure
 from .cutter_models import MM_PER_INCH
 from .tools import (
@@ -40,14 +40,14 @@ from .tools import (
     TABLE_COLOR,
     TABLE_MARGIN,
     VISE_MARGIN,
+    KeepOut,
+    MachineVise,
+    MillTable,
+    Parallel,
     Point,
-    SCKeepOut,
-    SCMachineVise,
-    SCMillTable,
-    SCParallel,
-    SCPrism,
-    SCTormach,
-    SCViseBlock,
+    Prism,
+    Tormach,
+    ViseBlock,
     _mm,
     box_prism,
     left_corner,
@@ -68,16 +68,16 @@ def _inches(length: float) -> str:
     return f"{length / MM_PER_INCH:.3f} in"
 
 
-# Class `SCLayer`:
-class SCLayer(Protocol):
-    """One layer of a `SCMount`: anything that can be stacked."""
+# Class `MountLayer`:
+class MountLayer(Protocol):
+    """One layer of a `Mount`: anything that can be stacked."""
 
-    # Method `SCLayer.name()`:
+    # Method `MountLayer.name()`:
     @property
     def name(self) -> str:
         """Return what the layer is."""
 
-    # Method `SCLayer.seat()`:
+    # Method `MountLayer.seat()`:
     def seat(self) -> Point:
         """Return where the next layer stands.
 
@@ -87,64 +87,64 @@ class SCLayer(Protocol):
           this layer's bottom (millimeters).
         """
 
-    # Method `SCLayer.model()`:
-    def model(self, solidcraft: SCPyBind, center: Point) -> list[str]:
+    # Method `MountLayer.model()`:
+    def model(self, solidcraft: PyBind, center: Point) -> list[str]:
         """Model the layer.
 
         Arguments:
-        * `solidcraft` (`SCPyBind`): The SolidCraft session.
+        * `solidcraft` (`PyBind`): The SolidCraft session.
         * `center` (`Point`): The center of its bottom (millimeters).
 
         Returns:
         * (`list[str]`): The names of the bodies.
         """
 
-    # Method `SCLayer.cacheable()`:
-    def cacheable(self) -> tuple[SCCacheable, ...]:
+    # Method `MountLayer.cacheable()`:
+    def cacheable(self) -> tuple[Cacheable, ...]:
         """Return the layer as models that can be cached.
 
         Returns:
-        * (`tuple[SCCacheable, ...]`):
+        * (`tuple[Cacheable, ...]`):
           The models, around the center of its bottom, or none if it is
           always to be built with `model()`.
         """
 
-    # Method `SCLayer.keep_out()`:
-    def keep_out(self, center: Point) -> SCKeepOut:
+    # Method `MountLayer.keep_out()`:
+    def keep_out(self, center: Point) -> KeepOut:
         """Return the regions around the layer that a tool must not enter.
 
         Arguments:
         * `center` (`Point`): The center of its bottom (millimeters).
 
         Returns:
-        * (`SCKeepOut`): The regions (none, for material).
+        * (`KeepOut`): The regions (none, for material).
         """
 
 
-# Class `SCTableLayer`:
+# Class `TableLayer`:
 @dataclass(frozen=True, slots=True)
-class SCTableLayer:
+class TableLayer:
     """A mill's table.
 
     Attributes:
-    * `table` (`SCMillTable`): The table.
+    * `table` (`MillTable`): The table.
 
     Constructor:
-    * `SCTableLayer(table)`
+    * `TableLayer(table)`
     """
 
     # Constructor arguments:
-    table: SCMillTable = field(init=True)
+    table: MillTable = field(init=True)
 
-    # Method `SCTableLayer.name()`:
+    # Method `TableLayer.name()`:
     @property
     def name(self) -> str:
         """Return the table's name."""
         return self.table.name
 
-    # Method `SCTableLayer.named()`:
+    # Method `TableLayer.named()`:
     @classmethod
-    def named(cls, table: str) -> "SCTableLayer":
+    def named(cls, table: str) -> "TableLayer":
         """Return the layer of a table, by key or name.
 
         Arguments:
@@ -152,14 +152,14 @@ class SCTableLayer:
           The table's key (e.g. `mikini_1610l`) or name.
 
         Returns:
-        * (`SCTableLayer`): The layer.
+        * (`TableLayer`): The layer.
 
         Raises:
         * `KeyError`: If there is no such table.
         """
-        return cls(SCMillTable.named(table))
+        return cls(MillTable.named(table))
 
-    # Method `SCTableLayer.seat()`:
+    # Method `TableLayer.seat()`:
     def seat(self) -> Point:
         """Return the middle of the table's top.
 
@@ -168,7 +168,7 @@ class SCTableLayer:
         """
         return (0.0, 0.0, self.table.thickness)
 
-    # Method `SCTableLayer.origin()`:
+    # Method `TableLayer.origin()`:
     def origin(self, turns: int = 0) -> Point:
         """Return the point handed up to the next item.
 
@@ -189,12 +189,12 @@ class SCTableLayer:
         ]
         return left_corner(corners, turns, upper=True)
 
-    # Method `SCTableLayer.model()`:
-    def model(self, solidcraft: SCPyBind, center: Point) -> list[str]:
+    # Method `TableLayer.model()`:
+    def model(self, solidcraft: PyBind, center: Point) -> list[str]:
         """Model the table.
 
         Arguments:
-        * `solidcraft` (`SCPyBind`): The SolidCraft session.
+        * `solidcraft` (`PyBind`): The SolidCraft session.
         * `center` (`Point`): The center of its bottom (millimeters).
 
         Returns:
@@ -202,21 +202,21 @@ class SCTableLayer:
         """
         # A table is modeled with its top at `Z = 0` and on `X = 0`.
         x, y, z = center
-        body: str = SCTormach(solidcraft).mill_table(self.table, y)
+        body: str = Tormach(solidcraft).mill_table(self.table, y)
         top: float = z + self.table.thickness
         if x != 0.0 or top != 0.0:
             solidcraft.solid.move(bodies=[body], translate=(x, 0.0, top))
         return [body]
 
-    # Method `SCTableLayer.cacheable()`:
-    def cacheable(self) -> tuple[SCCacheable, ...]:
+    # Method `TableLayer.cacheable()`:
+    def cacheable(self) -> tuple[Cacheable, ...]:
         """Return the table as a model that can be cached.
 
         Returns:
-        * (`tuple[SCCacheable, ...]`): The table.
+        * (`tuple[Cacheable, ...]`): The table.
         """
         return (
-            SCCacheable(
+            Cacheable(
                 self.table.name,
                 tooling_shape(self.table),
                 lambda solidcraft: self.model(solidcraft, (0.0, 0.0, 0.0)),
@@ -224,17 +224,17 @@ class SCTableLayer:
             ),
         )
 
-    # Method `SCTableLayer.keep_out()`:
-    def keep_out(self, center: Point) -> SCKeepOut:
+    # Method `TableLayer.keep_out()`:
+    def keep_out(self, center: Point) -> KeepOut:
         """Return the prism around the table.
 
         Arguments:
         * `center` (`Point`): The center of its bottom (millimeters).
 
         Returns:
-        * (`SCKeepOut`): One grown prism.
+        * (`KeepOut`): One grown prism.
         """
-        keep_out: SCKeepOut = SCKeepOut()
+        keep_out: KeepOut = KeepOut()
         keep_out.add_prism(
             box_prism(
                 self.table.name,
@@ -246,9 +246,9 @@ class SCTableLayer:
         return keep_out
 
 
-# Class `SCMachineViseLayer`:
+# Class `MachineViseLayer`:
 @dataclass(frozen=True, slots=True)
-class SCMachineViseLayer:
+class MachineViseLayer:
     """A machine vise, with its jaws set to an opening.
 
     The next layer stands on the bed, in the middle of the gap.  A
@@ -257,28 +257,28 @@ class SCMachineViseLayer:
     X, with the hexagon toward +X.
 
     Attributes:
-    * `vise` (`SCMachineVise`): The vise.
+    * `vise` (`MachineVise`): The vise.
     * `opening` (`float`): The gap between its jaw plates (millimeters).
     * `turned` (`bool`): True if its lead screw runs along Y.
 
     Constructor:
-    * `SCMachineViseLayer(vise, opening, turned)`
+    * `MachineViseLayer(vise, opening, turned)`
     """
 
     # Constructor arguments:
-    vise: SCMachineVise = field(init=True)
+    vise: MachineVise = field(init=True)
     opening: float = field(init=True)
     turned: bool = field(init=True, default=False)
 
-    # Method `SCMachineViseLayer.name()`:
+    # Method `MachineViseLayer.name()`:
     @property
     def name(self) -> str:
         """Return the vise's name."""
         return self.vise.name
 
-    # Method `SCMachineViseLayer.named()`:
+    # Method `MachineViseLayer.named()`:
     @classmethod
-    def named(cls, vise: str, opening: str | float) -> "SCMachineViseLayer":
+    def named(cls, vise: str, opening: str | float) -> "MachineViseLayer":
         """Return the layer of a vise, by key or name, set to an opening.
 
         It is never `turned`: an item's quarter turns turn it (as
@@ -292,13 +292,13 @@ class SCMachineViseLayer:
           or millimeters.
 
         Returns:
-        * (`SCMachineViseLayer`): The layer.
+        * (`MachineViseLayer`): The layer.
 
         Raises:
         * `KeyError`: If there is no such vise.
         * `ValueError`: If the opening is not a length the vise opens to.
         """
-        found: SCMachineVise = SCMachineVise.named(vise)
+        found: MachineVise = MachineVise.named(vise)
         gap: float = (
             float(opening)
             if isinstance(opening, (int, float))
@@ -311,7 +311,7 @@ class SCMachineViseLayer:
             )
         return cls(found, gap)
 
-    # Method `SCMachineViseLayer.seat()`:
+    # Method `MachineViseLayer.seat()`:
     def seat(self) -> Point:
         """Return the middle of the gap, on top of the rails.
 
@@ -322,7 +322,7 @@ class SCMachineViseLayer:
         height: float = self.vise.bed_top()
         return (0.0, -gap, height) if self.turned else (gap, 0.0, height)
 
-    # Method `SCMachineViseLayer.origin()`:
+    # Method `MachineViseLayer.origin()`:
     def origin(self, turns: int = 0) -> Point:
         """Return the point handed up to the next item.
 
@@ -340,19 +340,19 @@ class SCMachineViseLayer:
         Returns:
         * (`Point`): From the center of its base's bottom, turned (mm).
         """
-        vise: SCMachineVise = self.vise
+        vise: MachineVise = self.vise
         face: float = vise.gap_center(self.opening) - self.opening / 2.0
         half: float = vise.fixed_jaw.width / 2.0
         top: float = vise.bed_top() + vise.fixed_jaw.height
         ends: list[Point] = [(face, -half, top), (face, half, top)]
         return left_corner(ends, turns + (3 if self.turned else 0))
 
-    # Method `SCMachineViseLayer.model()`:
-    def model(self, solidcraft: SCPyBind, center: Point) -> list[str]:
+    # Method `MachineViseLayer.model()`:
+    def model(self, solidcraft: PyBind, center: Point) -> list[str]:
         """Model the vise.
 
         Arguments:
-        * `solidcraft` (`SCPyBind`): The SolidCraft session.
+        * `solidcraft` (`PyBind`): The SolidCraft session.
         * `center` (`Point`): The center of its bottom (millimeters).
 
         Returns:
@@ -371,28 +371,28 @@ class SCMachineViseLayer:
             solidcraft.solid.move(bodies=bodies, translate=(x, y, 0.0))
         return bodies
 
-    # Method `SCMachineViseLayer.cacheable()`:
-    def cacheable(self) -> tuple[SCCacheable, ...]:
+    # Method `MachineViseLayer.cacheable()`:
+    def cacheable(self) -> tuple[Cacheable, ...]:
         """Return the vise as models that can be cached.
 
         Returns:
-        * (`tuple[SCCacheable, ...]`):
+        * (`tuple[Cacheable, ...]`):
           The vise, then what moves; none if it is `turned`, which a
           setup leaves to its placement.
         """
         return () if self.turned else self.vise.cacheable(self.opening)
 
-    # Method `SCMachineViseLayer.keep_out()`:
-    def keep_out(self, center: Point) -> SCKeepOut:
+    # Method `MachineViseLayer.keep_out()`:
+    def keep_out(self, center: Point) -> KeepOut:
         """Return the prisms around the base and each jaw.
 
         Arguments:
         * `center` (`Point`): The center of its bottom (millimeters).
 
         Returns:
-        * (`SCKeepOut`): Three grown prisms.
+        * (`KeepOut`): Three grown prisms.
         """
-        keep_out: SCKeepOut = self.vise.keep_out(
+        keep_out: KeepOut = self.vise.keep_out(
             center, self.opening, VISE_MARGIN
         )
         if self.turned:
@@ -404,30 +404,30 @@ class SCMachineViseLayer:
         return keep_out
 
 
-# Class `SCParallelLayer`:
+# Class `ParallelLayer`:
 @dataclass(frozen=True, slots=True)
-class SCParallelLayer:
+class ParallelLayer:
     """One parallel, for a stack that places each of them itself.
 
     Attributes:
-    * `parallel` (`SCParallel`): The parallel.
+    * `parallel` (`Parallel`): The parallel.
 
     Constructor:
-    * `SCParallelLayer(parallel)`
+    * `ParallelLayer(parallel)`
     """
 
     # Constructor arguments:
-    parallel: SCParallel = field(init=True)
+    parallel: Parallel = field(init=True)
 
-    # Method `SCParallelLayer.name()`:
+    # Method `ParallelLayer.name()`:
     @property
     def name(self) -> str:
         """Return the parallel's name."""
         return self.parallel.name
 
-    # Method `SCParallelLayer.named()`:
+    # Method `ParallelLayer.named()`:
     @classmethod
-    def named(cls, parallel: str) -> "SCParallelLayer":
+    def named(cls, parallel: str) -> "ParallelLayer":
         """Return the layer of a parallel, by key or name.
 
         Arguments:
@@ -435,14 +435,14 @@ class SCParallelLayer:
           The parallel's key (e.g. `parallel_1_1_2_in_a`) or name.
 
         Returns:
-        * (`SCParallelLayer`): The layer.
+        * (`ParallelLayer`): The layer.
 
         Raises:
         * `KeyError`: If there is no such parallel.
         """
-        return cls(SCParallel.named(parallel))
+        return cls(Parallel.named(parallel))
 
-    # Method `SCParallelLayer.seat()`:
+    # Method `ParallelLayer.seat()`:
     def seat(self) -> Point:
         """Return the middle of the parallel's top edge.
 
@@ -451,7 +451,7 @@ class SCParallelLayer:
         """
         return (0.0, 0.0, self.parallel.height)
 
-    # Method `SCParallelLayer.origin()`:
+    # Method `ParallelLayer.origin()`:
     def origin(self, _turns: int = 0) -> Point:
         """Return the middle of the parallel's top edge.
 
@@ -468,12 +468,12 @@ class SCParallelLayer:
         """
         return (0.0, 0.0, self.parallel.height)
 
-    # Method `SCParallelLayer.model()`:
-    def model(self, solidcraft: SCPyBind, center: Point) -> list[str]:
+    # Method `ParallelLayer.model()`:
+    def model(self, solidcraft: PyBind, center: Point) -> list[str]:
         """Model the parallel.
 
         Arguments:
-        * `solidcraft` (`SCPyBind`): The SolidCraft session.
+        * `solidcraft` (`PyBind`): The SolidCraft session.
         * `center` (`Point`): The center of its bottom edge (mm).
 
         Returns:
@@ -481,15 +481,15 @@ class SCParallelLayer:
         """
         return [self.parallel.model(solidcraft, center)]
 
-    # Method `SCParallelLayer.cacheable()`:
-    def cacheable(self) -> tuple[SCCacheable, ...]:
+    # Method `ParallelLayer.cacheable()`:
+    def cacheable(self) -> tuple[Cacheable, ...]:
         """Return the parallel as a model that can be cached.
 
         Returns:
-        * (`tuple[SCCacheable, ...]`): The parallel.
+        * (`tuple[Cacheable, ...]`): The parallel.
         """
         return (
-            SCCacheable(
+            Cacheable(
                 self.parallel.name,
                 tooling_shape(self.parallel),
                 lambda solidcraft: self.model(solidcraft, (0.0, 0.0, 0.0)),
@@ -497,41 +497,41 @@ class SCParallelLayer:
             ),
         )
 
-    # Method `SCParallelLayer.keep_out()`:
-    def keep_out(self, center: Point) -> SCKeepOut:
+    # Method `ParallelLayer.keep_out()`:
+    def keep_out(self, center: Point) -> KeepOut:
         """Return the prism around the parallel.
 
         Arguments:
         * `center` (`Point`): The center of its bottom edge (mm).
 
         Returns:
-        * (`SCKeepOut`): One grown prism.
+        * (`KeepOut`): One grown prism.
         """
-        keep_out: SCKeepOut = SCKeepOut()
+        keep_out: KeepOut = KeepOut()
         keep_out.add_prism(self.parallel.prism(center), PARALLEL_MARGIN)
         return keep_out
 
 
-# Class `SCParallelPair`:
+# Class `ParallelPair`:
 @dataclass(frozen=True, slots=True)
-class SCParallelPair:
+class ParallelPair:
     """Two parallels of one height, side by side along X.
 
     Attributes:
-    * `first` (`SCParallel`): The parallel toward -X.
-    * `second` (`SCParallel`): The parallel toward +X.
+    * `first` (`Parallel`): The parallel toward -X.
+    * `second` (`Parallel`): The parallel toward +X.
     * `spacing` (`float`): The distance between their centers (mm).
 
     Constructor:
-    * `SCParallelPair(first, second, spacing)`
+    * `ParallelPair(first, second, spacing)`
     """
 
     # Constructor arguments:
-    first: SCParallel = field(init=True)
-    second: SCParallel = field(init=True)
+    first: Parallel = field(init=True)
+    second: Parallel = field(init=True)
     spacing: float = field(init=True)
 
-    # Method `SCParallelPair.__post_init__()`:
+    # Method `ParallelPair.__post_init__()`:
     def __post_init__(self) -> None:
         """Check that the two can carry work between them.
 
@@ -547,13 +547,13 @@ class SCParallelPair:
                 f"{self.spacing=} is less than {self.first.thickness=}"
             )
 
-    # Method `SCParallelPair.name()`:
+    # Method `ParallelPair.name()`:
     @property
     def name(self) -> str:
         """Return what the pair is."""
         return f"{self.first.name} and {self.second.name}"
 
-    # Method `SCParallelPair.seat()`:
+    # Method `ParallelPair.seat()`:
     def seat(self) -> Point:
         """Return the middle of the space above the pair.
 
@@ -562,7 +562,7 @@ class SCParallelPair:
         """
         return (0.0, 0.0, self.first.height)
 
-    # Method `SCParallelPair.centers()`:
+    # Method `ParallelPair.centers()`:
     def centers(self, center: Point) -> list[Point]:
         """Return the center of each parallel's bottom edge.
 
@@ -576,12 +576,12 @@ class SCParallelPair:
         half: float = self.spacing / 2.0
         return [(x - half, y, z), (x + half, y, z)]
 
-    # Method `SCParallelPair.model()`:
-    def model(self, solidcraft: SCPyBind, center: Point) -> list[str]:
+    # Method `ParallelPair.model()`:
+    def model(self, solidcraft: PyBind, center: Point) -> list[str]:
         """Model both parallels.
 
         Arguments:
-        * `solidcraft` (`SCPyBind`): The SolidCraft session.
+        * `solidcraft` (`PyBind`): The SolidCraft session.
         * `center` (`Point`): The middle of the pair's bottom (mm).
 
         Returns:
@@ -594,26 +594,26 @@ class SCParallelPair:
             )
         ]
 
-    # Method `SCParallelPair.cacheable()`:
-    def cacheable(self) -> tuple[SCCacheable, ...]:
+    # Method `ParallelPair.cacheable()`:
+    def cacheable(self) -> tuple[Cacheable, ...]:
         """Return nothing, since a mount builds its pair each time.
 
         Returns:
-        * (`tuple[SCCacheable, ...]`): No models.
+        * (`tuple[Cacheable, ...]`): No models.
         """
         return ()
 
-    # Method `SCParallelPair.keep_out()`:
-    def keep_out(self, center: Point) -> SCKeepOut:
+    # Method `ParallelPair.keep_out()`:
+    def keep_out(self, center: Point) -> KeepOut:
         """Return the prism around each parallel.
 
         Arguments:
         * `center` (`Point`): The middle of the pair's bottom (mm).
 
         Returns:
-        * (`SCKeepOut`): Two grown prisms.
+        * (`KeepOut`): Two grown prisms.
         """
-        keep_out: SCKeepOut = SCKeepOut()
+        keep_out: KeepOut = KeepOut()
         for parallel, place in zip(
             (self.first, self.second), self.centers(center), strict=True
         ):
@@ -621,9 +621,9 @@ class SCParallelPair:
         return keep_out
 
 
-# Class `SCPlate`:
+# Class `Plate`:
 @dataclass(frozen=True, slots=True)
-class SCPlate:
+class Plate:
     """A rectangular plate of material, which is what gets cut.
 
     Attributes:
@@ -635,7 +635,7 @@ class SCPlate:
     * `opacity` (`float`): How solid it looks, from 0.0 to 1.0.
 
     Constructor:
-    * `SCPlate(name, length, width, thickness, color, opacity)`
+    * `Plate(name, length, width, thickness, color, opacity)`
     """
 
     # Constructor arguments:
@@ -646,21 +646,21 @@ class SCPlate:
     color: str = field(init=True, default=ALUMINUM_COLOR)
     opacity: float = field(init=True, default=1.0)
 
-    # Method `SCPlate.prism()`:
-    def prism(self, center: Point) -> SCPrism:
+    # Method `Plate.prism()`:
+    def prism(self, center: Point) -> Prism:
         """Return the rectangular prism that just encloses the plate.
 
         Arguments:
         * `center` (`Point`): The center of its bottom face (mm).
 
         Returns:
-        * (`SCPrism`): The prism, named for the plate.
+        * (`Prism`): The prism, named for the plate.
         """
         return box_prism(
             self.name, (self.length, self.width, self.thickness), center
         )
 
-    # Method `SCPlate.seat()`:
+    # Method `Plate.seat()`:
     def seat(self) -> Point:
         """Return the middle of the plate's top.
 
@@ -669,18 +669,18 @@ class SCPlate:
         """
         return (0.0, 0.0, self.thickness)
 
-    # Method `SCPlate.model()`:
-    def model(self, solidcraft: SCPyBind, center: Point) -> list[str]:
+    # Method `Plate.model()`:
+    def model(self, solidcraft: PyBind, center: Point) -> list[str]:
         """Model the plate.
 
         Arguments:
-        * `solidcraft` (`SCPyBind`): The SolidCraft session.
+        * `solidcraft` (`PyBind`): The SolidCraft session.
         * `center` (`Point`): The center of its bottom (millimeters).
 
         Returns:
         * (`list[str]`): The name of the plate's body.
         """
-        body: str = SCViseBlock(self.length, self.width, self.thickness).model(
+        body: str = ViseBlock(self.length, self.width, self.thickness).model(
             solidcraft, self.name, center
         )
         solidcraft.appearance.assign(
@@ -688,49 +688,49 @@ class SCPlate:
         )
         return [body]
 
-    # Method `SCPlate.cacheable()`:
-    def cacheable(self) -> tuple[SCCacheable, ...]:
+    # Method `Plate.cacheable()`:
+    def cacheable(self) -> tuple[Cacheable, ...]:
         """Return nothing, since a plain box is quick to build.
 
         Returns:
-        * (`tuple[SCCacheable, ...]`): No models.
+        * (`tuple[Cacheable, ...]`): No models.
         """
         return ()
 
-    # Method `SCPlate.keep_out()`:
-    def keep_out(self, _center: Point) -> SCKeepOut:
+    # Method `Plate.keep_out()`:
+    def keep_out(self, _center: Point) -> KeepOut:
         """Return no regions, since a tool is meant to enter material.
 
         Arguments:
         * `_center` (`Point`): The center of its bottom (millimeters).
 
         Returns:
-        * (`SCKeepOut`): An empty set of regions.
+        * (`KeepOut`): An empty set of regions.
         """
-        return SCKeepOut()
+        return KeepOut()
 
 
-# Class `SCMount`:
+# Class `Mount`:
 @dataclass(frozen=True, slots=True)
-class SCMount:
+class Mount:
     """A stack of layers holding work on a machine.
 
     Attributes:
     * `name` (`str`): What it is.
-    * `layers` (`tuple[SCLayer, ...]`): The layers, from the bottom up.
+    * `layers` (`tuple[MountLayer, ...]`): The layers, from the bottom up.
     * `notes` (`tuple[str, ...]`):
       What a person should know about how the stack came out.
 
     Constructor:
-    * `SCMount(name, layers, notes)`
+    * `Mount(name, layers, notes)`
     """
 
     # Constructor arguments:
     name: str = field(init=True)
-    layers: tuple[SCLayer, ...] = field(init=True)
+    layers: tuple[MountLayer, ...] = field(init=True)
     notes: tuple[str, ...] = field(init=True, default=())
 
-    # Method `SCMount.places()`:
+    # Method `Mount.places()`:
     def places(self) -> list[Point]:
         """Return where each layer goes, with the first's top at `Z = 0`.
 
@@ -749,7 +749,7 @@ class SCMount:
             x, y, z = x + seat_x, y + seat_y, z + seat_z
         return places
 
-    # Method `SCMount.report()`:
+    # Method `Mount.report()`:
     def report(self) -> list[str]:
         """Return the stack as lines of text, from the top down.
 
@@ -770,12 +770,12 @@ class SCMount:
         lines.extend(f"* {note}" for note in self.notes)
         return lines
 
-    # Method `SCMount.model()`:
-    def model(self, solidcraft: SCPyBind) -> list[str]:
+    # Method `Mount.model()`:
+    def model(self, solidcraft: PyBind) -> list[str]:
         """Model every layer.
 
         Arguments:
-        * `solidcraft` (`SCPyBind`): The SolidCraft session.
+        * `solidcraft` (`PyBind`): The SolidCraft session.
 
         Returns:
         * (`list[str]`): The names of the bodies, from the bottom up.
@@ -785,23 +785,23 @@ class SCMount:
             bodies.extend(layer.model(solidcraft, place))
         return bodies
 
-    # Method `SCMount.keep_out()`:
-    def keep_out(self) -> SCKeepOut:
+    # Method `Mount.keep_out()`:
+    def keep_out(self) -> KeepOut:
         """Return the regions of every layer that a tool must not enter.
 
         Returns:
-        * (`SCKeepOut`): The regions, from the bottom up.
+        * (`KeepOut`): The regions, from the bottom up.
         """
-        keep_out: SCKeepOut = SCKeepOut()
+        keep_out: KeepOut = KeepOut()
         for layer, place in zip(self.layers, self.places(), strict=True):
-            regions: SCKeepOut = layer.keep_out(place)
+            regions: KeepOut = layer.keep_out(place)
             keep_out.prisms.extend(regions.prisms)
             keep_out.cylinders.extend(regions.cylinders)
         return keep_out
 
 
 # Function `parallel_pair()`:
-def parallel_pair(height: str, spacing: float) -> SCParallelPair:
+def parallel_pair(height: str, spacing: float) -> ParallelPair:
     """Return the pair of a given height from the set of parallels.
 
     Arguments:
@@ -809,37 +809,37 @@ def parallel_pair(height: str, spacing: float) -> SCParallelPair:
     * `spacing` (`float`): The distance between their centers (mm).
 
     Returns:
-    * (`SCParallelPair`): The pair.
+    * (`ParallelPair`): The pair.
 
     Raises:
     * `ValueError`: If the set has no such pair.
     """
-    found: list[SCParallel] = [
+    found: list[Parallel] = [
         parallel
         for parallel in PARALLELS
         if parallel.name.startswith(f"Parallel {height} ")
     ]
     if len(found) != 2:
         raise ValueError(f"{height=} is not a pair of `PARALLELS`")
-    return SCParallelPair(found[0], found[1], spacing)
+    return ParallelPair(found[0], found[1], spacing)
 
 
 # Function `vise_notes()`:
 def vise_notes(
-    table: SCMillTable,
-    vise: SCMachineVise,
+    table: MillTable,
+    vise: MachineVise,
     opening: float,
-    pair: SCParallelPair,
-    work: SCPlate,
+    pair: ParallelPair,
+    work: Plate,
 ) -> tuple[str, ...]:
     """Return what a person should know about work held in a vise.
 
     Arguments:
-    * `table` (`SCMillTable`): The table under the vise.
-    * `vise` (`SCMachineVise`): The vise.
+    * `table` (`MillTable`): The table under the vise.
+    * `vise` (`MachineVise`): The vise.
     * `opening` (`float`): The gap between its jaw plates (millimeters).
-    * `pair` (`SCParallelPair`): The parallels under the work.
-    * `work` (`SCPlate`): The work.
+    * `pair` (`ParallelPair`): The parallels under the work.
+    * `work` (`Plate`): The work.
 
     Returns:
     * (`tuple[str, ...]`): The notes, one sentence each.
@@ -898,12 +898,12 @@ def vise_notes(
 
 # Function `vise_mount()`:
 def vise_mount(
-    table: SCMillTable,
-    vise: SCMachineVise,
+    table: MillTable,
+    vise: MachineVise,
     opening: float,
     height: str,
-    work: SCPlate,
-) -> SCMount:
+    work: Plate,
+) -> Mount:
     """Return a stack of a table, a vise, parallels and work.
 
     The vise is centered on the table, and the work in the gap between
@@ -911,14 +911,14 @@ def vise_mount(
     them, so that they stay under the work as the jaws close on it.
 
     Arguments:
-    * `table` (`SCMillTable`): The table.
-    * `vise` (`SCMachineVise`): The vise.
+    * `table` (`MillTable`): The table.
+    * `vise` (`MachineVise`): The vise.
     * `opening` (`float`): The gap between its jaw plates (millimeters).
     * `height` (`str`): The parallels' height, as `PARALLELS` names it.
-    * `work` (`SCPlate`): The work, whose `length` lies across the jaws.
+    * `work` (`Plate`): The work, whose `length` lies across the jaws.
 
     Returns:
-    * (`SCMount`): The stack, with its notes.
+    * (`Mount`): The stack, with its notes.
 
     Raises:
     * `ValueError`: If the work does not fit between the jaws, or the set
@@ -927,23 +927,23 @@ def vise_mount(
     if work.length > opening:
         raise ValueError(f"{work.length=} does not fit {opening=}")
     thickness: float = PARALLELS[0].thickness
-    pair: SCParallelPair = parallel_pair(height, work.length - thickness)
-    return SCMount(
+    pair: ParallelPair = parallel_pair(height, work.length - thickness)
+    return Mount(
         f"{work.name} in a {vise.name} on a {table.name}",
-        (SCTableLayer(table), SCMachineViseLayer(vise, opening), pair, work),
+        (TableLayer(table), MachineViseLayer(vise, opening), pair, work),
         vise_notes(table, vise, opening, pair, work),
     )
 
 
 # Function `turned_vise_notes()`:
 def turned_vise_notes(
-    table: SCMillTable, vise: SCMachineVise, opening: float, y_travel: float
+    table: MillTable, vise: MachineVise, opening: float, y_travel: float
 ) -> tuple[str, ...]:
     """Return how a vise centered on a table, turned along Y, fits it.
 
     Arguments:
-    * `table` (`SCMillTable`): The table, whose width lies along Y.
-    * `vise` (`SCMachineVise`): The vise.
+    * `table` (`MillTable`): The table, whose width lies along Y.
+    * `vise` (`MachineVise`): The vise.
     * `opening` (`float`): The gap between its jaw plates (millimeters).
     * `y_travel` (`float`): How far the Y axis travels (millimeters).
 
@@ -975,22 +975,22 @@ def turned_vise_notes(
 # The first stack, as the user described it, on the middle of Tormach's
 # three tables.  The user gave no thickness for the plate; 1/2 in is the
 # demonstration's.
-FIRST_MOUNT: SCMount = vise_mount(
+FIRST_MOUNT: Mount = vise_mount(
     MILL_TABLES[1],
     KURT_D688,
     _mm("6 in"),
     "1-1/2 in",
-    SCPlate("Aluminum plate", _mm("5-1/2 in"), _mm("12 in"), _mm("1/2 in")),
+    Plate("Aluminum plate", _mm("5-1/2 in"), _mm("12 in"), _mm("1/2 in")),
 )
 
 
 # The mill in the user's garage: does a full size vise fit its table?
 GARAGE_OPENING: float = _mm("6 in")
-GARAGE_MOUNT: SCMount = SCMount(
+GARAGE_MOUNT: Mount = Mount(
     f"{KURT_D688.name} on a {MIKINI_1610L.name}",
     (
-        SCTableLayer(MIKINI_1610L),
-        SCMachineViseLayer(KURT_D688, GARAGE_OPENING, turned=True),
+        TableLayer(MIKINI_1610L),
+        MachineViseLayer(KURT_D688, GARAGE_OPENING, turned=True),
     ),
     turned_vise_notes(
         MIKINI_1610L, KURT_D688, GARAGE_OPENING, MIKINI_Y_TRAVEL
@@ -998,13 +998,13 @@ GARAGE_MOUNT: SCMount = SCMount(
 )
 
 # The grid plate directly on that table, whose width it matches.
-PLATE_MOUNT: SCMount = SCMount(
+PLATE_MOUNT: Mount = Mount(
     f"{GRID_PLATE.name} on a {MIKINI_1610L.name}",
-    (SCTableLayer(MIKINI_1610L), GRID_PLATE),
+    (TableLayer(MIKINI_1610L), GRID_PLATE),
 )
 
 # The stacks that can be shown.
-MOUNTS: dict[str, SCMount] = {
+MOUNTS: dict[str, Mount] = {
     "garage": GARAGE_MOUNT,
     "plate": PLATE_MOUNT,
     "first": FIRST_MOUNT,
@@ -1015,9 +1015,9 @@ MOUNTS: dict[str, SCMount] = {
 def main() -> None:
     """Show a stack and its keep-outs, in a new design."""
     target: str = sys.argv[1] if len(sys.argv) > 1 else "8080"
-    stack: SCMount = MOUNTS[sys.argv[2] if len(sys.argv) > 2 else "garage"]
+    stack: Mount = MOUNTS[sys.argv[2] if len(sys.argv) > 2 else "garage"]
     with connect(target) as transport:
-        solidcraft: SCPyBind = SCPyBind(transport)
+        solidcraft: PyBind = PyBind(transport)
         solidcraft.file.new()
         print(stack.model(solidcraft))
         print(stack.keep_out().model(solidcraft))

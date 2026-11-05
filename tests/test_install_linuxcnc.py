@@ -168,7 +168,9 @@ class TestInstallLinuxCNC(unittest.TestCase):
 
     def test_target_command(self) -> None:
         """Commands are prefixed, as root or as the user."""
-        options = install_linuxcnc.SCOptions("wsl", "lcnc", "Debian", False)
+        options = install_linuxcnc.InstallOptions(
+            "wsl", "lcnc", "Debian", False
+        )
         wsl = install_linuxcnc.wsl_steps(options)[0]
         command = wsl.command(["id", "-u"], root=True)
         self.assertEqual(
@@ -180,7 +182,9 @@ class TestInstallLinuxCNC(unittest.TestCase):
     def test_steps(self) -> None:
         """Every route ends with the same seven steps, `halrun` last."""
         for route, setup in (("distrobox", 2), ("wsl", 1)):
-            options = install_linuxcnc.SCOptions(route, "b", "Debian", True)
+            options = install_linuxcnc.InstallOptions(
+                route, "b", "Debian", True
+            )
             _, all_steps = install_linuxcnc.steps(options)
             self.assertEqual(len(all_steps), setup + 7, route)
             self.assertIn("import linuxcnc", all_steps[-2].title)
@@ -212,7 +216,9 @@ class TestInstallLinuxCNC(unittest.TestCase):
 
     def test_send_file_shared(self) -> None:
         """A box sees the file where it is; nothing is sent."""
-        options = install_linuxcnc.SCOptions("distrobox", "b", "Debian", True)
+        options = install_linuxcnc.InstallOptions(
+            "distrobox", "b", "Debian", True
+        )
         target = install_linuxcnc.box_steps(options)[0]
         path = Path("/x/p.deb")
         with mock.patch("scraftcnc.lcnc.install_linuxcnc.run") as run:

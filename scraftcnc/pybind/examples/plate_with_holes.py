@@ -28,13 +28,13 @@ cq.Workplane("XY").box(100, 60, 10).faces(">Z").workplane()
 import sys
 from pathlib import Path
 
-from ..scraftpybind import JSON, SCPyBind, connect
+from ..scraftpybind import JSON, PyBind, connect
 
 
 # Function `plate_with_holes()`:
 # Each dimension is its own keyword-only argument, as in CadQuery.
 def plate_with_holes(  # pylint: disable=too-many-arguments  # pragma: no cover
-    solidcraft: SCPyBind,
+    solidcraft: PyBind,
     *,
     length: float,
     width: float,
@@ -48,7 +48,7 @@ def plate_with_holes(  # pylint: disable=too-many-arguments  # pragma: no cover
     from it.
 
     Arguments:
-    * `solidcraft` (`SCPyBind`): Where to build it.
+    * `solidcraft` (`PyBind`): Where to build it.
     * `length` (`float`): The plate's length, along X (mm).
     * `width` (`float`): Its width, along Y (mm).
     * `thickness` (`float`): Its thickness, along Z (mm).
@@ -111,7 +111,7 @@ def main() -> int:  # pragma: no cover
     # Build the plate, colour it and show it (headless, the view is
     # still set, though nobody sees it).
     with connect(sys.argv[1]) as transport:
-        solidcraft: SCPyBind = SCPyBind(transport)
+        solidcraft: PyBind = PyBind(transport)
         plate_with_holes(
             solidcraft,
             length=100,

@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """Drive SolidCraft from Python, one method per JSON command.
 
-`SCPyBind` runs SolidCraft commands (`sketch.create`,
-`solid.extrude`, ...) through a `SCTransport`:
-* `SCControlTransport` talks to a running SolidCraft GUI over its
+`PyBind` runs SolidCraft commands (`sketch.create`,
+`solid.extrude`, ...) through a `Transport`:
+* `ControlTransport` talks to a running SolidCraft GUI over its
   control port (SolidCraft's `docs/control-protocol.md`: one JSON request per
   line, and one JSON reply per line), so the design can be watched.
-* `SCHeadlessTransport` runs `solidcraft-cli mcp --headless`, a design
+* `HeadlessTransport` runs `solidcraft-cli mcp --headless`, a design
   session with no window, and talks MCP to it (SolidCraft's
   `docs/mcp.md`).
 
 Each command is one method, in a class named after the command's
 namespace: `sketch.rectangle.center` is
-`SCPyBind.sketch.rectangle_center()`.  Parameters left at `None`
+`PyBind.sketch.rectangle_center()`.  Parameters left at `None`
 are not sent, so SolidCraft uses its own defaults for them.
 
 Run directly, it builds a 100 x 60 x 10 mm plate with a 20 mm hole,
@@ -78,8 +78,8 @@ RELEASES: str = "https://github.com/tangency-labs/solidcraft/releases"
 EXIT_TIMEOUT: float = 10.0
 
 
-# Class `SCSolidCraftError`:
-class SCSolidCraftError(Exception):
+# Class `SolidCraftError`:
+class SolidCraftError(Exception):
     """A SolidCraft request that failed.
 
     Attributes:
@@ -93,7 +93,7 @@ class SCSolidCraftError(Exception):
       earlier request on this connection is still running.
     """
 
-    # Method `SCSolidCraftError.__init__()`:
+    # Method `SolidCraftError.__init__()`:
     def __init__(
         self, method: str, error: str, running: bool, busy: bool
     ) -> None:
@@ -131,18 +131,18 @@ def control_dir() -> Path:
     return data / "solidcraft" / "control"
 
 
-# Class `SCTransport`:
+# Class `Transport`:
 @dataclass(slots=True)
-class SCTransport:
+class Transport:
     """The base of the ways to send requests to SolidCraft.
 
     A transport is a context manager, closing itself on exit.
 
     Constructor:
-    * `SCTransport()`
+    * `Transport()`
     """
 
-    # Method `SCTransport.request()`:
+    # Method `Transport.request()`:
     def request(self, method: str, params: Mapping[str, JSON]) -> JSON:
         """Send one request and return its result.
 
@@ -158,11 +158,11 @@ class SCTransport:
         """
         raise NotImplementedError(f"{type(self).__name__}.request")
 
-    # Method `SCTransport.close()`:
+    # Method `Transport.close()`:
     def close(self) -> None:
         """Close the transport, if it is open."""
 
-    # Method `SCTransport.__enter__()`:
+    # Method `Transport.__enter__()`:
     def __enter__(self) -> Self:
         """Return this transport for a `with` statement.
 
@@ -171,7 +171,7 @@ class SCTransport:
         """
         return self
 
-    # Method `SCTransport.__exit__()`:
+    # Method `Transport.__exit__()`:
     def __exit__(
         self,
         exc_type: type[BaseException] | None,
@@ -188,9 +188,9 @@ class SCTransport:
         self.close()
 
 
-# Class `SCControlTransport`:
+# Class `ControlTransport`:
 @dataclass(slots=True)
-class SCControlTransport(SCTransport):
+class ControlTransport(Transport):
     """A connection to a running SolidCraft GUI's control port.
 
     Each request is one line `{"id", "method", "params"}`, and each
@@ -212,7 +212,7 @@ class SCControlTransport(SCTransport):
     * `sock` (`socket.socket | None`): The socket, once connected.
 
     Constructor:
-    * `SCControlTransport(port, host, token)`
+    * `ControlTransport(port, host, token)`
     """
 
     # Constructor arguments:
@@ -225,7 +225,7 @@ class SCControlTransport(SCTransport):
     reader: TextIO | None = field(init=False, default=None)
     sock: socket.socket | None = field(init=False, default=None)
 
-    # Method `SCControlTransport.connect()`:
+    # Method `ControlTransport.connect()`:
     def connect(self) -> None:
         """Connect to SolidCraft, finding the port and token if needed.
 
@@ -272,7 +272,7 @@ class SCControlTransport(SCTransport):
         self.reader = self.sock.makefile("r", encoding="utf-8")
         self.next_id = 1
 
-    # Method `SCControlTransport.request()`:
+    # Method `ControlTransport.request()`:
     def request(self, method: str, params: Mapping[str, JSON]) -> JSON:
         """Send one request and return its result.
 
@@ -284,7 +284,7 @@ class SCControlTransport(SCTransport):
         * (`JSON`): The reply's `result`.
 
         Raises:
-        * `SCSolidCraftError`: If SolidCraft answers `"ok": false`.
+        * `SolidCraftError`: If SolidCraft answers `"ok": false`.
         * `ConnectionError`:
           If the connection closes or the reply does not match.
         """
@@ -318,14 +318,14 @@ class SCControlTransport(SCTransport):
         if reply.get("ok") is True:
             result: JSON = reply.get("result")
             return result
-        raise SCSolidCraftError(
+        raise SolidCraftError(
             method,
             str(reply.get("error", "")),
             reply.get("running") is True,
             reply.get("busy") is True,
         )
 
-    # Method `SCControlTransport.close()`:
+    # Method `ControlTransport.close()`:
     def close(self) -> None:
         """Close the connection, if it is open."""
         # Close the reader first, since it wraps the socket.
@@ -337,9 +337,9 @@ class SCControlTransport(SCTransport):
             self.sock = None
 
 
-# Class `SCHeadlessTransport`:
+# Class `HeadlessTransport`:
 @dataclass(slots=True)
-class SCHeadlessTransport(SCTransport):
+class HeadlessTransport(Transport):
     """A headless SolidCraft session: `solidcraft-cli mcp --headless`.
 
     The session holds one design in memory, with no window.  It speaks
@@ -363,7 +363,7 @@ class SCHeadlessTransport(SCTransport):
       The session, once started.
 
     Constructor:
-    * `SCHeadlessTransport(cli, allow_paths)`
+    * `HeadlessTransport(cli, allow_paths)`
     """
 
     # Constructor arguments:
@@ -375,7 +375,7 @@ class SCHeadlessTransport(SCTransport):
     next_id: int = field(init=False, default=1)
     process: subprocess.Popen[str] | None = field(init=False, default=None)
 
-    # Method `SCHeadlessTransport.start()`:
+    # Method `HeadlessTransport.start()`:
     def start(self) -> None:
         """Start the session and complete the MCP handshake.
 
@@ -421,7 +421,7 @@ class SCHeadlessTransport(SCTransport):
         )
         self.send({"jsonrpc": "2.0", "method": "notifications/initialized"})
 
-    # Method `SCHeadlessTransport.send()`:
+    # Method `HeadlessTransport.send()`:
     def send(self, message: Mapping[str, JSON]) -> None:
         """Send one MCP message as one line.
 
@@ -432,7 +432,7 @@ class SCHeadlessTransport(SCTransport):
         self.process.stdin.write(json.dumps(message) + "\n")
         self.process.stdin.flush()
 
-    # Method `SCHeadlessTransport.call()`:
+    # Method `HeadlessTransport.call()`:
     def call(self, method: str, params: Mapping[str, JSON]) -> JSON:
         """Send one MCP request and return its `result`.
 
@@ -444,7 +444,7 @@ class SCHeadlessTransport(SCTransport):
         * (`JSON`): The reply's `result`.
 
         Raises:
-        * `SCSolidCraftError`: If the reply is a JSON-RPC error.
+        * `SolidCraftError`: If the reply is a JSON-RPC error.
         * `ConnectionError`: If the session has stopped.
         """
         # Send the request.
@@ -472,13 +472,13 @@ class SCHeadlessTransport(SCTransport):
         # Return the result, or raise the error.
         error: JSON = reply.get("error")
         if isinstance(error, dict):
-            raise SCSolidCraftError(
+            raise SolidCraftError(
                 method, str(error.get("message", "")), False, False
             )
         result: JSON = reply.get("result")
         return result
 
-    # Method `SCHeadlessTransport.stopped()`:
+    # Method `HeadlessTransport.stopped()`:
     def stopped(self) -> str:
         """Describe how the session stopped, with its last error text.
 
@@ -497,7 +497,7 @@ class SCHeadlessTransport(SCTransport):
         text: str = self.errors.read().decode("utf-8", "replace").strip()
         return f"the session stopped ({status=}): {text[-500:]}"
 
-    # Method `SCHeadlessTransport.request()`:
+    # Method `HeadlessTransport.request()`:
     def request(self, method: str, params: Mapping[str, JSON]) -> JSON:
         """Send one request and return its result.
 
@@ -512,13 +512,13 @@ class SCHeadlessTransport(SCTransport):
         * (`JSON`): The command's result.
 
         Raises:
-        * `SCSolidCraftError`:
+        * `SolidCraftError`:
           If the command fails, or `method` is not `engine.execute`.
         * `ConnectionError`: If the session has stopped.
         """
         # Start on first use.
         if method != "engine.execute":
-            raise SCSolidCraftError(method, "needs the GUI", False, False)
+            raise SolidCraftError(method, "needs the GUI", False, False)
         if self.process is None:
             self.start()
 
@@ -536,14 +536,14 @@ class SCHeadlessTransport(SCTransport):
             if isinstance(first, Mapping):
                 text = str(first.get("text", ""))
         if result.get("isError") is True:
-            raise SCSolidCraftError(method, text, False, False)
+            raise SolidCraftError(method, text, False, False)
         try:
             parsed: JSON = json.loads(text)
         except json.JSONDecodeError:
             return text
         return parsed
 
-    # Method `SCHeadlessTransport.close()`:
+    # Method `HeadlessTransport.close()`:
     def close(self) -> None:
         """Stop the session, if it is running."""
         # Closing its standard input ends the session.
@@ -564,7 +564,7 @@ class SCHeadlessTransport(SCTransport):
 
 
 # Function `connect()`:
-def connect(where: str) -> SCTransport:
+def connect(where: str) -> Transport:
     """Return a transport for a port number, or for `headless`.
 
     Arguments:
@@ -573,34 +573,34 @@ def connect(where: str) -> SCTransport:
       with no window.
 
     Returns:
-    * (`SCTransport`): The transport, which connects on first use.
+    * (`Transport`): The transport, which connects on first use.
 
     Raises:
     * `ValueError`: If `where` is neither.
     """
     if where == "headless":
-        return SCHeadlessTransport()
+        return HeadlessTransport()
     if not where.isdigit():
         raise ValueError(f"{where=} is not a port number or `headless`")
-    return SCControlTransport(int(where))
+    return ControlTransport(int(where))
 
 
-# Class `SCNamespace`:
+# Class `CommandNamespace`:
 @dataclass(slots=True)
-class SCNamespace:
+class CommandNamespace:
     """The base of the classes that hold one namespace's commands.
 
     Attributes:
-    * `transport` (`SCTransport`): How the commands are sent.
+    * `transport` (`Transport`): How the commands are sent.
 
     Constructor:
-    * `SCNamespace(transport)`
+    * `CommandNamespace(transport)`
     """
 
     # Constructor arguments:
-    transport: SCTransport = field(init=True)
+    transport: Transport = field(init=True)
 
-    # Method `SCNamespace.execute()`:
+    # Method `CommandNamespace.execute()`:
     def execute(self, command: str, params: Mapping[str, JSON]) -> JSON:
         """Run one command, leaving out the parameters that are `None`.
 
@@ -613,7 +613,7 @@ class SCNamespace:
         * (`JSON`): The command's result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         sent: dict[str, JSON] = {
             name: value for name, value in params.items() if value is not None
@@ -1069,16 +1069,16 @@ ViewNavigateAction: TypeAlias = Literal[
 ViewNavigateMotion: TypeAlias = Literal["pan", "orbit", "zoom"]
 
 
-# Class `SCAppearanceCommands`:
+# Class `AppearanceCommands`:
 @dataclass(slots=True)
-class SCAppearanceCommands(SCNamespace):
+class AppearanceCommands(CommandNamespace):
     """The `appearance.*` commands.
 
     Constructor:
-    * `SCAppearanceCommands(transport)`
+    * `AppearanceCommands(transport)`
     """
 
-    # Method `SCAppearanceCommands.assign()`:
+    # Method `AppearanceCommands.assign()`:
     def assign(
         self,
         *,
@@ -1122,7 +1122,7 @@ class SCAppearanceCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "appearance.assign",
@@ -1138,7 +1138,7 @@ class SCAppearanceCommands(SCNamespace):
             },
         )
 
-    # Method `SCAppearanceCommands.library()`:
+    # Method `AppearanceCommands.library()`:
     def library(
         self,
         **extra: JSON,
@@ -1155,7 +1155,7 @@ class SCAppearanceCommands(SCNamespace):
         * (`JSON`): the built-in appearances (name, colour, opacity)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "appearance.library",
@@ -1164,7 +1164,7 @@ class SCAppearanceCommands(SCNamespace):
             },
         )
 
-    # Method `SCAppearanceCommands.list()`:
+    # Method `AppearanceCommands.list()`:
     def list(
         self,
         *,
@@ -1186,7 +1186,7 @@ class SCAppearanceCommands(SCNamespace):
           and its faces' (face index, look)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "appearance.list",
@@ -1197,16 +1197,16 @@ class SCAppearanceCommands(SCNamespace):
         )
 
 
-# Class `SCAssemblyCommands`:
+# Class `AssemblyCommands`:
 @dataclass(slots=True)
-class SCAssemblyCommands(SCNamespace):
+class AssemblyCommands(CommandNamespace):
     """The `assembly.*` commands.
 
     Constructor:
-    * `SCAssemblyCommands(transport)`
+    * `AssemblyCommands(transport)`
     """
 
-    # Method `SCAssemblyCommands.bom()`:
+    # Method `AssemblyCommands.bom()`:
     def bom(
         self,
         *,
@@ -1250,7 +1250,7 @@ class SCAssemblyCommands(SCNamespace):
           by part number, total_occurrences (children included)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "assembly.bom",
@@ -1266,16 +1266,16 @@ class SCAssemblyCommands(SCNamespace):
         )
 
 
-# Class `SCBodyCommands`:
+# Class `BodyCommands`:
 @dataclass(slots=True)
-class SCBodyCommands(SCNamespace):
+class BodyCommands(CommandNamespace):
     """The `body.*` commands.
 
     Constructor:
-    * `SCBodyCommands(transport)`
+    * `BodyCommands(transport)`
     """
 
-    # Method `SCBodyCommands.rename()`:
+    # Method `BodyCommands.rename()`:
     def rename(
         self,
         *,
@@ -1299,7 +1299,7 @@ class SCBodyCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "body.rename",
@@ -1311,16 +1311,16 @@ class SCBodyCommands(SCNamespace):
         )
 
 
-# Class `SCBrowserCommands`:
+# Class `BrowserCommands`:
 @dataclass(slots=True)
-class SCBrowserCommands(SCNamespace):
+class BrowserCommands(CommandNamespace):
     """The `browser.*` commands.
 
     Constructor:
-    * `SCBrowserCommands(transport)`
+    * `BrowserCommands(transport)`
     """
 
-    # Method `SCBrowserCommands.group()`:
+    # Method `BrowserCommands.group()`:
     def group(
         self,
         *,
@@ -1350,7 +1350,7 @@ class SCBrowserCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "browser.group",
@@ -1363,7 +1363,7 @@ class SCBrowserCommands(SCNamespace):
             },
         )
 
-    # Method `SCBrowserCommands.move()`:
+    # Method `BrowserCommands.move()`:
     def move(
         self,
         *,
@@ -1396,7 +1396,7 @@ class SCBrowserCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "browser.move",
@@ -1410,7 +1410,7 @@ class SCBrowserCommands(SCNamespace):
             },
         )
 
-    # Method `SCBrowserCommands.order()`:
+    # Method `BrowserCommands.order()`:
     def order(
         self,
         *,
@@ -1437,7 +1437,7 @@ class SCBrowserCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "browser.order",
@@ -1449,7 +1449,7 @@ class SCBrowserCommands(SCNamespace):
             },
         )
 
-    # Method `SCBrowserCommands.rename_group()`:
+    # Method `BrowserCommands.rename_group()`:
     def rename_group(
         self,
         *,
@@ -1473,7 +1473,7 @@ class SCBrowserCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "browser.rename_group",
@@ -1484,7 +1484,7 @@ class SCBrowserCommands(SCNamespace):
             },
         )
 
-    # Method `SCBrowserCommands.ungroup()`:
+    # Method `BrowserCommands.ungroup()`:
     def ungroup(
         self,
         *,
@@ -1505,7 +1505,7 @@ class SCBrowserCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "browser.ungroup",
@@ -1515,7 +1515,7 @@ class SCBrowserCommands(SCNamespace):
             },
         )
 
-    # Method `SCBrowserCommands.visibility()`:
+    # Method `BrowserCommands.visibility()`:
     def visibility(
         self,
         *,
@@ -1561,7 +1561,7 @@ class SCBrowserCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "browser.visibility",
@@ -1578,16 +1578,16 @@ class SCBrowserCommands(SCNamespace):
         )
 
 
-# Class `SCCanvasCommands`:
+# Class `CanvasCommands`:
 @dataclass(slots=True)
-class SCCanvasCommands(SCNamespace):
+class CanvasCommands(CommandNamespace):
     """The `canvas.*` commands.
 
     Constructor:
-    * `SCCanvasCommands(transport)`
+    * `CanvasCommands(transport)`
     """
 
-    # Method `SCCanvasCommands.calibrate()`:
+    # Method `CanvasCommands.calibrate()`:
     def calibrate(
         self,
         *,
@@ -1617,7 +1617,7 @@ class SCCanvasCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "canvas.calibrate",
@@ -1630,7 +1630,7 @@ class SCCanvasCommands(SCNamespace):
             },
         )
 
-    # Method `SCCanvasCommands.decal()`:
+    # Method `CanvasCommands.decal()`:
     def decal(
         self,
         *,
@@ -1663,7 +1663,7 @@ class SCCanvasCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "canvas.decal",
@@ -1676,7 +1676,7 @@ class SCCanvasCommands(SCNamespace):
             },
         )
 
-    # Method `SCCanvasCommands.delete()`:
+    # Method `CanvasCommands.delete()`:
     def delete(
         self,
         *,
@@ -1697,7 +1697,7 @@ class SCCanvasCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "canvas.delete",
@@ -1707,7 +1707,7 @@ class SCCanvasCommands(SCNamespace):
             },
         )
 
-    # Method `SCCanvasCommands.edit()`:
+    # Method `CanvasCommands.edit()`:
     def edit(
         self,
         *,
@@ -1749,7 +1749,7 @@ class SCCanvasCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "canvas.edit",
@@ -1766,7 +1766,7 @@ class SCCanvasCommands(SCNamespace):
             },
         )
 
-    # Method `SCCanvasCommands.insert()`:
+    # Method `CanvasCommands.insert()`:
     def insert(
         self,
         *,
@@ -1810,7 +1810,7 @@ class SCCanvasCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "canvas.insert",
@@ -1828,16 +1828,16 @@ class SCCanvasCommands(SCNamespace):
         )
 
 
-# Class `SCComponentCommands`:
+# Class `ComponentCommands`:
 @dataclass(slots=True)
-class SCComponentCommands(SCNamespace):
+class ComponentCommands(CommandNamespace):
     """The `component.*` commands.
 
     Constructor:
-    * `SCComponentCommands(transport)`
+    * `ComponentCommands(transport)`
     """
 
-    # Method `SCComponentCommands.activate()`:
+    # Method `ComponentCommands.activate()`:
     def activate(
         self,
         *,
@@ -1864,7 +1864,7 @@ class SCComponentCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "component.activate",
@@ -1876,7 +1876,7 @@ class SCComponentCommands(SCNamespace):
             },
         )
 
-    # Method `SCComponentCommands.break_link()`:
+    # Method `ComponentCommands.break_link()`:
     def break_link(
         self,
         *,
@@ -1898,7 +1898,7 @@ class SCComponentCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "component.break_link",
@@ -1908,7 +1908,7 @@ class SCComponentCommands(SCNamespace):
             },
         )
 
-    # Method `SCComponentCommands.capture_position()`:
+    # Method `ComponentCommands.capture_position()`:
     def capture_position(
         self,
         **extra: JSON,
@@ -1927,7 +1927,7 @@ class SCComponentCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "component.capture_position",
@@ -1936,7 +1936,7 @@ class SCComponentCommands(SCNamespace):
             },
         )
 
-    # Method `SCComponentCommands.create()`:
+    # Method `ComponentCommands.create()`:
     def create(
         self,
         *,
@@ -1966,7 +1966,7 @@ class SCComponentCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "component.create",
@@ -1979,7 +1979,7 @@ class SCComponentCommands(SCNamespace):
             },
         )
 
-    # Method `SCComponentCommands.delete()`:
+    # Method `ComponentCommands.delete()`:
     def delete(
         self,
         *,
@@ -2002,7 +2002,7 @@ class SCComponentCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "component.delete",
@@ -2012,7 +2012,7 @@ class SCComponentCommands(SCNamespace):
             },
         )
 
-    # Method `SCComponentCommands.from_bodies()`:
+    # Method `ComponentCommands.from_bodies()`:
     def from_bodies(
         self,
         *,
@@ -2033,7 +2033,7 @@ class SCComponentCommands(SCNamespace):
         * (`JSON`): one new component per body, named after it
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "component.from_bodies",
@@ -2043,7 +2043,7 @@ class SCComponentCommands(SCNamespace):
             },
         )
 
-    # Method `SCComponentCommands.insert_design()`:
+    # Method `ComponentCommands.insert_design()`:
     def insert_design(
         self,
         *,
@@ -2068,7 +2068,7 @@ class SCComponentCommands(SCNamespace):
           insert another occurrence of an existing link to the same file
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "component.insert_design",
@@ -2078,7 +2078,7 @@ class SCComponentCommands(SCNamespace):
             },
         )
 
-    # Method `SCComponentCommands.links()`:
+    # Method `ComponentCommands.links()`:
     def links(
         self,
         **extra: JSON,
@@ -2096,7 +2096,7 @@ class SCComponentCommands(SCNamespace):
           (resolved), found
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "component.links",
@@ -2105,7 +2105,7 @@ class SCComponentCommands(SCNamespace):
             },
         )
 
-    # Method `SCComponentCommands.list()`:
+    # Method `ComponentCommands.list()`:
     def list(
         self,
         *,
@@ -2131,7 +2131,7 @@ class SCComponentCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "component.list",
@@ -2142,7 +2142,7 @@ class SCComponentCommands(SCNamespace):
             },
         )
 
-    # Method `SCComponentCommands.metadata()`:
+    # Method `ComponentCommands.metadata()`:
     def metadata(
         self,
         *,
@@ -2166,7 +2166,7 @@ class SCComponentCommands(SCNamespace):
           text}
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "component.metadata",
@@ -2176,7 +2176,7 @@ class SCComponentCommands(SCNamespace):
             },
         )
 
-    # Method `SCComponentCommands.metadata_set()`:
+    # Method `ComponentCommands.metadata_set()`:
     def metadata_set(
         self,
         *,
@@ -2218,7 +2218,7 @@ class SCComponentCommands(SCNamespace):
         * (`JSON`): component, metadata, properties, changed: [keys]
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "component.metadata.set",
@@ -2233,7 +2233,7 @@ class SCComponentCommands(SCNamespace):
             },
         )
 
-    # Method `SCComponentCommands.move_bodies()`:
+    # Method `ComponentCommands.move_bodies()`:
     def move_bodies(
         self,
         *,
@@ -2257,7 +2257,7 @@ class SCComponentCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "component.move_bodies",
@@ -2268,7 +2268,7 @@ class SCComponentCommands(SCNamespace):
             },
         )
 
-    # Method `SCComponentCommands.move_sketches()`:
+    # Method `ComponentCommands.move_sketches()`:
     def move_sketches(
         self,
         *,
@@ -2292,7 +2292,7 @@ class SCComponentCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "component.move_sketches",
@@ -2303,7 +2303,7 @@ class SCComponentCommands(SCNamespace):
             },
         )
 
-    # Method `SCComponentCommands.paste_new()`:
+    # Method `ComponentCommands.paste_new()`:
     def paste_new(
         self,
         *,
@@ -2337,7 +2337,7 @@ class SCComponentCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "component.paste_new",
@@ -2350,7 +2350,7 @@ class SCComponentCommands(SCNamespace):
             },
         )
 
-    # Method `SCComponentCommands.properties()`:
+    # Method `ComponentCommands.properties()`:
     def properties(
         self,
         *,
@@ -2377,7 +2377,7 @@ class SCComponentCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "component.properties",
@@ -2388,7 +2388,7 @@ class SCComponentCommands(SCNamespace):
             },
         )
 
-    # Method `SCComponentCommands.relink()`:
+    # Method `ComponentCommands.relink()`:
     def relink(
         self,
         *,
@@ -2422,7 +2422,7 @@ class SCComponentCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "component.relink",
@@ -2435,7 +2435,7 @@ class SCComponentCommands(SCNamespace):
             },
         )
 
-    # Method `SCComponentCommands.rename()`:
+    # Method `ComponentCommands.rename()`:
     def rename(
         self,
         *,
@@ -2459,7 +2459,7 @@ class SCComponentCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "component.rename",
@@ -2470,7 +2470,7 @@ class SCComponentCommands(SCNamespace):
             },
         )
 
-    # Method `SCComponentCommands.revert_position()`:
+    # Method `ComponentCommands.revert_position()`:
     def revert_position(
         self,
         *,
@@ -2493,7 +2493,7 @@ class SCComponentCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "component.revert_position",
@@ -2503,7 +2503,7 @@ class SCComponentCommands(SCNamespace):
             },
         )
 
-    # Method `SCComponentCommands.unlock()`:
+    # Method `ComponentCommands.unlock()`:
     def unlock(
         self,
         *,
@@ -2527,7 +2527,7 @@ class SCComponentCommands(SCNamespace):
         * (`JSON`): joints (the ids removed)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "component.unlock",
@@ -2537,7 +2537,7 @@ class SCComponentCommands(SCNamespace):
             },
         )
 
-    # Method `SCComponentCommands.update_links()`:
+    # Method `ComponentCommands.update_links()`:
     def update_links(
         self,
         *,
@@ -2560,7 +2560,7 @@ class SCComponentCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "component.update_links",
@@ -2571,16 +2571,16 @@ class SCComponentCommands(SCNamespace):
         )
 
 
-# Class `SCConfigCommands`:
+# Class `ConfigCommands`:
 @dataclass(slots=True)
-class SCConfigCommands(SCNamespace):
+class ConfigCommands(CommandNamespace):
     """The `config.*` commands.
 
     Constructor:
-    * `SCConfigCommands(transport)`
+    * `ConfigCommands(transport)`
     """
 
-    # Method `SCConfigCommands.activate()`:
+    # Method `ConfigCommands.activate()`:
     def activate(
         self,
         *,
@@ -2601,7 +2601,7 @@ class SCConfigCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "config.activate",
@@ -2611,7 +2611,7 @@ class SCConfigCommands(SCNamespace):
             },
         )
 
-    # Method `SCConfigCommands.column()`:
+    # Method `ConfigCommands.column()`:
     def column(
         self,
         *,
@@ -2634,7 +2634,7 @@ class SCConfigCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "config.column",
@@ -2644,7 +2644,7 @@ class SCConfigCommands(SCNamespace):
             },
         )
 
-    # Method `SCConfigCommands.configure()`:
+    # Method `ConfigCommands.configure()`:
     def configure(
         self,
         *,
@@ -2675,7 +2675,7 @@ class SCConfigCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "config.configure",
@@ -2688,7 +2688,7 @@ class SCConfigCommands(SCNamespace):
             },
         )
 
-    # Method `SCConfigCommands.preview()`:
+    # Method `ConfigCommands.preview()`:
     def preview(
         self,
         *,
@@ -2710,7 +2710,7 @@ class SCConfigCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "config.preview",
@@ -2720,7 +2720,7 @@ class SCConfigCommands(SCNamespace):
             },
         )
 
-    # Method `SCConfigCommands.row()`:
+    # Method `ConfigCommands.row()`:
     def row(
         self,
         *,
@@ -2754,7 +2754,7 @@ class SCConfigCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "config.row",
@@ -2768,7 +2768,7 @@ class SCConfigCommands(SCNamespace):
             },
         )
 
-    # Method `SCConfigCommands.rule()`:
+    # Method `ConfigCommands.rule()`:
     def rule(
         self,
         *,
@@ -2791,7 +2791,7 @@ class SCConfigCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "config.rule",
@@ -2801,7 +2801,7 @@ class SCConfigCommands(SCNamespace):
             },
         )
 
-    # Method `SCConfigCommands.rules()`:
+    # Method `ConfigCommands.rules()`:
     def rules(
         self,
         **extra: JSON,
@@ -2820,7 +2820,7 @@ class SCConfigCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "config.rules",
@@ -2829,7 +2829,7 @@ class SCConfigCommands(SCNamespace):
             },
         )
 
-    # Method `SCConfigCommands.table()`:
+    # Method `ConfigCommands.table()`:
     def table(
         self,
         **extra: JSON,
@@ -2847,7 +2847,7 @@ class SCConfigCommands(SCNamespace):
           the active row and whether the design still matches it
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "config.table",
@@ -2857,16 +2857,16 @@ class SCConfigCommands(SCNamespace):
         )
 
 
-# Class `SCConstructCommands`:
+# Class `ConstructCommands`:
 @dataclass(slots=True)
-class SCConstructCommands(SCNamespace):
+class ConstructCommands(CommandNamespace):
     """The `construct.*` commands.
 
     Constructor:
-    * `SCConstructCommands(transport)`
+    * `ConstructCommands(transport)`
     """
 
-    # Method `SCConstructCommands.axis_edge()`:
+    # Method `ConstructCommands.axis_edge()`:
     def axis_edge(
         self,
         *,
@@ -2890,7 +2890,7 @@ class SCConstructCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "construct.axis.edge",
@@ -2901,7 +2901,7 @@ class SCConstructCommands(SCNamespace):
             },
         )
 
-    # Method `SCConstructCommands.axis_normal_to_face()`:
+    # Method `ConstructCommands.axis_normal_to_face()`:
     def axis_normal_to_face(
         self,
         *,
@@ -2928,7 +2928,7 @@ class SCConstructCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "construct.axis.normal_to_face",
@@ -2940,7 +2940,7 @@ class SCConstructCommands(SCNamespace):
             },
         )
 
-    # Method `SCConstructCommands.axis_through_cylinder()`:
+    # Method `ConstructCommands.axis_through_cylinder()`:
     def axis_through_cylinder(
         self,
         *,
@@ -2965,7 +2965,7 @@ class SCConstructCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "construct.axis.through_cylinder",
@@ -2976,7 +2976,7 @@ class SCConstructCommands(SCNamespace):
             },
         )
 
-    # Method `SCConstructCommands.axis_two_planes()`:
+    # Method `ConstructCommands.axis_two_planes()`:
     def axis_two_planes(
         self,
         *,
@@ -3003,7 +3003,7 @@ class SCConstructCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "construct.axis.two_planes",
@@ -3015,7 +3015,7 @@ class SCConstructCommands(SCNamespace):
             },
         )
 
-    # Method `SCConstructCommands.axis_two_points()`:
+    # Method `ConstructCommands.axis_two_points()`:
     def axis_two_points(
         self,
         *,
@@ -3042,7 +3042,7 @@ class SCConstructCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "construct.axis.two_points",
@@ -3054,7 +3054,7 @@ class SCConstructCommands(SCNamespace):
             },
         )
 
-    # Method `SCConstructCommands.plane_along_path()`:
+    # Method `ConstructCommands.plane_along_path()`:
     def plane_along_path(
         self,
         *,
@@ -3081,7 +3081,7 @@ class SCConstructCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "construct.plane.along_path",
@@ -3092,7 +3092,7 @@ class SCConstructCommands(SCNamespace):
             },
         )
 
-    # Method `SCConstructCommands.plane_at_angle()`:
+    # Method `ConstructCommands.plane_at_angle()`:
     def plane_at_angle(
         self,
         *,
@@ -3123,7 +3123,7 @@ class SCConstructCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "construct.plane.at_angle",
@@ -3136,7 +3136,7 @@ class SCConstructCommands(SCNamespace):
             },
         )
 
-    # Method `SCConstructCommands.plane_midplane()`:
+    # Method `ConstructCommands.plane_midplane()`:
     def plane_midplane(
         self,
         *,
@@ -3164,7 +3164,7 @@ class SCConstructCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "construct.plane.midplane",
@@ -3176,7 +3176,7 @@ class SCConstructCommands(SCNamespace):
             },
         )
 
-    # Method `SCConstructCommands.plane_offset()`:
+    # Method `ConstructCommands.plane_offset()`:
     def plane_offset(
         self,
         *,
@@ -3205,7 +3205,7 @@ class SCConstructCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "construct.plane.offset",
@@ -3217,7 +3217,7 @@ class SCConstructCommands(SCNamespace):
             },
         )
 
-    # Method `SCConstructCommands.plane_perpendicular()`:
+    # Method `ConstructCommands.plane_perpendicular()`:
     def plane_perpendicular(
         self,
         *,
@@ -3244,7 +3244,7 @@ class SCConstructCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "construct.plane.perpendicular",
@@ -3255,7 +3255,7 @@ class SCConstructCommands(SCNamespace):
             },
         )
 
-    # Method `SCConstructCommands.plane_tangent()`:
+    # Method `ConstructCommands.plane_tangent()`:
     def plane_tangent(
         self,
         *,
@@ -3282,7 +3282,7 @@ class SCConstructCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "construct.plane.tangent",
@@ -3294,7 +3294,7 @@ class SCConstructCommands(SCNamespace):
             },
         )
 
-    # Method `SCConstructCommands.plane_three_points()`:
+    # Method `ConstructCommands.plane_three_points()`:
     def plane_three_points(
         self,
         *,
@@ -3324,7 +3324,7 @@ class SCConstructCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "construct.plane.three_points",
@@ -3337,7 +3337,7 @@ class SCConstructCommands(SCNamespace):
             },
         )
 
-    # Method `SCConstructCommands.plane_two_edges()`:
+    # Method `ConstructCommands.plane_two_edges()`:
     def plane_two_edges(
         self,
         *,
@@ -3364,7 +3364,7 @@ class SCConstructCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "construct.plane.two_edges",
@@ -3376,7 +3376,7 @@ class SCConstructCommands(SCNamespace):
             },
         )
 
-    # Method `SCConstructCommands.point_along_path()`:
+    # Method `ConstructCommands.point_along_path()`:
     def point_along_path(
         self,
         *,
@@ -3405,7 +3405,7 @@ class SCConstructCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "construct.point.along_path",
@@ -3417,7 +3417,7 @@ class SCConstructCommands(SCNamespace):
             },
         )
 
-    # Method `SCConstructCommands.point_center()`:
+    # Method `ConstructCommands.point_center()`:
     def point_center(
         self,
         *,
@@ -3442,7 +3442,7 @@ class SCConstructCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "construct.point.center",
@@ -3453,7 +3453,7 @@ class SCConstructCommands(SCNamespace):
             },
         )
 
-    # Method `SCConstructCommands.point_edge_plane()`:
+    # Method `ConstructCommands.point_edge_plane()`:
     def point_edge_plane(
         self,
         *,
@@ -3480,7 +3480,7 @@ class SCConstructCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "construct.point.edge_plane",
@@ -3492,7 +3492,7 @@ class SCConstructCommands(SCNamespace):
             },
         )
 
-    # Method `SCConstructCommands.point_three_planes()`:
+    # Method `ConstructCommands.point_three_planes()`:
     def point_three_planes(
         self,
         *,
@@ -3522,7 +3522,7 @@ class SCConstructCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "construct.point.three_planes",
@@ -3535,7 +3535,7 @@ class SCConstructCommands(SCNamespace):
             },
         )
 
-    # Method `SCConstructCommands.point_two_edges()`:
+    # Method `ConstructCommands.point_two_edges()`:
     def point_two_edges(
         self,
         *,
@@ -3563,7 +3563,7 @@ class SCConstructCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "construct.point.two_edges",
@@ -3575,7 +3575,7 @@ class SCConstructCommands(SCNamespace):
             },
         )
 
-    # Method `SCConstructCommands.point_vertex()`:
+    # Method `ConstructCommands.point_vertex()`:
     def point_vertex(
         self,
         *,
@@ -3599,7 +3599,7 @@ class SCConstructCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "construct.point.vertex",
@@ -3611,16 +3611,16 @@ class SCConstructCommands(SCNamespace):
         )
 
 
-# Class `SCContactCommands`:
+# Class `ContactCommands`:
 @dataclass(slots=True)
-class SCContactCommands(SCNamespace):
+class ContactCommands(CommandNamespace):
     """The `contact.*` commands.
 
     Constructor:
-    * `SCContactCommands(transport)`
+    * `ContactCommands(transport)`
     """
 
-    # Method `SCContactCommands.check()`:
+    # Method `ContactCommands.check()`:
     def check(
         self,
         **extra: JSON,
@@ -3638,7 +3638,7 @@ class SCContactCommands(SCNamespace):
           now
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "contact.check",
@@ -3647,7 +3647,7 @@ class SCContactCommands(SCNamespace):
             },
         )
 
-    # Method `SCContactCommands.create()`:
+    # Method `ContactCommands.create()`:
     def create(
         self,
         *,
@@ -3671,7 +3671,7 @@ class SCContactCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "contact.create",
@@ -3682,7 +3682,7 @@ class SCContactCommands(SCNamespace):
             },
         )
 
-    # Method `SCContactCommands.disable_all()`:
+    # Method `ContactCommands.disable_all()`:
     def disable_all(
         self,
         **extra: JSON,
@@ -3701,7 +3701,7 @@ class SCContactCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "contact.disable_all",
@@ -3710,7 +3710,7 @@ class SCContactCommands(SCNamespace):
             },
         )
 
-    # Method `SCContactCommands.edit()`:
+    # Method `ContactCommands.edit()`:
     def edit(
         self,
         *,
@@ -3743,7 +3743,7 @@ class SCContactCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "contact.edit",
@@ -3757,7 +3757,7 @@ class SCContactCommands(SCNamespace):
             },
         )
 
-    # Method `SCContactCommands.enable_all()`:
+    # Method `ContactCommands.enable_all()`:
     def enable_all(
         self,
         **extra: JSON,
@@ -3776,7 +3776,7 @@ class SCContactCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "contact.enable_all",
@@ -3785,7 +3785,7 @@ class SCContactCommands(SCNamespace):
             },
         )
 
-    # Method `SCContactCommands.enable_sets()`:
+    # Method `ContactCommands.enable_sets()`:
     def enable_sets(
         self,
         *,
@@ -3807,7 +3807,7 @@ class SCContactCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "contact.enable_sets",
@@ -3817,7 +3817,7 @@ class SCContactCommands(SCNamespace):
             },
         )
 
-    # Method `SCContactCommands.list()`:
+    # Method `ContactCommands.list()`:
     def list(
         self,
         **extra: JSON,
@@ -3834,7 +3834,7 @@ class SCContactCommands(SCNamespace):
         * (`JSON`): sets, enabled, all
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "contact.list",
@@ -3844,16 +3844,16 @@ class SCContactCommands(SCNamespace):
         )
 
 
-# Class `SCDiagnosticsCommands`:
+# Class `DiagnosticsCommands`:
 @dataclass(slots=True)
-class SCDiagnosticsCommands(SCNamespace):
+class DiagnosticsCommands(CommandNamespace):
     """The `diagnostics.*` commands.
 
     Constructor:
-    * `SCDiagnosticsCommands(transport)`
+    * `DiagnosticsCommands(transport)`
     """
 
-    # Method `SCDiagnosticsCommands.crash_report()`:
+    # Method `DiagnosticsCommands.crash_report()`:
     def crash_report(
         self,
         *,
@@ -3890,7 +3890,7 @@ class SCDiagnosticsCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "diagnostics.crash_report",
@@ -3904,7 +3904,7 @@ class SCDiagnosticsCommands(SCNamespace):
             },
         )
 
-    # Method `SCDiagnosticsCommands.crash_reports()`:
+    # Method `DiagnosticsCommands.crash_reports()`:
     def crash_reports(
         self,
         *,
@@ -3931,7 +3931,7 @@ class SCDiagnosticsCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "diagnostics.crash_reports",
@@ -3941,7 +3941,7 @@ class SCDiagnosticsCommands(SCNamespace):
             },
         )
 
-    # Method `SCDiagnosticsCommands.crash_reports_clear()`:
+    # Method `DiagnosticsCommands.crash_reports_clear()`:
     def crash_reports_clear(
         self,
         *,
@@ -3962,7 +3962,7 @@ class SCDiagnosticsCommands(SCNamespace):
         * (`JSON`): Returns {deleted}
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "diagnostics.crash_reports.clear",
@@ -3972,7 +3972,7 @@ class SCDiagnosticsCommands(SCNamespace):
             },
         )
 
-    # Method `SCDiagnosticsCommands.crash_test()`:
+    # Method `DiagnosticsCommands.crash_test()`:
     def crash_test(
         self,
         *,
@@ -3999,7 +3999,7 @@ class SCDiagnosticsCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "diagnostics.crash_test",
@@ -4010,16 +4010,16 @@ class SCDiagnosticsCommands(SCNamespace):
         )
 
 
-# Class `SCDocCommands`:
+# Class `DocCommands`:
 @dataclass(slots=True)
-class SCDocCommands(SCNamespace):
+class DocCommands(CommandNamespace):
     """The `doc.*` commands.
 
     Constructor:
-    * `SCDocCommands(transport)`
+    * `DocCommands(transport)`
     """
 
-    # Method `SCDocCommands.open()`:
+    # Method `DocCommands.open()`:
     def open(
         self,
         *,
@@ -4053,7 +4053,7 @@ class SCDocCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "doc.open",
@@ -4065,7 +4065,7 @@ class SCDocCommands(SCNamespace):
             },
         )
 
-    # Method `SCDocCommands.recover()`:
+    # Method `DocCommands.recover()`:
     def recover(
         self,
         *,
@@ -4096,7 +4096,7 @@ class SCDocCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "doc.recover",
@@ -4109,7 +4109,7 @@ class SCDocCommands(SCNamespace):
             },
         )
 
-    # Method `SCDocCommands.recovery_discard()`:
+    # Method `DocCommands.recovery_discard()`:
     def recovery_discard(
         self,
         *,
@@ -4136,7 +4136,7 @@ class SCDocCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "doc.recovery_discard",
@@ -4148,7 +4148,7 @@ class SCDocCommands(SCNamespace):
             },
         )
 
-    # Method `SCDocCommands.recovery_list()`:
+    # Method `DocCommands.recovery_list()`:
     def recovery_list(
         self,
         *,
@@ -4170,7 +4170,7 @@ class SCDocCommands(SCNamespace):
           with unsaved changes
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "doc.recovery_list",
@@ -4181,16 +4181,16 @@ class SCDocCommands(SCNamespace):
         )
 
 
-# Class `SCDocumentCommands`:
+# Class `DocumentCommands`:
 @dataclass(slots=True)
-class SCDocumentCommands(SCNamespace):
+class DocumentCommands(CommandNamespace):
     """The `document.*` commands.
 
     Constructor:
-    * `SCDocumentCommands(transport)`
+    * `DocumentCommands(transport)`
     """
 
-    # Method `SCDocumentCommands.inspect()`:
+    # Method `DocumentCommands.inspect()`:
     def inspect(
         self,
         *,
@@ -4211,7 +4211,7 @@ class SCDocumentCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "document.inspect",
@@ -4221,7 +4221,7 @@ class SCDocumentCommands(SCNamespace):
             },
         )
 
-    # Method `SCDocumentCommands.metadata()`:
+    # Method `DocumentCommands.metadata()`:
     def metadata(
         self,
         **extra: JSON,
@@ -4241,7 +4241,7 @@ class SCDocumentCommands(SCNamespace):
           its text or null (absent, or not text)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "document.metadata",
@@ -4250,7 +4250,7 @@ class SCDocumentCommands(SCNamespace):
             },
         )
 
-    # Method `SCDocumentCommands.metadata_remove()`:
+    # Method `DocumentCommands.metadata_remove()`:
     def metadata_remove(
         self,
         *,
@@ -4274,7 +4274,7 @@ class SCDocumentCommands(SCNamespace):
         * (`JSON`): metadata, removed: [keys that were there]
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "document.metadata.remove",
@@ -4285,7 +4285,7 @@ class SCDocumentCommands(SCNamespace):
             },
         )
 
-    # Method `SCDocumentCommands.metadata_set()`:
+    # Method `DocumentCommands.metadata_set()`:
     def metadata_set(
         self,
         *,
@@ -4328,7 +4328,7 @@ class SCDocumentCommands(SCNamespace):
         * (`JSON`): metadata, changed: [keys]
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "document.metadata.set",
@@ -4344,7 +4344,7 @@ class SCDocumentCommands(SCNamespace):
             },
         )
 
-    # Method `SCDocumentCommands.units()`:
+    # Method `DocumentCommands.units()`:
     def units(
         self,
         *,
@@ -4366,7 +4366,7 @@ class SCDocumentCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "document.units",
@@ -4377,16 +4377,16 @@ class SCDocumentCommands(SCNamespace):
         )
 
 
-# Class `SCEditCommands`:
+# Class `EditCommands`:
 @dataclass(slots=True)
-class SCEditCommands(SCNamespace):
+class EditCommands(CommandNamespace):
     """The `edit.*` commands.
 
     Constructor:
-    * `SCEditCommands(transport)`
+    * `EditCommands(transport)`
     """
 
-    # Method `SCEditCommands.checkpoint()`:
+    # Method `EditCommands.checkpoint()`:
     def checkpoint(
         self,
         **extra: JSON,
@@ -4404,7 +4404,7 @@ class SCEditCommands(SCNamespace):
           and undo history (restore with edit.restore_checkpoint)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "edit.checkpoint",
@@ -4413,7 +4413,7 @@ class SCEditCommands(SCNamespace):
             },
         )
 
-    # Method `SCEditCommands.redo()`:
+    # Method `EditCommands.redo()`:
     def redo(
         self,
         **extra: JSON,
@@ -4430,7 +4430,7 @@ class SCEditCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "edit.redo",
@@ -4439,7 +4439,7 @@ class SCEditCommands(SCNamespace):
             },
         )
 
-    # Method `SCEditCommands.restore_checkpoint()`:
+    # Method `EditCommands.restore_checkpoint()`:
     def restore_checkpoint(
         self,
         *,
@@ -4465,7 +4465,7 @@ class SCEditCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "edit.restore_checkpoint",
@@ -4476,7 +4476,7 @@ class SCEditCommands(SCNamespace):
             },
         )
 
-    # Method `SCEditCommands.undo()`:
+    # Method `EditCommands.undo()`:
     def undo(
         self,
         **extra: JSON,
@@ -4493,7 +4493,7 @@ class SCEditCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "edit.undo",
@@ -4503,16 +4503,16 @@ class SCEditCommands(SCNamespace):
         )
 
 
-# Class `SCEngineCommands`:
+# Class `EngineCommands`:
 @dataclass(slots=True)
-class SCEngineCommands(SCNamespace):
+class EngineCommands(CommandNamespace):
     """The `engine.*` commands.
 
     Constructor:
-    * `SCEngineCommands(transport)`
+    * `EngineCommands(transport)`
     """
 
-    # Method `SCEngineCommands.commands()`:
+    # Method `EngineCommands.commands()`:
     def commands(
         self,
         **extra: JSON,
@@ -4529,7 +4529,7 @@ class SCEngineCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "engine.commands",
@@ -4538,7 +4538,7 @@ class SCEngineCommands(SCNamespace):
             },
         )
 
-    # Method `SCEngineCommands.describe()`:
+    # Method `EngineCommands.describe()`:
     def describe(
         self,
         command: str,
@@ -4562,7 +4562,7 @@ class SCEngineCommands(SCNamespace):
           and of a successful result (null otherwise). Read-only.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "engine.describe",
@@ -4573,16 +4573,16 @@ class SCEngineCommands(SCNamespace):
         )
 
 
-# Class `SCExplodeCommands`:
+# Class `ExplodeCommands`:
 @dataclass(slots=True)
-class SCExplodeCommands(SCNamespace):
+class ExplodeCommands(CommandNamespace):
     """The `explode.*` commands.
 
     Constructor:
-    * `SCExplodeCommands(transport)`
+    * `ExplodeCommands(transport)`
     """
 
-    # Method `SCExplodeCommands.create()`:
+    # Method `ExplodeCommands.create()`:
     def create(
         self,
         *,
@@ -4610,7 +4610,7 @@ class SCExplodeCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "explode.create",
@@ -4622,7 +4622,7 @@ class SCExplodeCommands(SCNamespace):
             },
         )
 
-    # Method `SCExplodeCommands.delete()`:
+    # Method `ExplodeCommands.delete()`:
     def delete(
         self,
         *,
@@ -4643,7 +4643,7 @@ class SCExplodeCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "explode.delete",
@@ -4653,7 +4653,7 @@ class SCExplodeCommands(SCNamespace):
             },
         )
 
-    # Method `SCExplodeCommands.list()`:
+    # Method `ExplodeCommands.list()`:
     def list(
         self,
         **extra: JSON,
@@ -4670,7 +4670,7 @@ class SCExplodeCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "explode.list",
@@ -4679,7 +4679,7 @@ class SCExplodeCommands(SCNamespace):
             },
         )
 
-    # Method `SCExplodeCommands.show()`:
+    # Method `ExplodeCommands.show()`:
     def show(
         self,
         *,
@@ -4703,7 +4703,7 @@ class SCExplodeCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "explode.show",
@@ -4714,16 +4714,16 @@ class SCExplodeCommands(SCNamespace):
         )
 
 
-# Class `SCExprCommands`:
+# Class `ExprCommands`:
 @dataclass(slots=True)
-class SCExprCommands(SCNamespace):
+class ExprCommands(CommandNamespace):
     """The `expr.*` commands.
 
     Constructor:
-    * `SCExprCommands(transport)`
+    * `ExprCommands(transport)`
     """
 
-    # Method `SCExprCommands.evaluate()`:
+    # Method `ExprCommands.evaluate()`:
     def evaluate(
         self,
         *,
@@ -4747,7 +4747,7 @@ class SCExprCommands(SCNamespace):
         * (`JSON`): ok, value (mm/rad), display_value, references, error
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "expr.evaluate",
@@ -4759,16 +4759,16 @@ class SCExprCommands(SCNamespace):
         )
 
 
-# Class `SCFaceCommands`:
+# Class `FaceCommands`:
 @dataclass(slots=True)
-class SCFaceCommands(SCNamespace):
+class FaceCommands(CommandNamespace):
     """The `face.*` commands.
 
     Constructor:
-    * `SCFaceCommands(transport)`
+    * `FaceCommands(transport)`
     """
 
-    # Method `SCFaceCommands.delete()`:
+    # Method `FaceCommands.delete()`:
     def delete(
         self,
         *,
@@ -4798,7 +4798,7 @@ class SCFaceCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "face.delete",
@@ -4811,16 +4811,16 @@ class SCFaceCommands(SCNamespace):
         )
 
 
-# Class `SCFileCommands`:
+# Class `FileCommands`:
 @dataclass(slots=True)
-class SCFileCommands(SCNamespace):
+class FileCommands(CommandNamespace):
     """The `file.*` commands.
 
     Constructor:
-    * `SCFileCommands(transport)`
+    * `FileCommands(transport)`
     """
 
-    # Method `SCFileCommands.export()`:
+    # Method `FileCommands.export()`:
     def export(
         self,
         *,
@@ -4860,7 +4860,7 @@ class SCFileCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "file.export",
@@ -4874,7 +4874,7 @@ class SCFileCommands(SCNamespace):
             },
         )
 
-    # Method `SCFileCommands.export_view_dxf()`:
+    # Method `FileCommands.export_view_dxf()`:
     def export_view_dxf(
         self,
         *,
@@ -4914,7 +4914,7 @@ class SCFileCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "file.export_view_dxf",
@@ -4928,7 +4928,7 @@ class SCFileCommands(SCNamespace):
             },
         )
 
-    # Method `SCFileCommands.insert_mesh()`:
+    # Method `FileCommands.insert_mesh()`:
     def insert_mesh(
         self,
         *,
@@ -4959,7 +4959,7 @@ class SCFileCommands(SCNamespace):
           z: the file's axes are kept)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "file.insert_mesh",
@@ -4969,7 +4969,7 @@ class SCFileCommands(SCNamespace):
             },
         )
 
-    # Method `SCFileCommands.insert_step()`:
+    # Method `FileCommands.insert_step()`:
     def insert_step(
         self,
         *,
@@ -5011,7 +5011,7 @@ class SCFileCommands(SCNamespace):
           tolerance? (see occurrence.move)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "file.insert_step",
@@ -5021,7 +5021,7 @@ class SCFileCommands(SCNamespace):
             },
         )
 
-    # Method `SCFileCommands.new()`:
+    # Method `FileCommands.new()`:
     def new(
         self,
         *,
@@ -5042,7 +5042,7 @@ class SCFileCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "file.new",
@@ -5052,7 +5052,7 @@ class SCFileCommands(SCNamespace):
             },
         )
 
-    # Method `SCFileCommands.save()`:
+    # Method `FileCommands.save()`:
     def save(
         self,
         *,
@@ -5086,7 +5086,7 @@ class SCFileCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "file.save",
@@ -5100,7 +5100,7 @@ class SCFileCommands(SCNamespace):
             },
         )
 
-    # Method `SCFileCommands.save_as()`:
+    # Method `FileCommands.save_as()`:
     def save_as(
         self,
         *,
@@ -5134,7 +5134,7 @@ class SCFileCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "file.save_as",
@@ -5148,7 +5148,7 @@ class SCFileCommands(SCNamespace):
             },
         )
 
-    # Method `SCFileCommands.save_mesh()`:
+    # Method `FileCommands.save_mesh()`:
     def save_mesh(
         self,
         *,
@@ -5185,7 +5185,7 @@ class SCFileCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "file.save_mesh",
@@ -5199,7 +5199,7 @@ class SCFileCommands(SCNamespace):
             },
         )
 
-    # Method `SCFileCommands.slicers()`:
+    # Method `FileCommands.slicers()`:
     def slicers(
         self,
         **extra: JSON,
@@ -5217,7 +5217,7 @@ class SCFileCommands(SCNamespace):
           icon?}]; pass an id or name as file.save_mesh's `slicer`
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "file.slicers",
@@ -5227,16 +5227,16 @@ class SCFileCommands(SCNamespace):
         )
 
 
-# Class `SCInspectCommands`:
+# Class `InspectCommands`:
 @dataclass(slots=True)
-class SCInspectCommands(SCNamespace):
+class InspectCommands(CommandNamespace):
     """The `inspect.*` commands.
 
     Constructor:
-    * `SCInspectCommands(transport)`
+    * `InspectCommands(transport)`
     """
 
-    # Method `SCInspectCommands.accessibility()`:
+    # Method `InspectCommands.accessibility()`:
     def accessibility(
         self,
         *,
@@ -5260,7 +5260,7 @@ class SCInspectCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "inspect.accessibility",
@@ -5271,7 +5271,7 @@ class SCInspectCommands(SCNamespace):
             },
         )
 
-    # Method `SCInspectCommands.center_of_mass()`:
+    # Method `InspectCommands.center_of_mass()`:
     def center_of_mass(
         self,
         *,
@@ -5293,7 +5293,7 @@ class SCInspectCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "inspect.center_of_mass",
@@ -5303,7 +5303,7 @@ class SCInspectCommands(SCNamespace):
             },
         )
 
-    # Method `SCInspectCommands.clearance()`:
+    # Method `InspectCommands.clearance()`:
     def clearance(
         self,
         *,
@@ -5359,7 +5359,7 @@ class SCInspectCommands(SCNamespace):
           exact faces and edges, the meshes only rule pairs out
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "inspect.clearance",
@@ -5375,7 +5375,7 @@ class SCInspectCommands(SCNamespace):
             },
         )
 
-    # Method `SCInspectCommands.compare()`:
+    # Method `InspectCommands.compare()`:
     def compare(
         self,
         *,
@@ -5429,7 +5429,7 @@ class SCInspectCommands(SCNamespace):
           near-identical bodies compare too
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "inspect.compare",
@@ -5444,7 +5444,7 @@ class SCInspectCommands(SCNamespace):
             },
         )
 
-    # Method `SCInspectCommands.continuity()`:
+    # Method `InspectCommands.continuity()`:
     def continuity(
         self,
         *,
@@ -5493,7 +5493,7 @@ class SCInspectCommands(SCNamespace):
           summary; the seams are shaded in the viewport
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "inspect.continuity",
@@ -5510,7 +5510,7 @@ class SCInspectCommands(SCNamespace):
             },
         )
 
-    # Method `SCInspectCommands.curvature_comb()`:
+    # Method `InspectCommands.curvature_comb()`:
     def curvature_comb(
         self,
         *,
@@ -5544,7 +5544,7 @@ class SCInspectCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "inspect.curvature_comb",
@@ -5558,7 +5558,7 @@ class SCInspectCommands(SCNamespace):
             },
         )
 
-    # Method `SCInspectCommands.curvature_map()`:
+    # Method `InspectCommands.curvature_map()`:
     def curvature_map(
         self,
         *,
@@ -5582,7 +5582,7 @@ class SCInspectCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "inspect.curvature_map",
@@ -5593,7 +5593,7 @@ class SCInspectCommands(SCNamespace):
             },
         )
 
-    # Method `SCInspectCommands.draft()`:
+    # Method `InspectCommands.draft()`:
     def draft(
         self,
         *,
@@ -5620,7 +5620,7 @@ class SCInspectCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "inspect.draft",
@@ -5632,7 +5632,7 @@ class SCInspectCommands(SCNamespace):
             },
         )
 
-    # Method `SCInspectCommands.environment_map()`:
+    # Method `InspectCommands.environment_map()`:
     def environment_map(
         self,
         *,
@@ -5653,7 +5653,7 @@ class SCInspectCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "inspect.environment_map",
@@ -5663,7 +5663,7 @@ class SCInspectCommands(SCNamespace):
             },
         )
 
-    # Method `SCInspectCommands.interference()`:
+    # Method `InspectCommands.interference()`:
     def interference(
         self,
         *,
@@ -5710,7 +5710,7 @@ class SCInspectCommands(SCNamespace):
           and ms
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "inspect.interference",
@@ -5721,7 +5721,7 @@ class SCInspectCommands(SCNamespace):
             },
         )
 
-    # Method `SCInspectCommands.isocurve()`:
+    # Method `InspectCommands.isocurve()`:
     def isocurve(
         self,
         *,
@@ -5745,7 +5745,7 @@ class SCInspectCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "inspect.isocurve",
@@ -5756,7 +5756,7 @@ class SCInspectCommands(SCNamespace):
             },
         )
 
-    # Method `SCInspectCommands.measure()`:
+    # Method `InspectCommands.measure()`:
     def measure(
         self,
         *,
@@ -5783,7 +5783,7 @@ class SCInspectCommands(SCNamespace):
           (centre to centre, or from an axis) and angle
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "inspect.measure",
@@ -5794,7 +5794,7 @@ class SCInspectCommands(SCNamespace):
             },
         )
 
-    # Method `SCInspectCommands.minimum_radius()`:
+    # Method `InspectCommands.minimum_radius()`:
     def minimum_radius(
         self,
         *,
@@ -5823,7 +5823,7 @@ class SCInspectCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "inspect.minimum_radius",
@@ -5835,7 +5835,7 @@ class SCInspectCommands(SCNamespace):
             },
         )
 
-    # Method `SCInspectCommands.section()`:
+    # Method `InspectCommands.section()`:
     def section(
         self,
         *,
@@ -5873,7 +5873,7 @@ class SCInspectCommands(SCNamespace):
         * (`JSON`): Returns the cut's origin and normal
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "inspect.section",
@@ -5887,7 +5887,7 @@ class SCInspectCommands(SCNamespace):
             },
         )
 
-    # Method `SCInspectCommands.silhouette()`:
+    # Method `InspectCommands.silhouette()`:
     def silhouette(
         self,
         *,
@@ -5920,7 +5920,7 @@ class SCInspectCommands(SCNamespace):
           right/up, projection, body and triangle counts
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "inspect.silhouette",
@@ -5933,7 +5933,7 @@ class SCInspectCommands(SCNamespace):
             },
         )
 
-    # Method `SCInspectCommands.zebra()`:
+    # Method `InspectCommands.zebra()`:
     def zebra(
         self,
         *,
@@ -5957,7 +5957,7 @@ class SCInspectCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "inspect.zebra",
@@ -5969,16 +5969,16 @@ class SCInspectCommands(SCNamespace):
         )
 
 
-# Class `SCJointCommands`:
+# Class `JointCommands`:
 @dataclass(slots=True)
-class SCJointCommands(SCNamespace):
+class JointCommands(CommandNamespace):
     """The `joint.*` commands.
 
     Constructor:
-    * `SCJointCommands(transport)`
+    * `JointCommands(transport)`
     """
 
-    # Method `SCJointCommands.as_built()`:
+    # Method `JointCommands.as_built()`:
     def as_built(
         self,
         *,
@@ -6020,7 +6020,7 @@ class SCJointCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "joint.as_built",
@@ -6036,7 +6036,7 @@ class SCJointCommands(SCNamespace):
             },
         )
 
-    # Method `SCJointCommands.cam()`:
+    # Method `JointCommands.cam()`:
     def cam(
         self,
         *,
@@ -6097,7 +6097,7 @@ class SCJointCommands(SCNamespace):
           also when the link replaces another (at the current pose)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "joint.cam",
@@ -6114,7 +6114,7 @@ class SCJointCommands(SCNamespace):
             },
         )
 
-    # Method `SCJointCommands.create()`:
+    # Method `JointCommands.create()`:
     def create(
         self,
         *,
@@ -6179,7 +6179,7 @@ class SCJointCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "joint.create",
@@ -6198,7 +6198,7 @@ class SCJointCommands(SCNamespace):
             },
         )
 
-    # Method `SCJointCommands.delete()`:
+    # Method `JointCommands.delete()`:
     def delete(
         self,
         *,
@@ -6219,7 +6219,7 @@ class SCJointCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "joint.delete",
@@ -6229,7 +6229,7 @@ class SCJointCommands(SCNamespace):
             },
         )
 
-    # Method `SCJointCommands.drive()`:
+    # Method `JointCommands.drive()`:
     def drive(
         self,
         *,
@@ -6265,7 +6265,7 @@ class SCJointCommands(SCNamespace):
           unconnected: the occurrence named)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "joint.drive",
@@ -6277,7 +6277,7 @@ class SCJointCommands(SCNamespace):
             },
         )
 
-    # Method `SCJointCommands.edit()`:
+    # Method `JointCommands.edit()`:
     def edit(
         self,
         *,
@@ -6316,7 +6316,7 @@ class SCJointCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "joint.edit",
@@ -6332,7 +6332,7 @@ class SCJointCommands(SCNamespace):
             },
         )
 
-    # Method `SCJointCommands.gear()`:
+    # Method `JointCommands.gear()`:
     def gear(
         self,
         *,
@@ -6377,7 +6377,7 @@ class SCJointCommands(SCNamespace):
           is, also when the link replaces another (at the current pose)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "joint.gear",
@@ -6393,7 +6393,7 @@ class SCJointCommands(SCNamespace):
             },
         )
 
-    # Method `SCJointCommands.inspect()`:
+    # Method `JointCommands.inspect()`:
     def inspect(
         self,
         *,
@@ -6429,7 +6429,7 @@ class SCJointCommands(SCNamespace):
           only: nothing changes)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "joint.inspect",
@@ -6439,7 +6439,7 @@ class SCJointCommands(SCNamespace):
             },
         )
 
-    # Method `SCJointCommands.limits()`:
+    # Method `JointCommands.limits()`:
     def limits(
         self,
         *,
@@ -6469,7 +6469,7 @@ class SCJointCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "joint.limits",
@@ -6482,7 +6482,7 @@ class SCJointCommands(SCNamespace):
             },
         )
 
-    # Method `SCJointCommands.list()`:
+    # Method `JointCommands.list()`:
     def list(
         self,
         **extra: JSON,
@@ -6504,7 +6504,7 @@ class SCJointCommands(SCNamespace):
           driving them moves nothing)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "joint.list",
@@ -6513,7 +6513,7 @@ class SCJointCommands(SCNamespace):
             },
         )
 
-    # Method `SCJointCommands.motion_link()`:
+    # Method `JointCommands.motion_link()`:
     def motion_link(
         self,
         *,
@@ -6551,7 +6551,7 @@ class SCJointCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "joint.motion_link",
@@ -6566,7 +6566,7 @@ class SCJointCommands(SCNamespace):
             },
         )
 
-    # Method `SCJointCommands.origin()`:
+    # Method `JointCommands.origin()`:
     def origin(
         self,
         *,
@@ -6629,7 +6629,7 @@ class SCJointCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "joint.origin",
@@ -6648,7 +6648,7 @@ class SCJointCommands(SCNamespace):
             },
         )
 
-    # Method `SCJointCommands.rack_pinion()`:
+    # Method `JointCommands.rack_pinion()`:
     def rack_pinion(
         self,
         *,
@@ -6688,7 +6688,7 @@ class SCJointCommands(SCNamespace):
           current pose)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "joint.rack_pinion",
@@ -6702,7 +6702,7 @@ class SCJointCommands(SCNamespace):
             },
         )
 
-    # Method `SCJointCommands.reach()`:
+    # Method `JointCommands.reach()`:
     def reach(
         self,
         *,
@@ -6759,7 +6759,7 @@ class SCJointCommands(SCNamespace):
           chain alone gets closer); reason: why nothing can move
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "joint.reach",
@@ -6776,7 +6776,7 @@ class SCJointCommands(SCNamespace):
             },
         )
 
-    # Method `SCJointCommands.rigid_group()`:
+    # Method `JointCommands.rigid_group()`:
     def rigid_group(
         self,
         *,
@@ -6797,7 +6797,7 @@ class SCJointCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "joint.rigid_group",
@@ -6807,7 +6807,7 @@ class SCJointCommands(SCNamespace):
             },
         )
 
-    # Method `SCJointCommands.screw()`:
+    # Method `JointCommands.screw()`:
     def screw(
         self,
         *,
@@ -6845,7 +6845,7 @@ class SCJointCommands(SCNamespace):
           current pose)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "joint.screw",
@@ -6859,7 +6859,7 @@ class SCJointCommands(SCNamespace):
             },
         )
 
-    # Method `SCJointCommands.solve()`:
+    # Method `JointCommands.solve()`:
     def solve(
         self,
         **extra: JSON,
@@ -6878,7 +6878,7 @@ class SCJointCommands(SCNamespace):
         * (`JSON`): conflicts, errors, dof
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "joint.solve",
@@ -6887,7 +6887,7 @@ class SCJointCommands(SCNamespace):
             },
         )
 
-    # Method `SCJointCommands.sweep()`:
+    # Method `JointCommands.sweep()`:
     def sweep(
         self,
         *,
@@ -6957,7 +6957,7 @@ class SCJointCommands(SCNamespace):
           on a copy (closed loops follow, contact sets do not stop it)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "joint.sweep",
@@ -6977,16 +6977,16 @@ class SCJointCommands(SCNamespace):
         )
 
 
-# Class `SCLibraryCommands`:
+# Class `LibraryCommands`:
 @dataclass(slots=True)
-class SCLibraryCommands(SCNamespace):
+class LibraryCommands(CommandNamespace):
     """The `library.*` commands.
 
     Constructor:
-    * `SCLibraryCommands(transport)`
+    * `LibraryCommands(transport)`
     """
 
-    # Method `SCLibraryCommands.apply()`:
+    # Method `LibraryCommands.apply()`:
     def apply(
         self,
         *,
@@ -7022,7 +7022,7 @@ class SCLibraryCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "library.apply",
@@ -7036,7 +7036,7 @@ class SCLibraryCommands(SCNamespace):
             },
         )
 
-    # Method `SCLibraryCommands.export()`:
+    # Method `LibraryCommands.export()`:
     def export(
         self,
         *,
@@ -7069,7 +7069,7 @@ class SCLibraryCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "library.export",
@@ -7082,7 +7082,7 @@ class SCLibraryCommands(SCNamespace):
             },
         )
 
-    # Method `SCLibraryCommands.inspect()`:
+    # Method `LibraryCommands.inspect()`:
     def inspect(
         self,
         *,
@@ -7106,7 +7106,7 @@ class SCLibraryCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "library.inspect",
@@ -7117,16 +7117,16 @@ class SCLibraryCommands(SCNamespace):
         )
 
 
-# Class `SCMaterialCommands`:
+# Class `MaterialCommands`:
 @dataclass(slots=True)
-class SCMaterialCommands(SCNamespace):
+class MaterialCommands(CommandNamespace):
     """The `material.*` commands.
 
     Constructor:
-    * `SCMaterialCommands(transport)`
+    * `MaterialCommands(transport)`
     """
 
-    # Method `SCMaterialCommands.assign()`:
+    # Method `MaterialCommands.assign()`:
     def assign(
         self,
         *,
@@ -7151,7 +7151,7 @@ class SCMaterialCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "material.assign",
@@ -7162,7 +7162,7 @@ class SCMaterialCommands(SCNamespace):
             },
         )
 
-    # Method `SCMaterialCommands.create()`:
+    # Method `MaterialCommands.create()`:
     def create(
         self,
         *,
@@ -7201,7 +7201,7 @@ class SCMaterialCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "material.create",
@@ -7216,7 +7216,7 @@ class SCMaterialCommands(SCNamespace):
             },
         )
 
-    # Method `SCMaterialCommands.delete()`:
+    # Method `MaterialCommands.delete()`:
     def delete(
         self,
         *,
@@ -7241,7 +7241,7 @@ class SCMaterialCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "material.delete",
@@ -7252,7 +7252,7 @@ class SCMaterialCommands(SCNamespace):
             },
         )
 
-    # Method `SCMaterialCommands.edit()`:
+    # Method `MaterialCommands.edit()`:
     def edit(
         self,
         *,
@@ -7288,7 +7288,7 @@ class SCMaterialCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "material.edit",
@@ -7302,7 +7302,7 @@ class SCMaterialCommands(SCNamespace):
             },
         )
 
-    # Method `SCMaterialCommands.list()`:
+    # Method `MaterialCommands.list()`:
     def list(
         self,
         **extra: JSON,
@@ -7320,7 +7320,7 @@ class SCMaterialCommands(SCNamespace):
           true, with their look)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "material.list",
@@ -7329,7 +7329,7 @@ class SCMaterialCommands(SCNamespace):
             },
         )
 
-    # Method `SCMaterialCommands.properties_directional()`:
+    # Method `MaterialCommands.properties_directional()`:
     def properties_directional(
         self,
         *,
@@ -7358,7 +7358,7 @@ class SCMaterialCommands(SCNamespace):
         * (`JSON`): Returns normalized direction
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "material.properties.directional",
@@ -7369,7 +7369,7 @@ class SCMaterialCommands(SCNamespace):
             },
         )
 
-    # Method `SCMaterialCommands.properties_validate()`:
+    # Method `MaterialCommands.properties_validate()`:
     def properties_validate(
         self,
         *,
@@ -7395,7 +7395,7 @@ class SCMaterialCommands(SCNamespace):
         * (`JSON`): Returns numerical consistency
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "material.properties.validate",
@@ -7406,16 +7406,16 @@ class SCMaterialCommands(SCNamespace):
         )
 
 
-# Class `SCMeshCommands`:
+# Class `MeshCommands`:
 @dataclass(slots=True)
-class SCMeshCommands(SCNamespace):
+class MeshCommands(CommandNamespace):
     """The `mesh.*` commands.
 
     Constructor:
-    * `SCMeshCommands(transport)`
+    * `MeshCommands(transport)`
     """
 
-    # Method `SCMeshCommands.convert()`:
+    # Method `MeshCommands.convert()`:
     def convert(
         self,
         *,
@@ -7446,7 +7446,7 @@ class SCMeshCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "mesh.convert",
@@ -7459,16 +7459,16 @@ class SCMeshCommands(SCNamespace):
         )
 
 
-# Class `SCModelCommands`:
+# Class `ModelCommands`:
 @dataclass(slots=True)
-class SCModelCommands(SCNamespace):
+class ModelCommands(CommandNamespace):
     """The `model.*` commands.
 
     Constructor:
-    * `SCModelCommands(transport)`
+    * `ModelCommands(transport)`
     """
 
-    # Method `SCModelCommands.edges()`:
+    # Method `ModelCommands.edges()`:
     def edges(
         self,
         *,
@@ -7489,7 +7489,7 @@ class SCModelCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "model.edges",
@@ -7499,7 +7499,7 @@ class SCModelCommands(SCNamespace):
             },
         )
 
-    # Method `SCModelCommands.faces()`:
+    # Method `ModelCommands.faces()`:
     def faces(
         self,
         *,
@@ -7528,7 +7528,7 @@ class SCModelCommands(SCNamespace):
           holds while sizes change and flanges come and go)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "model.faces",
@@ -7538,7 +7538,7 @@ class SCModelCommands(SCNamespace):
             },
         )
 
-    # Method `SCModelCommands.threads()`:
+    # Method `ModelCommands.threads()`:
     def threads(
         self,
         **extra: JSON,
@@ -7555,7 +7555,7 @@ class SCModelCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "model.threads",
@@ -7565,16 +7565,16 @@ class SCModelCommands(SCNamespace):
         )
 
 
-# Class `SCMotionCommands`:
+# Class `MotionCommands`:
 @dataclass(slots=True)
-class SCMotionCommands(SCNamespace):
+class MotionCommands(CommandNamespace):
     """The `motion.*` commands.
 
     Constructor:
-    * `SCMotionCommands(transport)`
+    * `MotionCommands(transport)`
     """
 
-    # Method `SCMotionCommands.delete()`:
+    # Method `MotionCommands.delete()`:
     def delete(
         self,
         *,
@@ -7595,7 +7595,7 @@ class SCMotionCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "motion.delete",
@@ -7605,7 +7605,7 @@ class SCMotionCommands(SCNamespace):
             },
         )
 
-    # Method `SCMotionCommands.export()`:
+    # Method `MotionCommands.export()`:
     def export(
         self,
         *,
@@ -7633,7 +7633,7 @@ class SCMotionCommands(SCNamespace):
           changed)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "motion.export",
@@ -7645,7 +7645,7 @@ class SCMotionCommands(SCNamespace):
             },
         )
 
-    # Method `SCMotionCommands.export_animation()`:
+    # Method `MotionCommands.export_animation()`:
     def export_animation(
         self,
         *,
@@ -7704,7 +7704,7 @@ class SCMotionCommands(SCNamespace):
           stopped_by_contact (the design is not changed)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "motion.export_animation",
@@ -7723,7 +7723,7 @@ class SCMotionCommands(SCNamespace):
             },
         )
 
-    # Method `SCMotionCommands.interference()`:
+    # Method `MotionCommands.interference()`:
     def interference(
         self,
         *,
@@ -7768,7 +7768,7 @@ class SCMotionCommands(SCNamespace):
           two samples is missed
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "motion.interference",
@@ -7781,7 +7781,7 @@ class SCMotionCommands(SCNamespace):
             },
         )
 
-    # Method `SCMotionCommands.list()`:
+    # Method `MotionCommands.list()`:
     def list(
         self,
         **extra: JSON,
@@ -7798,7 +7798,7 @@ class SCMotionCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "motion.list",
@@ -7807,7 +7807,7 @@ class SCMotionCommands(SCNamespace):
             },
         )
 
-    # Method `SCMotionCommands.play()`:
+    # Method `MotionCommands.play()`:
     def play(
         self,
         *,
@@ -7838,7 +7838,7 @@ class SCMotionCommands(SCNamespace):
           such as a chain joined to nothing grounded)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "motion.play",
@@ -7850,7 +7850,7 @@ class SCMotionCommands(SCNamespace):
             },
         )
 
-    # Method `SCMotionCommands.plot()`:
+    # Method `MotionCommands.plot()`:
     def plot(
         self,
         *,
@@ -7895,7 +7895,7 @@ class SCMotionCommands(SCNamespace):
           one-sided at the ends)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "motion.plot",
@@ -7908,7 +7908,7 @@ class SCMotionCommands(SCNamespace):
             },
         )
 
-    # Method `SCMotionCommands.study()`:
+    # Method `MotionCommands.study()`:
     def study(
         self,
         *,
@@ -7939,7 +7939,7 @@ class SCMotionCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "motion.study",
@@ -7952,7 +7952,7 @@ class SCMotionCommands(SCNamespace):
             },
         )
 
-    # Method `SCMotionCommands.trace()`:
+    # Method `MotionCommands.trace()`:
     def trace(
         self,
         *,
@@ -7994,7 +7994,7 @@ class SCMotionCommands(SCNamespace):
           design is not changed)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "motion.trace",
@@ -8008,7 +8008,7 @@ class SCMotionCommands(SCNamespace):
             },
         )
 
-    # Method `SCMotionCommands.trace_keep()`:
+    # Method `MotionCommands.trace_keep()`:
     def trace_keep(
         self,
         *,
@@ -8053,7 +8053,7 @@ class SCMotionCommands(SCNamespace):
         * (`JSON`): sketch, name, curves, points
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "motion.trace.keep",
@@ -8069,16 +8069,16 @@ class SCMotionCommands(SCNamespace):
         )
 
 
-# Class `SCOccurrenceCommands`:
+# Class `OccurrenceCommands`:
 @dataclass(slots=True)
-class SCOccurrenceCommands(SCNamespace):
+class OccurrenceCommands(CommandNamespace):
     """The `occurrence.*` commands.
 
     Constructor:
-    * `SCOccurrenceCommands(transport)`
+    * `OccurrenceCommands(transport)`
     """
 
-    # Method `SCOccurrenceCommands.copy()`:
+    # Method `OccurrenceCommands.copy()`:
     def copy(
         self,
         *,
@@ -8110,7 +8110,7 @@ class SCOccurrenceCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "occurrence.copy",
@@ -8123,7 +8123,7 @@ class SCOccurrenceCommands(SCNamespace):
             },
         )
 
-    # Method `SCOccurrenceCommands.ground()`:
+    # Method `OccurrenceCommands.ground()`:
     def ground(
         self,
         *,
@@ -8147,7 +8147,7 @@ class SCOccurrenceCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "occurrence.ground",
@@ -8158,7 +8158,7 @@ class SCOccurrenceCommands(SCNamespace):
             },
         )
 
-    # Method `SCOccurrenceCommands.move()`:
+    # Method `OccurrenceCommands.move()`:
     def move(
         self,
         *,
@@ -8211,7 +8211,7 @@ class SCOccurrenceCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "occurrence.move",
@@ -8230,7 +8230,7 @@ class SCOccurrenceCommands(SCNamespace):
             },
         )
 
-    # Method `SCOccurrenceCommands.properties()`:
+    # Method `OccurrenceCommands.properties()`:
     def properties(
         self,
         *,
@@ -8260,7 +8260,7 @@ class SCOccurrenceCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "occurrence.properties",
@@ -8273,16 +8273,16 @@ class SCOccurrenceCommands(SCNamespace):
         )
 
 
-# Class `SCParametersCommands`:
+# Class `ParametersCommands`:
 @dataclass(slots=True)
-class SCParametersCommands(SCNamespace):
+class ParametersCommands(CommandNamespace):
     """The `parameters.*` commands.
 
     Constructor:
-    * `SCParametersCommands(transport)`
+    * `ParametersCommands(transport)`
     """
 
-    # Method `SCParametersCommands.add()`:
+    # Method `ParametersCommands.add()`:
     def add(
         self,
         *,
@@ -8315,7 +8315,7 @@ class SCParametersCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "parameters.add",
@@ -8329,7 +8329,7 @@ class SCParametersCommands(SCNamespace):
             },
         )
 
-    # Method `SCParametersCommands.change()`:
+    # Method `ParametersCommands.change()`:
     def change(
         self,
         *,
@@ -8375,7 +8375,7 @@ class SCParametersCommands(SCNamespace):
           the same inputs was reused (e.g. a value set back)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "parameters.change",
@@ -8392,7 +8392,7 @@ class SCParametersCommands(SCNamespace):
             },
         )
 
-    # Method `SCParametersCommands.comment()`:
+    # Method `ParametersCommands.comment()`:
     def comment(
         self,
         *,
@@ -8416,7 +8416,7 @@ class SCParametersCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "parameters.comment",
@@ -8427,7 +8427,7 @@ class SCParametersCommands(SCNamespace):
             },
         )
 
-    # Method `SCParametersCommands.complete()`:
+    # Method `ParametersCommands.complete()`:
     def complete(
         self,
         *,
@@ -8449,7 +8449,7 @@ class SCParametersCommands(SCNamespace):
           parameter|function|unit|constant, detail}]
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "parameters.complete",
@@ -8459,7 +8459,7 @@ class SCParametersCommands(SCNamespace):
             },
         )
 
-    # Method `SCParametersCommands.delete()`:
+    # Method `ParametersCommands.delete()`:
     def delete(
         self,
         *,
@@ -8481,7 +8481,7 @@ class SCParametersCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "parameters.delete",
@@ -8491,7 +8491,7 @@ class SCParametersCommands(SCNamespace):
             },
         )
 
-    # Method `SCParametersCommands.export()`:
+    # Method `ParametersCommands.export()`:
     def export(
         self,
         *,
@@ -8515,7 +8515,7 @@ class SCParametersCommands(SCNamespace):
         * (`JSON`): text
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "parameters.export",
@@ -8526,7 +8526,7 @@ class SCParametersCommands(SCNamespace):
             },
         )
 
-    # Method `SCParametersCommands.favorite()`:
+    # Method `ParametersCommands.favorite()`:
     def favorite(
         self,
         *,
@@ -8550,7 +8550,7 @@ class SCParametersCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "parameters.favorite",
@@ -8561,7 +8561,7 @@ class SCParametersCommands(SCNamespace):
             },
         )
 
-    # Method `SCParametersCommands.graph()`:
+    # Method `ParametersCommands.graph()`:
     def graph(
         self,
         **extra: JSON,
@@ -8579,7 +8579,7 @@ class SCParametersCommands(SCNamespace):
           Feature:<name>), cycles, errors
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "parameters.graph",
@@ -8588,7 +8588,7 @@ class SCParametersCommands(SCNamespace):
             },
         )
 
-    # Method `SCParametersCommands.import_()`:
+    # Method `ParametersCommands.import_()`:
     def import_(
         self,
         *,
@@ -8612,7 +8612,7 @@ class SCParametersCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "parameters.import",
@@ -8622,7 +8622,7 @@ class SCParametersCommands(SCNamespace):
             },
         )
 
-    # Method `SCParametersCommands.list()`:
+    # Method `ParametersCommands.list()`:
     def list(
         self,
         *,
@@ -8648,7 +8648,7 @@ class SCParametersCommands(SCNamespace):
           error) and cycles
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "parameters.list",
@@ -8659,7 +8659,7 @@ class SCParametersCommands(SCNamespace):
             },
         )
 
-    # Method `SCParametersCommands.move()`:
+    # Method `ParametersCommands.move()`:
     def move(
         self,
         *,
@@ -8688,7 +8688,7 @@ class SCParametersCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "parameters.move",
@@ -8700,7 +8700,7 @@ class SCParametersCommands(SCNamespace):
             },
         )
 
-    # Method `SCParametersCommands.rename()`:
+    # Method `ParametersCommands.rename()`:
     def rename(
         self,
         *,
@@ -8725,7 +8725,7 @@ class SCParametersCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "parameters.rename",
@@ -8736,7 +8736,7 @@ class SCParametersCommands(SCNamespace):
             },
         )
 
-    # Method `SCParametersCommands.users()`:
+    # Method `ParametersCommands.users()`:
     def users(
         self,
         *,
@@ -8758,7 +8758,7 @@ class SCParametersCommands(SCNamespace):
           the features it drives
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "parameters.users",
@@ -8769,16 +8769,16 @@ class SCParametersCommands(SCNamespace):
         )
 
 
-# Class `SCPartsCommands`:
+# Class `PartsCommands`:
 @dataclass(slots=True)
-class SCPartsCommands(SCNamespace):
+class PartsCommands(CommandNamespace):
     """The `parts.*` commands.
 
     Constructor:
-    * `SCPartsCommands(transport)`
+    * `PartsCommands(transport)`
     """
 
-    # Method `SCPartsCommands.fastener()`:
+    # Method `PartsCommands.fastener()`:
     def fastener(
         self,
         *,
@@ -8808,7 +8808,7 @@ class SCPartsCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "parts.fastener",
@@ -8820,7 +8820,7 @@ class SCPartsCommands(SCNamespace):
             },
         )
 
-    # Method `SCPartsCommands.insert()`:
+    # Method `PartsCommands.insert()`:
     def insert(
         self,
         *,
@@ -8859,7 +8859,7 @@ class SCPartsCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "parts.insert",
@@ -8874,7 +8874,7 @@ class SCPartsCommands(SCNamespace):
             },
         )
 
-    # Method `SCPartsCommands.library()`:
+    # Method `PartsCommands.library()`:
     def library(
         self,
         *,
@@ -8896,7 +8896,7 @@ class SCPartsCommands(SCNamespace):
           family, each size's dimensions (mm)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "parts.library",
@@ -8906,7 +8906,7 @@ class SCPartsCommands(SCNamespace):
             },
         )
 
-    # Method `SCPartsCommands.resize()`:
+    # Method `PartsCommands.resize()`:
     def resize(
         self,
         *,
@@ -8932,7 +8932,7 @@ class SCPartsCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "parts.resize",
@@ -8944,16 +8944,16 @@ class SCPartsCommands(SCNamespace):
         )
 
 
-# Class `SCPlasticCommands`:
+# Class `PlasticCommands`:
 @dataclass(slots=True)
-class SCPlasticCommands(SCNamespace):
+class PlasticCommands(CommandNamespace):
     """The `plastic.*` commands.
 
     Constructor:
-    * `SCPlasticCommands(transport)`
+    * `PlasticCommands(transport)`
     """
 
-    # Method `SCPlasticCommands.assign_rule()`:
+    # Method `PlasticCommands.assign_rule()`:
     def assign_rule(
         self,
         *,
@@ -8978,7 +8978,7 @@ class SCPlasticCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "plastic.assign_rule",
@@ -8989,7 +8989,7 @@ class SCPlasticCommands(SCNamespace):
             },
         )
 
-    # Method `SCPlasticCommands.boss()`:
+    # Method `PlasticCommands.boss()`:
     def boss(
         self,
         *,
@@ -9046,7 +9046,7 @@ class SCPlasticCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "plastic.boss",
@@ -9068,7 +9068,7 @@ class SCPlasticCommands(SCNamespace):
             },
         )
 
-    # Method `SCPlasticCommands.lip()`:
+    # Method `PlasticCommands.lip()`:
     def lip(
         self,
         *,
@@ -9107,7 +9107,7 @@ class SCPlasticCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "plastic.lip",
@@ -9123,7 +9123,7 @@ class SCPlasticCommands(SCNamespace):
             },
         )
 
-    # Method `SCPlasticCommands.manage_rules()`:
+    # Method `PlasticCommands.manage_rules()`:
     def manage_rules(
         self,
         *,
@@ -9188,7 +9188,7 @@ class SCPlasticCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "plastic.manage_rules",
@@ -9212,7 +9212,7 @@ class SCPlasticCommands(SCNamespace):
             },
         )
 
-    # Method `SCPlasticCommands.rest()`:
+    # Method `PlasticCommands.rest()`:
     def rest(
         self,
         *,
@@ -9257,7 +9257,7 @@ class SCPlasticCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "plastic.rest",
@@ -9275,7 +9275,7 @@ class SCPlasticCommands(SCNamespace):
             },
         )
 
-    # Method `SCPlasticCommands.rules()`:
+    # Method `PlasticCommands.rules()`:
     def rules(
         self,
         **extra: JSON,
@@ -9293,7 +9293,7 @@ class SCPlasticCommands(SCNamespace):
           rule and the rules assigned to bodies
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "plastic.rules",
@@ -9302,7 +9302,7 @@ class SCPlasticCommands(SCNamespace):
             },
         )
 
-    # Method `SCPlasticCommands.snap_fit()`:
+    # Method `PlasticCommands.snap_fit()`:
     def snap_fit(
         self,
         *,
@@ -9347,7 +9347,7 @@ class SCPlasticCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "plastic.snap_fit",
@@ -9366,16 +9366,16 @@ class SCPlasticCommands(SCNamespace):
         )
 
 
-# Class `SCRenderCommands`:
+# Class `RenderCommands`:
 @dataclass(slots=True)
-class SCRenderCommands(SCNamespace):
+class RenderCommands(CommandNamespace):
     """The `render.*` commands.
 
     Constructor:
-    * `SCRenderCommands(transport)`
+    * `RenderCommands(transport)`
     """
 
-    # Method `SCRenderCommands.backends()`:
+    # Method `RenderCommands.backends()`:
     def backends(
         self,
         **extra: JSON,
@@ -9397,7 +9397,7 @@ class SCRenderCommands(SCNamespace):
           availability, profiles, limits, scratch}]}]}. Metadata only
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "render.backends",
@@ -9406,7 +9406,7 @@ class SCRenderCommands(SCNamespace):
             },
         )
 
-    # Method `SCRenderCommands.cancel()`:
+    # Method `RenderCommands.cancel()`:
     def cancel(
         self,
         *,
@@ -9431,7 +9431,7 @@ class SCRenderCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "render.cancel",
@@ -9441,7 +9441,7 @@ class SCRenderCommands(SCNamespace):
             },
         )
 
-    # Method `SCRenderCommands.export()`:
+    # Method `RenderCommands.export()`:
     def export(
         self,
         *,
@@ -9471,7 +9471,7 @@ class SCRenderCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "render.export",
@@ -9483,7 +9483,7 @@ class SCRenderCommands(SCNamespace):
             },
         )
 
-    # Method `SCRenderCommands.preflight()`:
+    # Method `RenderCommands.preflight()`:
     def preflight(
         self,
         *,
@@ -9512,7 +9512,7 @@ class SCRenderCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "render.preflight",
@@ -9524,7 +9524,7 @@ class SCRenderCommands(SCNamespace):
             },
         )
 
-    # Method `SCRenderCommands.scene()`:
+    # Method `RenderCommands.scene()`:
     def scene(
         self,
         **extra: JSON,
@@ -9545,7 +9545,7 @@ class SCRenderCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "render.scene",
@@ -9554,7 +9554,7 @@ class SCRenderCommands(SCNamespace):
             },
         )
 
-    # Method `SCRenderCommands.settings_apply()`:
+    # Method `RenderCommands.settings_apply()`:
     def settings_apply(
         self,
         *,
@@ -9578,7 +9578,7 @@ class SCRenderCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "render.settings.apply",
@@ -9588,7 +9588,7 @@ class SCRenderCommands(SCNamespace):
             },
         )
 
-    # Method `SCRenderCommands.settings_get()`:
+    # Method `RenderCommands.settings_get()`:
     def settings_get(
         self,
         *,
@@ -9612,7 +9612,7 @@ class SCRenderCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "render.settings.get",
@@ -9622,7 +9622,7 @@ class SCRenderCommands(SCNamespace):
             },
         )
 
-    # Method `SCRenderCommands.settings_set()`:
+    # Method `RenderCommands.settings_set()`:
     def settings_set(
         self,
         *,
@@ -9651,7 +9651,7 @@ class SCRenderCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "render.settings.set",
@@ -9662,7 +9662,7 @@ class SCRenderCommands(SCNamespace):
             },
         )
 
-    # Method `SCRenderCommands.start()`:
+    # Method `RenderCommands.start()`:
     def start(
         self,
         **extra: JSON,
@@ -9684,7 +9684,7 @@ class SCRenderCommands(SCNamespace):
         * (`JSON`): Returns its session-scoped job identity
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "render.start",
@@ -9693,7 +9693,7 @@ class SCRenderCommands(SCNamespace):
             },
         )
 
-    # Method `SCRenderCommands.status()`:
+    # Method `RenderCommands.status()`:
     def status(
         self,
         *,
@@ -9718,7 +9718,7 @@ class SCRenderCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "render.status",
@@ -9729,16 +9729,16 @@ class SCRenderCommands(SCNamespace):
         )
 
 
-# Class `SCSelectCommands`:
+# Class `SelectCommands`:
 @dataclass(slots=True)
-class SCSelectCommands(SCNamespace):
+class SelectCommands(CommandNamespace):
     """The `select.*` commands.
 
     Constructor:
-    * `SCSelectCommands(transport)`
+    * `SelectCommands(transport)`
     """
 
-    # Method `SCSelectCommands.clear()`:
+    # Method `SelectCommands.clear()`:
     def clear(
         self,
         **extra: JSON,
@@ -9755,7 +9755,7 @@ class SCSelectCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "select.clear",
@@ -9764,7 +9764,7 @@ class SCSelectCommands(SCNamespace):
             },
         )
 
-    # Method `SCSelectCommands.set()`:
+    # Method `SelectCommands.set()`:
     def set(
         self,
         *,
@@ -9789,7 +9789,7 @@ class SCSelectCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "select.set",
@@ -9801,16 +9801,16 @@ class SCSelectCommands(SCNamespace):
         )
 
 
-# Class `SCSelectionCommands`:
+# Class `SelectionCommands`:
 @dataclass(slots=True)
-class SCSelectionCommands(SCNamespace):
+class SelectionCommands(CommandNamespace):
     """The `selection.*` commands.
 
     Constructor:
-    * `SCSelectionCommands(transport)`
+    * `SelectionCommands(transport)`
     """
 
-    # Method `SCSelectionCommands.delete()`:
+    # Method `SelectionCommands.delete()`:
     def delete(
         self,
         *,
@@ -9847,7 +9847,7 @@ class SCSelectionCommands(SCNamespace):
           undo step)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "selection.delete",
@@ -9863,16 +9863,16 @@ class SCSelectionCommands(SCNamespace):
         )
 
 
-# Class `SCSheetCommands`:
+# Class `SheetCommands`:
 @dataclass(slots=True)
-class SCSheetCommands(SCNamespace):
+class SheetCommands(CommandNamespace):
     """The `sheet.*` commands.
 
     Constructor:
-    * `SCSheetCommands(transport)`
+    * `SheetCommands(transport)`
     """
 
-    # Method `SCSheetCommands.convert()`:
+    # Method `SheetCommands.convert()`:
     def convert(
         self,
         *,
@@ -9915,7 +9915,7 @@ class SCSheetCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sheet.convert",
@@ -9928,7 +9928,7 @@ class SCSheetCommands(SCNamespace):
             },
         )
 
-    # Method `SCSheetCommands.export_bend_table()`:
+    # Method `SheetCommands.export_bend_table()`:
     def export_bend_table(
         self,
         *,
@@ -9957,7 +9957,7 @@ class SCSheetCommands(SCNamespace):
           row for each piece
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sheet.export_bend_table",
@@ -9969,7 +9969,7 @@ class SCSheetCommands(SCNamespace):
             },
         )
 
-    # Method `SCSheetCommands.export_dxf()`:
+    # Method `SheetCommands.export_dxf()`:
     def export_dxf(
         self,
         *,
@@ -10021,7 +10021,7 @@ class SCSheetCommands(SCNamespace):
           outline
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sheet.export_dxf",
@@ -10037,7 +10037,7 @@ class SCSheetCommands(SCNamespace):
             },
         )
 
-    # Method `SCSheetCommands.flange()`:
+    # Method `SheetCommands.flange()`:
     def flange(
         self,
         *,
@@ -10100,7 +10100,7 @@ class SCSheetCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sheet.flange",
@@ -10121,7 +10121,7 @@ class SCSheetCommands(SCNamespace):
             },
         )
 
-    # Method `SCSheetCommands.flat_pattern()`:
+    # Method `SheetCommands.flat_pattern()`:
     def flat_pattern(
         self,
         *,
@@ -10147,7 +10147,7 @@ class SCSheetCommands(SCNamespace):
           (with their own cutout_shapes), bend lines and the bend table
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sheet.flat_pattern",
@@ -10157,7 +10157,7 @@ class SCSheetCommands(SCNamespace):
             },
         )
 
-    # Method `SCSheetCommands.fold()`:
+    # Method `SheetCommands.fold()`:
     def fold(
         self,
         *,
@@ -10201,7 +10201,7 @@ class SCSheetCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sheet.fold",
@@ -10218,7 +10218,7 @@ class SCSheetCommands(SCNamespace):
             },
         )
 
-    # Method `SCSheetCommands.hem()`:
+    # Method `SheetCommands.hem()`:
     def hem(
         self,
         *,
@@ -10251,7 +10251,7 @@ class SCSheetCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sheet.hem",
@@ -10265,7 +10265,7 @@ class SCSheetCommands(SCNamespace):
             },
         )
 
-    # Method `SCSheetCommands.manage_rules()`:
+    # Method `SheetCommands.manage_rules()`:
     def manage_rules(
         self,
         *,
@@ -10324,7 +10324,7 @@ class SCSheetCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sheet.manage_rules",
@@ -10345,7 +10345,7 @@ class SCSheetCommands(SCNamespace):
             },
         )
 
-    # Method `SCSheetCommands.perforate()`:
+    # Method `SheetCommands.perforate()`:
     def perforate(
         self,
         *,
@@ -10380,7 +10380,7 @@ class SCSheetCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sheet.perforate",
@@ -10393,7 +10393,7 @@ class SCSheetCommands(SCNamespace):
             },
         )
 
-    # Method `SCSheetCommands.refold()`:
+    # Method `SheetCommands.refold()`:
     def refold(
         self,
         *,
@@ -10414,7 +10414,7 @@ class SCSheetCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sheet.refold",
@@ -10424,7 +10424,7 @@ class SCSheetCommands(SCNamespace):
             },
         )
 
-    # Method `SCSheetCommands.rules()`:
+    # Method `SheetCommands.rules()`:
     def rules(
         self,
         **extra: JSON,
@@ -10442,7 +10442,7 @@ class SCSheetCommands(SCNamespace):
           active one
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sheet.rules",
@@ -10451,7 +10451,7 @@ class SCSheetCommands(SCNamespace):
             },
         )
 
-    # Method `SCSheetCommands.unfold()`:
+    # Method `SheetCommands.unfold()`:
     def unfold(
         self,
         *,
@@ -10472,7 +10472,7 @@ class SCSheetCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sheet.unfold",
@@ -10483,16 +10483,16 @@ class SCSheetCommands(SCNamespace):
         )
 
 
-# Class `SCSketchCommands`:
+# Class `SketchCommands`:
 @dataclass(slots=True)
-class SCSketchCommands(SCNamespace):
+class SketchCommands(CommandNamespace):
     """The `sketch.*` commands.
 
     Constructor:
-    * `SCSketchCommands(transport)`
+    * `SketchCommands(transport)`
     """
 
-    # Method `SCSketchCommands.arc_center_point()`:
+    # Method `SketchCommands.arc_center_point()`:
     def arc_center_point(
         self,
         *,
@@ -10531,7 +10531,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.arc.center_point",
@@ -10545,7 +10545,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.arc_tangent()`:
+    # Method `SketchCommands.arc_tangent()`:
     def arc_tangent(
         self,
         *,
@@ -10575,7 +10575,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.arc.tangent",
@@ -10587,7 +10587,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.arc_three_point()`:
+    # Method `SketchCommands.arc_three_point()`:
     def arc_three_point(
         self,
         *,
@@ -10622,7 +10622,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.arc.three_point",
@@ -10635,7 +10635,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.auto_constrain()`:
+    # Method `SketchCommands.auto_constrain()`:
     def auto_constrain(
         self,
         *,
@@ -10664,7 +10664,7 @@ class SCSketchCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.auto_constrain",
@@ -10676,7 +10676,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.auto_constrain_from_datum()`:
+    # Method `SketchCommands.auto_constrain_from_datum()`:
     def auto_constrain_from_datum(
         self,
         *,
@@ -10699,7 +10699,7 @@ class SCSketchCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.auto_constrain_from_datum",
@@ -10709,7 +10709,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.auto_project()`:
+    # Method `SketchCommands.auto_project()`:
     def auto_project(
         self,
         *,
@@ -10731,7 +10731,7 @@ class SCSketchCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.auto_project",
@@ -10741,7 +10741,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.blend_curve()`:
+    # Method `SketchCommands.blend_curve()`:
     def blend_curve(
         self,
         *,
@@ -10773,7 +10773,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.blend_curve",
@@ -10785,7 +10785,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.break_()`:
+    # Method `SketchCommands.break_()`:
     def break_(
         self,
         *,
@@ -10816,7 +10816,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.break",
@@ -10828,7 +10828,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.break_link()`:
+    # Method `SketchCommands.break_link()`:
     def break_link(
         self,
         *,
@@ -10853,7 +10853,7 @@ class SCSketchCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.break_link",
@@ -10864,7 +10864,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.centerline()`:
+    # Method `SketchCommands.centerline()`:
     def centerline(
         self,
         *,
@@ -10889,7 +10889,7 @@ class SCSketchCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.centerline",
@@ -10900,7 +10900,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.chain()`:
+    # Method `SketchCommands.chain()`:
     def chain(
         self,
         *,
@@ -10922,7 +10922,7 @@ class SCSketchCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.chain",
@@ -10932,7 +10932,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.chamfer_distance_angle()`:
+    # Method `SketchCommands.chamfer_distance_angle()`:
     def chamfer_distance_angle(
         self,
         *,
@@ -10964,7 +10964,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.chamfer.distance_angle",
@@ -10976,7 +10976,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.chamfer_equal_distance()`:
+    # Method `SketchCommands.chamfer_equal_distance()`:
     def chamfer_equal_distance(
         self,
         *,
@@ -11005,7 +11005,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.chamfer.equal_distance",
@@ -11016,7 +11016,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.chamfer_two_distance()`:
+    # Method `SketchCommands.chamfer_two_distance()`:
     def chamfer_two_distance(
         self,
         *,
@@ -11048,7 +11048,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.chamfer.two_distance",
@@ -11060,7 +11060,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.circle_center()`:
+    # Method `SketchCommands.circle_center()`:
     def circle_center(
         self,
         *,
@@ -11098,7 +11098,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.circle.center",
@@ -11112,7 +11112,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.circle_three_point()`:
+    # Method `SketchCommands.circle_three_point()`:
     def circle_three_point(
         self,
         *,
@@ -11146,7 +11146,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.circle.three_point",
@@ -11159,7 +11159,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.circle_three_tangent()`:
+    # Method `SketchCommands.circle_three_tangent()`:
     def circle_three_tangent(
         self,
         *,
@@ -11186,7 +11186,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.circle.three_tangent",
@@ -11197,7 +11197,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.circle_two_point()`:
+    # Method `SketchCommands.circle_two_point()`:
     def circle_two_point(
         self,
         *,
@@ -11228,7 +11228,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.circle.two_point",
@@ -11240,7 +11240,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.circle_two_tangent()`:
+    # Method `SketchCommands.circle_two_tangent()`:
     def circle_two_tangent(
         self,
         *,
@@ -11273,7 +11273,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.circle.two_tangent",
@@ -11286,7 +11286,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.conic()`:
+    # Method `SketchCommands.conic()`:
     def conic(
         self,
         *,
@@ -11319,7 +11319,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.conic",
@@ -11332,7 +11332,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.constrainer()`:
+    # Method `SketchCommands.constrainer()`:
     def constrainer(
         self,
         *,
@@ -11356,7 +11356,7 @@ class SCSketchCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.constrainer",
@@ -11366,7 +11366,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.constraint_coincident()`:
+    # Method `SketchCommands.constraint_coincident()`:
     def constraint_coincident(
         self,
         *,
@@ -11395,7 +11395,7 @@ class SCSketchCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.constraint.coincident",
@@ -11406,7 +11406,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.constraint_collinear()`:
+    # Method `SketchCommands.constraint_collinear()`:
     def constraint_collinear(
         self,
         *,
@@ -11432,7 +11432,7 @@ class SCSketchCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.constraint.collinear",
@@ -11443,7 +11443,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.constraint_concentric()`:
+    # Method `SketchCommands.constraint_concentric()`:
     def constraint_concentric(
         self,
         *,
@@ -11467,7 +11467,7 @@ class SCSketchCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.constraint.concentric",
@@ -11478,7 +11478,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.constraint_curvature()`:
+    # Method `SketchCommands.constraint_curvature()`:
     def constraint_curvature(
         self,
         *,
@@ -11503,7 +11503,7 @@ class SCSketchCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.constraint.curvature",
@@ -11514,7 +11514,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.constraint_equal()`:
+    # Method `SketchCommands.constraint_equal()`:
     def constraint_equal(
         self,
         *,
@@ -11538,7 +11538,7 @@ class SCSketchCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.constraint.equal",
@@ -11549,7 +11549,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.constraint_fix()`:
+    # Method `SketchCommands.constraint_fix()`:
     def constraint_fix(
         self,
         *,
@@ -11576,7 +11576,7 @@ class SCSketchCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.constraint.fix",
@@ -11588,7 +11588,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.constraint_horizontal_vertical()`:
+    # Method `SketchCommands.constraint_horizontal_vertical()`:
     def constraint_horizontal_vertical(
         self,
         *,
@@ -11616,7 +11616,7 @@ class SCSketchCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.constraint.horizontal_vertical",
@@ -11628,7 +11628,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.constraint_midpoint()`:
+    # Method `SketchCommands.constraint_midpoint()`:
     def constraint_midpoint(
         self,
         *,
@@ -11653,7 +11653,7 @@ class SCSketchCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.constraint.midpoint",
@@ -11663,7 +11663,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.constraint_parallel()`:
+    # Method `SketchCommands.constraint_parallel()`:
     def constraint_parallel(
         self,
         *,
@@ -11689,7 +11689,7 @@ class SCSketchCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.constraint.parallel",
@@ -11700,7 +11700,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.constraint_perpendicular()`:
+    # Method `SketchCommands.constraint_perpendicular()`:
     def constraint_perpendicular(
         self,
         *,
@@ -11726,7 +11726,7 @@ class SCSketchCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.constraint.perpendicular",
@@ -11737,7 +11737,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.constraint_polygon()`:
+    # Method `SketchCommands.constraint_polygon()`:
     def constraint_polygon(
         self,
         *,
@@ -11759,7 +11759,7 @@ class SCSketchCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.constraint.polygon",
@@ -11769,7 +11769,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.constraint_symmetry()`:
+    # Method `SketchCommands.constraint_symmetry()`:
     def constraint_symmetry(
         self,
         *,
@@ -11806,7 +11806,7 @@ class SCSketchCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.constraint.symmetry",
@@ -11819,7 +11819,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.constraint_tangent()`:
+    # Method `SketchCommands.constraint_tangent()`:
     def constraint_tangent(
         self,
         *,
@@ -11845,7 +11845,7 @@ class SCSketchCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.constraint.tangent",
@@ -11856,7 +11856,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.construction()`:
+    # Method `SketchCommands.construction()`:
     def construction(
         self,
         *,
@@ -11880,7 +11880,7 @@ class SCSketchCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.construction",
@@ -11891,7 +11891,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.copy()`:
+    # Method `SketchCommands.copy()`:
     def copy(
         self,
         *,
@@ -11914,7 +11914,7 @@ class SCSketchCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.copy",
@@ -11924,7 +11924,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.create()`:
+    # Method `SketchCommands.create()`:
     def create(
         self,
         *,
@@ -11972,7 +11972,7 @@ class SCSketchCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.create",
@@ -11987,7 +11987,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.cut()`:
+    # Method `SketchCommands.cut()`:
     def cut(
         self,
         *,
@@ -12011,7 +12011,7 @@ class SCSketchCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.cut",
@@ -12021,7 +12021,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.delete()`:
+    # Method `SketchCommands.delete()`:
     def delete(
         self,
         *,
@@ -12042,7 +12042,7 @@ class SCSketchCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.delete",
@@ -12052,7 +12052,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.dimension()`:
+    # Method `SketchCommands.dimension()`:
     def dimension(
         self,
         *,
@@ -12108,7 +12108,7 @@ class SCSketchCommands(SCNamespace):
         * (`JSON`): Returns measured in unit (mm or deg)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.dimension",
@@ -12123,7 +12123,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.dimension_text()`:
+    # Method `SketchCommands.dimension_text()`:
     def dimension_text(
         self,
         *,
@@ -12150,7 +12150,7 @@ class SCSketchCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.dimension_text",
@@ -12162,7 +12162,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.drag()`:
+    # Method `SketchCommands.drag()`:
     def drag(
         self,
         *,
@@ -12208,7 +12208,7 @@ class SCSketchCommands(SCNamespace):
           requested move (0..1)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.drag",
@@ -12221,7 +12221,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.drag_end()`:
+    # Method `SketchCommands.drag_end()`:
     def drag_end(
         self,
         *,
@@ -12247,7 +12247,7 @@ class SCSketchCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.drag_end",
@@ -12257,7 +12257,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.draw_dimensioned()`:
+    # Method `SketchCommands.draw_dimensioned()`:
     def draw_dimensioned(
         self,
         *,
@@ -12290,7 +12290,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.draw.dimensioned",
@@ -12302,7 +12302,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.edit()`:
+    # Method `SketchCommands.edit()`:
     def edit(
         self,
         *,
@@ -12323,7 +12323,7 @@ class SCSketchCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.edit",
@@ -12333,7 +12333,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.edit_text()`:
+    # Method `SketchCommands.edit_text()`:
     def edit_text(
         self,
         *,
@@ -12409,7 +12409,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.edit_text",
@@ -12433,7 +12433,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.ellipse()`:
+    # Method `SketchCommands.ellipse()`:
     def ellipse(
         self,
         *,
@@ -12464,7 +12464,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.ellipse",
@@ -12476,7 +12476,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.export_dxf()`:
+    # Method `SketchCommands.export_dxf()`:
     def export_dxf(
         self,
         *,
@@ -12500,7 +12500,7 @@ class SCSketchCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.export_dxf",
@@ -12511,7 +12511,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.extend()`:
+    # Method `SketchCommands.extend()`:
     def extend(
         self,
         *,
@@ -12535,7 +12535,7 @@ class SCSketchCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.extend",
@@ -12546,7 +12546,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.fillet()`:
+    # Method `SketchCommands.fillet()`:
     def fillet(
         self,
         *,
@@ -12582,7 +12582,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.fillet",
@@ -12595,7 +12595,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.finish()`:
+    # Method `SketchCommands.finish()`:
     def finish(
         self,
         **extra: JSON,
@@ -12612,7 +12612,7 @@ class SCSketchCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.finish",
@@ -12621,7 +12621,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.finish_auto_constrain()`:
+    # Method `SketchCommands.finish_auto_constrain()`:
     def finish_auto_constrain(
         self,
         **extra: JSON,
@@ -12640,7 +12640,7 @@ class SCSketchCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.finish_auto_constrain",
@@ -12649,7 +12649,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.fit_curves_to_section()`:
+    # Method `SketchCommands.fit_curves_to_section()`:
     def fit_curves_to_section(
         self,
         *,
@@ -12676,7 +12676,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.fit_curves_to_section",
@@ -12686,7 +12686,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.glyphs()`:
+    # Method `SketchCommands.glyphs()`:
     def glyphs(
         self,
         *,
@@ -12708,7 +12708,7 @@ class SCSketchCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.glyphs",
@@ -12718,7 +12718,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.include_3d()`:
+    # Method `SketchCommands.include_3d()`:
     def include_3d(
         self,
         *,
@@ -12745,7 +12745,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.include_3d",
@@ -12755,7 +12755,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.infinite()`:
+    # Method `SketchCommands.infinite()`:
     def infinite(
         self,
         *,
@@ -12786,7 +12786,7 @@ class SCSketchCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.infinite",
@@ -12798,7 +12798,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.insert_dxf()`:
+    # Method `SketchCommands.insert_dxf()`:
     def insert_dxf(
         self,
         *,
@@ -12837,7 +12837,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.insert_dxf",
@@ -12852,7 +12852,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.insert_svg()`:
+    # Method `SketchCommands.insert_svg()`:
     def insert_svg(
         self,
         *,
@@ -12891,7 +12891,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.insert_svg",
@@ -12906,7 +12906,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.inspect()`:
+    # Method `SketchCommands.inspect()`:
     def inspect(
         self,
         *,
@@ -12927,7 +12927,7 @@ class SCSketchCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.inspect",
@@ -12937,7 +12937,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.intersect()`:
+    # Method `SketchCommands.intersect()`:
     def intersect(
         self,
         *,
@@ -12966,7 +12966,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.intersect",
@@ -12977,7 +12977,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.intersection_curve()`:
+    # Method `SketchCommands.intersection_curve()`:
     def intersection_curve(
         self,
         *,
@@ -13006,7 +13006,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.intersection_curve",
@@ -13017,7 +13017,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.isoparametric_curve()`:
+    # Method `SketchCommands.isoparametric_curve()`:
     def isoparametric_curve(
         self,
         *,
@@ -13048,7 +13048,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.isoparametric_curve",
@@ -13060,7 +13060,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.line()`:
+    # Method `SketchCommands.line()`:
     def line(
         self,
         *,
@@ -13104,7 +13104,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.line",
@@ -13119,7 +13119,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.line_midpoint()`:
+    # Method `SketchCommands.line_midpoint()`:
     def line_midpoint(
         self,
         *,
@@ -13149,7 +13149,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.line.midpoint",
@@ -13161,7 +13161,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.line3d()`:
+    # Method `SketchCommands.line3d()`:
     def line3d(
         self,
         *,
@@ -13188,7 +13188,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.line3d",
@@ -13198,7 +13198,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.loose_ends()`:
+    # Method `SketchCommands.loose_ends()`:
     def loose_ends(
         self,
         *,
@@ -13227,7 +13227,7 @@ class SCSketchCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.loose_ends",
@@ -13238,7 +13238,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.loose_ends_tie()`:
+    # Method `SketchCommands.loose_ends_tie()`:
     def loose_ends_tie(
         self,
         *,
@@ -13266,7 +13266,7 @@ class SCSketchCommands(SCNamespace):
         * (`JSON`): Returns constraints: [ids added]
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.loose_ends.tie",
@@ -13277,7 +13277,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.mirror()`:
+    # Method `SketchCommands.mirror()`:
     def mirror(
         self,
         *,
@@ -13304,7 +13304,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.mirror",
@@ -13315,7 +13315,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.move()`:
+    # Method `SketchCommands.move()`:
     def move(
         self,
         *,
@@ -13354,7 +13354,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.move",
@@ -13368,7 +13368,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.move3d()`:
+    # Method `SketchCommands.move3d()`:
     def move3d(
         self,
         *,
@@ -13400,7 +13400,7 @@ class SCSketchCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.move3d",
@@ -13413,7 +13413,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.move_point()`:
+    # Method `SketchCommands.move_point()`:
     def move_point(
         self,
         *,
@@ -13437,7 +13437,7 @@ class SCSketchCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.move_point",
@@ -13448,7 +13448,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.offset()`:
+    # Method `SketchCommands.offset()`:
     def offset(
         self,
         *,
@@ -13500,7 +13500,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.offset",
@@ -13517,7 +13517,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.offset_break()`:
+    # Method `SketchCommands.offset_break()`:
     def offset_break(
         self,
         *,
@@ -13539,7 +13539,7 @@ class SCSketchCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.offset.break",
@@ -13549,7 +13549,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.options()`:
+    # Method `SketchCommands.options()`:
     def options(
         self,
         *,
@@ -13599,7 +13599,7 @@ class SCSketchCommands(SCNamespace):
         * (`JSON`): Returns them all
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.options",
@@ -13618,7 +13618,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.paste()`:
+    # Method `SketchCommands.paste()`:
     def paste(
         self,
         *,
@@ -13648,7 +13648,7 @@ class SCSketchCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.paste",
@@ -13660,7 +13660,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.pattern_circular()`:
+    # Method `SketchCommands.pattern_circular()`:
     def pattern_circular(
         self,
         *,
@@ -13707,7 +13707,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.pattern.circular",
@@ -13722,7 +13722,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.pattern_rectangular()`:
+    # Method `SketchCommands.pattern_rectangular()`:
     def pattern_rectangular(
         self,
         *,
@@ -13787,7 +13787,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.pattern.rectangular",
@@ -13808,7 +13808,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.point()`:
+    # Method `SketchCommands.point()`:
     def point(
         self,
         *,
@@ -13841,7 +13841,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.point",
@@ -13853,7 +13853,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.point3d()`:
+    # Method `SketchCommands.point3d()`:
     def point3d(
         self,
         *,
@@ -13877,7 +13877,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.point3d",
@@ -13887,7 +13887,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.polygon_circumscribed()`:
+    # Method `SketchCommands.polygon_circumscribed()`:
     def polygon_circumscribed(
         self,
         *,
@@ -13924,7 +13924,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.polygon.circumscribed",
@@ -13938,7 +13938,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.polygon_edge()`:
+    # Method `SketchCommands.polygon_edge()`:
     def polygon_edge(
         self,
         *,
@@ -13972,7 +13972,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.polygon.edge",
@@ -13985,7 +13985,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.polygon_inscribed()`:
+    # Method `SketchCommands.polygon_inscribed()`:
     def polygon_inscribed(
         self,
         *,
@@ -14022,7 +14022,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.polygon.inscribed",
@@ -14036,7 +14036,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.project()`:
+    # Method `SketchCommands.project()`:
     def project(
         self,
         *,
@@ -14063,7 +14063,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.project",
@@ -14073,7 +14073,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.project_to_surface()`:
+    # Method `SketchCommands.project_to_surface()`:
     def project_to_surface(
         self,
         *,
@@ -14105,7 +14105,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.project_to_surface",
@@ -14117,7 +14117,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.rectangle_center()`:
+    # Method `SketchCommands.rectangle_center()`:
     def rectangle_center(
         self,
         *,
@@ -14150,7 +14150,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.rectangle.center",
@@ -14162,7 +14162,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.rectangle_rounded()`:
+    # Method `SketchCommands.rectangle_rounded()`:
     def rectangle_rounded(
         self,
         *,
@@ -14203,7 +14203,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.rectangle.rounded",
@@ -14216,7 +14216,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.rectangle_three_point()`:
+    # Method `SketchCommands.rectangle_three_point()`:
     def rectangle_three_point(
         self,
         *,
@@ -14250,7 +14250,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.rectangle.three_point",
@@ -14263,7 +14263,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.rectangle_two_point()`:
+    # Method `SketchCommands.rectangle_two_point()`:
     def rectangle_two_point(
         self,
         *,
@@ -14299,7 +14299,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.rectangle.two_point",
@@ -14312,7 +14312,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.redefine()`:
+    # Method `SketchCommands.redefine()`:
     def redefine(
         self,
         *,
@@ -14342,7 +14342,7 @@ class SCSketchCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.redefine",
@@ -14354,7 +14354,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.scale()`:
+    # Method `SketchCommands.scale()`:
     def scale(
         self,
         *,
@@ -14381,7 +14381,7 @@ class SCSketchCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.scale",
@@ -14393,7 +14393,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.slot_arc_center()`:
+    # Method `SketchCommands.slot_arc_center()`:
     def slot_arc_center(
         self,
         *,
@@ -14426,7 +14426,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.slot.arc_center",
@@ -14439,7 +14439,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.slot_arc_three_point()`:
+    # Method `SketchCommands.slot_arc_three_point()`:
     def slot_arc_three_point(
         self,
         *,
@@ -14472,7 +14472,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.slot.arc_three_point",
@@ -14485,7 +14485,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.slot_center_point()`:
+    # Method `SketchCommands.slot_center_point()`:
     def slot_center_point(
         self,
         *,
@@ -14515,7 +14515,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.slot.center_point",
@@ -14527,7 +14527,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.slot_center_to_center()`:
+    # Method `SketchCommands.slot_center_to_center()`:
     def slot_center_to_center(
         self,
         *,
@@ -14561,7 +14561,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.slot.center_to_center",
@@ -14574,7 +14574,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.slot_overall()`:
+    # Method `SketchCommands.slot_overall()`:
     def slot_overall(
         self,
         *,
@@ -14608,7 +14608,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.slot.overall",
@@ -14621,7 +14621,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.snap()`:
+    # Method `SketchCommands.snap()`:
     def snap(
         self,
         *,
@@ -14649,7 +14649,7 @@ class SCSketchCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.snap",
@@ -14661,7 +14661,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.solve()`:
+    # Method `SketchCommands.solve()`:
     def solve(
         self,
         **extra: JSON,
@@ -14680,7 +14680,7 @@ class SCSketchCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.solve",
@@ -14689,7 +14689,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.spline_control_point()`:
+    # Method `SketchCommands.spline_control_point()`:
     def spline_control_point(
         self,
         *,
@@ -14716,7 +14716,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.spline.control_point",
@@ -14727,7 +14727,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.spline_control_point_5()`:
+    # Method `SketchCommands.spline_control_point_5()`:
     def spline_control_point_5(
         self,
         *,
@@ -14753,7 +14753,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.spline.control_point_5",
@@ -14763,7 +14763,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.spline_fit_point()`:
+    # Method `SketchCommands.spline_fit_point()`:
     def spline_fit_point(
         self,
         *,
@@ -14794,7 +14794,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.spline.fit_point",
@@ -14805,7 +14805,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.spline3d()`:
+    # Method `SketchCommands.spline3d()`:
     def spline3d(
         self,
         *,
@@ -14830,7 +14830,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.spline3d",
@@ -14840,7 +14840,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.spun_profile()`:
+    # Method `SketchCommands.spun_profile()`:
     def spun_profile(
         self,
         *,
@@ -14870,7 +14870,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.spun_profile",
@@ -14881,7 +14881,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.text()`:
+    # Method `SketchCommands.text()`:
     def text(
         self,
         *,
@@ -14949,7 +14949,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.text",
@@ -14970,7 +14970,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.toggle_driven()`:
+    # Method `SketchCommands.toggle_driven()`:
     def toggle_driven(
         self,
         *,
@@ -14996,7 +14996,7 @@ class SCSketchCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.toggle_driven",
@@ -15007,7 +15007,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.trim()`:
+    # Method `SketchCommands.trim()`:
     def trim(
         self,
         *,
@@ -15035,7 +15035,7 @@ class SCSketchCommands(SCNamespace):
           sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.trim",
@@ -15046,7 +15046,7 @@ class SCSketchCommands(SCNamespace):
             },
         )
 
-    # Method `SCSketchCommands.trim_path()`:
+    # Method `SketchCommands.trim_path()`:
     def trim_path(
         self,
         *,
@@ -15079,7 +15079,7 @@ class SCSketchCommands(SCNamespace):
           sketch.dimension, sketch.constraint.*, sketch.delete…)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "sketch.trim.path",
@@ -15090,16 +15090,16 @@ class SCSketchCommands(SCNamespace):
         )
 
 
-# Class `SCSolidCommands`:
+# Class `SolidCommands`:
 @dataclass(slots=True)
-class SCSolidCommands(SCNamespace):
+class SolidCommands(CommandNamespace):
     """The `solid.*` commands.
 
     Constructor:
-    * `SCSolidCommands(transport)`
+    * `SolidCommands(transport)`
     """
 
-    # Method `SCSolidCommands.align()`:
+    # Method `SolidCommands.align()`:
     def align(
         self,
         *,
@@ -15147,7 +15147,7 @@ class SCSolidCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "solid.align",
@@ -15164,7 +15164,7 @@ class SCSolidCommands(SCNamespace):
             },
         )
 
-    # Method `SCSolidCommands.boundary_fill()`:
+    # Method `SolidCommands.boundary_fill()`:
     def boundary_fill(
         self,
         *,
@@ -15195,7 +15195,7 @@ class SCSolidCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "solid.boundary_fill",
@@ -15208,7 +15208,7 @@ class SCSolidCommands(SCNamespace):
             },
         )
 
-    # Method `SCSolidCommands.bounding_solid()`:
+    # Method `SolidCommands.bounding_solid()`:
     def bounding_solid(
         self,
         *,
@@ -15238,7 +15238,7 @@ class SCSolidCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "solid.bounding_solid",
@@ -15251,7 +15251,7 @@ class SCSolidCommands(SCNamespace):
             },
         )
 
-    # Method `SCSolidCommands.box()`:
+    # Method `SolidCommands.box()`:
     def box(
         self,
         length: Expr,
@@ -15305,7 +15305,7 @@ class SCSolidCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "solid.box",
@@ -15325,7 +15325,7 @@ class SCSolidCommands(SCNamespace):
             },
         )
 
-    # Method `SCSolidCommands.chamfer()`:
+    # Method `SolidCommands.chamfer()`:
     def chamfer(
         self,
         *,
@@ -15361,7 +15361,7 @@ class SCSolidCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "solid.chamfer",
@@ -15376,7 +15376,7 @@ class SCSolidCommands(SCNamespace):
             },
         )
 
-    # Method `SCSolidCommands.coil()`:
+    # Method `SolidCommands.coil()`:
     def coil(
         self,
         *,
@@ -15439,7 +15439,7 @@ class SCSolidCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "solid.coil",
@@ -15462,7 +15462,7 @@ class SCSolidCommands(SCNamespace):
             },
         )
 
-    # Method `SCSolidCommands.combine()`:
+    # Method `SolidCommands.combine()`:
     def combine(
         self,
         *,
@@ -15495,7 +15495,7 @@ class SCSolidCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "solid.combine",
@@ -15509,7 +15509,7 @@ class SCSolidCommands(SCNamespace):
             },
         )
 
-    # Method `SCSolidCommands.cylinder()`:
+    # Method `SolidCommands.cylinder()`:
     def cylinder(
         self,
         *,
@@ -15551,7 +15551,7 @@ class SCSolidCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "solid.cylinder",
@@ -15567,7 +15567,7 @@ class SCSolidCommands(SCNamespace):
             },
         )
 
-    # Method `SCSolidCommands.draft()`:
+    # Method `SolidCommands.draft()`:
     def draft(
         self,
         *,
@@ -15600,7 +15600,7 @@ class SCSolidCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "solid.draft",
@@ -15614,7 +15614,7 @@ class SCSolidCommands(SCNamespace):
             },
         )
 
-    # Method `SCSolidCommands.emboss()`:
+    # Method `SolidCommands.emboss()`:
     def emboss(
         self,
         *,
@@ -15652,7 +15652,7 @@ class SCSolidCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "solid.emboss",
@@ -15667,7 +15667,7 @@ class SCSolidCommands(SCNamespace):
             },
         )
 
-    # Method `SCSolidCommands.extrude()`:
+    # Method `SolidCommands.extrude()`:
     def extrude(
         self,
         *,
@@ -15786,7 +15786,7 @@ class SCSolidCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "solid.extrude",
@@ -15823,7 +15823,7 @@ class SCSolidCommands(SCNamespace):
             },
         )
 
-    # Method `SCSolidCommands.fillet()`:
+    # Method `SolidCommands.fillet()`:
     def fillet(
         self,
         *,
@@ -15900,7 +15900,7 @@ class SCSolidCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "solid.fillet",
@@ -15921,7 +15921,7 @@ class SCSolidCommands(SCNamespace):
             },
         )
 
-    # Method `SCSolidCommands.hole()`:
+    # Method `SolidCommands.hole()`:
     def hole(
         self,
         *,
@@ -15996,7 +15996,7 @@ class SCSolidCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "solid.hole",
@@ -16020,7 +16020,7 @@ class SCSolidCommands(SCNamespace):
             },
         )
 
-    # Method `SCSolidCommands.loft()`:
+    # Method `SolidCommands.loft()`:
     def loft(
         self,
         *,
@@ -16066,7 +16066,7 @@ class SCSolidCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "solid.loft",
@@ -16082,7 +16082,7 @@ class SCSolidCommands(SCNamespace):
             },
         )
 
-    # Method `SCSolidCommands.mirror()`:
+    # Method `SolidCommands.mirror()`:
     def mirror(
         self,
         *,
@@ -16112,7 +16112,7 @@ class SCSolidCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "solid.mirror",
@@ -16124,7 +16124,7 @@ class SCSolidCommands(SCNamespace):
             },
         )
 
-    # Method `SCSolidCommands.move()`:
+    # Method `SolidCommands.move()`:
     def move(
         self,
         *,
@@ -16158,7 +16158,7 @@ class SCSolidCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "solid.move",
@@ -16172,7 +16172,7 @@ class SCSolidCommands(SCNamespace):
             },
         )
 
-    # Method `SCSolidCommands.offset_face()`:
+    # Method `SolidCommands.offset_face()`:
     def offset_face(
         self,
         *,
@@ -16200,7 +16200,7 @@ class SCSolidCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "solid.offset_face",
@@ -16212,7 +16212,7 @@ class SCSolidCommands(SCNamespace):
             },
         )
 
-    # Method `SCSolidCommands.pattern_circular()`:
+    # Method `SolidCommands.pattern_circular()`:
     def pattern_circular(
         self,
         *,
@@ -16255,7 +16255,7 @@ class SCSolidCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "solid.pattern.circular",
@@ -16272,7 +16272,7 @@ class SCSolidCommands(SCNamespace):
             },
         )
 
-    # Method `SCSolidCommands.pattern_path()`:
+    # Method `SolidCommands.pattern_path()`:
     def pattern_path(
         self,
         *,
@@ -16314,7 +16314,7 @@ class SCSolidCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "solid.pattern.path",
@@ -16331,7 +16331,7 @@ class SCSolidCommands(SCNamespace):
             },
         )
 
-    # Method `SCSolidCommands.pattern_rectangular()`:
+    # Method `SolidCommands.pattern_rectangular()`:
     def pattern_rectangular(
         self,
         *,
@@ -16388,7 +16388,7 @@ class SCSolidCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "solid.pattern.rectangular",
@@ -16410,7 +16410,7 @@ class SCSolidCommands(SCNamespace):
             },
         )
 
-    # Method `SCSolidCommands.pipe()`:
+    # Method `SolidCommands.pipe()`:
     def pipe(
         self,
         *,
@@ -16452,7 +16452,7 @@ class SCSolidCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "solid.pipe",
@@ -16469,7 +16469,7 @@ class SCSolidCommands(SCNamespace):
             },
         )
 
-    # Method `SCSolidCommands.press_pull()`:
+    # Method `SolidCommands.press_pull()`:
     def press_pull(
         self,
         *,
@@ -16494,7 +16494,7 @@ class SCSolidCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "solid.press_pull",
@@ -16505,7 +16505,7 @@ class SCSolidCommands(SCNamespace):
             },
         )
 
-    # Method `SCSolidCommands.remove()`:
+    # Method `SolidCommands.remove()`:
     def remove(
         self,
         *,
@@ -16526,7 +16526,7 @@ class SCSolidCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "solid.remove",
@@ -16536,7 +16536,7 @@ class SCSolidCommands(SCNamespace):
             },
         )
 
-    # Method `SCSolidCommands.replace_face()`:
+    # Method `SolidCommands.replace_face()`:
     def replace_face(
         self,
         *,
@@ -16568,7 +16568,7 @@ class SCSolidCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "solid.replace_face",
@@ -16581,7 +16581,7 @@ class SCSolidCommands(SCNamespace):
             },
         )
 
-    # Method `SCSolidCommands.revolve()`:
+    # Method `SolidCommands.revolve()`:
     def revolve(
         self,
         *,
@@ -16643,7 +16643,7 @@ class SCSolidCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "solid.revolve",
@@ -16665,7 +16665,7 @@ class SCSolidCommands(SCNamespace):
             },
         )
 
-    # Method `SCSolidCommands.rib()`:
+    # Method `SolidCommands.rib()`:
     def rib(
         self,
         *,
@@ -16703,7 +16703,7 @@ class SCSolidCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "solid.rib",
@@ -16718,7 +16718,7 @@ class SCSolidCommands(SCNamespace):
             },
         )
 
-    # Method `SCSolidCommands.scale()`:
+    # Method `SolidCommands.scale()`:
     def scale(
         self,
         *,
@@ -16748,7 +16748,7 @@ class SCSolidCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "solid.scale",
@@ -16761,7 +16761,7 @@ class SCSolidCommands(SCNamespace):
             },
         )
 
-    # Method `SCSolidCommands.shell()`:
+    # Method `SolidCommands.shell()`:
     def shell(
         self,
         *,
@@ -16795,7 +16795,7 @@ class SCSolidCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "solid.shell",
@@ -16809,7 +16809,7 @@ class SCSolidCommands(SCNamespace):
             },
         )
 
-    # Method `SCSolidCommands.sphere()`:
+    # Method `SolidCommands.sphere()`:
     def sphere(
         self,
         *,
@@ -16849,7 +16849,7 @@ class SCSolidCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "solid.sphere",
@@ -16865,7 +16865,7 @@ class SCSolidCommands(SCNamespace):
             },
         )
 
-    # Method `SCSolidCommands.split_body()`:
+    # Method `SolidCommands.split_body()`:
     def split_body(
         self,
         *,
@@ -16899,7 +16899,7 @@ class SCSolidCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "solid.split_body",
@@ -16913,7 +16913,7 @@ class SCSolidCommands(SCNamespace):
             },
         )
 
-    # Method `SCSolidCommands.split_face()`:
+    # Method `SolidCommands.split_face()`:
     def split_face(
         self,
         *,
@@ -16947,7 +16947,7 @@ class SCSolidCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "solid.split_face",
@@ -16960,7 +16960,7 @@ class SCSolidCommands(SCNamespace):
             },
         )
 
-    # Method `SCSolidCommands.sweep()`:
+    # Method `SolidCommands.sweep()`:
     def sweep(
         self,
         *,
@@ -17031,7 +17031,7 @@ class SCSolidCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "solid.sweep",
@@ -17053,7 +17053,7 @@ class SCSolidCommands(SCNamespace):
             },
         )
 
-    # Method `SCSolidCommands.thread()`:
+    # Method `SolidCommands.thread()`:
     def thread(
         self,
         *,
@@ -17087,7 +17087,7 @@ class SCSolidCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "solid.thread",
@@ -17100,7 +17100,7 @@ class SCSolidCommands(SCNamespace):
             },
         )
 
-    # Method `SCSolidCommands.torus()`:
+    # Method `SolidCommands.torus()`:
     def torus(
         self,
         *,
@@ -17140,7 +17140,7 @@ class SCSolidCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "solid.torus",
@@ -17156,7 +17156,7 @@ class SCSolidCommands(SCNamespace):
             },
         )
 
-    # Method `SCSolidCommands.web()`:
+    # Method `SolidCommands.web()`:
     def web(
         self,
         *,
@@ -17192,7 +17192,7 @@ class SCSolidCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "solid.web",
@@ -17208,16 +17208,16 @@ class SCSolidCommands(SCNamespace):
         )
 
 
-# Class `SCSurfaceCommands`:
+# Class `SurfaceCommands`:
 @dataclass(slots=True)
-class SCSurfaceCommands(SCNamespace):
+class SurfaceCommands(CommandNamespace):
     """The `surface.*` commands.
 
     Constructor:
-    * `SCSurfaceCommands(transport)`
+    * `SurfaceCommands(transport)`
     """
 
-    # Method `SCSurfaceCommands.blend()`:
+    # Method `SurfaceCommands.blend()`:
     def blend(
         self,
         *,
@@ -17272,7 +17272,7 @@ class SCSurfaceCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "surface.blend",
@@ -17290,7 +17290,7 @@ class SCSurfaceCommands(SCNamespace):
             },
         )
 
-    # Method `SCSurfaceCommands.boundary()`:
+    # Method `SurfaceCommands.boundary()`:
     def boundary(
         self,
         *,
@@ -17354,7 +17354,7 @@ class SCSurfaceCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "surface.boundary",
@@ -17370,7 +17370,7 @@ class SCSurfaceCommands(SCNamespace):
             },
         )
 
-    # Method `SCSurfaceCommands.extend()`:
+    # Method `SurfaceCommands.extend()`:
     def extend(
         self,
         *,
@@ -17414,7 +17414,7 @@ class SCSurfaceCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "surface.extend",
@@ -17429,7 +17429,7 @@ class SCSurfaceCommands(SCNamespace):
             },
         )
 
-    # Method `SCSurfaceCommands.extrude()`:
+    # Method `SurfaceCommands.extrude()`:
     def extrude(
         self,
         *,
@@ -17473,7 +17473,7 @@ class SCSurfaceCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "surface.extrude",
@@ -17490,7 +17490,7 @@ class SCSurfaceCommands(SCNamespace):
             },
         )
 
-    # Method `SCSurfaceCommands.fair()`:
+    # Method `SurfaceCommands.fair()`:
     def fair(
         self,
         *,
@@ -17537,7 +17537,7 @@ class SCSurfaceCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "surface.fair",
@@ -17553,7 +17553,7 @@ class SCSurfaceCommands(SCNamespace):
             },
         )
 
-    # Method `SCSurfaceCommands.fillet()`:
+    # Method `SurfaceCommands.fillet()`:
     def fillet(
         self,
         *,
@@ -17584,7 +17584,7 @@ class SCSurfaceCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "surface.fillet",
@@ -17597,7 +17597,7 @@ class SCSurfaceCommands(SCNamespace):
             },
         )
 
-    # Method `SCSurfaceCommands.loft()`:
+    # Method `SurfaceCommands.loft()`:
     def loft(
         self,
         *,
@@ -17645,7 +17645,7 @@ class SCSurfaceCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "surface.loft",
@@ -17661,7 +17661,7 @@ class SCSurfaceCommands(SCNamespace):
             },
         )
 
-    # Method `SCSurfaceCommands.match()`:
+    # Method `SurfaceCommands.match()`:
     def match(
         self,
         *,
@@ -17698,7 +17698,7 @@ class SCSurfaceCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "surface.match",
@@ -17712,7 +17712,7 @@ class SCSurfaceCommands(SCNamespace):
             },
         )
 
-    # Method `SCSurfaceCommands.offset()`:
+    # Method `SurfaceCommands.offset()`:
     def offset(
         self,
         *,
@@ -17750,7 +17750,7 @@ class SCSurfaceCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "surface.offset",
@@ -17764,7 +17764,7 @@ class SCSurfaceCommands(SCNamespace):
             },
         )
 
-    # Method `SCSurfaceCommands.patch()`:
+    # Method `SurfaceCommands.patch()`:
     def patch(
         self,
         *,
@@ -17814,7 +17814,7 @@ class SCSurfaceCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "surface.patch",
@@ -17830,7 +17830,7 @@ class SCSurfaceCommands(SCNamespace):
             },
         )
 
-    # Method `SCSurfaceCommands.reverse_normal()`:
+    # Method `SurfaceCommands.reverse_normal()`:
     def reverse_normal(
         self,
         *,
@@ -17855,7 +17855,7 @@ class SCSurfaceCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "surface.reverse_normal",
@@ -17866,7 +17866,7 @@ class SCSurfaceCommands(SCNamespace):
             },
         )
 
-    # Method `SCSurfaceCommands.revolve()`:
+    # Method `SurfaceCommands.revolve()`:
     def revolve(
         self,
         *,
@@ -17909,7 +17909,7 @@ class SCSurfaceCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "surface.revolve",
@@ -17926,7 +17926,7 @@ class SCSurfaceCommands(SCNamespace):
             },
         )
 
-    # Method `SCSurfaceCommands.ruled()`:
+    # Method `SurfaceCommands.ruled()`:
     def ruled(
         self,
         *,
@@ -17981,7 +17981,7 @@ class SCSurfaceCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "surface.ruled",
@@ -17999,7 +17999,7 @@ class SCSurfaceCommands(SCNamespace):
             },
         )
 
-    # Method `SCSurfaceCommands.stitch()`:
+    # Method `SurfaceCommands.stitch()`:
     def stitch(
         self,
         *,
@@ -18024,7 +18024,7 @@ class SCSurfaceCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "surface.stitch",
@@ -18035,7 +18035,7 @@ class SCSurfaceCommands(SCNamespace):
             },
         )
 
-    # Method `SCSurfaceCommands.sweep()`:
+    # Method `SurfaceCommands.sweep()`:
     def sweep(
         self,
         *,
@@ -18087,7 +18087,7 @@ class SCSurfaceCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "surface.sweep",
@@ -18107,7 +18107,7 @@ class SCSurfaceCommands(SCNamespace):
             },
         )
 
-    # Method `SCSurfaceCommands.thicken()`:
+    # Method `SurfaceCommands.thicken()`:
     def thicken(
         self,
         *,
@@ -18140,7 +18140,7 @@ class SCSurfaceCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "surface.thicken",
@@ -18154,7 +18154,7 @@ class SCSurfaceCommands(SCNamespace):
             },
         )
 
-    # Method `SCSurfaceCommands.trim()`:
+    # Method `SurfaceCommands.trim()`:
     def trim(
         self,
         *,
@@ -18205,7 +18205,7 @@ class SCSurfaceCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "surface.trim",
@@ -18222,7 +18222,7 @@ class SCSurfaceCommands(SCNamespace):
             },
         )
 
-    # Method `SCSurfaceCommands.unstitch()`:
+    # Method `SurfaceCommands.unstitch()`:
     def unstitch(
         self,
         *,
@@ -18249,7 +18249,7 @@ class SCSurfaceCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "surface.unstitch",
@@ -18260,7 +18260,7 @@ class SCSurfaceCommands(SCNamespace):
             },
         )
 
-    # Method `SCSurfaceCommands.untrim()`:
+    # Method `SurfaceCommands.untrim()`:
     def untrim(
         self,
         *,
@@ -18296,7 +18296,7 @@ class SCSurfaceCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "surface.untrim",
@@ -18310,16 +18310,16 @@ class SCSurfaceCommands(SCNamespace):
         )
 
 
-# Class `SCTimelineCommands`:
+# Class `TimelineCommands`:
 @dataclass(slots=True)
-class SCTimelineCommands(SCNamespace):
+class TimelineCommands(CommandNamespace):
     """The `timeline.*` commands.
 
     Constructor:
-    * `SCTimelineCommands(transport)`
+    * `TimelineCommands(transport)`
     """
 
-    # Method `SCTimelineCommands.add()`:
+    # Method `TimelineCommands.add()`:
     def add(
         self,
         *,
@@ -18349,7 +18349,7 @@ class SCTimelineCommands(SCNamespace):
         * (`JSON`): feature, name, error, warning
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "timeline.add",
@@ -18360,7 +18360,7 @@ class SCTimelineCommands(SCNamespace):
             },
         )
 
-    # Method `SCTimelineCommands.compute_all()`:
+    # Method `TimelineCommands.compute_all()`:
     def compute_all(
         self,
         **extra: JSON,
@@ -18377,7 +18377,7 @@ class SCTimelineCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "timeline.compute_all",
@@ -18386,7 +18386,7 @@ class SCTimelineCommands(SCNamespace):
             },
         )
 
-    # Method `SCTimelineCommands.copy()`:
+    # Method `TimelineCommands.copy()`:
     def copy(
         self,
         *,
@@ -18407,7 +18407,7 @@ class SCTimelineCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "timeline.copy",
@@ -18417,7 +18417,7 @@ class SCTimelineCommands(SCNamespace):
             },
         )
 
-    # Method `SCTimelineCommands.delete()`:
+    # Method `TimelineCommands.delete()`:
     def delete(
         self,
         *,
@@ -18443,7 +18443,7 @@ class SCTimelineCommands(SCNamespace):
           features that worked and now fail)
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "timeline.delete",
@@ -18454,7 +18454,7 @@ class SCTimelineCommands(SCNamespace):
             },
         )
 
-    # Method `SCTimelineCommands.dependents()`:
+    # Method `TimelineCommands.dependents()`:
     def dependents(
         self,
         *,
@@ -18476,7 +18476,7 @@ class SCTimelineCommands(SCNamespace):
           fail without it
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "timeline.dependents",
@@ -18486,7 +18486,7 @@ class SCTimelineCommands(SCNamespace):
             },
         )
 
-    # Method `SCTimelineCommands.edit()`:
+    # Method `TimelineCommands.edit()`:
     def edit(
         self,
         *,
@@ -18516,7 +18516,7 @@ class SCTimelineCommands(SCNamespace):
           whose earlier result for the same inputs was reused
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "timeline.edit",
@@ -18527,7 +18527,7 @@ class SCTimelineCommands(SCNamespace):
             },
         )
 
-    # Method `SCTimelineCommands.export_script()`:
+    # Method `TimelineCommands.export_script()`:
     def export_script(
         self,
         *,
@@ -18551,7 +18551,7 @@ class SCTimelineCommands(SCNamespace):
           components and assemblies are not supported yet
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "timeline.export_script",
@@ -18561,7 +18561,7 @@ class SCTimelineCommands(SCNamespace):
             },
         )
 
-    # Method `SCTimelineCommands.group()`:
+    # Method `TimelineCommands.group()`:
     def group(
         self,
         *,
@@ -18588,7 +18588,7 @@ class SCTimelineCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "timeline.group",
@@ -18600,7 +18600,7 @@ class SCTimelineCommands(SCNamespace):
             },
         )
 
-    # Method `SCTimelineCommands.inspect()`:
+    # Method `TimelineCommands.inspect()`:
     def inspect(
         self,
         *,
@@ -18624,7 +18624,7 @@ class SCTimelineCommands(SCNamespace):
           set), error, warning
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "timeline.inspect",
@@ -18634,7 +18634,7 @@ class SCTimelineCommands(SCNamespace):
             },
         )
 
-    # Method `SCTimelineCommands.move_many()`:
+    # Method `TimelineCommands.move_many()`:
     def move_many(
         self,
         *,
@@ -18667,7 +18667,7 @@ class SCTimelineCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "timeline.move_many",
@@ -18680,7 +18680,7 @@ class SCTimelineCommands(SCNamespace):
             },
         )
 
-    # Method `SCTimelineCommands.move_to_group()`:
+    # Method `TimelineCommands.move_to_group()`:
     def move_to_group(
         self,
         *,
@@ -18707,7 +18707,7 @@ class SCTimelineCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "timeline.move_to_group",
@@ -18719,7 +18719,7 @@ class SCTimelineCommands(SCNamespace):
             },
         )
 
-    # Method `SCTimelineCommands.paste()`:
+    # Method `TimelineCommands.paste()`:
     def paste(
         self,
         *,
@@ -18742,7 +18742,7 @@ class SCTimelineCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "timeline.paste",
@@ -18752,7 +18752,7 @@ class SCTimelineCommands(SCNamespace):
             },
         )
 
-    # Method `SCTimelineCommands.redefine()`:
+    # Method `TimelineCommands.redefine()`:
     def redefine(
         self,
         *,
@@ -18779,7 +18779,7 @@ class SCTimelineCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "timeline.redefine",
@@ -18791,7 +18791,7 @@ class SCTimelineCommands(SCNamespace):
             },
         )
 
-    # Method `SCTimelineCommands.rename()`:
+    # Method `TimelineCommands.rename()`:
     def rename(
         self,
         *,
@@ -18815,7 +18815,7 @@ class SCTimelineCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "timeline.rename",
@@ -18826,7 +18826,7 @@ class SCTimelineCommands(SCNamespace):
             },
         )
 
-    # Method `SCTimelineCommands.rename_group()`:
+    # Method `TimelineCommands.rename_group()`:
     def rename_group(
         self,
         *,
@@ -18850,7 +18850,7 @@ class SCTimelineCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "timeline.rename_group",
@@ -18861,7 +18861,7 @@ class SCTimelineCommands(SCNamespace):
             },
         )
 
-    # Method `SCTimelineCommands.reorder()`:
+    # Method `TimelineCommands.reorder()`:
     def reorder(
         self,
         *,
@@ -18887,7 +18887,7 @@ class SCTimelineCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "timeline.reorder",
@@ -18898,7 +18898,7 @@ class SCTimelineCommands(SCNamespace):
             },
         )
 
-    # Method `SCTimelineCommands.reorder_many()`:
+    # Method `TimelineCommands.reorder_many()`:
     def reorder_many(
         self,
         *,
@@ -18925,7 +18925,7 @@ class SCTimelineCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "timeline.reorder_many",
@@ -18936,7 +18936,7 @@ class SCTimelineCommands(SCNamespace):
             },
         )
 
-    # Method `SCTimelineCommands.roll_to()`:
+    # Method `TimelineCommands.roll_to()`:
     def roll_to(
         self,
         *,
@@ -18962,7 +18962,7 @@ class SCTimelineCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "timeline.roll_to",
@@ -18973,7 +18973,7 @@ class SCTimelineCommands(SCNamespace):
             },
         )
 
-    # Method `SCTimelineCommands.rollback()`:
+    # Method `TimelineCommands.rollback()`:
     def rollback(
         self,
         *,
@@ -18996,7 +18996,7 @@ class SCTimelineCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "timeline.rollback",
@@ -19006,7 +19006,7 @@ class SCTimelineCommands(SCNamespace):
             },
         )
 
-    # Method `SCTimelineCommands.suppress()`:
+    # Method `TimelineCommands.suppress()`:
     def suppress(
         self,
         *,
@@ -19034,7 +19034,7 @@ class SCTimelineCommands(SCNamespace):
         * (`JSON`): feature: id (or features: [ids]), suppressed
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "timeline.suppress",
@@ -19046,7 +19046,7 @@ class SCTimelineCommands(SCNamespace):
             },
         )
 
-    # Method `SCTimelineCommands.ungroup()`:
+    # Method `TimelineCommands.ungroup()`:
     def ungroup(
         self,
         *,
@@ -19070,7 +19070,7 @@ class SCTimelineCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "timeline.ungroup",
@@ -19082,16 +19082,16 @@ class SCTimelineCommands(SCNamespace):
         )
 
 
-# Class `SCViewCommands`:
+# Class `ViewCommands`:
 @dataclass(slots=True)
-class SCViewCommands(SCNamespace):
+class ViewCommands(CommandNamespace):
     """The `view.*` commands.
 
     Constructor:
-    * `SCViewCommands(transport)`
+    * `ViewCommands(transport)`
     """
 
-    # Method `SCViewCommands.ambient_occlusion()`:
+    # Method `ViewCommands.ambient_occlusion()`:
     def ambient_occlusion(
         self,
         *,
@@ -19113,7 +19113,7 @@ class SCViewCommands(SCNamespace):
           viewport
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "view.ambient_occlusion",
@@ -19123,7 +19123,7 @@ class SCViewCommands(SCNamespace):
             },
         )
 
-    # Method `SCViewCommands.apply()`:
+    # Method `ViewCommands.apply()`:
     def apply(
         self,
         *,
@@ -19149,7 +19149,7 @@ class SCViewCommands(SCNamespace):
           there. View state: not saved, not an undo step
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "view.apply",
@@ -19160,7 +19160,7 @@ class SCViewCommands(SCNamespace):
             },
         )
 
-    # Method `SCViewCommands.delete()`:
+    # Method `ViewCommands.delete()`:
     def delete(
         self,
         *,
@@ -19181,7 +19181,7 @@ class SCViewCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "view.delete",
@@ -19191,7 +19191,7 @@ class SCViewCommands(SCNamespace):
             },
         )
 
-    # Method `SCViewCommands.graphics_preset()`:
+    # Method `ViewCommands.graphics_preset()`:
     def graphics_preset(
         self,
         *,
@@ -19214,7 +19214,7 @@ class SCViewCommands(SCNamespace):
           Performance: no AO, Normal, no SSAA
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "view.graphics_preset",
@@ -19224,7 +19224,7 @@ class SCViewCommands(SCNamespace):
             },
         )
 
-    # Method `SCViewCommands.history_layout()`:
+    # Method `ViewCommands.history_layout()`:
     def history_layout(
         self,
         *,
@@ -19252,7 +19252,7 @@ class SCViewCommands(SCNamespace):
           a dialog
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "view.history_layout",
@@ -19264,7 +19264,7 @@ class SCViewCommands(SCNamespace):
             },
         )
 
-    # Method `SCViewCommands.layout()`:
+    # Method `ViewCommands.layout()`:
     def layout(
         self,
         *,
@@ -19286,7 +19286,7 @@ class SCViewCommands(SCNamespace):
           opens a dialog
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "view.layout",
@@ -19296,7 +19296,7 @@ class SCViewCommands(SCNamespace):
             },
         )
 
-    # Method `SCViewCommands.list()`:
+    # Method `ViewCommands.list()`:
     def list(
         self,
         **extra: JSON,
@@ -19313,7 +19313,7 @@ class SCViewCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "view.list",
@@ -19322,7 +19322,7 @@ class SCViewCommands(SCNamespace):
             },
         )
 
-    # Method `SCViewCommands.navigate()`:
+    # Method `ViewCommands.navigate()`:
     def navigate(
         self,
         *,
@@ -19374,7 +19374,7 @@ class SCViewCommands(SCNamespace):
         * (`JSON`): camera, fit, continuous?
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "view.navigate",
@@ -19394,7 +19394,7 @@ class SCViewCommands(SCNamespace):
             },
         )
 
-    # Method `SCViewCommands.normal_to()`:
+    # Method `ViewCommands.normal_to()`:
     def normal_to(
         self,
         *,
@@ -19417,7 +19417,7 @@ class SCViewCommands(SCNamespace):
           flip the side; preserves scale and projection
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "view.normal_to",
@@ -19427,7 +19427,7 @@ class SCViewCommands(SCNamespace):
             },
         )
 
-    # Method `SCViewCommands.rename()`:
+    # Method `ViewCommands.rename()`:
     def rename(
         self,
         *,
@@ -19451,7 +19451,7 @@ class SCViewCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "view.rename",
@@ -19462,7 +19462,7 @@ class SCViewCommands(SCNamespace):
             },
         )
 
-    # Method `SCViewCommands.save()`:
+    # Method `ViewCommands.save()`:
     def save(
         self,
         *,
@@ -19487,7 +19487,7 @@ class SCViewCommands(SCNamespace):
         * (`JSON`): The command result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
         return self.execute(
             "view.save",
@@ -19499,183 +19499,183 @@ class SCViewCommands(SCNamespace):
         )
 
 
-# Class `SCPyBind`:
+# Class `PyBind`:
 @dataclass(slots=True)
-class SCPyBind:
+class PyBind:
     """The top level of `scraftpybind`: SolidCraft's commands.
 
     The commands are grouped by namespace, so `sketch.create` is
-    `SCPyBind.sketch.create()`.
+    `PyBind.sketch.create()`.
 
     Attributes:
-    * `transport` (`SCTransport`): How the commands are sent.
-    * `appearance` (`SCAppearanceCommands`):
+    * `transport` (`Transport`): How the commands are sent.
+    * `appearance` (`AppearanceCommands`):
       The `appearance.*` commands.
-    * `assembly` (`SCAssemblyCommands`):
+    * `assembly` (`AssemblyCommands`):
       The `assembly.*` commands.
-    * `body` (`SCBodyCommands`):
+    * `body` (`BodyCommands`):
       The `body.*` commands.
-    * `browser` (`SCBrowserCommands`):
+    * `browser` (`BrowserCommands`):
       The `browser.*` commands.
-    * `canvas` (`SCCanvasCommands`):
+    * `canvas` (`CanvasCommands`):
       The `canvas.*` commands.
-    * `component` (`SCComponentCommands`):
+    * `component` (`ComponentCommands`):
       The `component.*` commands.
-    * `config` (`SCConfigCommands`):
+    * `config` (`ConfigCommands`):
       The `config.*` commands.
-    * `construct` (`SCConstructCommands`):
+    * `construct` (`ConstructCommands`):
       The `construct.*` commands.
-    * `contact` (`SCContactCommands`):
+    * `contact` (`ContactCommands`):
       The `contact.*` commands.
-    * `diagnostics` (`SCDiagnosticsCommands`):
+    * `diagnostics` (`DiagnosticsCommands`):
       The `diagnostics.*` commands.
-    * `doc` (`SCDocCommands`):
+    * `doc` (`DocCommands`):
       The `doc.*` commands.
-    * `document` (`SCDocumentCommands`):
+    * `document` (`DocumentCommands`):
       The `document.*` commands.
-    * `edit` (`SCEditCommands`):
+    * `edit` (`EditCommands`):
       The `edit.*` commands.
-    * `engine` (`SCEngineCommands`):
+    * `engine` (`EngineCommands`):
       The `engine.*` commands.
-    * `explode` (`SCExplodeCommands`):
+    * `explode` (`ExplodeCommands`):
       The `explode.*` commands.
-    * `expr` (`SCExprCommands`):
+    * `expr` (`ExprCommands`):
       The `expr.*` commands.
-    * `face` (`SCFaceCommands`):
+    * `face` (`FaceCommands`):
       The `face.*` commands.
-    * `file` (`SCFileCommands`):
+    * `file` (`FileCommands`):
       The `file.*` commands.
-    * `inspect` (`SCInspectCommands`):
+    * `inspect` (`InspectCommands`):
       The `inspect.*` commands.
-    * `joint` (`SCJointCommands`):
+    * `joint` (`JointCommands`):
       The `joint.*` commands.
-    * `library` (`SCLibraryCommands`):
+    * `library` (`LibraryCommands`):
       The `library.*` commands.
-    * `material` (`SCMaterialCommands`):
+    * `material` (`MaterialCommands`):
       The `material.*` commands.
-    * `mesh` (`SCMeshCommands`):
+    * `mesh` (`MeshCommands`):
       The `mesh.*` commands.
-    * `model` (`SCModelCommands`):
+    * `model` (`ModelCommands`):
       The `model.*` commands.
-    * `motion` (`SCMotionCommands`):
+    * `motion` (`MotionCommands`):
       The `motion.*` commands.
-    * `occurrence` (`SCOccurrenceCommands`):
+    * `occurrence` (`OccurrenceCommands`):
       The `occurrence.*` commands.
-    * `parameters` (`SCParametersCommands`):
+    * `parameters` (`ParametersCommands`):
       The `parameters.*` commands.
-    * `parts` (`SCPartsCommands`):
+    * `parts` (`PartsCommands`):
       The `parts.*` commands.
-    * `plastic` (`SCPlasticCommands`):
+    * `plastic` (`PlasticCommands`):
       The `plastic.*` commands.
-    * `render` (`SCRenderCommands`):
+    * `render` (`RenderCommands`):
       The `render.*` commands.
-    * `select` (`SCSelectCommands`):
+    * `select` (`SelectCommands`):
       The `select.*` commands.
-    * `selection` (`SCSelectionCommands`):
+    * `selection` (`SelectionCommands`):
       The `selection.*` commands.
-    * `sheet` (`SCSheetCommands`):
+    * `sheet` (`SheetCommands`):
       The `sheet.*` commands.
-    * `sketch` (`SCSketchCommands`):
+    * `sketch` (`SketchCommands`):
       The `sketch.*` commands.
-    * `solid` (`SCSolidCommands`):
+    * `solid` (`SolidCommands`):
       The `solid.*` commands.
-    * `surface` (`SCSurfaceCommands`):
+    * `surface` (`SurfaceCommands`):
       The `surface.*` commands.
-    * `timeline` (`SCTimelineCommands`):
+    * `timeline` (`TimelineCommands`):
       The `timeline.*` commands.
-    * `view` (`SCViewCommands`):
+    * `view` (`ViewCommands`):
       The `view.*` commands.
 
     Constructor:
-    * `SCPyBind(transport)`
+    * `PyBind(transport)`
     """
 
     # Constructor arguments:
-    transport: SCTransport = field(init=True)
+    transport: Transport = field(init=True)
 
     # The namespaces, made by `__post_init__()` (alphabetized):
-    appearance: SCAppearanceCommands = field(init=False)
-    assembly: SCAssemblyCommands = field(init=False)
-    body: SCBodyCommands = field(init=False)
-    browser: SCBrowserCommands = field(init=False)
-    canvas: SCCanvasCommands = field(init=False)
-    component: SCComponentCommands = field(init=False)
-    config: SCConfigCommands = field(init=False)
-    construct: SCConstructCommands = field(init=False)
-    contact: SCContactCommands = field(init=False)
-    diagnostics: SCDiagnosticsCommands = field(init=False)
-    doc: SCDocCommands = field(init=False)
-    document: SCDocumentCommands = field(init=False)
-    edit: SCEditCommands = field(init=False)
-    engine: SCEngineCommands = field(init=False)
-    explode: SCExplodeCommands = field(init=False)
-    expr: SCExprCommands = field(init=False)
-    face: SCFaceCommands = field(init=False)
-    file: SCFileCommands = field(init=False)
-    inspect: SCInspectCommands = field(init=False)
-    joint: SCJointCommands = field(init=False)
-    library: SCLibraryCommands = field(init=False)
-    material: SCMaterialCommands = field(init=False)
-    mesh: SCMeshCommands = field(init=False)
-    model: SCModelCommands = field(init=False)
-    motion: SCMotionCommands = field(init=False)
-    occurrence: SCOccurrenceCommands = field(init=False)
-    parameters: SCParametersCommands = field(init=False)
-    parts: SCPartsCommands = field(init=False)
-    plastic: SCPlasticCommands = field(init=False)
-    render: SCRenderCommands = field(init=False)
-    select: SCSelectCommands = field(init=False)
-    selection: SCSelectionCommands = field(init=False)
-    sheet: SCSheetCommands = field(init=False)
-    sketch: SCSketchCommands = field(init=False)
-    solid: SCSolidCommands = field(init=False)
-    surface: SCSurfaceCommands = field(init=False)
-    timeline: SCTimelineCommands = field(init=False)
-    view: SCViewCommands = field(init=False)
+    appearance: AppearanceCommands = field(init=False)
+    assembly: AssemblyCommands = field(init=False)
+    body: BodyCommands = field(init=False)
+    browser: BrowserCommands = field(init=False)
+    canvas: CanvasCommands = field(init=False)
+    component: ComponentCommands = field(init=False)
+    config: ConfigCommands = field(init=False)
+    construct: ConstructCommands = field(init=False)
+    contact: ContactCommands = field(init=False)
+    diagnostics: DiagnosticsCommands = field(init=False)
+    doc: DocCommands = field(init=False)
+    document: DocumentCommands = field(init=False)
+    edit: EditCommands = field(init=False)
+    engine: EngineCommands = field(init=False)
+    explode: ExplodeCommands = field(init=False)
+    expr: ExprCommands = field(init=False)
+    face: FaceCommands = field(init=False)
+    file: FileCommands = field(init=False)
+    inspect: InspectCommands = field(init=False)
+    joint: JointCommands = field(init=False)
+    library: LibraryCommands = field(init=False)
+    material: MaterialCommands = field(init=False)
+    mesh: MeshCommands = field(init=False)
+    model: ModelCommands = field(init=False)
+    motion: MotionCommands = field(init=False)
+    occurrence: OccurrenceCommands = field(init=False)
+    parameters: ParametersCommands = field(init=False)
+    parts: PartsCommands = field(init=False)
+    plastic: PlasticCommands = field(init=False)
+    render: RenderCommands = field(init=False)
+    select: SelectCommands = field(init=False)
+    selection: SelectionCommands = field(init=False)
+    sheet: SheetCommands = field(init=False)
+    sketch: SketchCommands = field(init=False)
+    solid: SolidCommands = field(init=False)
+    surface: SurfaceCommands = field(init=False)
+    timeline: TimelineCommands = field(init=False)
+    view: ViewCommands = field(init=False)
 
-    # Method `SCPyBind.__post_init__()`:
+    # Method `PyBind.__post_init__()`:
     def __post_init__(self) -> None:
         """Make the namespaces, all sharing the one transport."""
-        self.appearance = SCAppearanceCommands(self.transport)
-        self.assembly = SCAssemblyCommands(self.transport)
-        self.body = SCBodyCommands(self.transport)
-        self.browser = SCBrowserCommands(self.transport)
-        self.canvas = SCCanvasCommands(self.transport)
-        self.component = SCComponentCommands(self.transport)
-        self.config = SCConfigCommands(self.transport)
-        self.construct = SCConstructCommands(self.transport)
-        self.contact = SCContactCommands(self.transport)
-        self.diagnostics = SCDiagnosticsCommands(self.transport)
-        self.doc = SCDocCommands(self.transport)
-        self.document = SCDocumentCommands(self.transport)
-        self.edit = SCEditCommands(self.transport)
-        self.engine = SCEngineCommands(self.transport)
-        self.explode = SCExplodeCommands(self.transport)
-        self.expr = SCExprCommands(self.transport)
-        self.face = SCFaceCommands(self.transport)
-        self.file = SCFileCommands(self.transport)
-        self.inspect = SCInspectCommands(self.transport)
-        self.joint = SCJointCommands(self.transport)
-        self.library = SCLibraryCommands(self.transport)
-        self.material = SCMaterialCommands(self.transport)
-        self.mesh = SCMeshCommands(self.transport)
-        self.model = SCModelCommands(self.transport)
-        self.motion = SCMotionCommands(self.transport)
-        self.occurrence = SCOccurrenceCommands(self.transport)
-        self.parameters = SCParametersCommands(self.transport)
-        self.parts = SCPartsCommands(self.transport)
-        self.plastic = SCPlasticCommands(self.transport)
-        self.render = SCRenderCommands(self.transport)
-        self.select = SCSelectCommands(self.transport)
-        self.selection = SCSelectionCommands(self.transport)
-        self.sheet = SCSheetCommands(self.transport)
-        self.sketch = SCSketchCommands(self.transport)
-        self.solid = SCSolidCommands(self.transport)
-        self.surface = SCSurfaceCommands(self.transport)
-        self.timeline = SCTimelineCommands(self.transport)
-        self.view = SCViewCommands(self.transport)
+        self.appearance = AppearanceCommands(self.transport)
+        self.assembly = AssemblyCommands(self.transport)
+        self.body = BodyCommands(self.transport)
+        self.browser = BrowserCommands(self.transport)
+        self.canvas = CanvasCommands(self.transport)
+        self.component = ComponentCommands(self.transport)
+        self.config = ConfigCommands(self.transport)
+        self.construct = ConstructCommands(self.transport)
+        self.contact = ContactCommands(self.transport)
+        self.diagnostics = DiagnosticsCommands(self.transport)
+        self.doc = DocCommands(self.transport)
+        self.document = DocumentCommands(self.transport)
+        self.edit = EditCommands(self.transport)
+        self.engine = EngineCommands(self.transport)
+        self.explode = ExplodeCommands(self.transport)
+        self.expr = ExprCommands(self.transport)
+        self.face = FaceCommands(self.transport)
+        self.file = FileCommands(self.transport)
+        self.inspect = InspectCommands(self.transport)
+        self.joint = JointCommands(self.transport)
+        self.library = LibraryCommands(self.transport)
+        self.material = MaterialCommands(self.transport)
+        self.mesh = MeshCommands(self.transport)
+        self.model = ModelCommands(self.transport)
+        self.motion = MotionCommands(self.transport)
+        self.occurrence = OccurrenceCommands(self.transport)
+        self.parameters = ParametersCommands(self.transport)
+        self.parts = PartsCommands(self.transport)
+        self.plastic = PlasticCommands(self.transport)
+        self.render = RenderCommands(self.transport)
+        self.select = SelectCommands(self.transport)
+        self.selection = SelectionCommands(self.transport)
+        self.sheet = SheetCommands(self.transport)
+        self.sketch = SketchCommands(self.transport)
+        self.solid = SolidCommands(self.transport)
+        self.surface = SurfaceCommands(self.transport)
+        self.timeline = TimelineCommands(self.transport)
+        self.view = ViewCommands(self.transport)
 
-    # Method `SCPyBind.execute()`:
+    # Method `PyBind.execute()`:
     def execute(self, command: str, params: Mapping[str, JSON]) -> JSON:
         """Run any SolidCraft command by its id (`engine.execute`).
 
@@ -19689,9 +19689,9 @@ class SCPyBind:
         * (`JSON`): The command's result.
 
         Raises:
-        * `SCSolidCraftError`: If the command fails.
+        * `SolidCraftError`: If the command fails.
         """
-        return SCNamespace(self.transport).execute(command, params)
+        return CommandNamespace(self.transport).execute(command, params)
 
 
 # End the generated command classes.
@@ -19727,7 +19727,7 @@ def _plate(where: str) -> None:
     * `where` (`str`): A GUI's control port, or `headless`.
     """
     with connect(where) as transport:
-        solidcraft: SCPyBind = SCPyBind(transport)
+        solidcraft: PyBind = PyBind(transport)
 
         # Sketch a 100 x 60 mm rectangle with a 20 mm circle inside it.
         solidcraft.sketch.create(plane="XY", name="Plate")
@@ -19750,7 +19750,7 @@ def _plate(where: str) -> None:
         # headless, there is nothing to see, so export it instead.
         solidcraft.appearance.assign(bodies=["Plate"], color="#ADD8E6")
         solidcraft.view.apply(view="iso")
-        if isinstance(transport, SCHeadlessTransport):
+        if isinstance(transport, HeadlessTransport):
             step: Path = Path("scraftpybind_plate.step").resolve()
             solidcraft.file.export(path=str(step))
             print(f"Wrote {step}")

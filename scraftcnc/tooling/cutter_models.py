@@ -58,24 +58,24 @@ from pathlib import Path
 from typing import ClassVar, cast
 
 from ..model_cache import (
-    SCCacheable,
-    SCInserted,
-    SCModelCache,
+    Cacheable,
+    InsertedModel,
+    ModelCache,
     cache_for,
     placement_matrix,
 )
-from ..plot import SCStep, SpacePoint, send_batch, sketch_steps
-from ..pybind.scraftpybind import JSON, SCPyBind, connect
+from ..plot import InstallStep, SpacePoint, send_batch, sketch_steps
+from ..pybind.scraftpybind import JSON, PyBind, connect
 from ..shops import (
     ANGLE,
     CNC_KINDS,
     LENGTH,
-    SCShopError,
+    ShopError,
     check_tool,
     measure,
     read,
 )
-from .registry import SCRegistry
+from .registry import Registry
 from .registry import key as registry_key
 
 # A profile: `(r, z)` points, in inches.
@@ -576,7 +576,7 @@ def flute_steps(
     runs: Sequence[FluteRun],
     at: tuple[float, float, float] = (0.0, 0.0, 0.0),
     mm_per_unit: float = MM_PER_INCH,
-) -> list[SCStep]:
+) -> list[InstallStep]:
     """Return the steps that draw flute lines as a whole 3D sketch.
 
     Arguments:
@@ -587,9 +587,9 @@ def flute_steps(
     * `mm_per_unit` (`float`): The scale to millimeters.
 
     Returns:
-    * (`list[SCStep]`): The steps, for `send_batch()`.
+    * (`list[InstallStep]`): The steps, for `send_batch()`.
     """
-    drawing: list[SCStep] = [
+    drawing: list[InstallStep] = [
         {
             "command": command,
             "params": {
@@ -608,11 +608,11 @@ def flute_steps(
 
 
 # Function `as_component()`:
-def as_component(solidcraft: SCPyBind, body: str, sketch: str) -> str:
+def as_component(solidcraft: PyBind, body: str, sketch: str) -> str:
     """Put a body and its sketch in a new component, free to move.
 
     Arguments:
-    * `solidcraft` (`SCPyBind`): The SolidCraft session.
+    * `solidcraft` (`PyBind`): The SolidCraft session.
     * `body` (`str`): The body's name.
     * `sketch` (`str`): The sketch's name.
 
@@ -632,14 +632,14 @@ def as_component(solidcraft: SCPyBind, body: str, sketch: str) -> str:
 
 
 # Function `free_occurrence()`:
-def free_occurrence(solidcraft: SCPyBind, component_id: JSON) -> str:
+def free_occurrence(solidcraft: PyBind, component_id: JSON) -> str:
     """Return a component's occurrence, ungrounded.
 
     A design's first component is grounded, and an inserted one is, and
     those can not move.
 
     Arguments:
-    * `solidcraft` (`SCPyBind`): The SolidCraft session.
+    * `solidcraft` (`PyBind`): The SolidCraft session.
     * `component_id` (`JSON`): The component's id.
 
     Returns:
@@ -699,31 +699,31 @@ def unique_id_digits(tools: Sequence[tuple[str, dict[str, object]]]) -> int:
     return max((len(str(tool["unique_id"])) for _, tool in tools), default=1)
 
 
-# Class `SCCutter`:
+# Class `Cutter`:
 @dataclass(frozen=True, slots=True)
-class SCCutter:
+class Cutter:
     """One tool of the shop's tools files, by name.
 
     Attributes:
     * `kind` (`str`): The list it is in (e.g. `end_mills`).
     * `tool` (`dict[str, object]`): Its description, from
       `shops.read()`.
-    * `REGISTRY` (`SCRegistry[SCCutter]`): Every cutter of the
+    * `REGISTRY` (`Registry[Cutter]`): Every cutter of the
       example shop, by key (class attribute).
 
     Constructor:
-    * `SCCutter(kind, tool)`
+    * `Cutter(kind, tool)`
     """
 
-    REGISTRY: ClassVar["SCRegistry[SCCutter]"]
+    REGISTRY: ClassVar["Registry[Cutter]"]
 
     # Constructor arguments:
     kind: str = field(init=True)
     tool: dict[str, object] = field(init=True)
 
-    # Method `SCCutter.named()`:
+    # Method `Cutter.named()`:
     @classmethod
-    def named(cls, name: str) -> "SCCutter":
+    def named(cls, name: str) -> "Cutter":
         """Return the cutter with a key or name.
 
         Arguments:
@@ -731,20 +731,20 @@ class SCCutter:
           Its key (`registry.key()` of its name) or its name.
 
         Returns:
-        * (`SCCutter`): The cutter.
+        * (`Cutter`): The cutter.
 
         Raises:
         * `KeyError`: If there is none, listing the known keys.
         """
         return cls.REGISTRY.named(name)
 
-    # Method `SCCutter.name()`:
+    # Method `Cutter.name()`:
     @property
     def name(self) -> str:
         """Return its name in the tools files."""
         return str(self.tool["name"])
 
-    # Method `SCCutter.key()`:
+    # Method `Cutter.key()`:
     @property
     def key(self) -> str:
         """Return its key in `REGISTRY` (e.g. `1_4_in_2_flute_...`)."""
@@ -753,13 +753,13 @@ class SCCutter:
 
 # Function `register_cutters()`:
 def register_cutters(
-    shop: dict[str, object], cutters: SCRegistry[SCCutter]
+    shop: dict[str, object], cutters: Registry[Cutter]
 ) -> None:
     """Add every tool of a shop to a cutter registry.
 
     Arguments:
     * `shop` (`dict[str, object]`): The shop, from `shops.read()`.
-    * `cutters` (`SCRegistry[SCCutter]`): The registry to fill.
+    * `cutters` (`Registry[Cutter]`): The registry to fill.
 
     Raises:
     * `ValueError`: If two different tools have the same key.
@@ -767,7 +767,7 @@ def register_cutters(
     kind: str
     tool: dict[str, object]
     for kind, tool in shop_tools(shop):
-        cutter: SCCutter = SCCutter(kind, tool)
+        cutter: Cutter = Cutter(kind, tool)
         cutters.add(cutter.name, cutter)
 
 
@@ -817,7 +817,7 @@ def holder_bands(
 
 # Function `model()`:
 def model(
-    solidcraft: SCPyBind,
+    solidcraft: PyBind,
     name: str,
     outline: Sequence[tuple[float, float]],
     at: tuple[float, float, float] = (0.0, 0.0, 0.0),
@@ -829,7 +829,7 @@ def model(
     `at`.
 
     Arguments:
-    * `solidcraft` (`SCPyBind`): The SolidCraft session.
+    * `solidcraft` (`PyBind`): The SolidCraft session.
     * `name` (`str`): The name for its body and sketch.
     * `outline` (`Sequence[tuple[float, float]]`): Its profile.
     * `at` (`tuple[float, float, float]`):
@@ -868,9 +868,9 @@ def model(
     return bodies[0]
 
 
-# Class `SCModeledTool`:
+# Class `ModeledTool`:
 @dataclass(frozen=True, slots=True)
-class SCModeledTool:
+class ModeledTool:
     """A tool in SolidCraft: a component with its body and flute lines.
 
     Attributes:
@@ -879,7 +879,7 @@ class SCModeledTool:
     * `occurrence` (`str`): Its component's occurrence, for moving it.
 
     Constructor:
-    * `SCModeledTool(body, sketch, occurrence)`
+    * `ModeledTool(body, sketch, occurrence)`
     """
 
     # Constructor arguments:
@@ -887,7 +887,7 @@ class SCModeledTool:
     sketch: str = field(init=True)
     occurrence: str = field(init=True)
 
-    # Method `SCModeledTool.items()`:
+    # Method `ModeledTool.items()`:
     def items(self) -> list[str]:
         """Return what `browser.visibility` shows or hides for the tool.
 
@@ -901,31 +901,31 @@ class SCModeledTool:
 # Each argument is a choice of the caller's.
 # pylint: disable-next=too-many-arguments,too-many-positional-arguments
 def model_tool(
-    solidcraft: SCPyBind,
+    solidcraft: PyBind,
     name: str,
     tool: tuple[str, dict[str, object]],
     at: tuple[float, float, float] = (0.0, 0.0, 0.0),
     color: str = "",
-    cache: SCModelCache | None = None,
-) -> SCModeledTool:
+    cache: ModelCache | None = None,
+) -> ModeledTool:
     """Model a shop's tool: its body and flute lines, in a component.
 
     Arguments:
-    * `solidcraft` (`SCPyBind`): The SolidCraft session.
+    * `solidcraft` (`PyBind`): The SolidCraft session.
     * `name` (`str`): The name for its body, and to start its sketches'.
     * `tool` (`tuple[str, dict[str, object]]`):
       The list it is in, in its tools file, and its description.
     * `at` (`tuple[float, float, float]`):
       Where its tip goes (inches).
     * `color` (`str`): Its color, as `"#rrggbb"`, or `""` for the default.
-    * `cache` (`SCModelCache | None`):
+    * `cache` (`ModelCache | None`):
       Where to keep its body between runs, or `None` to build it.
 
     Returns:
-    * (`SCModeledTool`): What was made, free to move.
+    * (`ModeledTool`): What was made, free to move.
     """
     if cache is not None:
-        cached: SCModeledTool | None = _cached_tool(
+        cached: ModeledTool | None = _cached_tool(
             solidcraft, name, tool, at, color, cache
         )
         if cached is not None:
@@ -935,35 +935,35 @@ def model_tool(
         solidcraft.appearance.assign(bodies=[body], color=color)
     sketch: str = f"{name} flutes"
     send_batch(solidcraft, flute_steps(sketch, tool_flute_runs(*tool), at))
-    return SCModeledTool(body, sketch, as_component(solidcraft, body, sketch))
+    return ModeledTool(body, sketch, as_component(solidcraft, body, sketch))
 
 
 # Function `model_description()`:
 def model_description(
-    solidcraft: SCPyBind,
+    solidcraft: PyBind,
     description: dict[str, object],
     at: tuple[float, float, float] = (0.0, 0.0, 0.0),
-    cache: SCModelCache | None = None,
-) -> SCModeledTool:
+    cache: ModelCache | None = None,
+) -> ModeledTool:
     """Model one tool from its description.
 
     Arguments:
-    * `solidcraft` (`SCPyBind`): The SolidCraft session.
+    * `solidcraft` (`PyBind`): The SolidCraft session.
     * `description` (`dict[str, object]`):
       The tool, with its `kind`, as `shops.check_tool()` takes it.  Its
       `name`, if any, names the body.
     * `at` (`tuple[float, float, float]`):
       Where its tip goes (inches).
-    * `cache` (`SCModelCache | None`):
+    * `cache` (`ModelCache | None`):
       Where to keep its body between runs, or `None` to build it.
 
     Returns:
-    * (`SCModeledTool`): What was made, free to move.
+    * (`ModeledTool`): What was made, free to move.
 
     Raises:
-    * `SCShopError`:
+    * `ShopError`:
       If the description has any problem, before SolidCraft is touched.
-    * `SCSolidCraftError`: If SolidCraft refuses a command.
+    * `SolidCraftError`: If SolidCraft refuses a command.
     * `FileNotFoundError`: If no SolidCraft has the port.
     * `ConnectionError`:
       If nothing listens on the port, or SolidCraft goes away.
@@ -977,7 +977,7 @@ def model_description(
 
 
 # Function `_cacheable_outline()`:
-def _cacheable_outline(name: str, outline: Profile) -> SCCacheable:
+def _cacheable_outline(name: str, outline: Profile) -> Cacheable:
     """Return a revolved outline as a model that can be cached.
 
     The outline is all that affects its shape, so a change to the tool
@@ -990,9 +990,9 @@ def _cacheable_outline(name: str, outline: Profile) -> SCCacheable:
     * `outline` (`Profile`): Its profile, around the origin.
 
     Returns:
-    * (`SCCacheable`): The model.
+    * (`Cacheable`): The model.
     """
-    return SCCacheable(
+    return Cacheable(
         name,
         {"revolved": [[r, z] for r, z in outline]},
         lambda solidcraft: [model(solidcraft, name, outline)],
@@ -1001,23 +1001,23 @@ def _cacheable_outline(name: str, outline: Profile) -> SCCacheable:
 
 # Function `_inserted_outline()`:
 def _inserted_outline(
-    solidcraft: SCPyBind,
-    cache: SCModelCache,
-    cacheable: SCCacheable,
+    solidcraft: PyBind,
+    cache: ModelCache,
+    cacheable: Cacheable,
     body_name: str,
     at: tuple[float, float, float] = (0.0, 0.0, 0.0),
-) -> tuple[str, SCInserted] | None:
+) -> tuple[str, InsertedModel] | None:
     """Insert a revolved outline, whose one body takes a name.
 
     Arguments:
-    * `solidcraft` (`SCPyBind`): The SolidCraft session.
-    * `cache` (`SCModelCache`): The cache.
-    * `cacheable` (`SCCacheable`): The model.
+    * `solidcraft` (`PyBind`): The SolidCraft session.
+    * `cache` (`ModelCache`): The cache.
+    * `cacheable` (`Cacheable`): The model.
     * `body_name` (`str`): The name for its body.
     * `at` (`tuple[float, float, float]`): Where it goes (inches).
 
     Returns:
-    * (`tuple[str, SCInserted] | None`):
+    * (`tuple[str, InsertedModel] | None`):
       Its body's name and what was inserted, or `None` if the cache
       could not be used.
     """
@@ -1026,7 +1026,7 @@ def _inserted_outline(
         at[1] * MM_PER_INCH,
         at[2] * MM_PER_INCH,
     )
-    inserted: SCInserted | None = cache.insert(
+    inserted: InsertedModel | None = cache.insert(
         solidcraft, cacheable, placement_matrix(0, place)
     )
     if inserted is None:
@@ -1042,13 +1042,13 @@ def _inserted_outline(
 # It takes what `model_tool()` does, each a choice of the caller's.
 # pylint: disable-next=too-many-arguments,too-many-positional-arguments
 def _cached_tool(
-    solidcraft: SCPyBind,
+    solidcraft: PyBind,
     name: str,
     tool: tuple[str, dict[str, object]],
     at: tuple[float, float, float],
     color: str,
-    cache: SCModelCache,
-) -> SCModeledTool | None:
+    cache: ModelCache,
+) -> ModeledTool | None:
     """Model a shop's tool, with its body from the cache.
 
     STEP files hold no sketches, so its flute lines are drawn each time.
@@ -1056,20 +1056,20 @@ def _cached_tool(
     then the component goes to `at`.
 
     Arguments:
-    * `solidcraft` (`SCPyBind`): The SolidCraft session.
+    * `solidcraft` (`PyBind`): The SolidCraft session.
     * `name` (`str`): The name for its body, and to start its sketches'.
     * `tool` (`tuple[str, dict[str, object]]`):
       The list it is in, in its tools file, and its description.
     * `at` (`tuple[float, float, float]`): Where its tip goes (inches).
     * `color` (`str`): Its color, as `"#rrggbb"`, or `""` for the default.
-    * `cache` (`SCModelCache`): The cache.
+    * `cache` (`ModelCache`): The cache.
 
     Returns:
-    * (`SCModeledTool | None`):
+    * (`ModeledTool | None`):
       What was made, free to move, or `None` if the cache could not be
       used.
     """
-    found: tuple[str, SCInserted] | None = _inserted_outline(
+    found: tuple[str, InsertedModel] | None = _inserted_outline(
         solidcraft,
         cache,
         _cacheable_outline(str(tool[1]["name"]), profile(*tool)),
@@ -1100,26 +1100,26 @@ def _cached_tool(
             ),
             capture=False,
         )
-    return SCModeledTool(body, sketch, occurrence)
+    return ModeledTool(body, sketch, occurrence)
 
 
 # Function `model_holder()`:
 def model_holder(
-    solidcraft: SCPyBind,
+    solidcraft: PyBind,
     tool: dict[str, object],
     digits: int,
     at: tuple[float, float, float] = (0.0, 0.0, 0.0),
-    cache: SCModelCache | None = None,
+    cache: ModelCache | None = None,
 ) -> list[str]:
     """Model a tool's holder in SolidCraft, one body per band.
 
     Arguments:
-    * `solidcraft` (`SCPyBind`): The SolidCraft session.
+    * `solidcraft` (`PyBind`): The SolidCraft session.
     * `tool` (`dict[str, object]`): The tool, with a `holder`.
     * `digits` (`int`): How many bands (from `unique_id_digits()`).
     * `at` (`tuple[float, float, float]`):
       Where the holder's tool end is (inches).
-    * `cache` (`SCModelCache | None`):
+    * `cache` (`ModelCache | None`):
       Where to keep its bands between runs, or `None` to build them.
 
     Returns:
@@ -1128,7 +1128,7 @@ def model_holder(
     bodies: list[str] = []
     for index, (color, outline) in enumerate(holder_bands(tool, digits)):
         name: str = f"Holder {tool['unique_id']} band {index + 1}"
-        found: tuple[str, SCInserted] | None = None
+        found: tuple[str, InsertedModel] | None = None
         if cache is not None:
             found = _inserted_outline(
                 solidcraft,
@@ -1149,9 +1149,9 @@ def model_holder(
 
 # Function `model_shop_tools()`:
 def model_shop_tools(
-    solidcraft: SCPyBind,
+    solidcraft: PyBind,
     shop: dict[str, object],
-    cache: SCModelCache | None = None,
+    cache: ModelCache | None = None,
 ) -> None:
     """Model every tool of a shop and its holder, in a row along X.
 
@@ -1159,9 +1159,9 @@ def model_shop_tools(
     inside its holder.
 
     Arguments:
-    * `solidcraft` (`SCPyBind`): The SolidCraft session.
+    * `solidcraft` (`PyBind`): The SolidCraft session.
     * `shop` (`dict[str, object]`): The shop, from `shops.read()`.
-    * `cache` (`SCModelCache | None`):
+    * `cache` (`ModelCache | None`):
       Where to keep the models between runs, or `None` to build them.
     """
     tools: list[tuple[str, dict[str, object]]] = shop_tools(shop)
@@ -1188,7 +1188,7 @@ def model_shop_tools(
 
 # The cutters of the shop in use, by key (`registry.key()` of each
 # name), filled by `shop_registries.use_shop()`.
-SCCutter.REGISTRY = SCRegistry("cutter")
+Cutter.REGISTRY = Registry("cutter")
 
 
 # Function `main()`:
@@ -1201,18 +1201,18 @@ def main() -> None:
         try:
             description: dict[str, object] = json.loads(sys.argv[2])
             check_tool(description)
-        except (json.JSONDecodeError, SCShopError) as error:
+        except (json.JSONDecodeError, ShopError) as error:
             sys.exit(str(error))
         with connect(target) as transport:
-            modeled: SCModeledTool = model_description(
-                SCPyBind(transport), description, cache=cache_for(target)
+            modeled: ModeledTool = model_description(
+                PyBind(transport), description, cache=cache_for(target)
             )
         print(f"Modeled {modeled.body}.")
         return
 
     # Every tool of the example shop, in a new design.
     with connect(target) as transport:
-        solidcraft: SCPyBind = SCPyBind(transport)
+        solidcraft: PyBind = PyBind(transport)
         solidcraft.file.new()
         model_shop_tools(solidcraft, read(EXAMPLE_SHOP), cache_for(target))
 

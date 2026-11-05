@@ -3,7 +3,7 @@
 import unittest
 from pathlib import Path
 
-from scraftcnc.machine import SCMachine, SCTool
+from scraftcnc.machine import Machine, ToolEntry
 from scraftcnc.shops import cnc_machine, read
 from tests.test_gcode import machine
 
@@ -20,7 +20,7 @@ class TestMachine(unittest.TestCase):
     # Method `TestMachine.test_example_shop()`:
     def test_example_shop(self) -> None:
         """The example shop's mill, with its tools."""
-        mill: SCMachine = cnc_machine(
+        mill: Machine = cnc_machine(
             read(SHOP_FILE), "Shop mill", "6061 aluminum"
         )
         self.assertEqual(mill.change_words(4), ["T04", "M6", "G43", "H04"])
@@ -54,13 +54,13 @@ class TestMachine(unittest.TestCase):
             with self.assertRaises(ValueError, msg=str(changes)):
                 machine(**changes)
         with self.assertRaises(ValueError):
-            SCTool(1, "Bad", "end mill", 0.0, 1200, 1.0, 1.0)
+            ToolEntry(1, "Bad", "end mill", 0.0, 1200, 1.0, 1.0)
         with self.assertRaises(ValueError):
-            SCTool(0, "Bad", "end mill", 0.25, 1200, 1.0, 1.0)
+            ToolEntry(0, "Bad", "end mill", 0.25, 1200, 1.0, 1.0)
         with self.assertRaises(ValueError):
-            SCTool(5, "Bad", "chamfer", 0.02, 1200, 1.0, 1.0, angle=180.0)
+            ToolEntry(5, "Bad", "chamfer", 0.02, 1200, 1.0, 1.0, angle=180.0)
         with self.assertRaises(ValueError):
-            SCTool(6, "Bad", "corner round", 0.1, 1200, 1.0, 1.0)
+            ToolEntry(6, "Bad", "corner round", 0.1, 1200, 1.0, 1.0)
 
 
 if __name__ == "__main__":

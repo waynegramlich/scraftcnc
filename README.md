@@ -9,7 +9,7 @@ Python bindings, `scraftcnc/pybind/`.
 What it does today:
 
 * Outlines in the XY plane made of straight edges whose corners each
-  have their own radius (`SCRoundedPolygon`), each with a range of
+  have their own radius (`RoundedPolygon`), each with a range of
   heights, going up (material) or down (a hole), and children that
   start on its surface, such as islands with holes of their own.
 * Outside and inside profiles, climb milled, with half circle lead-ins
@@ -114,9 +114,9 @@ Each step below needs a little more than the one before it.
    ```
 
    It starts LinuxCNC, SolidCraft with the plate in it (on the table,
-   vise, parallels and grid plate drawn by the panel from the program's
-   `(SCC: ...)` setup comments), and the panel, stopped.  Press Start in the panel, and the tool cuts
-   the plate in SolidCraft.  The panel's Quit button closes everything.
+   vise, parallels and grid plate drawn by the HMI from the program's
+   `(SCC: ...)` setup comments), and the HMI, stopped.  Press Start in the HMI, and the tool cuts
+   the plate in SolidCraft.  The HMI's Quit button closes everything.
 
    Keep the mouse pointer out of SolidCraft's window while it runs:
    SolidCraft makes what is under the pointer see-through, so a pointer
@@ -125,7 +125,7 @@ Each step below needs a little more than the one before it.
    leave them be.
 
    `./show_demo.py --headless` runs the same thing with no windows
-   (a headless SolidCraft session, the panel without `tkinter`),
+   (a headless SolidCraft session, the HMI without `tkinter`),
    presses Start itself, and prints what was built, with bounding
    boxes.
 
@@ -133,9 +133,9 @@ Each step below needs a little more than the one before it.
 
 The code is the package `scraftcnc/`:
 
-* `gcode.py`: `SCCNC`, which writes the G-code (profiles, pockets,
+* `gcode.py`: `CNC`, which writes the G-code (profiles, pockets,
   drilling, edge finishing).
-* `geometry.py`: outlines (`SCRoundedPolygon`, `SCLoop`) and the
+* `geometry.py`: outlines (`RoundedPolygon`, `Loop`) and the
   offsets that tool paths are made from.
 * `shops.py` (with `Shops.md` and `examples/shop/`): the shop
   description files, their reader (every problem reported at its file
@@ -171,7 +171,7 @@ The code is the package `scraftcnc/`:
 * `lcnc/`: LinuxCNC's simulator (`install_linuxcnc.py`), the bridge
   and server that drive it, and the simulations that show it in
   SolidCraft.
-* `hmi/`: the operator's panel (`lcnc_hmi.py`) and its headless
+* `hmi/`: the operator's HMI (`lcnc_hmi.py`) and its headless
   version.
 
 Beside it, `tests/` holds the tests and `show_demo.py` the
@@ -189,7 +189,7 @@ python3 -m unittest discover -s tests -t .
 
 The tests need no SolidCraft, and no display.  One more suite follows
 the whole path, from the demonstration's G-code, through the
-headless panel (`scraftcnc/hmi/`) and `serve_linuxcnc`, to a real
+headless HMI (`scraftcnc/hmi/`) and `serve_linuxcnc`, to a real
 LinuxCNC simulator, in about two minutes, when asked (it needs LinuxCNC, from
 `python3 -m scraftcnc.lcnc.install_linuxcnc`):
 

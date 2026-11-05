@@ -14,8 +14,8 @@ from typing import Any
 from unittest import mock
 
 from scraftcnc import model_cache, setups
-from scraftcnc.assembly import SCItem
-from scraftcnc.pybind.scraftpybind import JSON, SCHeadlessTransport, SCPyBind
+from scraftcnc.assembly import AssemblyItem
+from scraftcnc.pybind.scraftpybind import JSON, HeadlessTransport, PyBind
 from scraftcnc.shops import read
 from scraftcnc.tooling import cutter_models, mount, tools
 from scraftcnc.tooling.shop_registries import use_shop
@@ -27,9 +27,9 @@ STACK: Path = HERE / "examples/setup/demo_stack.json"
 INCH = 25.4
 
 
-def session(directory: Path) -> SCHeadlessTransport:
+def session(directory: Path) -> HeadlessTransport:
     """Return a headless SolidCraft that may use a directory."""
-    return SCHeadlessTransport(
+    return HeadlessTransport(
         shutil.which("solidcraft-cli") or str(CLI), (str(directory),)
     )
 
@@ -45,7 +45,7 @@ def reply(value: JSON) -> Any:
     return value
 
 
-def centers(solidcraft: SCPyBind, bodies: list[str]) -> dict[str, list[float]]:
+def centers(solidcraft: PyBind, bodies: list[str]) -> dict[str, list[float]]:
     """Return where each body's center of mass is, by name."""
     found = reply(solidcraft.inspect.center_of_mass(bodies=bodies))
     return {entry["body"]: entry["center"] for entry in found["bodies"]}
@@ -74,9 +74,9 @@ class TestHash(unittest.TestCase):
 
     def test_path(self) -> None:
         """A file is MODEL_NAME__HASH.step, with a safe name."""
-        cache = model_cache.SCModelCache(Path("/cache"))
+        cache = model_cache.ModelCache(Path("/cache"))
         shape = {"a": 1}
-        model = model_cache.SCCacheable("1/4 in mill", shape, lambda _: [])
+        model = model_cache.Cacheable("1/4 in mill", shape, lambda _: [])
         self.assertEqual(
             cache.path(model),
             Path(f"/cache/1_4_in_mill__{model_cache.shape_hash(shape)}.step"),
@@ -96,12 +96,12 @@ class TestItemKey(unittest.TestCase):
     """The key of an assembly item: its `call`, `args` and code."""
 
     @staticmethod
-    def item(**args: Any) -> SCItem:
+    def item(**args: Any) -> AssemblyItem:
         """Return a tooling item calling the vise layer with `args`."""
-        return SCItem(
+        return AssemblyItem(
             "tooling",
             "vise",
-            "scraftcnc.tooling.mount:SCMachineViseLayer.named",
+            "scraftcnc.tooling.mount:MachineViseLayer.named",
             dict(args),
         )
 
@@ -145,9 +145,9 @@ class TestItemKey(unittest.TestCase):
     def test_keyed_by_item(self) -> None:
         """A model keyed by its item is filed under the item's key."""
         item = self.item(vise="kurt_d688", opening="5 in")
-        model = model_cache.SCCacheable("Vise", {"old": 1}, lambda _s: [])
+        model = model_cache.Cacheable("Vise", {"old": 1}, lambda _s: [])
         keyed = model_cache.keyed_by_item(model, item)
-        path = model_cache.SCModelCache(Path("/cache")).path(keyed)
+        path = model_cache.ModelCache(Path("/cache")).path(keyed)
         self.assertEqual(
             path, Path(f"/cache/Vise__{model_cache.item_key(item)}.step")
         )
@@ -178,7 +178,7 @@ class TestSweep(unittest.TestCase):
     def test_sweep(self) -> None:
         """An old file is deleted and a young one kept, in one pass."""
         with tempfile.TemporaryDirectory() as directory:
-            cache = model_cache.SCModelCache(Path(directory) / "a" / "b")
+            cache = model_cache.ModelCache(Path(directory) / "a" / "b")
             cache.sweep()
             old = cache.directory / "old__0.step"
             young = cache.directory / "young__0.step"
@@ -212,7 +212,7 @@ class TestHeadlessFallback(unittest.TestCase):
         Returns:
         * (`str`): What was printed on `stderr`.
         """
-        model = model_cache.SCCacheable("Pin", {"pin": 2}, lambda _s: [])
+        model = model_cache.Cacheable("Pin", {"pin": 2}, lambda _s: [])
         solidcraft: Any = mock.MagicMock()
         before = mock.Mock()
         stderr = io.StringIO()
@@ -220,14 +220,14 @@ class TestHeadlessFallback(unittest.TestCase):
             tempfile.TemporaryDirectory() as directory,
             mock.patch("shutil.which", return_value=program),
             mock.patch.object(
-                model_cache, "SCHeadlessTransport", side_effect=error
+                model_cache, "HeadlessTransport", side_effect=error
             ),
             mock.patch.object(
                 model_cache, "export_model", return_value=["Pin"]
             ) as export,
             contextlib.redirect_stderr(stderr),
         ):
-            cache = model_cache.SCModelCache(Path(directory))
+            cache = model_cache.ModelCache(Path(directory))
             path = cache.path(model)
             cache.create(solidcraft, model, path, before)
 
@@ -258,8 +258,8 @@ class TestLive(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.directory = Path(temporary.name)
-        self.cache = model_cache.SCModelCache(self.directory)
-        self.setup = setups.SCSetup(
+        self.cache = model_cache.ModelCache(self.directory)
+        self.setup = setups.Setup(
             json.loads(STACK.read_text(encoding="utf-8"))
         )
 
@@ -267,7 +267,7 @@ class TestLive(unittest.TestCase):
         """A model is built the first time, and its file freshened after."""
         builds = []
 
-        def build(solidcraft: SCPyBind) -> list[str]:
+        def build(solidcraft: PyBind) -> list[str]:
             builds.append(1)
             return [
                 cutter_models.model(
@@ -275,10 +275,10 @@ class TestLive(unittest.TestCase):
                 )
             ]
 
-        model = model_cache.SCCacheable("Pin", {"pin": 1}, build)
+        model = model_cache.Cacheable("Pin", {"pin": 1}, build)
         path = self.cache.path(model)
         with session(self.directory) as transport:
-            solidcraft = SCPyBind(transport)
+            solidcraft = PyBind(transport)
             first = self.cache.insert(solidcraft, model)
             assert first is not None
             self.assertEqual(first.bodies, ["Pin"])
@@ -297,22 +297,22 @@ class TestLive(unittest.TestCase):
         """A directory that can not be made means building, with no file."""
         blocker = self.directory / "file"
         blocker.write_text("", encoding="utf-8")
-        cache = model_cache.SCModelCache(blocker / "cache")
-        model = model_cache.SCCacheable("Pin", {"pin": 1}, lambda _: [])
+        cache = model_cache.ModelCache(blocker / "cache")
+        model = model_cache.Cacheable("Pin", {"pin": 1}, lambda _: [])
         with session(self.directory) as transport:
-            solidcraft = SCPyBind(transport)
+            solidcraft = PyBind(transport)
             self.assertIsNone(cache.insert(solidcraft, model))
         self.assertTrue(cache.broken)
 
     def test_stack_matches_built(self) -> None:
         """Cached twice, the stack lands just where a built one does."""
         with session(self.directory) as transport:
-            solidcraft = SCPyBind(transport)
+            solidcraft = PyBind(transport)
             names = self.setup.model(solidcraft)
             want = centers(solidcraft, names)
         for _ in range(2):
             with session(self.directory) as transport:
-                solidcraft = SCPyBind(transport)
+                solidcraft = PyBind(transport)
                 names = self.setup.model(solidcraft, self.cache)
                 got = centers(solidcraft, names)
                 appearance = reply(solidcraft.appearance.list())["bodies"]
@@ -350,7 +350,7 @@ class TestLive(unittest.TestCase):
     def check_units(self, program: str, want_changes: int) -> None:
         """Model the setup in inches, counting the changes of units."""
         with session(self.directory) as transport:
-            solidcraft = SCPyBind(transport)
+            solidcraft = PyBind(transport)
             solidcraft.document.units(units="in")
             commands = type(solidcraft.document)
             with (
@@ -374,7 +374,7 @@ class TestLive(unittest.TestCase):
         cli = shutil.which("solidcraft-cli") or str(CLI)
         sessions = []
 
-        def build(solidcraft: SCPyBind) -> list[str]:
+        def build(solidcraft: PyBind) -> list[str]:
             sessions.append(solidcraft)
             return [
                 cutter_models.model(
@@ -382,12 +382,12 @@ class TestLive(unittest.TestCase):
                 )
             ]
 
-        model = model_cache.SCCacheable("Pin", {"pin": 2}, build)
+        model = model_cache.Cacheable("Pin", {"pin": 2}, build)
         with (
             session(self.directory) as transport,
             mock.patch.object(model_cache, "HEADLESS_CLI", cli),
         ):
-            solidcraft = SCPyBind(transport)
+            solidcraft = PyBind(transport)
             inserted = self.cache.insert(solidcraft, model)
             assert inserted is not None
             self.assertEqual(inserted.bodies, ["Pin"])
@@ -398,10 +398,10 @@ class TestLive(unittest.TestCase):
         """The vise is two files, which any opening shares."""
         vise = tools.KURT_D688
         for opening in (10.0, 100.0):
-            layer = mount.SCMachineViseLayer(vise, opening)
+            layer = mount.MachineViseLayer(vise, opening)
             with session(self.directory) as transport:
-                setups.SCPlacement(0.0, 0.0, 0.0, 0).model(
-                    layer, SCPyBind(transport), self.cache
+                setups.Placement(0.0, 0.0, 0.0, 0).model(
+                    layer, PyBind(transport), self.cache
                 )
         self.assertFalse(self.cache.broken)
         self.assertEqual(
@@ -416,14 +416,14 @@ class TestLive(unittest.TestCase):
         tool = cutter_models.shop_tools(read(cutter_models.EXAMPLE_SHOP))[4]
         at = (2.0, 1.0, 3.0)
         with session(self.directory) as transport:
-            solidcraft = SCPyBind(transport)
+            solidcraft = PyBind(transport)
             want = centers(
                 solidcraft,
                 [cutter_models.model_tool(solidcraft, "T", tool, at).body],
             )["T"]
         for _ in range(2):
             with session(self.directory) as transport:
-                solidcraft = SCPyBind(transport)
+                solidcraft = PyBind(transport)
                 made = cutter_models.model_tool(
                     solidcraft, "T5", tool, at, "#123456", self.cache
                 )

@@ -1,9 +1,9 @@
 """Stock, and the assembly of everything in one setup (a Mount).
 
-`SCStock` is the raw material, a rectangular prism for now.
-`SCAssembly` lists the items of one setup (tooling, stock and the
+`Stock` is the raw material, a rectangular prism for now.
+`Assembly` lists the items of one setup (tooling, stock and the
 part) in stacking order, each placed from the origin of the item below
-it.  `SCAssembly.to_dict()` and `SCAssembly.from_dict()` turn it into
+it.  `Assembly.to_dict()` and `Assembly.from_dict()` turn it into
 and out of one ordered `item` list, as TOML's `[[item]]` or JSON.
 Lengths are read as strings with units (`"4 in"`, `"3mm"`): a number
 with no unit is a count, never a length (#48).  They are kept as
@@ -16,7 +16,7 @@ from typing import Any
 
 from .shops import LENGTH, measure
 from .tooling.cutter_models import MM_PER_INCH
-from .tooling.tools import Point, SCKeepOut, left_corner
+from .tooling.tools import KeepOut, Point, left_corner
 
 # The kinds of item in an assembly, in no particular order.
 KINDS: tuple[str, ...] = ("tooling", "stock", "part")
@@ -92,14 +92,14 @@ def lengths_text(lengths: tuple[float, ...]) -> str:
     )
 
 
-# Class `SCStock`:
+# Class `Stock`:
 @dataclass(frozen=True, slots=True)
-class SCStock:
+class Stock:
     """Raw material: a rectangular prism (cylinders and tubes later).
 
-    Its frame matches `tooling.mount.SCLayer`: points are from the
+    Its frame matches `tooling.mount.MountLayer`: points are from the
     center of its bottom.  It has no SolidCraft model yet, so it does
-    not have `SCLayer`'s `model()` or `cacheable()`.
+    not have `MountLayer`'s `model()` or `cacheable()`.
 
     Attributes:
     * `material` (`str`): A short name, such as `"aluminum_6061"`.
@@ -110,7 +110,7 @@ class SCStock:
     * `dz` (`float`): Its Z size, its thickness (millimeters).
 
     Constructor:
-    * `SCStock(material, size)`
+    * `Stock(material, size)`
     """
 
     # Constructor arguments:
@@ -122,7 +122,7 @@ class SCStock:
     dy: float = field(init=False, default=0.0)
     dz: float = field(init=False, default=0.0)
 
-    # Method `SCStock.__post_init__()`:
+    # Method `Stock.__post_init__()`:
     def __post_init__(self) -> None:
         """Check the arguments and work out the sizes.
 
@@ -148,7 +148,7 @@ class SCStock:
         object.__setattr__(self, "dy", sizes[1])
         object.__setattr__(self, "dz", sizes[2])
 
-    # Method `SCStock.name()`:
+    # Method `Stock.name()`:
     @property
     def name(self) -> str:
         """Return what the stock is."""
@@ -156,7 +156,7 @@ class SCStock:
             f"{self.material} stock {self.dx:g} x {self.dy:g} x {self.dz:g} mm"
         )
 
-    # Method `SCStock.seat()`:
+    # Method `Stock.seat()`:
     def seat(self) -> Point:
         """Return where the next layer stands: the middle of its top.
 
@@ -165,7 +165,7 @@ class SCStock:
         """
         return (0.0, 0.0, self.dz)
 
-    # Method `SCStock.origin()`:
+    # Method `Stock.origin()`:
     def origin(self, turns: int = 0) -> Point:
         """Return the point handed up to the next item.
 
@@ -186,17 +186,17 @@ class SCStock:
         ]
         return left_corner(corners, turns)
 
-    # Method `SCStock.keep_out()`:
-    def keep_out(self, _center: Point) -> SCKeepOut:
+    # Method `Stock.keep_out()`:
+    def keep_out(self, _center: Point) -> KeepOut:
         """Return the regions a tool must not enter: none, for material.
 
         Arguments:
         * `_center` (`Point`): The center of its bottom (millimeters).
 
         Returns:
-        * (`SCKeepOut`): No regions.
+        * (`KeepOut`): No regions.
         """
-        return SCKeepOut()
+        return KeepOut()
 
 
 # Function `keep_out_boxes()`:
@@ -214,7 +214,7 @@ def keep_out_boxes(thing: Any) -> tuple[Box, ...]:
     Returns:
     * (`tuple[Box, ...]`): The boxes.
     """
-    keep_out: SCKeepOut = thing.keep_out((0.0, 0.0, 0.0))
+    keep_out: KeepOut = thing.keep_out((0.0, 0.0, 0.0))
     ox, oy, oz = thing.origin(0)
     return tuple(
         (
@@ -229,10 +229,10 @@ def keep_out_boxes(thing: Any) -> tuple[Box, ...]:
     )
 
 
-# Class `SCItem`:
+# Class `AssemblyItem`:
 # Ten fields, one per key of an item table:
 @dataclass(frozen=True, slots=True)
-class SCItem:  # pylint: disable=too-many-instance-attributes
+class AssemblyItem:  # pylint: disable=too-many-instance-attributes
     """One item of an assembly: tooling, stock or the part.
 
     Attributes:
@@ -253,7 +253,7 @@ class SCItem:  # pylint: disable=too-many-instance-attributes
       Boxes a tool must not enter (millimeters, from its origin).
 
     Constructor:
-    * `SCItem(kind, name, call, args, location, orientation, color,
+    * `AssemblyItem(kind, name, call, args, location, orientation, color,
       transparency, note, keep_out)`
     """
 
@@ -269,7 +269,7 @@ class SCItem:  # pylint: disable=too-many-instance-attributes
     note: str = field(init=True, default="")
     keep_out: tuple[Box, ...] = field(init=True, default=())
 
-    # Method `SCItem.__post_init__()`:
+    # Method `AssemblyItem.__post_init__()`:
     def __post_init__(self) -> None:
         """Check the arguments.
 
@@ -308,7 +308,7 @@ class SCItem:  # pylint: disable=too-many-instance-attributes
             if not all(box[axis] < box[axis + 3] for axis in range(3)):
                 raise ValueError(f"{where}: keep_out {box!r} is empty")
 
-    # Method `SCItem.to_dict()`:
+    # Method `AssemblyItem.to_dict()`:
     def to_dict(self) -> dict[str, Any]:
         """Return the item as a table (TOML or JSON).
 
@@ -334,9 +334,9 @@ class SCItem:  # pylint: disable=too-many-instance-attributes
             table["keep_out"] = [lengths_text(box) for box in self.keep_out]
         return table
 
-    # Method `SCItem.from_dict()`:
+    # Method `AssemblyItem.from_dict()`:
     @staticmethod
-    def from_dict(table: dict[str, Any], index: int) -> "SCItem":
+    def from_dict(table: dict[str, Any], index: int) -> "AssemblyItem":
         """Return an item read from a table.
 
         Arguments:
@@ -344,7 +344,7 @@ class SCItem:  # pylint: disable=too-many-instance-attributes
         * `index` (`int`): Its place in the list, for error messages.
 
         Returns:
-        * (`SCItem`): The item.
+        * (`AssemblyItem`): The item.
 
         Raises:
         * `TypeError`: If it is not a table.
@@ -386,7 +386,7 @@ class SCItem:  # pylint: disable=too-many-instance-attributes
                 transparency, (int, float)
             ):
                 raise TypeError(f"transparency {transparency!r} not a number")
-            return SCItem(
+            return AssemblyItem(
                 kind=table["kind"],
                 name=name,
                 call=table["call"],
@@ -402,22 +402,22 @@ class SCItem:  # pylint: disable=too-many-instance-attributes
             raise ValueError(f"{where}: {error}") from error
 
 
-# Class `SCAssembly`:
+# Class `Assembly`:
 @dataclass(slots=True)
-class SCAssembly:
+class Assembly:
     """The items of one setup (a Mount), in stacking order.
 
     Attributes:
-    * `items` (`list[SCItem]`): The items, bottom first.
+    * `items` (`list[AssemblyItem]`): The items, bottom first.
 
     Constructor:
-    * `SCAssembly(items)`
+    * `Assembly(items)`
     """
 
     # Constructor arguments:
-    items: list[SCItem] = field(init=True, default_factory=list)
+    items: list[AssemblyItem] = field(init=True, default_factory=list)
 
-    # Method `SCAssembly.__post_init__()`:
+    # Method `Assembly.__post_init__()`:
     def __post_init__(self) -> None:
         """Check that the item names are unique.
 
@@ -425,13 +425,13 @@ class SCAssembly:
         * `ValueError`: If two items have the same name.
         """
         seen: set[str] = set()
-        item: SCItem
+        item: AssemblyItem
         for item in self.items:
             if item.name in seen:
                 raise ValueError(f"item {item.name!r}: name used twice")
             seen.add(item.name)
 
-    # Method `SCAssembly.to_dict()`:
+    # Method `Assembly.to_dict()`:
     def to_dict(self) -> dict[str, Any]:
         """Return the assembly as one ordered `item` list.
 
@@ -440,16 +440,16 @@ class SCAssembly:
         """
         return {"item": [item.to_dict() for item in self.items]}
 
-    # Method `SCAssembly.from_dict()`:
+    # Method `Assembly.from_dict()`:
     @staticmethod
-    def from_dict(table: dict[str, Any]) -> "SCAssembly":
+    def from_dict(table: dict[str, Any]) -> "Assembly":
         """Return an assembly read from a table (TOML or JSON).
 
         Arguments:
         * `table` (`dict[str, Any]`): A table with an `item` list.
 
         Returns:
-        * (`SCAssembly`): The assembly.
+        * (`Assembly`): The assembly.
 
         Raises:
         * `ValueError`: If it is wrong (the message names the item).
@@ -460,16 +460,16 @@ class SCAssembly:
             entries: list[Any] = _list(table["item"])
         except TypeError as error:
             raise ValueError(f"assembly: item {error}") from error
-        return SCAssembly(
+        return Assembly(
             [
-                SCItem.from_dict(entry, index)
+                AssemblyItem.from_dict(entry, index)
                 for index, entry in enumerate(entries, start=1)
             ]
         )
 
 
 # Function `resolve()`:
-def resolve(item: SCItem) -> Any:
+def resolve(item: AssemblyItem) -> Any:
     """Build an item by calling its `call` with its `args`.
 
     `call` is `"module:Class.method"` or `"module:function"`: the
@@ -477,10 +477,10 @@ def resolve(item: SCItem) -> Any:
     turn, and the result is called with `**args`.
 
     Arguments:
-    * `item` (`SCItem`): The item.
+    * `item` (`AssemblyItem`): The item.
 
     Returns:
-    * (`Any`): What the call returns (a layer, `SCStock`, ...).
+    * (`Any`): What the call returns (a layer, `Stock`, ...).
 
     Raises:
     * `ValueError`: If the call can not be found or fails (the message
