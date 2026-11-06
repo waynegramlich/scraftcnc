@@ -3013,10 +3013,11 @@ def _id_digits(shop: dict[str, object]) -> int:
     * `shop` (`dict[str, object]`): The shop, from `read()`.
 
     Returns:
-    * (`int`): The number of digits (at least 1), as
-      `cutter_models.unique_id_digits()` counts for the holders.
+    * (`int`): The number of digits (at least 2, as a holder has at
+      least two color bands), as `cutter_models.unique_id_digits()`
+      counts for the holders.
     """
-    digits: int = 1
+    digits: int = 2
     tools_file: object
     for tools_file in cast(list[object], shop.get("tools", [])):
         if not isinstance(tools_file, dict):

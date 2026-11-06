@@ -177,6 +177,13 @@ INCREMENTAL: re.Pattern[str] = re.compile(r"\bG0*91(?![.\d])", re.IGNORECASE)
 METRIC: re.Pattern[str] = re.compile(r"\bG0*21(?![.\d])", re.IGNORECASE)
 INCH: re.Pattern[str] = re.compile(r"\bG0*20(?![.\d])", re.IGNORECASE)
 
+# A word that starts a move, and an axis word: a line with an axis word
+# but no move word moves in LinuxCNC's current (modal) motion mode.
+MOTION: re.Pattern[str] = re.compile(
+    r"\bG0*(?:[0-3]|8[0-9])(?![.\d])", re.IGNORECASE
+)
+AXIS: re.Pattern[str] = re.compile(r"[XYZ]\s*[-+.\d]", re.IGNORECASE)
+
 # A line of RS-274 words, simply: letters, each followed by a number.
 WORDS: re.Pattern[str] = re.compile(
     r"\s*([A-Za-z]\s*[-+]?(\d+\.?\d*|\.\d+)\s*)+"
@@ -511,6 +518,10 @@ def mdi_segments(
     The line is read by the tool path viewer's reader
     (`plot.read_gcode()`), after a move to where the tip is, in
     absolute (`G90`) mode; arcs come back as short straight pieces.
+    A line with axis words but no move word (e.g. `Z-4`) moves in the
+    modal motion mode, which the reader does not follow, so it is
+    read as a straight `G1` (the user drove through the grid plate
+    with `Z-4`).
 
     Arguments:
     * `line` (`str`): The typed line.
@@ -524,8 +535,14 @@ def mdi_segments(
       line that does not move.
 
     Raises:
-    * `ValueError`: If the line can not be read.
+    * `ValueError`: If the line can not be read, or has axis words
+      but reads as no move.
     """
+    words: str = COMMENT.sub("", line)
+    if re.search(r"\bG0*(?:28|30|53)(?![.\d])", words, re.IGNORECASE):
+        raise ValueError("moves by machine coordinates (G28, G30, G53)")
+    if AXIS.search(words) and not MOTION.search(words):
+        line = f"G1 {line}"
     scale: float = 25.4 if metric else 1.0
     x, y, z = (value * scale for value in start)
     text: str = (
@@ -546,6 +563,12 @@ def mdi_segments(
             for point in move["pts"]
         ]
         pieces += itertools.pairwise(points)
+    if (
+        not pieces
+        and AXIS.search(words)
+        and not re.search(r"\bG0*(?:10|92|43|5[4-9])\b", words, re.IGNORECASE)
+    ):
+        raise ValueError(f"no move read from {line!r}")
     return pieces
 
 

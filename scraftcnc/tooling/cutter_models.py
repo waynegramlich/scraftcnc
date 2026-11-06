@@ -91,6 +91,10 @@ MM_PER_INCH: float = 25.4
 # How many straight lines draw a quarter circle.
 ARC_STEPS: int = 8
 
+# The fewest color bands a holder has (with leading zeros), so that
+# they read as a tool number (the user, 2026-11-05).
+MIN_BANDS: int = 2
+
 # The electrical resistor color code, by digit.
 RESISTOR_COLORS: tuple[str, ...] = (
     "#000000",  # 0: black.
@@ -687,16 +691,20 @@ def shop_tools(
 
 # Function `unique_id_digits()`:
 def unique_id_digits(tools: Sequence[tuple[str, dict[str, object]]]) -> int:
-    """Return how many digits the longest `unique_id` has.
+    """Return how many color bands a holder has: the longest `unique_id`.
+
+    At least `MIN_BANDS`, so that the bands read as a tool number.
 
     Arguments:
     * `tools` (`Sequence[tuple[str, dict[str, object]]]`):
       The tools, from `shop_tools()`.
 
     Returns:
-    * (`int`): The number of digits (at least 1).
+    * (`int`): The number of digits (at least `MIN_BANDS`).
     """
-    return max((len(str(tool["unique_id"])) for _, tool in tools), default=1)
+    return max(
+        [MIN_BANDS, *(len(str(tool["unique_id"])) for _, tool in tools)]
+    )
 
 
 # Class `Cutter`:
@@ -1145,6 +1153,98 @@ def model_holder(
         )
         bodies.append(body)
     return bodies
+
+
+# Function `occurrence_ids()`:
+def occurrence_ids(solidcraft: PyBind, occurrence: str) -> tuple[int, int]:
+    """Return the ids of an occurrence's component and of itself.
+
+    Arguments:
+    * `solidcraft` (`PyBind`): The SolidCraft session.
+    * `occurrence` (`str`): The occurrence's name (e.g. `T1:1`).
+
+    Returns:
+    * (`tuple[int, int]`): The component's id, and the occurrence's,
+      for `component.move_bodies` and `browser.visibility`'s `paths`.
+
+    Raises:
+    * `ValueError`: If there is no such occurrence.
+    """
+    listed: JSON = solidcraft.component.list(compact=True)
+    assert isinstance(listed, dict) and isinstance(listed["components"], list)
+    component: JSON
+    for component in listed["components"]:
+        if not isinstance(component, dict) or not isinstance(
+            component["occurrences"], list
+        ):
+            continue
+        found: JSON
+        for found in component["occurrences"]:
+            if isinstance(found, dict) and found["name"] == occurrence:
+                return (int(str(component["id"])), int(str(found["id"])))
+    raise ValueError(f"no occurrence {occurrence}")
+
+
+# Function `holder_tool_end_height()`:
+def holder_tool_end_height(tool: tuple[str, dict[str, object]]) -> float:
+    """Return how far above its tip a tool's holder's narrow end is.
+
+    The narrow end of the holder's cone is its tool end, where the
+    tool comes out, and where a carousel's spoke holds it; a tool with
+    no holder gives its overall length.
+
+    Arguments:
+    * `tool` (`tuple[str, dict[str, object]]`):
+      The list it is in, in its tools file, and its description.
+
+    Returns:
+    * (`float`): The height (inches).
+    """
+    length: float = measure(tool[1]["overall_length"], LENGTH)
+    if "holder" not in tool[1]:
+        return length
+    return length * (1 - HOLDER_GRIP)
+
+
+# Function `add_holder()`:
+def add_holder(
+    solidcraft: PyBind,
+    modeled: ModeledTool,
+    tool: tuple[str, dict[str, object]],
+    digits: int,
+    cache: ModelCache | None = None,
+) -> list[str]:
+    """Give a modeled tool its holder, in its component, to move with it.
+
+    The tool must still stand on its tip at the origin, as
+    `model_tool()` leaves it when `at` is not given.
+
+    Arguments:
+    * `solidcraft` (`PyBind`): The SolidCraft session.
+    * `modeled` (`ModeledTool`): The tool, from `model_tool()`.
+    * `tool` (`tuple[str, dict[str, object]]`):
+      The list it is in, in its tools file, and its description.
+    * `digits` (`int`): How many bands (from `unique_id_digits()`).
+    * `cache` (`ModelCache | None`):
+      Where to keep its bands between runs, or `None` to build them.
+
+    Returns:
+    * (`list[str]`): The bands' body names; none for a tool with no
+      `holder`.
+    """
+    if "holder" not in tool[1]:
+        return []
+    length: float = measure(tool[1]["overall_length"], LENGTH)
+    bands: list[str] = model_holder(
+        solidcraft,
+        tool[1],
+        digits,
+        (0.0, 0.0, length * (1 - HOLDER_GRIP)),
+        cache,
+    )
+    component, _ = occurrence_ids(solidcraft, modeled.occurrence)
+    solidcraft.component.move_bodies(bodies=bands, component=component)
+    return bands
 
 
 # Function `model_shop_tools()`:

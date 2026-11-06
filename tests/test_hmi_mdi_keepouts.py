@@ -79,6 +79,23 @@ class TestMdiKeepOuts(unittest.TestCase):
         )
         self.assertEqual(self.sent(), ["mdi G0 X1"])
 
+    def test_axis_words_only(self) -> None:
+        """`Z-4` (no move word) is checked as a straight move (the user's
+        drive through the grid plate)."""
+        self.guard()
+        self.assertIn("refused", self.run_line("X1"))
+        self.assertEqual(self.sent(), [])
+        self.assertEqual(
+            len(lcnc_hmi.mdi_segments("Z-4", (1, 0, 1), False)), 1
+        )
+
+    def test_machine_coordinates_refused(self) -> None:
+        """`G28`, `G30` and `G53` moves are not followed, so refused."""
+        self.guard()
+        for line in ("G28 Z1", "G30", "G53 G0 Z0"):
+            self.assertIn("can not be checked", self.run_line(line))
+        self.assertEqual(self.sent(), [])
+
     def test_segments(self) -> None:
         """An arc comes back as short pieces, end to end, in inches."""
         pieces = lcnc_hmi.mdi_segments(

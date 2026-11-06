@@ -8,6 +8,7 @@ from unittest import mock
 
 from scraftcnc.carousel import Plan, Swap, spoke_ends
 from scraftcnc.lcnc import sim_solidcraft
+from scraftcnc.tooling import cutter_models
 
 
 class TestSpokeEnds(unittest.TestCase):
@@ -35,6 +36,7 @@ def tool_model() -> Any:
     """Return a stand-in for a `ToolModel`."""
     model: Any = mock.MagicMock()
     model.modeled.items.return_value = [f"items {id(model)}"]
+    model.base = 3.0
     return model
 
 
@@ -79,9 +81,10 @@ class TestCarouselView(unittest.TestCase):
         with mock.patch.object(sim_solidcraft, "send_batch") as batch:
             self.sample(0, False)
         self.assertEqual(batch.call_count, 1)
-        x, y, _ = self.tip(4)
+        x, y, z = self.tip(4)
         self.assertAlmostEqual(x, 11.0)
         self.assertAlmostEqual(y, 0.0)
+        self.assertAlmostEqual(z, -3.0)  # Hung by its holder's narrow end.
         x, y, _ = self.tip(8)
         self.assertAlmostEqual(x, 7.0)
         self.assertAlmostEqual(y, 0.0)
@@ -114,12 +117,7 @@ class TestCarouselView(unittest.TestCase):
             self.sample(1, True)
         self.assertEqual(self.view.slots, {1: 4, 2: 1})
         self.assertEqual(self.view.front, 2)
-        hidden: list[Any] = [
-            call.kwargs["items"]
-            for call in self.solidcraft.browser.visibility.call_args_list
-            if call.kwargs["visible"] is False
-        ]
-        self.assertIn(self.rack.tools[8].modeled.items(), hidden)
+        self.rack.tools[8].show.assert_any_call(False)
 
     def test_origin_change_places_again(self) -> None:
         """A new work origin draws the spokes again, moved."""
@@ -129,6 +127,42 @@ class TestCarouselView(unittest.TestCase):
         self.assertEqual(batch.call_count, 2)
         x, _, _ = self.tip(4)
         self.assertAlmostEqual(x, 10.0)
+
+
+class TestAddHolder(unittest.TestCase):
+    """A simulated tool's holder goes into the tool's component."""
+
+    def test_moved_into_component(self) -> None:
+        """The bands are made, then moved into the tool's component."""
+        solidcraft: Any = mock.MagicMock()
+        solidcraft.component.list.return_value = {
+            "components": [
+                {"id": 0, "occurrences": []},
+                {"id": 4, "occurrences": [{"id": 5, "name": "T1:1"}]},
+            ]
+        }
+        modeled: Any = SimpleNamespace(occurrence="T1:1")
+        tool: Any = ("end_mills", {"holder": {}, "overall_length": "2 in"})
+        with mock.patch.object(
+            cutter_models, "model_holder", return_value=["band"]
+        ):
+            bands = cutter_models.add_holder(solidcraft, modeled, tool, 2)
+        self.assertEqual(bands, ["band"])
+        solidcraft.component.move_bodies.assert_called_once_with(
+            bodies=["band"], component=4
+        )
+        self.assertEqual(
+            cutter_models.occurrence_ids(solidcraft, "T1:1"), (4, 5)
+        )
+
+    def test_no_holder(self) -> None:
+        """A tool with no holder gets none."""
+        solidcraft: Any = mock.MagicMock()
+        tool: Any = ("end_mills", {"overall_length": "2 in"})
+        modeled: Any = SimpleNamespace(occurrence="T1:1")
+        bands = cutter_models.add_holder(solidcraft, modeled, tool, 2)
+        self.assertEqual(bands, [])
+        solidcraft.component.move_bodies.assert_not_called()
 
 
 if __name__ == "__main__":

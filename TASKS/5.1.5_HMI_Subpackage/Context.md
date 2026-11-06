@@ -412,3 +412,55 @@ Tests: `tests/test_hmi_mdi_keepouts.py` (6).  Unit suite 653 OK, 13
 skipped, 228 s; end-to-end 10 OK, 138 s.  Open: #49 (holders of tools
 in the carousel ignore the Holders toggle; the follower process does
 not know the HMI's toggles).  All steps S1-S12 are done.
+
+## 2026-11-05: S13 (#49; done by Claude directly)
+
+#49 was moot: the simulated tools had no holders at all (only the
+cutter gallery, `model_shop_tools()`, drew them), so the S9 Holders
+toggle found nothing in `show_demo`.  Now `cutter_models.add_holder()`
+builds a tool's bands and moves them into the tool's component
+(`component.move_bodies`, component id from `occurrence_ids()`), and
+`sim_solidcraft.ToolModel` uses it; a tool is shown or hidden whole
+(`browser.visibility(paths=[[occurrence id]])`, plus body and flutes),
+so only the HMI touches the bands.  A probe showed a band hidden by
+the toggle stays hidden through tool changes, and unused tools hide
+whole.  Unit suite 655 OK, 13 skipped, 203 s; `./show_demo.py
+--headless` fine (105 s): the carousel tools' bands sit at the spoke
+ends (63.5 mm from the hub).  To check in a GUI run (#50): a body
+named `Holder band` at the work origin, and empty `Holder band
+profile` sketches, appear (from building the bands' cache entries?).
+
+## 2026-11-05: S14, and two holder bands (the user, #0, #51, #52)
+
+The user saw `show_demo.py` and liked it.  Holder bands: at least two
+(`cutter_models.MIN_BANDS`), set by the whole shop's highest
+`unique_id` (`Machine.id_digits`, passed to the simulator's
+`ToolRack`; it used to count only the loaded tools, giving one band).
+S14: keep-outs are solid boxes (`solid.box`), red `#ff0000` at
+opacity 0.15 (`setup_view.KEEP_OUT_COLOR`/`_OPACITY`), named
+`keep_out_<item>_<n>`, in place of wire sketches (SolidCraft has no
+line colors); the toggle works as before.  Unit suite 655 OK, 13
+skipped, 198 s; `./show_demo.py --headless --keep-outs`: every holder
+has two bands, the 7 keep-out boxes match the old sketches' extents,
+no errors, 104 s.  `T.hs~5.1.5` stays open until the user has seen it.
+
+## 2026-11-05: After the user's GUI look (two items)
+
+1) Carousel spokes end at the holder's narrow (tool) end (the user
+corrected "base"): tools hang there
+(`cutter_models.holder_tool_end_height()` = overall length x (1 -
+HOLDER_GRIP); `ToolModel.base`).  2) The user drove a
+bit through the tooling (grid) plate.  Not reproduced: in a dry-run
+HMI with the demo open, zones (7) and the origin mark are set, and a
+1 in -Z jog is refused ("would enter grid plate"); `jog_hit()` refuses
+moves into it; the grid plate's red box covers its body (top -0.375 in
+vs body top -0.5 in).  Asked the user how (jog step, MDI, or a run)
+and what the message line said.
+
+The drive-through: the user typed `Z-4` (no move word).  The viewer's
+reader gives no move for a line with axis words but no motion word
+(modal motion), so `mdi_segments()` found nothing to check.  Fixed: such
+a line is read as a straight `G1`; a line with axis words that still
+reads as no move is refused (unless it is `G10`, `G92`, `G43`, `G5x`);
+`G28`, `G30` and `G53` (machine-coordinate moves) are refused while
+keep-outs are checked.  Tests added (8 in `test_hmi_mdi_keepouts.py`).

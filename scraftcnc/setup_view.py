@@ -42,6 +42,10 @@ OPACITY: dict[str, float] = {"tooling": 0.35, "stock": 0.35, "part": 1.0}
 # how it looks, and which copy of the same it is.
 DisplayKey = tuple[str, str, float, float, float, int, str, float, int]
 
+# The keep-outs' look: red, and mostly see-through.
+KEEP_OUT_COLOR: str = "#ff0000"
+KEEP_OUT_OPACITY: float = 0.15
+
 # What can be hidden, by the first word of its display key: each
 # item's keep-outs (their own sketches) and the stock (its outline).
 HIDEABLE: tuple[str, ...] = ("keep_out", "stock")
@@ -551,27 +555,44 @@ class SetupView:  # pylint: disable=too-many-instance-attributes
 
     # Method `SetupView.draw_keep_out()`:
     def draw_keep_out(self, here: PlacedItem) -> ShownItem:
-        """Draw an item's keep-outs as wire boxes, in a sketch of their own.
+        """Draw an item's keep-outs as translucent red boxes (bodies).
+
+        SolidCraft has no colors for sketch lines, and a solid can be
+        seen through (the user, 2026-11-05, `T.hs~5.1.5` S14).
 
         Arguments:
         * `here` (`PlacedItem`): The item, placed.
 
         Returns:
-        * (`ShownItem`): The sketch.
+        * (`ShownItem`): Its boxes' bodies.
         """
         origin: Point = self.resolver(here.item).origin(0)
         self.sketches += 1
-        name: str = f"keep_out_{self.sketches}"
-        self.solidcraft.sketch.create(plane="XY", name=name)
-        self.solidcraft.sketch.options(sketch_3d=True)
+        bodies: list[str] = []
         low: Point
         high: Point
-        for low, high in keep_out_prisms(here, origin):
-            points: list[list[float]]
-            for points in prism_edges(low, high):
-                self.solidcraft.sketch.line3d(points=cast(JSON, points))
-        self.solidcraft.sketch.finish()
-        return ShownItem(bodies=[], sketches=[name])
+        for index, (low, high) in enumerate(keep_out_prisms(here, origin)):
+            sizes: list[float] = [
+                b - a for a, b in zip(low, high, strict=True)
+            ]
+            if min(sizes) <= 0.0:
+                continue
+            name: str = f"keep_out_{self.sketches}_{index + 1}"
+            self.solidcraft.solid.box(
+                length=sizes[0],
+                width=sizes[1],
+                height=sizes[2],
+                corner=list(low),
+                body_name=name,
+            )
+            bodies.append(name)
+        if bodies:
+            self.solidcraft.appearance.assign(
+                bodies=cast(JSON, bodies),
+                color=KEEP_OUT_COLOR,
+                opacity=KEEP_OUT_OPACITY,
+            )
+        return ShownItem(bodies=bodies, sketches=[])
 
     # Method `SetupView.draw()`:
     def draw(self, here: PlacedItem) -> ShownItem:

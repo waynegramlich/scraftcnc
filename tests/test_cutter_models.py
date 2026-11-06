@@ -361,10 +361,15 @@ class TestHolders(unittest.TestCase):
         )
 
     def test_digits(self) -> None:
-        """The longest number sets the number of bands."""
+        """The longest number sets the number of bands, at least two."""
         self.assertEqual(cutter_models.unique_id_digits(self.tools), 2)
-        self.assertEqual(cutter_models.unique_id_digits(self.tools[:9]), 1)
-        self.assertEqual(cutter_models.unique_id_digits([]), 1)
+        self.assertEqual(cutter_models.unique_id_digits(self.tools[:9]), 2)
+        self.assertEqual(cutter_models.unique_id_digits([]), 2)
+        long_id: tuple[str, dict[str, object]] = (
+            "end_mills",
+            {"unique_id": 305},
+        )
+        self.assertEqual(cutter_models.unique_id_digits([long_id]), 3)
 
     def test_colors(self) -> None:
         """Bands read from the base, with leading zeros."""

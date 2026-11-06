@@ -47,7 +47,14 @@ from ..pybind.scraftpybind import (
     connect,
 )
 from ..shops import cnc_machine, loaded_tools, read
-from ..tooling.cutter_models import ModeledTool, model_tool
+from ..tooling.cutter_models import (
+    ModeledTool,
+    add_holder,
+    holder_tool_end_height,
+    model_tool,
+    occurrence_ids,
+    unique_id_digits,
+)
 from .probe_batch import (
     InstallStep,
     path_steps,
@@ -119,10 +126,17 @@ class ToolModel:  # pylint: disable=too-few-public-methods
     Its tip starts at the program's zero.  SolidCraft moves a
     component only by a step from where it is, so the position it was
     last sent to is kept, and each move sends the difference; a move
-    is sent only when the tool has moved.
+    is sent only when the tool has moved.  Its holder's color bands
+    are in its component, so they move with it; it is shown and
+    hidden whole (its occurrence), which leaves each band's own
+    visibility to the HMI's Holders toggle.
 
     Attributes:
+    * `base` (`float`): How far above its tip its holder's narrow
+      (tool) end is (inches), where a carousel's spoke holds it.
+    * `holder` (`list[str]`): Its holder's bands' body names.
     * `modeled` (`ModeledTool`): Its body, flute lines and occurrence.
+    * `path` (`list[int]`): Its occurrence's id, for `paths`.
     * `position` (`Position`): Where its tip was last sent.
     * `solidcraft` (`PyBind`): The SolidCraft session.
     """
@@ -134,8 +148,9 @@ class ToolModel:  # pylint: disable=too-few-public-methods
         number: int,
         tool: tuple[str, dict[str, object]],
         cache: ModelCache | None = None,
+        digits: int = 1,
     ) -> None:
-        """Model the tool, as a component of its own, hidden.
+        """Model the tool and its holder, as a component, hidden.
 
         Arguments:
         * `solidcraft` (`PyBind`):
@@ -147,6 +162,8 @@ class ToolModel:  # pylint: disable=too-few-public-methods
           `shops.loaded_tools()`).
         * `cache` (`ModelCache | None`):
           Where to keep its model between runs, or `None` to build it.
+        * `digits` (`int`): How many holder bands (the shop's longest
+          `unique_id`).
         """
         # The tool, standing on its tip at the program's zero.
         self.solidcraft: PyBind = solidcraft
@@ -154,8 +171,25 @@ class ToolModel:  # pylint: disable=too-few-public-methods
         self.modeled: ModeledTool = model_tool(
             solidcraft, f"T{number}", tool, color=TOOL_COLOR, cache=cache
         )
-        solidcraft.browser.visibility(
-            visible=False, items=self.modeled.items()
+        self.base: float = holder_tool_end_height(tool)
+        self.holder: list[str] = add_holder(
+            solidcraft, self.modeled, tool, digits, cache
+        )
+        self.path: list[int] = [
+            occurrence_ids(solidcraft, self.modeled.occurrence)[1]
+        ]
+        self.show(False)
+
+    # Method `ToolModel.show()`:
+    def show(self, visible: bool) -> None:
+        """Show or hide the whole tool: its occurrence, body and lines.
+
+        Arguments:
+        * `visible` (`bool`): True to show it.
+        """
+        self.solidcraft.browser.visibility(visible=visible, paths=[self.path])
+        self.solidcraft.browser.visibility(
+            visible=visible, items=self.modeled.items()
         )
 
     # Method `ToolModel.move_to()`:
@@ -198,6 +232,7 @@ class ToolRack:  # pylint: disable=too-few-public-methods
         solidcraft: PyBind,
         tools: dict[int, tuple[str, dict[str, object]]],
         cache: ModelCache | None = None,
+        digits: int = 0,
     ) -> None:
         """Model every tool, hidden.
 
@@ -209,11 +244,14 @@ class ToolRack:  # pylint: disable=too-few-public-methods
         * `cache` (`ModelCache | None`):
           Where to keep their models between runs, or `None` to build
           them.
+        * `digits` (`int`): How many holder bands (`Machine.id_digits`,
+          from the whole shop), or 0 to count these tools' ids.
         """
         self.solidcraft: PyBind = solidcraft
         self.current: int = 0
+        digits = digits or unique_id_digits(list(tools.values()))
         self.tools: dict[int, ToolModel] = {
-            number: ToolModel(solidcraft, number, tool, cache)
+            number: ToolModel(solidcraft, number, tool, cache, digits)
             for number, tool in sorted(tools.items())
         }
 
@@ -231,16 +269,11 @@ class ToolRack:  # pylint: disable=too-few-public-methods
         # into place before showing it.
         if number != self.current:
             if self.current in self.tools:
-                self.solidcraft.browser.visibility(
-                    visible=False,
-                    items=self.tools[self.current].modeled.items(),
-                )
+                self.tools[self.current].show(False)
             self.current = number
             if number in self.tools:
                 self.tools[number].move_to(position)
-                self.solidcraft.browser.visibility(
-                    visible=True, items=self.tools[number].modeled.items()
-                )
+                self.tools[number].show(True)
         if number in self.tools:
             self.tools[number].move_to(position)
 
@@ -350,7 +383,8 @@ class CarouselView:  # pylint: disable=too-many-instance-attributes
 
     The spokes are one 3D sketch of lines from the hub, one per slot,
     with the slot in use at +X, where a tool goes in or out of the
-    spindle; each slot's tool stands on its tip at its spoke's end.  A
+    spindle; each slot's tool hangs with its holder's narrow end at
+    its spoke's end.  A
     tool change turns the spokes (a sketch for each slot at +X, drawn
     when first needed, only one shown) and moves the tools with them,
     with no animation.  The hub is in machine coordinates, so the
@@ -454,17 +488,17 @@ class CarouselView:  # pylint: disable=too-many-instance-attributes
                 visible=True, items=[self.shown]
             )
 
-        # Each slot's tool at its spoke's end, but the one in use.
+        # Each slot's tool, but the one in use, hung by its holder's
+        # narrow end at its spoke's end.
         slot: int
         number: int
         for slot, number in self.slots.items():
             if number == self.rack.current or number not in self.rack.tools:
                 continue
             model: ToolModel = self.rack.tools[number]
-            model.move_to(ends[slot])
-            self.solidcraft.browser.visibility(
-                visible=True, items=model.modeled.items()
-            )
+            x, y, z = ends[slot]
+            model.move_to((x, y, z - model.base))
+            model.show(True)
 
     # Method `CarouselView.sample()`:
     def sample(self, sample: Sample, changed: bool) -> None:
@@ -489,12 +523,7 @@ class CarouselView:  # pylint: disable=too-many-instance-attributes
                     ):
                         self.slots[swap.slot] = number
                         if swap.out in self.rack.tools:
-                            self.solidcraft.browser.visibility(
-                                visible=False,
-                                items=self.rack.tools[
-                                    swap.out
-                                ].modeled.items(),
-                            )
+                            self.rack.tools[swap.out].show(False)
                         break
             # The slot in use turns to +X.
             for slot, held in self.slots.items():
@@ -523,6 +552,7 @@ class SolidCraftDisplay:
         tools: dict[int, tuple[str, dict[str, object]]],
         paths: PathRack,
         carousel: tuple[Transport, Machine, Plan] | None = None,
+        digits: int = 0,
     ) -> None:
         """Model the tools.
 
@@ -535,8 +565,10 @@ class SolidCraftDisplay:
         * `carousel` (`tuple[Transport, Machine, Plan] | None`):
           The session's transport, the machine and the program's slot
           plan, for a machine with a carousel; else `None`.
+        * `digits` (`int`): How many holder bands (the whole shop's
+          longest `unique_id`), or 0 to count the tools' ids.
         """
-        self.rack: ToolRack = ToolRack(solidcraft, tools, ModelCache())
+        self.rack: ToolRack = ToolRack(solidcraft, tools, ModelCache(), digits)
         self.paths: PathRack = paths
         self.carousel: CarouselView | None = (
             None
@@ -650,4 +682,5 @@ def display(
                 if machine.carousel_slots > 0 and sequence
                 else None
             ),
+            machine.id_digits,
         )

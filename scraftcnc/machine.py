@@ -168,7 +168,7 @@ class Machine:  # pylint: disable=too-many-instance-attributes
       carousel's hub is (machine coordinates, inches).
     * `spoke_length` (`float`): From the hub to each slot (inches).
     * `id_digits` (`int`): How many digits the shop's longest tool
-      `unique_id` has (its holders' color bands).
+      `unique_id` has, at least 2 (its holders' color bands).
 
     Constructor:
     * `Machine(name, z_safe, clearance, tool_change_z, tool_change,
@@ -195,7 +195,7 @@ class Machine:  # pylint: disable=too-many-instance-attributes
         init=True, default=(0.0, 0.0, 0.0)
     )
     spoke_length: float = field(init=True, default=0.0)
-    id_digits: int = field(init=True, default=1)
+    id_digits: int = field(init=True, default=2)
 
     # Method `Machine.__post_init__()`:
     def __post_init__(self) -> None:

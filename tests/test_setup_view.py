@@ -440,7 +440,7 @@ class TestSetupView(unittest.TestCase):
         )
 
     def test_keep_outs(self) -> None:
-        """Keep-outs come as one sketch per item, and go when off."""
+        """Keep-outs come as red see-through boxes, and go when off."""
         items: list[AssemblyItem] = self.assembly().items
         items[0] = replace(items[0], keep_out=((0, 0, 0, 1, 2, 3),))
         assembly: Assembly = Assembly(items)
@@ -450,11 +450,13 @@ class TestSetupView(unittest.TestCase):
         self.view.show(assembly)
         self.assertEqual(self.view.counts, (1, 5, 0))
         names: list[str] = self.session.names()
-        self.assertEqual(names.count("sketch.line3d"), 6)
+        self.assertEqual(names.count("solid.box"), 1)
+        self.assertIn("appearance.assign", names)
+        self.assertNotIn("sketch.line3d", names)
         self.view.keep_outs = False
         self.view.show(assembly)
         self.assertEqual(self.view.counts, (0, 5, 1))
-        self.assertEqual(self.session.names(), ["timeline.delete"])
+        self.assertEqual(self.session.names(), ["solid.remove"])
 
     def test_hidden(self) -> None:
         """Hidden kinds are hidden after each show, and shown again."""
