@@ -464,3 +464,35 @@ a line is read as a straight `G1`; a line with axis words that still
 reads as no move is refused (unless it is `G10`, `G92`, `G43`, `G5x`);
 `G28`, `G30` and `G53` (machine-coordinate moves) are refused while
 keep-outs are checked.  Tests added (8 in `test_hmi_mdi_keepouts.py`).
+
+## 2026-11-05: Where things stand (before the user's reboot)
+
+All committed to git by the user.  Steps S1-S14 are done: S1 dropped
+(no trace baseline), S2 no `SC` prefix, S3 HMI tabs, S4 shop/machine/
+origin from setup comments (refuse other machines; no Start without an
+origin), S5 tool change pause, S6 next tool and time left, S7 per-axis
+origin, S8 jog keep-out check, S9 View toggles (keep-outs, stock,
+origin, holders), S10 carousel plan, S11 carousel drawn, S12 MDI
+keep-out check (now also axis-only lines; G28/G30/G53 refused), S13
+holders on simulated tools, S14 red translucent keep-out boxes; holders
+have at least two bands; carousel tools hang by the holder's narrow
+end.  Last unit suite: 657 OK; end-to-end last run at S12 (10 OK).
+
+Open:
+1. Keep `T.hs~5.1.5` open until the user has seen it in a GUI run of
+   `./show_demo.py`; then write `Summary.md` and close it with `aic`.
+2. #50: a body named `Holder band` at the work origin, and empty
+   `Holder band profile` sketches, seen once in a headless run
+   (from building the bands' cache entries?); check in a GUI run.
+3. S2 leftovers, unanswered: rename `--panel-port` (and the `panel`
+   names in `show_demo.py`) to HMI; the old `SC` names in
+   `index_conversion_issues.md` and `shars_catalog.md`.
+4. The carousel tools now hang lower (by the holder's narrow end); if
+   their tips sit too low, raise the carousel's `z` in
+   `examples/shop/shop_mill.toml`.
+5. The aic directory name `5.1.5_HMI_Subpackage` does not match its
+   title; `aic T.hs rename to HMI Sub-package` wants a git commit first.
+
+Working method: the user asked for no sub-agents for now; Claude does
+the steps directly.  `.claude/agents/step-worker.md` (Sonnet) exists
+for when agents are used again.
