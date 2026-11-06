@@ -124,10 +124,10 @@ def path_segments(moves: list[PathMove]) -> list[Segment]:
     os.environ.get("SCRAFTCNC_LINUXCNC"), "SCRAFTCNC_LINUXCNC is not set"
 )
 class TestEndToEnd(unittest.TestCase):
-    """A person's session at the panel, against a real LinuxCNC."""
+    """A person's session at the HMI, against a real LinuxCNC."""
 
     directory: ClassVar[tempfile.TemporaryDirectory[str]]
-    panel: ClassVar[subprocess.Popen[bytes]]
+    hmi: ClassVar[subprocess.Popen[bytes]]
     port: ClassVar[int]
     server: ClassVar[subprocess.Popen[bytes]]
 
@@ -150,7 +150,7 @@ class TestEndToEnd(unittest.TestCase):
                     cls.server.kill()
                     raise
                 time.sleep(0.2)
-        cls.start_panel()
+        cls.start_hmi()
         cls.set_work_origin()
 
     @classmethod
@@ -184,10 +184,10 @@ class TestEndToEnd(unittest.TestCase):
         ask("type ")
 
     @classmethod
-    def start_panel(cls) -> None:
-        """Start a panel, and wait until it answers."""
+    def start_hmi(cls) -> None:
+        """Start an HMI, and wait until it answers."""
         cls.port = free_port()
-        cls.panel = subprocess.Popen(
+        cls.hmi = subprocess.Popen(
             [sys.executable, "-m", "scraftcnc.hmi.lcnc_hmi", "--headless",
              "--port", str(cls.port)],
             cwd=HERE,
@@ -204,8 +204,8 @@ class TestEndToEnd(unittest.TestCase):
     @classmethod
     def tearDownClass(cls) -> None:
         """Stop the HMI and LinuxCNC, and check that they stop."""
-        cls.panel.terminate()
-        cls.panel.wait(timeout=10.0)
+        cls.hmi.terminate()
+        cls.hmi.wait(timeout=10.0)
         if cls.server.poll() is None:
             with lcnc_client.BridgeClient(timeout=10.0) as lcnc:
                 lcnc.call("shutdown")
@@ -412,14 +412,14 @@ class TestEndToEnd(unittest.TestCase):
         self.assertEqual(self.position(), stopped)
         self.assertEqual(self.shown()["buttons"]["Start"], "normal")
 
-    def test_panel_closed_and_opened(self) -> None:
+    def test_hmi_closed_and_opened(self) -> None:
         """LinuxCNC outlives the HMI; a new one keeps what it had."""
         self.open_program("kept.ngc", TWO_TOOLS)
         self.execute("G20 G90 G0 X2 Y1")
         self.press("Quit")
-        self.assertEqual(self.panel.wait(timeout=10.0), 0)
+        self.assertEqual(self.hmi.wait(timeout=10.0), 0)
         self.assertIsNone(self.server.poll())
-        self.start_panel()
+        self.start_hmi()
         self.assertTrue(self.at(2.0, 1.0, 0.0), self.position())
         self.assertTrue(self.status()["file"].endswith("kept.ngc"))
         self.wait_for(
@@ -508,7 +508,7 @@ class TestEndToEnd(unittest.TestCase):
         lines: list[int] = [sample[0] for sample in samples]
         self.assertGreater(max(lines), moves[-1]["line"] - 5)
 
-    def test_zz_server_stops_under_the_panel(self) -> None:
+    def test_zz_server_stops_under_the_hmi(self) -> None:
         """The HMI reports a LinuxCNC that has gone, and stays up."""
         with lcnc_client.BridgeClient(timeout=10.0) as lcnc:
             lcnc.call("shutdown")
@@ -518,4 +518,4 @@ class TestEndToEnd(unittest.TestCase):
             lambda: "not answering" in self.shown()["message"],
         )
         self.assertEqual(self.ask("ping"), "ok")
-        self.assertIsNone(self.panel.poll())
+        self.assertIsNone(self.hmi.poll())

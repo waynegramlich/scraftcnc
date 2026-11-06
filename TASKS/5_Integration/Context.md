@@ -39,3 +39,9 @@ toggles keep-outs; `./show_demo.py --headless` (`T.hlp~3.3.1`, closed)
 lets Claude run everything with no window.  Its summary lists what is
 left open.  Next candidates: `T.npfetc~5.4` (a path per tool change),
 spacers under the part (through cuts), `T.sm2~5.5`.
+
+## 2026-11-05: `T.hs~5.1.5` closed
+
+The HMI work (S1-S14) is done and checked by the user in a GUI run;
+see its `Summary.md`.  Next candidates: `T.npfetc~5.4` (a path per
+tool change), `T.cmt~5.3` (more tools), `T.sm2~5.5`.

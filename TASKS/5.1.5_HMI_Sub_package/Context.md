@@ -496,3 +496,13 @@ Open:
 Working method: the user asked for no sub-agents for now; Claude does
 the steps directly.  `.claude/agents/step-worker.md` (Sonnet) exists
 for when agents are used again.
+
+## 2026-11-05: Closed
+
+The user checked the GUI run (fine), the stray holder band bodies
+(#50, fine) and the carousel heights (fine).  `--panel-port` became
+`--port` in `show_demo.py`, and its `panel` names (and the
+end-to-end suite's) became `hmi`.  No `SC` names were left in
+`index_conversion_issues.md` (the matches were words like
+"Scraper"); `shars_catalog.md` is left alone (written by another
+tool).  The directory was renamed with `aic`.

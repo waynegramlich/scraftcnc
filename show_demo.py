@@ -67,7 +67,7 @@ BOX: str = "lcnc"
 
 # The usual ports, of SolidCraft and of the HMI's commands.
 SOLIDCRAFT_PORT: int = 8080
-PANEL_PORT: int = 5007
+HMI_PORT: int = 5007
 
 # The HMI's speed to start with: a whole run in about 75 seconds.
 SPEED: float = 10.0
@@ -643,8 +643,8 @@ class DemoShow:  # pylint: disable=too-many-public-methods
                 )
             time.sleep(POLL)
 
-    # Method `DemoShow.start_panel()`:
-    def start_panel(self) -> None:
+    # Method `DemoShow.start_hmi()`:
+    def start_hmi(self) -> None:
         """Start the HMI, stopped, with the program open.
 
         The HMI draws the program's setup in SolidCraft.
@@ -652,20 +652,20 @@ class DemoShow:  # pylint: disable=too-many-public-methods
         Raises:
         * `DemoShowFailed`: If it does not come up.
         """
-        port: int = self.options.panel_port
+        port: int = self.options.port
         say("Starting the HMI.")
         self.start(
-            "panel",
+            "hmi",
             [sys.executable, "-m", "scraftcnc.hmi.lcnc_hmi",
              "--port", str(port),
              "--solidcraft", str(self.options.solidcraft_port),
              *(["--headless"] if self.options.headless else []),
              str(self.program)],
         )  # fmt: skip
-        self.wait_for_port("panel", port)
-        with socket.create_connection(("127.0.0.1", port), 5.0) as panel:
-            panel.sendall(f"speed {self.options.speed}\n".encode())
-            panel.makefile().readline()
+        self.wait_for_port("hmi", port)
+        with socket.create_connection(("127.0.0.1", port), 5.0) as hmi:
+            hmi.sendall(f"speed {self.options.speed}\n".encode())
+            hmi.makefile().readline()
 
     # Method `DemoShow.bring_up()`:
     def bring_up(self) -> None:
@@ -681,7 +681,7 @@ class DemoShow:  # pylint: disable=too-many-public-methods
             {
                 "LinuxCNC": LINUXCNC_PORT,
                 "SolidCraft": self.options.solidcraft_port,
-                "the panel": self.options.panel_port,
+                "the HMI": self.options.port,
             }
         )
         if not self.options.headless:
@@ -703,7 +703,7 @@ class DemoShow:  # pylint: disable=too-many-public-methods
             self.start_solidcraft()
         self.write_program()
         self.start_watcher()
-        self.start_panel()
+        self.start_hmi()
 
     # Method `DemoShow.start_headless_solidcraft()`:
     def start_headless_solidcraft(self) -> None:
@@ -731,10 +731,10 @@ class DemoShow:  # pylint: disable=too-many-public-methods
         Returns:
         * (`str`): The answer.
         """
-        address: tuple[str, int] = ("127.0.0.1", self.options.panel_port)
-        with socket.create_connection(address, 30.0) as panel:
-            panel.sendall(f"{line}\n".encode())
-            return panel.makefile().readline().strip()
+        address: tuple[str, int] = ("127.0.0.1", self.options.port)
+        with socket.create_connection(address, 30.0) as hmi:
+            hmi.sendall(f"{line}\n".encode())
+            return hmi.makefile().readline().strip()
 
     # Method `DemoShow.watch()`:
     def watch(
@@ -893,7 +893,7 @@ class DemoShow:  # pylint: disable=too-many-public-methods
         self.report()
         say("Pressing Quit.")
         self.ask("press Quit")
-        self.running["panel"].wait(timeout=CLOSE_SECONDS)
+        self.running["hmi"].wait(timeout=CLOSE_SECONDS)
         say(f"Total {time.monotonic() - begun:.0f} s.")
 
     # Method `DemoShow.wait_until_closed()`:
@@ -992,7 +992,7 @@ class DemoShow:  # pylint: disable=too-many-public-methods
     def close(self) -> None:
         """Close everything, the last started first."""
         say("Closing.")
-        self.close_one("panel")
+        self.close_one("hmi")
         self.close_watcher()
         self.close_linuxcnc()
         self.close_one("solidcraft")
@@ -1031,9 +1031,9 @@ def main() -> int:
         help="SolidCraft's control port (default: %(default)s)",
     )
     parser.add_argument(
-        "--panel-port",
+        "--port",
         type=int,
-        default=PANEL_PORT,
+        default=HMI_PORT,
         help="the HMI's command port (default: %(default)s)",
     )
     parser.add_argument(
