@@ -1,5 +1,0 @@
-line-length = 79
-
-[lint.per-file-ignores]
-# The EZPkg bootstrap in `catxtract.py` is pasted as is.
-"catxtract.py" = ["E701", "E702", "BLE001"]

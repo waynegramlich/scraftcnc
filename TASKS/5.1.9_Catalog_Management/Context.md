@@ -114,3 +114,48 @@ Dropped (the user, 2026-11-07): `catxtract` works well enough.
   reports table, row and cell counts on pages 100, 105 and 452; the
   user checks differing pages in the GUI.  Claude may browse a few
   `SharsMD/` `.md`/`.json` files, never all of them.
+
+## catxtract's README (folded in, S1)
+
+# **catextract** -- Catalog Information Extraction
+
+Many catalogs are distributed in PDF (Portable Document Format).  These
+typically contain a product image, descriptive text, part number, price, etc.
+Frequently there is a table of related parts, each with a part number, some
+part characteristics, price, minimum quantity, etc.
+
+The `catextract` program is a graphical user interface that allows the user
+to identify the name, description, and tables on a catalog page.  This
+information is extracted and entered into a Markdown (`.md`) file on a
+page by page basis.
+
+
+## 2026-11-07: S1
+
+* `git subtree add --prefix=scraftcnc/catalog ../catxtract main`: merge
+  commit `82af26d` (8 commits of history).
+* Staged (uncommitted) removals: `aic` link, `CLAUDE.md`, `.flake8`,
+  `.gitignore`, `.hgignore`, `ISSUES/`, `README.md` (folded in above),
+  `ruff.toml`, `RULES/`, `TASKS/`.  Kept `catxtract.py`,
+  `catxtract.py.toml`; added `scraftcnc/catalog/__init__.py`.
+* `python3 -m scraftcnc.catalog.catxtract --help` prints the usage
+  (docstring) and exits; the `ezpkg` header was not edited.  No GUI run.
+
+## 2026-11-07: Where things stand (end of session 1)
+
+* S1 done: merge `82af26d`; only `catxtract.py`, `catxtract.py.toml`
+  and `__init__.py` in `scraftcnc/catalog/`; `python3 -m
+  scraftcnc.catalog.catxtract --help` works.  PyMuPDF is not in the
+  system `python3`; the GUI still runs only through the `ezpkg`
+  bootstrap (`python3 scraftcnc/catalog/catxtract.py
+  2026_Shars_Catalog.pdf SharsMD`) until S2.
+* Next: S2, done inline by Claude (no step-worker unless it grows):
+  drop `ezpkg`; fetch the PDF package on first use; try
+  `pdfplumber`, judged by the count script on pages 100, 105, 452
+  against PyMuPDF (kept available until judged); fall back to
+  PyMuPDF plus a README license note if `pdfplumber` falls short.
+* Then S3 checkers (the `ezpkg` ignores go away), S4 tests (skipped
+  without the package), S5 notes and README (fix this file's
+  catxtract paths), S6 Catalog mode in the HMI.
+* `../catxtract/` is deleted only after all this is committed and
+  pushed; its `SharsMD` is now a link to `scraftcnc/SharsMD/`.
