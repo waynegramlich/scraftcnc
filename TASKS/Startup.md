@@ -8,6 +8,7 @@
 @4_Implementing_Keepout_Zones/Details.md
 @5_Integration/Details.md
 @5_Integration/Context.md
+@5.1.9_Catalog_Management/Details.md
 @5.3_Create_More_Tools/Details.md
 @5.3_Create_More_Tools/Context.md
 @5.4_New_Path_for_Each_Tool_Change/Details.md
