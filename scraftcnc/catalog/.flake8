@@ -1,0 +1,5 @@
+[flake8]
+max-line-length = 79
+extend-ignore = E203
+# The EZPkg bootstrap in `catxtract.py` is pasted as is.
+per-file-ignores = catxtract.py: E301,E701,E702
