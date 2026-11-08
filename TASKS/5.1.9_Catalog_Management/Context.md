@@ -179,3 +179,26 @@ page by page basis.
   packages fetched on first use into `~/.scraftcnc/packages/`
   (proposed, not yet confirmed); then the count script on pages 100,
   105, 452 against PyMuPDF.
+
+## 2026-11-07: Package fetching done (S2, part 1)
+
+* The installed package is read only (the user); all writes go under
+  `~/.scraftcnc/`.  `scraftcnc/home.py` (`make_directory()`) creates
+  it with `Created ~/.scraftcnc/ directory to cache information.` on
+  stderr; `model_cache.py` uses it too.
+* `scraftcnc/packages.py` (`require(module, requirement)`): fetches
+  pip's wheel into `~/.scraftcnc/pip/`, installs into
+  `~/.scraftcnc/packages/cpython-312/` (`--no-warn-conflicts` hides
+  pip's report on unrelated system packages).  Tested with a fake
+  `HOME` and `python3 -S` (no system pip): installs, second run quiet.
+* `catxtract.py`: 3.11 `TypeAlias`, `zip(strict=False)`, pylint
+  limits quieted by name.  All four checkers clean on the four files.
+* Next: the rewrite onto `pdfplumber` + `pypdfium2`.
+* Later the same day: `~/.scraftcnc/` hidden on Windows (`attrib +h`),
+  checked by `tests/test_home.py`, added to the Windows/Linux CI
+  workflow's offline tests (`probe_linuxcnc.yml`).  `pip`'s stdout is
+  dropped; anything on its stderr is an error exit.  `.pylintrc`:
+  `max-module-lines = 10000` (the user).  `App.command()` dispatches by
+  a dictionary to private `App._...()` methods (public method limit);
+  `best_match()` replaces the loop `lambda`.  The user dislikes
+  `lambda`s: prefer local functions.

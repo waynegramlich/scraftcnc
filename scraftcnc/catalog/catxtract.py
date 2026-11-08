@@ -41,9 +41,10 @@ import json
 import re
 import sys
 import tkinter as tk
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import TypeAlias
 
 # PyMuPDF lives in EZPkg's cache, where `mypy` and `pylint` do not
 # look.
@@ -74,7 +75,7 @@ INDEX_LINE: re.Pattern[str] = re.compile(
 )
 
 # A word from `pymupdf`: (x0, y0, x1, y1, text).
-type Word = tuple[float, float, float, float, str]
+Word: TypeAlias = tuple[float, float, float, float, str]
 
 
 # Class `Region`:
@@ -309,7 +310,9 @@ def markdown_table(table: list[list[str]]) -> str:
     index: int
     row: list[str]
     for index, row in enumerate(rows):
-        cells: list[str] = [cell.ljust(w) for cell, w in zip(row, widths)]
+        cells: list[str] = [
+            cell.ljust(w) for cell, w in zip(row, widths, strict=False)
+        ]
         lines.append("| " + " | ".join(cells) + " |")
         if index == 0:
             lines.append("| " + " | ".join("-" * w for w in widths) + " |")
@@ -467,6 +470,27 @@ def load_regions(path: Path) -> tuple[list[Region], list[Region]]:
     return lists[0], lists[1]
 
 
+# Function `best_match()`:
+def best_match(old: Region, candidates: list[Region]) -> Region:
+    """Return the candidate that overlaps `old` the most.
+
+    Arguments:
+    * `old` (`Region`):
+      A region from an earlier page.
+    * `candidates` (`list[Region]`):
+      The regions found on this page; there must be at least one.
+
+    Returns:
+    * (`Region`): The candidate with the largest overlap.
+    """
+    best: Region = candidates[0]
+    candidate: Region
+    for candidate in candidates[1:]:
+        if overlap(candidate, old) > overlap(best, old):
+            best = candidate
+    return best
+
+
 # Function `detect()`:
 def detect(page: pymupdf.Page) -> list[Region]:
     """Find the images and tables on a page.
@@ -584,7 +608,7 @@ def suggest(
             f for f in found if f.kind == old.kind and overlap(f, old) > 0.3
         ]
         if same:
-            best: Region = max(same, key=lambda f: overlap(f, old))
+            best: Region = best_match(old, same)
             found.remove(best)
             regions.append(best)
         elif old.kind in ("title", "text", "index"):
@@ -998,67 +1022,152 @@ class App:
           The command's key, which names it (e.g. `n` for the next
           page).
         """
+        # The mode buttons share one method; the rest have one each.
+        actions: dict[str, Callable[[], None]] = {
+            "n": self._next_page,
+            "p": self._previous_page,
+            "N": self._next_new_page,
+            "P": self._previous_new_page,
+            "u": self._undo_region,
+            "c": self._clear_regions,
+            "]": self._region_down,
+            "[": self._region_up,
+            "y": self._cycle_older,
+            "Y": self._cycle_newer,
+            "d": self._delete_region,
+            "x": self._ignore_region,
+        }
+        if key == "q":
+            self.save_if_marked()
+            self.root.destroy()
+            return
         if key in KINDS:
-            # A mode button sets the kind of the selected region (if
-            # any) as well as the kind of the next region.
-            self.kind = KINDS[key]
-            self.kind_var.set(self.kind)
-            if 0 <= self.selected < len(self.regions):
-                self.regions[self.selected].kind = self.kind
-        elif key == "n" and self.page_no < len(self.doc) - 1:
+            self._set_kind(KINDS[key])
+        elif key in actions:
+            actions[key]()
+        self.draw_regions()
+
+    # Method `App._set_kind()`:
+    def _set_kind(self, kind: str) -> None:
+        """Set the kind of the next region, and of the selected one.
+
+        Arguments:
+        * `kind` (`str`):
+          The kind (e.g. `table`).
+        """
+        self.kind = kind
+        self.kind_var.set(kind)
+        if 0 <= self.selected < len(self.regions):
+            self.regions[self.selected].kind = kind
+
+    # Method `App._next_page()`:
+    def _next_page(self) -> None:
+        """Move to the next page, if there is one."""
+        if self.page_no < len(self.doc) - 1:
             self.change_page(self.page_no + 1)
-        elif key == "p" and self.page_no > 0:
+
+    # Method `App._previous_page()`:
+    def _previous_page(self) -> None:
+        """Move to the previous page, if there is one."""
+        if self.page_no > 0:
             self.change_page(self.page_no - 1)
-        elif key == "u" and self.regions:
+
+    # Method `App._next_new_page()`:
+    def _next_new_page(self) -> None:
+        """Move to the next page not extracted yet, if there is one."""
+        page_no: int = self.empty_page(1)
+        if page_no >= 0:
+            self.change_page(page_no)
+
+    # Method `App._previous_new_page()`:
+    def _previous_new_page(self) -> None:
+        """Move to the previous page not extracted yet, if any."""
+        page_no: int = self.empty_page(-1)
+        if page_no >= 0:
+            self.change_page(page_no)
+
+    # Method `App._undo_region()`:
+    def _undo_region(self) -> None:
+        """Remove the newest region, and select the one before it."""
+        if self.regions:
             self.regions.pop()
             self.selected = len(self.regions) - 1
-        elif key == "c":
-            self.regions = []
-            self.ignored = []
-            self.selected = -1
-            self.message = "Cleared."
-        elif key in "[]" and key and self.regions:
-            # Step through the regions top to bottom (or back up).
-            order: list[int] = sorted(
-                range(len(self.regions)),
-                key=lambda i: (self.regions[i].y0, self.regions[i].x0),
-            )
-            step: int = 1 if key == "]" else -1
-            here: int = (
-                order.index(self.selected)
-                if self.selected in order
-                else (-1 if step > 0 else 0)
-            )
-            self.selected = order[(here + step) % len(order)]
-        elif key == "N" and self.empty_page(1) >= 0:
-            self.change_page(self.empty_page(1))
-        elif key == "P" and self.empty_page(-1) >= 0:
-            self.change_page(self.empty_page(-1))
-        elif key == "y" and self.regions:
-            # Step down to older regions, wrapping to the newest.
+
+    # Method `App._clear_regions()`:
+    def _clear_regions(self) -> None:
+        """Remove every region, and forget the ignored ones."""
+        self.regions = []
+        self.ignored = []
+        self.selected = -1
+        self.message = "Cleared."
+
+    # Method `App._region_down()`:
+    def _region_down(self) -> None:
+        """Select the next region down the page (wrapping)."""
+        self._step_region(1)
+
+    # Method `App._region_up()`:
+    def _region_up(self) -> None:
+        """Select the next region up the page (wrapping)."""
+        self._step_region(-1)
+
+    # Method `App._step_region()`:
+    def _step_region(self, step: int) -> None:
+        """Step through the regions top to bottom (or back up).
+
+        Arguments:
+        * `step` (`int`):
+          1 to step down the page, -1 to step up.
+        """
+        if not self.regions:
+            return
+
+        # Order the regions top to bottom, then left to right.
+        def position(index: int) -> tuple[float, float]:
+            return (self.regions[index].y0, self.regions[index].x0)
+
+        order: list[int] = sorted(range(len(self.regions)), key=position)
+        here: int = (
+            order.index(self.selected)
+            if self.selected in order
+            else (-1 if step > 0 else 0)
+        )
+        self.selected = order[(here + step) % len(order)]
+
+    # Method `App._cycle_older()`:
+    def _cycle_older(self) -> None:
+        """Step down to older regions, wrapping to the newest."""
+        if self.regions:
             self.selected = (
                 len(self.regions) - 1
                 if self.selected < 0
                 else (self.selected - 1) % len(self.regions)
             )
-        elif key == "Y" and self.regions:
-            # Step up to newer regions, wrapping to the oldest.
+
+    # Method `App._cycle_newer()`:
+    def _cycle_newer(self) -> None:
+        """Step up to newer regions, wrapping to the oldest."""
+        if self.regions:
             self.selected = (self.selected + 1) % len(self.regions)
-        elif key == "d" and 0 <= self.selected < len(self.regions):
-            # Delete the selected region, then select the one before it,
-            # so that cycling carries on from there.
+
+    # Method `App._delete_region()`:
+    def _delete_region(self) -> None:
+        """Delete the selected region, and select the one before it.
+
+        Selecting the one before it lets cycling carry on from there.
+        """
+        if 0 <= self.selected < len(self.regions):
             self.regions.pop(self.selected)
             self.selected = (
                 (self.selected - 1) % len(self.regions) if self.regions else -1
             )
-        elif key == "x" and 0 <= self.selected < len(self.regions):
+
+    # Method `App._ignore_region()`:
+    def _ignore_region(self) -> None:
+        """Ignore the selected region, so it is not suggested again."""
+        if 0 <= self.selected < len(self.regions):
             self.ignored.append(self.regions.pop(self.selected))
             self.selected = -1
-        elif key == "q":
-            self.save_if_marked()
-            self.root.destroy()
-            return
-        self.draw_regions()
 
     # Method `App.update_indexes()`:
     def update_indexes(self) -> None:

@@ -40,6 +40,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
+from .home import HOME_DIRECTORY, make_directory
 from .pybind.scraftpybind import (
     JSON,
     HeadlessTransport,
@@ -51,7 +52,7 @@ if TYPE_CHECKING:
     from .assembly import AssemblyItem
 
 # Where the files go.
-CACHE_DIRECTORY: Path = Path.home() / ".scraftcnc" / "tool_cache"
+CACHE_DIRECTORY: Path = HOME_DIRECTORY / "tool_cache"
 
 # How long a file stays when it is not being used (seconds).
 MAX_AGE: float = 7.0 * 24.0 * 60.0 * 60.0
@@ -338,7 +339,7 @@ class ModelCache:
         """
         if self.swept:
             return
-        self.directory.mkdir(parents=True, exist_ok=True)
+        make_directory(self.directory)
         oldest: float = time.time() - MAX_AGE
         for path in self.directory.glob("*.step"):
             if path.stat().st_mtime < oldest:

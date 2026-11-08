@@ -1,0 +1,6 @@
+# Configuration for `pylint`.
+
+[FORMAT]
+# Long single file programs (e.g. `catxtract.py`) are fine (the user,
+# 2026-11-07).
+max-module-lines = 10000

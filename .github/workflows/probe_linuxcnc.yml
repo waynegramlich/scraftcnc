@@ -46,7 +46,7 @@ jobs:
           python --version
 
       - name: Offline tests
-        run: python -m unittest tests.test_install_linuxcnc tests.test_lcnc_bridge
+        run: python -m unittest tests.test_install_linuxcnc tests.test_lcnc_bridge tests.test_home
 
       - name: install_linuxcnc --yes
         id: install
