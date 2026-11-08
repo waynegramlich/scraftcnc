@@ -1,10 +1,4 @@
 #!/usr/bin/env python3
-# These lines are inline script metadata (PEP 723) that the EZPkg
-# bootstrap needs.  Never remove them.
-# /// script
-# requires-python = ">=3.12"
-# dependencies = ["ezpkg>=0.0.4,<0.1", "pymupdf"]
-# ///
 """Extract catalog information from PDF pages into Markdown files.
 
 `catxtract` shows one PDF page at a time.  The user drags rectangles
@@ -40,52 +34,12 @@ Usage: `catxtract.py PDF OUTDIR`
 
 from __future__ import annotations
 
-# The bootstrap below is pasted as is, so `ruff format` and `pylint`
-# skip it.
-# fmt: off
-# pylint: disable=all
-# Begin the EZPkg bootstrap.  Never edit it.
-import hashlib
-import importlib
-import json
-import pathlib
-import subprocess
-import sys
-import urllib.error
-import urllib.request as req
-
-try:  # Do not edit try block!  See https://pypi.org/project/ezpkg/
-    s = "find ezpkg"; t = pathlib.Path.home()/".ezpkg"; w = t/"ezpkg.whl"
-    def g(u: str) -> bytes:  # Fetch u; curl if no certificates.
-        try: return bytes(req.urlopen(u, None, 60).read())
-        except urllib.error.URLError as y: z = y  # python.org Macs.
-        try: return subprocess.run(["curl", "-fsSL", u],
-                                   capture_output=True, check=True).stdout
-        except Exception: raise z from None
-    try: m = None; m = importlib.import_module("ezpkg")  # Present?
-    except ImportError: pass
-    if m is None and not w.is_file():  # Not downloaded yet.
-        s = "download ezpkg"; d = g("https://pypi.org/pypi/ezpkg/json")
-        e = next(e for e in json.loads(d)["urls"] if e["url"][-4:] == ".whl")
-        r = g(e["url"])
-        if hashlib.sha256(r).hexdigest() != e["digests"]["sha256"]:
-            raise ValueError(f"{e['filename']} fails its SHA-256 check")
-        t.mkdir(parents=True, exist_ok=True); p = t/"ezpkg.part"
-        p.write_bytes(r); p.replace(w)  # The rename is atomic.
-    if m is None:  # Python imports it straight from the wheel.
-        s = "import ezpkg"; sys.path.insert(0, str(w))
-        m = importlib.import_module("ezpkg")
-    s = "fetch packages"; m.EZPkg().install(bootstrap="2026-10-26")
-except Exception as x:  # Do not edit try block!
-    raise SystemExit(f"ezpkg: {s} failed: {x!r}")
-# End the EZPkg bootstrap.
-# pylint: enable=all
-# fmt: on
-
 import bisect
 import functools
 import itertools
+import json
 import re
+import sys
 import tkinter as tk
 from collections.abc import Iterator
 from dataclasses import asdict, dataclass, field

@@ -159,3 +159,23 @@ page by page basis.
   catxtract paths), S6 Catalog mode in the HMI.
 * `../catxtract/` is deleted only after all this is committed and
   pushed; its `SharsMD` is now a link to `scraftcnc/SharsMD/`.
+
+## 2026-11-07: S2 started (session 2)
+
+* `pip` cannot be assumed (Ubuntu's Python has none).  Shown to
+  work, with the system `pip` hidden (`python3 -I -S`): fetch pip's
+  wheel from `https://pypi.org/pypi/pip/json` (urllib, curl
+  fallback, SHA-256 checked), run `python3 WHEEL/pip install
+  --target DIR pdfplumber`.  Gets `pdfplumber` 0.11.10, `pdfminer.six`,
+  `pypdfium2` (renders pages), Pillow; all permissive licenses.
+* The `ezpkg` bootstrap, PEP 723 header and `catxtract.py.toml` are
+  deleted (the user agreed); `catxtract.py` imports `json` and `sys`
+  itself.  It does not run until the rewrite (no PyMuPDF).
+* Checkers before the rewrite: `pylint` and `ruff format` clean;
+  `ruff check` and `mypy` left with the 3.12 `type` alias
+  (`catxtract.py:77`) and `zip()` without `strict=`
+  (`catxtract.py:312`).
+* Next: rewrite onto `pdfplumber` + `pypdfium2` with our own `Rect`;
+  packages fetched on first use into `~/.scraftcnc/packages/`
+  (proposed, not yet confirmed); then the count script on pages 100,
+  105, 452 against PyMuPDF.
