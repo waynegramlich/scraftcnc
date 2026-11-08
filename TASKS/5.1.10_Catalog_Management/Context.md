@@ -282,3 +282,10 @@ page by page basis.
 * Next session: answer 14-18, then code S6 (ask before any agent; only
   the relevant tests, never the full suite), then delete
   `../catxtract/` after S6 is committed and pushed.
+
+## 2026-11-08: Suspended
+
+Suspended by the user in favor of `T.osiade~5.1.9` (Organize Shop
+Information and Data Entry): shop information has no organizing
+strategy yet.  Open questions 14-21 (above) and deleting
+`../catxtract/` (22) wait on it.

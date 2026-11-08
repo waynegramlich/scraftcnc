@@ -1,4 +1,4 @@
-# 5.1.9 Catalog Management
+# 5.1.10 Catalog Management
 
 The vast majority of shop tools are purchased via mail order.  Usually tool
 vendor has a web site and frequently some sort on-line tool catalog.  Some
