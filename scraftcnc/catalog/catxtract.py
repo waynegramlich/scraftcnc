@@ -27,7 +27,7 @@ Moving to another page, or quitting, saves the page first.  Each
 saved pages before and after it; saving a page updates those links in
 the pages on either side as well.
 
-Usage: `catxtract.py PDF OUTDIR`
+Usage: `python3 -m scraftcnc.catalog.catxtract PDF OUTDIR`
 """
 
 # pylint: disable=too-many-instance-attributes,too-many-locals
@@ -44,12 +44,8 @@ import tkinter as tk
 from collections.abc import Callable, Iterator
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import TypeAlias
 
-# PyMuPDF lives in EZPkg's cache, where `mypy` and `pylint` do not
-# look.
-# pylint: disable-next=import-error
-import pymupdf  # type: ignore[import-not-found]
+from .pdf import Document, Page, Rect, Word
 
 KINDS: dict[str, str] = {
     "1": "title",
@@ -73,9 +69,6 @@ INDEX_LINE: re.Pattern[str] = re.compile(
     r"(?P<item>.*?)[\s.…]*[.…]{2}[\s.…]*"
     r"(?P<pages>\d+(?:\s*[~,-]\s*\d+)*)\s*"
 )
-
-# A word from `pymupdf`: (x0, y0, x1, y1, text).
-Word: TypeAlias = tuple[float, float, float, float, str]
 
 
 # Class `Region`:
@@ -102,13 +95,13 @@ class Region:
     y1: float = field(init=True)
 
     # Method `Region.rect()`:
-    def rect(self) -> pymupdf.Rect:
-        """Return the region as a `pymupdf.Rect`.
+    def rect(self) -> Rect:
+        """Return the region as a `Rect`.
 
         Returns:
-        * (`pymupdf.Rect`): The region's rectangle.
+        * (`Rect`): The region's rectangle.
         """
-        return pymupdf.Rect(self.x0, self.y0, self.x1, self.y1)
+        return Rect(self.x0, self.y0, self.x1, self.y1)
 
 
 # Function `group_rows()`:
@@ -320,14 +313,16 @@ def markdown_table(table: list[list[str]]) -> str:
 
 
 # Function `lines_inside()`:
-def lines_inside(page: pymupdf.Page, region: Region) -> str:
+def lines_inside(page: Page, region: Region) -> str:
     """Return the lines of text whose centers are inside a region.
 
     A hand drawn rectangle often clips a neighboring line (e.g. a page
-    footer), and `get_text()` with a `clip` keeps the pieces it touches.
+    footer), and the text that touches a rectangle includes it.  The
+    lines are the PDF's own (pdfminer's layout), which a column gap
+    splits, but which keep a page wide footer whole.
 
     Arguments:
-    * `page` (`pymupdf.Page`):
+    * `page` (`Page`):
       The page to look at.
     * `region` (`Region`):
       The region to look inside.
@@ -335,14 +330,20 @@ def lines_inside(page: pymupdf.Page, region: Region) -> str:
     Returns:
     * (`str`): The lines, in the order of the page, with their indents.
     """
-    lines: list[str] = []
-    for block in page.get_text("dict")["blocks"]:
-        for line in block.get("lines", []):
-            center: pymupdf.Point = pymupdf.Rect(line["bbox"]).tl / 2
-            center += pymupdf.Rect(line["bbox"]).br / 2
-            if center in region.rect():
-                lines.append("".join(s["text"] for s in line["spans"]))
-    return "\n".join(lines)
+    # Keep the lines whose centers are inside.
+    box: Rect = region.rect()
+    inside: list[tuple[Rect, str]] = [
+        (line, text)
+        for line, text in page.lines()
+        if box.contains((line.x0 + line.x1) / 2, (line.y0 + line.y1) / 2)
+    ]
+
+    # Put them top to bottom, since pdfminer may not (e.g. a large
+    # heading letter).
+    def top(item: tuple[Rect, str]) -> tuple[float, float]:
+        return (item[0].y0, item[0].x0)
+
+    return "\n".join(text for _line, text in sorted(inside, key=top))
 
 
 # Function `page_link()`:
@@ -428,8 +429,8 @@ def overlap(a: Region, b: Region) -> float:
     Returns:
     * (`float`): The area they share over the area they cover (0 to 1).
     """
-    common: float = (a.rect() & b.rect()).get_area()
-    total: float = a.rect().get_area() + b.rect().get_area() - common
+    common: float = a.rect().intersection(b.rect()).area()
+    total: float = a.rect().area() + b.rect().area() - common
     return common / total if total > 0 else 0.0
 
 
@@ -492,17 +493,17 @@ def best_match(old: Region, candidates: list[Region]) -> Region:
 
 
 # Function `detect()`:
-def detect(page: pymupdf.Page) -> list[Region]:
+def detect(page: Page) -> list[Region]:
     """Find the images and tables on a page.
 
     This is generic.  Images are the page's embedded images, with the
     pieces that nearly touch merged, except tiny ones (icons) and ones
     covering most of the page (backgrounds).
-    Tables are what `pymupdf` finds, kept only when at least 3 of their
+    Tables are what `pdfplumber` finds, kept only when at least 3 of their
     rows look like data rather than headers (which drops page footers).
 
     Arguments:
-    * `page` (`pymupdf.Page`):
+    * `page` (`Page`):
       The page to look at.
 
     Returns:
@@ -510,40 +511,37 @@ def detect(page: pymupdf.Page) -> list[Region]:
     """
     # Merge the embedded images that nearly touch, since a picture is
     # often made of pieces (e.g. a photo and the parts of a diagram).
-    boxes: list[pymupdf.Rect] = [
-        pymupdf.Rect(info["bbox"]) & page.rect
-        for info in page.get_image_info()
-    ]
+    boxes: list[Rect] = page.image_boxes()
     merged: bool = True
     while merged:
         merged = False
         i: int
         j: int
         for i, j in itertools.combinations(range(len(boxes)), 2):
-            if (boxes[i] + (-10, -10, 10, 10)).intersects(boxes[j]):
-                boxes[i] |= boxes.pop(j)
+            if boxes[i].grow(10).intersects(boxes[j]):
+                boxes[i] = boxes[i].union(boxes.pop(j))
                 merged = True
                 break
 
     # Keep the pictures that are neither icons (under 40 points on each
     # side) nor most of the page (backgrounds).  A picture can be thin
     # (e.g. a drill seen from the side).
-    page_area: float = page.rect.get_area()
+    page_area: float = page.rect.area()
     found: list[Region] = [
-        Region("image", *box)
+        Region("image", box.x0, box.y0, box.x1, box.y1)
         for box in boxes
-        if max(box.width, box.height) > 40
-        and min(box.width, box.height) > 10
-        and box.get_area() < 0.8 * page_area
+        if max(box.width(), box.height()) > 40
+        and min(box.width(), box.height()) > 10
+        and box.area() < 0.8 * page_area
     ]
 
     # Find the tables.
-    for table in page.find_tables().tables:
-        box = pymupdf.Rect(table.bbox)
-        words: list[Word] = [w[:5] for w in page.get_text("words", clip=box)]
+    box: Rect
+    for box in page.table_boxes():
+        words: list[Word] = page.words(box)
         rows: list[list[Word]] = group_rows(words) if words else []
         if sum(not is_header(row) for row in rows) >= 3:
-            found.append(Region("table", *box))
+            found.append(Region("table", box.x0, box.y0, box.x1, box.y1))
     return found
 
 
@@ -561,8 +559,8 @@ def snap(region: Region, words: list[Word]) -> Region | None:
     * (`Region | None`): The region around the words it touches, or
       `None` if it touches none.
     """
-    box: pymupdf.Rect = region.rect()
-    touched: list[Word] = [w for w in words if box.intersects(w[:4])]
+    box: Rect = region.rect()
+    touched: list[Word] = [w for w in words if box.intersects(Rect(*w[:4]))]
     if not touched:
         return None
     return Region(
@@ -576,7 +574,7 @@ def snap(region: Region, words: list[Word]) -> Region | None:
 
 # Function `suggest()`:
 def suggest(
-    page: pymupdf.Page, previous: list[Region], ignored: list[Region]
+    page: Page, previous: list[Region], ignored: list[Region]
 ) -> list[Region]:
     """Suggest regions for a page, helped by an earlier page.
 
@@ -587,7 +585,7 @@ def suggest(
     region ignored on the earlier page (such as a repeated logo).
 
     Arguments:
-    * `page` (`pymupdf.Page`):
+    * `page` (`Page`):
       The page to suggest regions for.
     * `previous` (`list[Region]`):
       The regions kept on the earlier page.
@@ -598,7 +596,7 @@ def suggest(
     * (`list[Region]`): The suggested regions.
     """
     found: list[Region] = detect(page)
-    words: list[Word] = [w[:5] for w in page.get_text("words")]
+    words: list[Word] = page.words()
     regions: list[Region] = []
 
     # Carry over the earlier page's regions.
@@ -633,7 +631,7 @@ class App:
 
     Attributes:
     * `canvas` (`tk.Canvas`): Shows the page and its regions.
-    * `doc` (`pymupdf.Document`): The PDF being extracted.
+    * `doc` (`Document`): The PDF being extracted.
     * `drag` (`tuple[float, float]`): Where the current drag started.
     * `ignored` (`list[Region]`): The regions ignored on this page.
     * `kind_var` (`tk.StringVar`): Shows `kind` on the kind buttons.
@@ -665,7 +663,7 @@ class App:
         * `out_dir` (`Path`):
           The directory the Markdown goes into.
         """
-        self.doc: pymupdf.Document = pymupdf.open(pdf)
+        self.doc: Document = Document(pdf)
         self.out_dir: Path = out_dir
         # Start at the first page not extracted yet (with no directory).
         self.page_no: int = next(
@@ -687,7 +685,7 @@ class App:
 
         # Fit the page to the screen height.
         self.root: tk.Tk = tk.Tk()
-        page_height: float = self.doc[0].rect.height
+        page_height: float = self.doc[0].rect.height()
         self.zoom: float = (self.root.winfo_screenheight() - 190) / page_height
 
         # Put the page buttons in the first row.
@@ -846,12 +844,11 @@ class App:
     def show_page(self) -> None:
         """Show the current page and load its saved regions."""
         # Render the page.
-        page: pymupdf.Page = self.doc[self.page_no]
-        pixmap: pymupdf.Pixmap = page.get_pixmap(
-            matrix=pymupdf.Matrix(self.zoom, self.zoom)
+        page: Page = self.doc[self.page_no]
+        self.photo = tk.PhotoImage(data=page.png(self.zoom))
+        self.canvas.config(
+            width=self.photo.width(), height=self.photo.height()
         )
-        self.photo = tk.PhotoImage(data=pixmap.tobytes("png"))
-        self.canvas.config(width=pixmap.width, height=pixmap.height)
         self.canvas.delete("all")
         self.canvas.create_image(0, 0, anchor="nw", image=self.photo)
 
@@ -994,13 +991,17 @@ class App:
         * `event` (`tk.Event[tk.Canvas]`):
           The mouse event.
         """
-        point: pymupdf.Point = pymupdf.Point(event.x, event.y) / self.zoom
+        x: float = event.x / self.zoom
+        y: float = event.y / self.zoom
         under: list[int] = [
-            i for i, r in enumerate(self.regions) if point in r.rect()
+            i for i, r in enumerate(self.regions) if r.rect().contains(x, y)
         ]
-        self.selected = min(
-            under, key=lambda i: self.regions[i].rect().get_area(), default=-1
-        )
+
+        # The smallest one wins.
+        def area(index: int) -> float:
+            return self.regions[index].rect().area()
+
+        self.selected = min(under, key=area, default=-1)
 
     # Method `App.on_delete()`:
     def on_delete(self, event: tk.Event[tk.Canvas]) -> None:
@@ -1040,6 +1041,7 @@ class App:
         if key == "q":
             self.save_if_marked()
             self.root.destroy()
+            self.doc.close()
             return
         if key in KINDS:
             self._set_kind(KINDS[key])
@@ -1232,7 +1234,7 @@ class App:
 
         # Write each region, top to bottom, except that the index regions
         # (usually columns, whose tops differ a little) go left to right.
-        page: pymupdf.Page = self.doc[self.page_no]
+        page: Page = self.doc[self.page_no]
         columns: Iterator[Region] = iter(
             sorted(
                 (r for r in self.regions if r.kind == "index"),
@@ -1251,9 +1253,7 @@ class App:
                     )
                 )
                 continue
-            text: str = " ".join(
-                page.get_text("text", clip=region.rect()).split()
-            )
+            text: str = " ".join(page.text(region.rect()).split())
             if region.kind == "title":
                 parts.append(f"## {text}")
             elif region.kind == "text":
@@ -1261,14 +1261,12 @@ class App:
             elif region.kind == "image":
                 image_count += 1
                 name: str = f"{stem}_{image_count}.png"
-                page.get_pixmap(dpi=150, clip=region.rect()).save(
-                    self.json_path().parent / name
+                (self.json_path().parent / name).write_bytes(
+                    page.png(150 / 72, region.rect())
                 )
                 parts.append(f"![image]({name})")
             else:
-                words: list[Word] = [
-                    w[:5] for w in page.get_text("words", clip=region.rect())
-                ]
+                words: list[Word] = page.words(region.rect())
                 parts.append(markdown_table(table_rows(words)))
         md_path: Path = self.json_path().parent / f"{stem}.md"
         md_path.write_text("\n\n".join(parts) + "\n")

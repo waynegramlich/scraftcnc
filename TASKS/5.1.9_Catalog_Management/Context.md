@@ -202,3 +202,39 @@ page by page basis.
   a dictionary to private `App._...()` methods (public method limit);
   `best_match()` replaces the loop `lambda`.  The user dislikes
   `lambda`s: prefer local functions.
+
+## 2026-11-07: S2 rewrite done, awaiting the user's GUI check
+
+* `scraftcnc/catalog/pdf.py`: the only module touching the libraries
+  (`Rect`, `Page`, `Document`; `pdfplumber` text/images/tables,
+  `pypdfium2` drawing).  `catxtract.py` no longer mentions PyMuPDF.
+  Run with `python3 -m scraftcnc.catalog.catxtract PDF OUTDIR`.
+* `lines_inside()` uses pdfminer's layout lines (a second
+  `pdfplumber` handle with `laparams={}`, opened only when needed,
+  ~1 s a page), sorted top to bottom: keeps index indents, keeps the
+  full width footer whole (so it stays out), and puts the big section
+  letters (D, E, F, G on page 452) before their sections (PyMuPDF put
+  them at the column's end).
+* Compared with PyMuPDF (scratch copy of the old file): pages 100 and
+  105 identical; page 452 index identical except those letters.  On
+  10 saved pages with images, image suggestions identical; table
+  suggestions differ on 8 (pages 1, 15, 27, 44, 72, 107, 127, 146):
+  splits, extra small tables, tighter boxes than PyMuPDF's page sized
+  ones.  The user is to judge in the GUI.  Suggest 2.5x faster.
+
+## 2026-11-07: S4 tests
+
+* Decided: keep `pdfplumber` (on pages 15, 27, 44, 107 its table
+  suggestions beat PyMuPDF's: two side by side tables instead of one,
+  small tables PyMuPDF missed, photos no longer swallowed).
+* `pdf.py` fetches the packages in `Document()`, not on import.
+  `Document.close()` added (the tests and Quit call it).
+* `tests/test_catalog_pdf.py`: 7 tests on a one page PDF written by
+  hand into a temporary directory (no binaries in git, the user's
+  wish): `Rect`, words, text, `lines_inside()` indents, `detect()`
+  (ruled table + inline image), `table_rows()`, `png()`.  Skipped
+  when the packages are not in `~/.scraftcnc/packages/`.
+* Relevant tests pass (`test_catalog_pdf`, `test_home`,
+  `test_model_cache`: 30).  The user: never the full suite, and no
+  agents without asking.  Next: S5 notes and README, S6 Catalog mode
+  in the HMI.
