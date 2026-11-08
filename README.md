@@ -40,7 +40,12 @@ screen.
 
 ## Requirements
 
-* Python 3.11 or newer; nothing outside the standard library.
+* Python 3.11 or newer; nothing outside the standard library, except
+  for the catalog extractor (`scraftcnc/catalog/`), which fetches
+  `pdfplumber` and `pypdfium2` from PyPI the first time it opens a PDF
+  (a network connection is needed then).  They go into
+  `~/.scraftcnc/packages/`, never into Python itself; `pip` is fetched
+  too, since some Pythons (e.g. Ubuntu's) have none.
 * `git`, to get the code.
 * SolidCraft, only to see the part: its GUI, or `solidcraft-cli` on
   the `PATH` for sessions with no window.  Downloads are on the
@@ -140,6 +145,11 @@ The code is the package `scraftcnc/`:
 * `shops.py` (with `Shops.md` and `examples/shop/`): the shop
   description files, their reader (every problem reported at its file
   and line), and the example shop that the demonstration uses.
+* `home.py`: `~/.scraftcnc/`, where `scraftcnc` keeps everything it
+  writes for itself (the package is treated as read only); created on
+  first use, with a message, and hidden on Windows.
+* `packages.py`: fetches optional packages from PyPI into
+  `~/.scraftcnc/packages/` the first time they are needed.
 * `model_cache.py`: keeps models of tools and tooling as STEP files in
   `~/.scraftcnc/tool_cache/`, so the second start is much faster.  One
   not used for a week is deleted, and deleting them all is always safe.
@@ -173,6 +183,10 @@ The code is the package `scraftcnc/`:
   SolidCraft.
 * `hmi/`: the operator's HMI (`lcnc_hmi.py`) and its headless
   version.
+* `catalog/`: `catxtract.py`, which pulls titles, text, images and
+  tables out of a vendor's PDF catalog into a Markdown file per page
+  (`python3 -m scraftcnc.catalog.catxtract PDF OUTDIR`), and `pdf.py`,
+  the only module that touches the PDF packages.
 
 Beside it, `tests/` holds the tests and `show_demo.py` the
 demonstration that connects everything.

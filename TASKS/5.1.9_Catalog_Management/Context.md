@@ -1,6 +1,6 @@
 # LLM Agent Context Log
 
-catxtract's notes, copied 2026-11-07 from `../catxtract/TASKS/1_Initial_Explortation/Context.md` (`T.ie~1` there), unchanged so far; its paths are still relative to `../catxtract/`, until the code moves here (`T.cm~5.1.9`).
+catxtract's notes, copied 2026-11-07 from `../catxtract/TASKS/1_Initial_Explortation/Context.md` (`T.ie~1` there).  Their paths are relative to `../catxtract/`, and their `ezpkg`, PyMuPDF and `PYTHONPATH` instructions are out of date: since S2-S4 the code is `scraftcnc/catalog/catxtract.py` and `pdf.py` (`pdfplumber` + `pypdfium2`, fetched into `~/.scraftcnc/packages/`), run with `python3 -m scraftcnc.catalog.catxtract PDF OUTDIR`; see the dated entries at the end.
 
 ## State as of 2026-10-29 (end of second session)
 
@@ -238,3 +238,47 @@ page by page basis.
   `test_model_cache`: 30).  The user: never the full suite, and no
   agents without asking.  Next: S5 notes and README, S6 Catalog mode
   in the HMI.
+
+## 2026-11-07: S5 done; S6 design questions open (end of session 2)
+
+* S5: `README.md` lists `catalog/`, `home.py`, `packages.py`, and the
+  PyPI fetch in Requirements; the copied notes above are marked out of
+  date.
+* S6, the user's design (2026-11-07): a separate [Catalogs] tab in the
+  HMI, listing each catalog downloaded as a PDF.  Top rows:
+  `Catalog Name: [...] [Create] [Delete]` ([Delete] pops up `Really
+  delete: [Yes] [No]`), then `PDF File Name: [...]`; [Create] greyed
+  out while that file does not exist.  Below: an alphabetical,
+  scrolling list of catalog names (a sub-directory each).  Selecting
+  one ungreys [Enter], which leads into the catxtract GUI.  The user
+  expects room for improvement.
+* Open questions, Claude's recommendation after each; the user was too
+  tired to decide, and will answer next session (numbers sticky):
+  14. Where catalogs live.  Rec: `~/.scraftcnc/catalogs/NAME/`, never
+      swept; change the "to cache information" message and README,
+      since `~/.scraftcnc/` would then hold the user's work, not just
+      caches; move `scraftcnc/SharsMD/` to
+      `~/.scraftcnc/catalogs/Shars/`.  Alternative: a separate
+      directory (e.g. `~/scraftcnc_catalogs/`).
+  15. HMI without LinuxCNC.  Today LinuxCNC starts the HMI as its
+      display.  Rec: the HMI can also start alone, opening on
+      [Catalogs], the machine tab greyed out with no LinuxCNC.
+  16. What [Create] does with the PDF.  Rec: copy it to
+      `NAME/catalog.pdf` (Shars is 60 MB).  Alternative: record the
+      original's path.
+  17. Safe [Delete].  Rec: pop-up names the loss (`Really delete Shars
+      (254 pages extracted): [Yes] [No]`); Yes renames to
+      `NAME.deleted` rather than erasing.
+  18. Where catxtract's view goes after [Enter].  Rec: it replaces the
+      [Catalogs] tab's contents, with a [Back] button that saves and
+      returns to the list (page fit to screen height loses a little to
+      the tab bar).  Alternatives: a separate window, or a tab per
+      open catalog.
+  Queued, not yet raised: 19 a [Browse...] button for the PDF; 20 each
+  catalog's progress (pages done) in the list; 21 rules for catalog
+  names.
+* The HMI (`scraftcnc/hmi/lcnc_hmi.py`, 2899 lines) has no tabs today
+  (no `ttk.Notebook`).
+* Next session: answer 14-18, then code S6 (ask before any agent; only
+  the relevant tests, never the full suite), then delete
+  `../catxtract/` after S6 is committed and pushed.
