@@ -40,12 +40,47 @@ import itertools
 import json
 import re
 import sys
-import tkinter as tk
 from collections.abc import Callable, Iterator
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from ..packages import require
 from .pdf import Document, Page, Rect, Word
+
+# `PySide6` lives in `~/.scraftcam/packages/`, so it is put on
+# `sys.path` (and fetched, the first time) before it is imported.
+require("PySide6")
+# pylint: disable=wrong-import-position,wrong-import-order
+from PySide6.QtCore import (  # noqa: E402
+    QPoint,
+    QRect,
+    QRectF,
+    QRegularExpression,
+    Qt,
+)
+from PySide6.QtGui import (  # noqa: E402
+    QCloseEvent,
+    QColor,
+    QMouseEvent,
+    QPainter,
+    QPaintEvent,
+    QPen,
+    QPixmap,
+    QRegularExpressionValidator,
+    QScreen,
+)
+from PySide6.QtWidgets import (  # noqa: E402
+    QApplication,
+    QButtonGroup,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
+
+# pylint: enable=wrong-import-position,wrong-import-order
 
 KINDS: dict[str, str] = {
     "1": "title",
@@ -59,7 +94,7 @@ COLORS: dict[str, str] = {
     "text": "blue",
     "image": "green",
     "table": "magenta",
-    "index": "dark orange",
+    "index": "darkorange",
 }
 
 # An index line: `SOME_TEXT.....NNN`, where the page numbers may be a
@@ -625,36 +660,173 @@ def suggest(
     return regions
 
 
+# Class `PageView`:
+class PageView(QWidget):
+    """Shows a page and its regions, and passes the mouse to `App`.
+
+    Attributes:
+    * `app` (`App`): The window it is in.
+    * `dragging` (`bool`): True while a rectangle is being dragged.
+    * `pixmap` (`QPixmap`): The page, drawn at `App.zoom`.
+    * `rubber` (`QRect`): The rectangle being dragged (screen
+      pixels).
+    """
+
+    # Method `PageView.__init__()`:
+    def __init__(self, app: App) -> None:
+        """Make an empty view.
+
+        Arguments:
+        * `app` (`App`):
+          The window it is in.
+        """
+        super().__init__(app)
+        self.app: App = app
+        self.pixmap: QPixmap = QPixmap()
+        self.rubber: QRect = QRect()
+        self.dragging: bool = False
+        self.setCursor(Qt.CursorShape.CrossCursor)
+
+    # Method `PageView.show_png()`:
+    def show_png(self, png: bytes) -> None:
+        """Show a page, and fit the view to it.
+
+        Arguments:
+        * `png` (`bytes`):
+          The page, as a PNG image.
+        """
+        self.pixmap.loadFromData(png)
+        self.setFixedSize(self.pixmap.size())
+        self.update()
+
+    # Method `PageView.paintEvent()`:
+    def paintEvent(  # pylint: disable=invalid-name
+        self, _event: QPaintEvent
+    ) -> None:
+        """Draw the page, its regions and the rectangle being dragged.
+
+        Qt names this method; the selected region is drawn thick and
+        dashed.
+
+        Arguments:
+        * `_event` (`QPaintEvent`):
+          What to draw (ignored: all of it is drawn).
+        """
+        # The page.
+        painter: QPainter = QPainter(self)
+        painter.drawPixmap(0, 0, self.pixmap)
+
+        # The regions.
+        z: float = self.app.zoom
+        index: int
+        region: Region
+        for index, region in enumerate(self.app.regions):
+            chosen: bool = index == self.app.selected
+            pen: QPen = QPen(QColor(COLORS[region.kind]), 5 if chosen else 2)
+            if chosen:
+                pen.setDashPattern([6.0 / 5, 3.0 / 5])
+            painter.setPen(pen)
+            painter.drawRect(
+                QRectF(
+                    region.x0 * z,
+                    region.y0 * z,
+                    (region.x1 - region.x0) * z,
+                    (region.y1 - region.y0) * z,
+                )
+            )
+
+        # The rectangle being dragged.
+        if self.dragging:
+            painter.setPen(QPen(QColor(COLORS[self.app.kind]), 1))
+            painter.drawRect(self.rubber.normalized())
+        painter.end()
+
+    # Method `PageView.mousePressEvent()`:
+    def mousePressEvent(  # pylint: disable=invalid-name
+        self, event: QMouseEvent
+    ) -> None:
+        """Start a drag (left button), or ignore a region (right).
+
+        Arguments:
+        * `event` (`QMouseEvent`):
+          The mouse press.
+        """
+        x: float = event.position().x()
+        y: float = event.position().y()
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.app.on_press(x, y)
+            corner: QPoint = event.position().toPoint()
+            self.rubber = QRect(corner, corner)
+            self.dragging = True
+        elif event.button() == Qt.MouseButton.RightButton:
+            self.app.on_delete(x, y)
+
+    # Method `PageView.mouseMoveEvent()`:
+    def mouseMoveEvent(  # pylint: disable=invalid-name
+        self, event: QMouseEvent
+    ) -> None:
+        """Stretch the rectangle being dragged.
+
+        Arguments:
+        * `event` (`QMouseEvent`):
+          The mouse motion.
+        """
+        if self.dragging:
+            self.rubber.setBottomRight(event.position().toPoint())
+            self.update()
+
+    # Method `PageView.mouseReleaseEvent()`:
+    def mouseReleaseEvent(  # pylint: disable=invalid-name
+        self, event: QMouseEvent
+    ) -> None:
+        """Finish the rectangle being dragged.
+
+        Arguments:
+        * `event` (`QMouseEvent`):
+          The mouse release.
+        """
+        if event.button() == Qt.MouseButton.LeftButton and self.dragging:
+            self.dragging = False
+            self.update()
+            self.app.on_release(event.position().x(), event.position().y())
+
+
 # Class `App`:
-class App:
+class App(QWidget):
     """The `catxtract` window.
 
     Attributes:
-    * `canvas` (`tk.Canvas`): Shows the page and its regions.
+    * `canvas` (`PageView`): Shows the page and its regions.
+    * `closed` (`bool`): True once the window is closed (the page
+      saved and the PDF closed).
     * `doc` (`Document`): The PDF being extracted.
-    * `drag` (`tuple[float, float]`): Where the current drag started.
+    * `drag` (`tuple[float, float]`): Where the current drag started
+      (screen pixels).
     * `ignored` (`list[Region]`): The regions ignored on this page.
-    * `kind_var` (`tk.StringVar`): Shows `kind` on the kind buttons.
     * `kind` (`str`): The kind of the next region.
-    * `goto` (`tk.Entry`): Holds the page number to go to.
+    * `kind_buttons` (`dict[str, QPushButton]`): The mode buttons, by
+      kind; the one for `kind` stays pressed.
+    * `goto` (`QLineEdit`): Holds the page number to go to.
     * `out_dir` (`Path`): The directory the Markdown goes into.
-    * `page_buttons` (`dict[str, tk.Button]`): The page moving
+    * `page_buttons` (`dict[str, QPushButton]`): The page moving
       buttons, by key, so they can be greyed out.
     * `page_no` (`int`): The current page, counting from 0.
-    * `photo` (`tk.PhotoImage`): The current page's image.
     * `progress` (`str`): How many pages have been edited, as of the
       last page change.
     * `regions` (`list[Region]`): The current page's regions.
-    * `root` (`tk.Tk`): The main window.
-    * `rubber` (`int`): The canvas id of the rectangle being dragged.
     * `message` (`str`): Says what last happened, on the status line.
+    * `modes` (`QButtonGroup`): The mode buttons, one pressed at a
+      time.
     * `selected` (`int`): The index of the selected region, or -1.
-    * `status` (`tk.Label`): Shows the page number and kind.
+    * `status` (`QLabel`): Shows the page number and kind.
     * `zoom` (`float`): Screen pixels per PDF point.
     """
 
     # Method `App.__init__()`:
-    def __init__(self, pdf: Path, out_dir: Path) -> None:
+    # pylint: disable-next=too-many-statements
+    def __init__(
+        self, pdf: Path, out_dir: Path, parent: QWidget | None = None
+    ) -> None:
         """Open the PDF and create the window.
 
         Arguments:
@@ -662,7 +834,10 @@ class App:
           The PDF to extract from.
         * `out_dir` (`Path`):
           The directory the Markdown goes into.
+        * `parent` (`QWidget | None`):
+          What it is shown in, or `None` for a window of its own.
         """
+        super().__init__(parent)
         self.doc: Document = Document(pdf)
         self.out_dir: Path = out_dir
         # Start at the first page not extracted yet (with no directory).
@@ -681,62 +856,53 @@ class App:
         self.message: str = ""
         self.progress: str = ""
         self.drag: tuple[float, float] = (0.0, 0.0)
-        self.rubber: int = 0
+        self.closed: bool = False
+        self.setWindowTitle("catxtract")
+        layout: QVBoxLayout = QVBoxLayout(self)
 
         # Fit the page to the screen height.
-        self.root: tk.Tk = tk.Tk()
         page_height: float = self.doc[0].rect.height()
-        self.zoom: float = (self.root.winfo_screenheight() - 190) / page_height
+        screen: QScreen | None = QApplication.primaryScreen()
+        screen_height: int = (
+            screen.availableGeometry().height() if screen is not None else 900
+        )
+        self.zoom: float = (screen_height - 190) / page_height
 
         # Put the page buttons in the first row.
-        pages: tk.Frame = tk.Frame(self.root)
-        pages.pack(fill="x")
-        tk.Label(pages, text="Page:").pack(side="left")
+        pages: QHBoxLayout = self.button_row(layout, "Page:")
         key: str
         label: str
-        self.page_buttons: dict[str, tk.Button] = {}
+        self.page_buttons: dict[str, QPushButton] = {}
         for key, label in (
             ("P", "Prev. New"),
             ("p", "Prev."),
             ("n", "Next"),
             ("N", "Next New"),
         ):
-            self.page_buttons[key] = tk.Button(
-                pages,
-                text=label,
-                command=functools.partial(self.command, key),
-            )
-            self.page_buttons[key].pack(side="left")
+            self.page_buttons[key] = self.button(pages, label, key)
 
         # Then the `Goto` button with its page number box (at most 5
         # digits), `Index Update` and `Quit`.
-        tk.Button(pages, text="Goto", command=self.go_to).pack(side="left")
-        self.goto: tk.Entry = tk.Entry(
-            pages,
-            width=6,
-            validate="key",
-            validatecommand=(
-                self.root.register(
-                    lambda text: text.isdigit() and len(text) <= 5 or not text
-                ),
-                "%P",
-            ),
+        goto_button: QPushButton = QPushButton("Goto")
+        goto_button.clicked.connect(self.go_to)
+        pages.addWidget(goto_button)
+        self.goto: QLineEdit = QLineEdit()
+        self.goto.setValidator(
+            QRegularExpressionValidator(QRegularExpression(r"\d{0,5}"), self)
         )
-        self.goto.bind("<Return>", lambda _event: self.go_to())
-        self.goto.pack(side="left")
-        tk.Button(
-            pages, text="Index Update", command=self.update_indexes
-        ).pack(side="left")
-        tk.Button(
-            pages,
-            text="Quit",
-            command=functools.partial(self.command, "q"),
-        ).pack(side="left")
+        self.goto.setFixedWidth(
+            self.goto.fontMetrics().horizontalAdvance("0" * 7)
+        )
+        self.goto.returnPressed.connect(self.go_to)
+        pages.addWidget(self.goto)
+        index_button: QPushButton = QPushButton("Index Update")
+        index_button.clicked.connect(self.update_indexes)
+        pages.addWidget(index_button)
+        self.button(pages, "Quit", "q")
+        pages.addStretch(1)
 
         # Put the region buttons in the second row.
-        regions: tk.Frame = tk.Frame(self.root)
-        regions.pack(fill="x")
-        tk.Label(regions, text="Region:").pack(side="left")
+        regions: QHBoxLayout = self.button_row(layout, "Region:")
         for key, label in (
             ("[", "Region Up"),
             ("]", "Region Down"),
@@ -746,44 +912,71 @@ class App:
             ("u", "Undo"),
             ("c", "Clear"),
         ):
-            tk.Button(
-                regions,
-                text=label,
-                command=functools.partial(self.command, key),
-            ).pack(side="left")
+            self.button(regions, label, key)
+        regions.addStretch(1)
 
         # Put the mode buttons (which stay pressed to show the kind of
         # the next region) in the third row.
-        self.kind_var: tk.StringVar = tk.StringVar(value=self.kind)
-        modes: tk.Frame = tk.Frame(self.root)
-        modes.pack(fill="x")
-        tk.Label(modes, text="Mode:").pack(side="left")
+        modes: QHBoxLayout = self.button_row(layout, "Mode:")
+        self.modes: QButtonGroup = QButtonGroup(self)
+        self.modes.setExclusive(True)
+        self.kind_buttons: dict[str, QPushButton] = {}
         kind: str
         for key, kind in KINDS.items():
-            tk.Radiobutton(
-                modes,
-                text=kind.title(),
-                fg=COLORS[kind],
-                variable=self.kind_var,
-                value=kind,
-                indicatoron=False,
-                command=functools.partial(self.command, key),
-            ).pack(side="left")
-        self.status: tk.Label = tk.Label(self.root, anchor="w")
-        self.status.pack(fill="x")
-        self.canvas: tk.Canvas = tk.Canvas(self.root, cursor="crosshair")
-        self.canvas.pack()
-        self.photo: tk.PhotoImage = tk.PhotoImage()
+            mode: QPushButton = self.button(modes, kind.title(), key)
+            mode.setCheckable(True)
+            mode.setChecked(kind == self.kind)
+            mode.setStyleSheet(f"QPushButton {{ color: {COLORS[kind]}; }}")
+            self.modes.addButton(mode)
+            self.kind_buttons[kind] = mode
+        modes.addStretch(1)
 
-        # Bind the mouse, and quit when the window is closed.
-        self.canvas.bind("<ButtonPress-1>", self.on_press)
-        self.canvas.bind("<B1-Motion>", self.on_motion)
-        self.canvas.bind("<ButtonRelease-1>", self.on_release)
-        self.canvas.bind("<ButtonPress-3>", self.on_delete)
-        self.root.protocol(
-            "WM_DELETE_WINDOW", functools.partial(self.command, "q")
-        )
+        # The status line, then the page.
+        self.status: QLabel = QLabel()
+        layout.addWidget(self.status)
+        self.canvas: PageView = PageView(self)
+        layout.addWidget(self.canvas)
+        layout.addStretch(1)
         self.show_page()
+
+    # Method `App.button_row()`:
+    @staticmethod
+    def button_row(layout: QVBoxLayout, title: str) -> QHBoxLayout:
+        """Add a row of buttons, with its title on the left.
+
+        Arguments:
+        * `layout` (`QVBoxLayout`):
+          The window's layout, to add the row under what is there.
+        * `title` (`str`):
+          The row's title (e.g. `Page:`).
+
+        Returns:
+        * (`QHBoxLayout`): The row, to add the buttons to.
+        """
+        row: QHBoxLayout = QHBoxLayout()
+        row.addWidget(QLabel(title))
+        layout.addLayout(row)
+        return row
+
+    # Method `App.button()`:
+    def button(self, row: QHBoxLayout, label: str, key: str) -> QPushButton:
+        """Add a button that does a command.
+
+        Arguments:
+        * `row` (`QHBoxLayout`):
+          Where the button goes, after what is there.
+        * `label` (`str`):
+          The text on it.
+        * `key` (`str`):
+          The command it does (`command()`).
+
+        Returns:
+        * (`QPushButton`): The button.
+        """
+        button: QPushButton = QPushButton(label)
+        button.clicked.connect(functools.partial(self.command, key))
+        row.addWidget(button)
+        return button
 
     # Method `App.go_to()`:
     def go_to(self) -> None:
@@ -792,13 +985,13 @@ class App:
         0 goes to the first page, and a number past the end goes to the
         last page.
         """
-        text: str = self.goto.get()
+        text: str = self.goto.text()
         if text:
             self.change_page(min(max(int(text), 1), len(self.doc)) - 1)
         else:
             self.message = "Type a page number first."
             self.draw_regions()
-        self.canvas.focus_set()
+        self.canvas.setFocus()
 
     # Method `App.change_page()`:
     def change_page(self, page_no: int) -> None:
@@ -845,12 +1038,7 @@ class App:
         """Show the current page and load its saved regions."""
         # Render the page.
         page: Page = self.doc[self.page_no]
-        self.photo = tk.PhotoImage(data=page.png(self.zoom))
-        self.canvas.config(
-            width=self.photo.width(), height=self.photo.height()
-        )
-        self.canvas.delete("all")
-        self.canvas.create_image(0, 0, anchor="nw", image=self.photo)
+        self.canvas.show_png(page.png(self.zoom))
 
         # Load the regions saved before, or else suggest some, helped
         # by the nearest earlier page that was saved.
@@ -885,22 +1073,8 @@ class App:
     # Method `App.draw_regions()`:
     def draw_regions(self) -> None:
         """Draw the regions and update the status line."""
-        self.canvas.delete("region")
-        z: float = self.zoom
-        index: int
-        region: Region
-        for index, region in enumerate(self.regions):
-            chosen: bool = index == self.selected
-            self.canvas.create_rectangle(
-                region.x0 * z,
-                region.y0 * z,
-                region.x1 * z,
-                region.y1 * z,
-                outline=COLORS[region.kind],
-                width=5 if chosen else 2,
-                dash=(6, 3) if chosen else (),
-                tags="region",
-            )
+        self.canvas.update()
+
         # Grey out the page buttons that have nowhere to go.
         targets: dict[str, int] = {
             "N": self.empty_page(1),
@@ -909,11 +1083,11 @@ class App:
             "P": self.empty_page(-1),
         }
         key: str
-        button: tk.Button
+        button: QPushButton
         for key, button in self.page_buttons.items():
-            button.config(state="normal" if targets[key] >= 0 else "disabled")
-        self.status.config(
-            text=f"Page {self.page_no + 1} of {len(self.doc)}  "
+            button.setEnabled(targets[key] >= 0)
+        self.status.setText(
+            f"Page {self.page_no + 1} of {len(self.doc)}  "
             f"{self.progress}  "
             f"Next region: {self.kind}  {self.message}"
         )
@@ -940,61 +1114,53 @@ class App:
         )
 
     # Method `App.on_press()`:
-    def on_press(self, event: tk.Event[tk.Canvas]) -> None:
+    def on_press(self, x: float, y: float) -> None:
         """Start dragging a new region.
 
         Arguments:
-        * `event` (`tk.Event[tk.Canvas]`):
-          The mouse press.
+        * `x` (`float`):
+          Where the mouse was pressed, across (screen pixels).
+        * `y` (`float`):
+          Where the mouse was pressed, down (screen pixels).
         """
-        self.drag = (event.x, event.y)
-        self.rubber = self.canvas.create_rectangle(
-            event.x, event.y, event.x, event.y, outline=COLORS[self.kind]
-        )
-
-    # Method `App.on_motion()`:
-    def on_motion(self, event: tk.Event[tk.Canvas]) -> None:
-        """Stretch the region being dragged.
-
-        Arguments:
-        * `event` (`tk.Event[tk.Canvas]`):
-          The mouse motion.
-        """
-        self.canvas.coords(self.rubber, *self.drag, event.x, event.y)
+        self.drag = (x, y)
 
     # Method `App.on_release()`:
-    def on_release(self, event: tk.Event[tk.Canvas]) -> None:
-        """Finish the region being dragged.
+    def on_release(self, x: float, y: float) -> None:
+        """Finish the region being dragged, or select by a click.
 
         Arguments:
-        * `event` (`tk.Event[tk.Canvas]`):
-          The mouse release.
+        * `x` (`float`):
+          Where the mouse was released, across (screen pixels).
+        * `y` (`float`):
+          Where the mouse was released, down (screen pixels).
         """
-        self.canvas.delete(self.rubber)
-        x0: float = min(self.drag[0], event.x) / self.zoom
-        x1: float = max(self.drag[0], event.x) / self.zoom
-        y0: float = min(self.drag[1], event.y) / self.zoom
-        y1: float = max(self.drag[1], event.y) / self.zoom
+        x0: float = min(self.drag[0], x) / self.zoom
+        x1: float = max(self.drag[0], x) / self.zoom
+        y0: float = min(self.drag[1], y) / self.zoom
+        y1: float = max(self.drag[1], y) / self.zoom
         if x1 - x0 > 3 and y1 - y0 > 3:
             # Select the new region, so a mode button can fix its kind.
             self.regions.append(Region(self.kind, x0, y0, x1, y1))
             self.selected = len(self.regions) - 1
         else:
-            self.select_at(event)
+            self.select_at(x, y)
         self.draw_regions()
 
     # Method `App.select_at()`:
-    def select_at(self, event: tk.Event[tk.Canvas]) -> None:
+    def select_at(self, x: float, y: float) -> None:
         """Select the smallest region under the mouse, if any.
 
         Arguments:
-        * `event` (`tk.Event[tk.Canvas]`):
-          The mouse event.
+        * `x` (`float`):
+          Where the mouse is, across (screen pixels).
+        * `y` (`float`):
+          Where the mouse is, down (screen pixels).
         """
-        x: float = event.x / self.zoom
-        y: float = event.y / self.zoom
         under: list[int] = [
-            i for i, r in enumerate(self.regions) if r.rect().contains(x, y)
+            i
+            for i, r in enumerate(self.regions)
+            if r.rect().contains(x / self.zoom, y / self.zoom)
         ]
 
         # The smallest one wins.
@@ -1004,15 +1170,36 @@ class App:
         self.selected = min(under, key=area, default=-1)
 
     # Method `App.on_delete()`:
-    def on_delete(self, event: tk.Event[tk.Canvas]) -> None:
+    def on_delete(self, x: float, y: float) -> None:
         """Ignore the smallest region under the mouse.
 
         Arguments:
-        * `event` (`tk.Event[tk.Canvas]`):
-          The mouse press.
+        * `x` (`float`):
+          Where the mouse was pressed, across (screen pixels).
+        * `y` (`float`):
+          Where the mouse was pressed, down (screen pixels).
         """
-        self.select_at(event)
+        self.select_at(x, y)
         self.command("x")
+
+    # Method `App.closeEvent()`:
+    def closeEvent(  # pylint: disable=invalid-name
+        self, event: QCloseEvent
+    ) -> None:
+        """Save the page and close the PDF as the window closes.
+
+        Qt names this method; Quit and the window's close button both
+        come here, and only the first close saves and closes the PDF.
+
+        Arguments:
+        * `event` (`QCloseEvent`):
+          The close, accepted.
+        """
+        if not self.closed:
+            self.closed = True
+            self.save_if_marked()
+            self.doc.close()
+        event.accept()
 
     # Method `App.command()`:
     def command(self, key: str) -> None:
@@ -1039,9 +1226,7 @@ class App:
             "x": self._ignore_region,
         }
         if key == "q":
-            self.save_if_marked()
-            self.root.destroy()
-            self.doc.close()
+            self.close()
             return
         if key in KINDS:
             self._set_kind(KINDS[key])
@@ -1058,7 +1243,7 @@ class App:
           The kind (e.g. `table`).
         """
         self.kind = kind
-        self.kind_var.set(kind)
+        self.kind_buttons[kind].setChecked(True)
         if 0 <= self.selected < len(self.regions):
             self.regions[self.selected].kind = kind
 
@@ -1234,17 +1419,20 @@ class App:
 
         # Write each region, top to bottom, except that the index regions
         # (usually columns, whose tops differ a little) go left to right.
+        def across(region: Region) -> tuple[float, float]:
+            return (region.x0, region.y0)
+
+        def down(region: Region) -> tuple[float, float]:
+            return (region.y0, region.x0)
+
         page: Page = self.doc[self.page_no]
         columns: Iterator[Region] = iter(
-            sorted(
-                (r for r in self.regions if r.kind == "index"),
-                key=lambda r: (r.x0, r.y0),
-            )
+            sorted((r for r in self.regions if r.kind == "index"), key=across)
         )
         parts: list[str] = [f"# Page {self.page_no + 1}"]
         image_count: int = 0
         region: Region
-        for region in sorted(self.regions, key=lambda r: (r.y0, r.x0)):
+        for region in sorted(self.regions, key=down):
             if region.kind == "index":
                 region = next(columns)
                 parts.append(
@@ -1270,7 +1458,7 @@ class App:
                 parts.append(markdown_table(table_rows(words)))
         md_path: Path = self.json_path().parent / f"{stem}.md"
         md_path.write_text("\n\n".join(parts) + "\n")
-        self.status.config(text=f"Saved {md_path}")
+        self.status.setText(f"Saved {md_path}")
 
         # Link this page to its saved neighbors, and them to it.
         saved: list[int] = sorted(
@@ -1335,9 +1523,11 @@ def main() -> None:
         print(__doc__)
         sys.exit(1)
 
-    # Run the window.
+    # Run the window until it is closed.
+    application: QApplication = QApplication(sys.argv[:1])
     app: App = App(Path(sys.argv[1]), Path(sys.argv[2]))
-    app.root.mainloop()
+    app.show()
+    sys.exit(application.exec())
 
 
 if __name__ == "__main__":

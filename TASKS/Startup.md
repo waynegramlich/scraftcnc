@@ -11,6 +11,7 @@
 @5.1.9_Organize_Shop_Information_and_Data_Entry/Details.md
 @5.1.9_Organize_Shop_Information_and_Data_Entry/Context.md
 @5.1.10_Catalog_Management/Details.md
+@5.1.10_Catalog_Management/Context.md
 @5.3_Create_More_Tools/Details.md
 @5.3_Create_More_Tools/Context.md
 @5.4_New_Path_for_Each_Tool_Change/Details.md

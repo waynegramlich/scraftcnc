@@ -3,14 +3,16 @@
 The PDF is written by `write_pdf()` into a temporary directory, so no
 binary file is kept in `git`.  The tests are skipped when `pdfplumber`
 has not been fetched into `~/.scraftcam/packages/` (the tests never
-fetch it), or when `tkinter` is missing.
+fetch it).
 """
 
 import importlib.util
+import json
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
 
 from scraftcam.packages import PACKAGES_DIRECTORY
 
@@ -20,7 +22,7 @@ if str(PDF_DIRECTORY) not in sys.path:
     sys.path.insert(0, str(PDF_DIRECTORY))
 READY: bool = all(
     importlib.util.find_spec(name) is not None
-    for name in ("pdfplumber", "pypdfium2", "tkinter")
+    for name in ("pdfplumber", "pypdfium2")
 )
 
 # The page: US letter, in points.
@@ -132,7 +134,7 @@ def write_pdf(path: Path) -> None:
     path.write_bytes(bytes(data))
 
 
-@unittest.skipUnless(READY, "pdfplumber, pypdfium2 or tkinter missing")
+@unittest.skipUnless(READY, "pdfplumber or pypdfium2 missing")
 class PdfTest(unittest.TestCase):
     """Tests of `Document`, `Page` and `catxtract`'s use of them."""
 
@@ -227,6 +229,122 @@ class PdfTest(unittest.TestCase):
         part: bytes = self.page.png(1.0, self.pdf.Rect(0.0, 0.0, 50.0, 40.0))
         self.assertEqual(int.from_bytes(part[16:20], "big"), 50)
         self.assertEqual(int.from_bytes(part[20:24], "big"), 40)
+
+
+@unittest.skipUnless(READY, "pdfplumber or pypdfium2 missing")
+class AppTest(unittest.TestCase):
+    """Tests of `catxtract`'s window, drawn offscreen by Qt."""
+
+    # pylint: disable=import-outside-toplevel
+
+    def setUp(self) -> None:
+        """Write the PDF, and open it in a window."""
+        from scraftcam.catalog import catxtract
+        from tests import qt_hmi
+
+        self.catxtract = catxtract
+        self.qt_hmi = qt_hmi
+        # pylint: disable-next=consider-using-with
+        directory: str = self.enterContext(tempfile.TemporaryDirectory())
+        path: Path = Path(directory) / "test.pdf"
+        write_pdf(path)
+        self.out: Path = Path(directory) / "out"
+        self.app = catxtract.App(path, self.out)
+        self.addCleanup(self.app.close)
+
+    def click(self, button: Any, x: float, y: float) -> None:
+        """Press and release a mouse button at a point (PDF points).
+
+        Arguments:
+        * `button` (`Any`): The mouse button (`Qt.MouseButton`).
+        * `x` (`float`): Across the page.
+        * `y` (`float`): Down the page.
+        """
+        self.drag(button, (x, y), (x, y))
+
+    def drag(
+        self,
+        button: Any,
+        start: tuple[float, float],
+        end: tuple[float, float],
+    ) -> None:
+        """Drag with a mouse button from one point to another (points).
+
+        Arguments:
+        * `button` (`Any`): The mouse button (`Qt.MouseButton`).
+        * `start` (`tuple[float, float]`): Where the drag starts.
+        * `end` (`tuple[float, float]`): Where it ends.
+        """
+        from PySide6.QtCore import QPoint
+        from PySide6.QtTest import QTest
+
+        zoom: float = self.app.zoom
+        first: QPoint = QPoint(round(start[0] * zoom), round(start[1] * zoom))
+        last: QPoint = QPoint(round(end[0] * zoom), round(end[1] * zoom))
+        canvas: Any = self.app.canvas
+        QTest.mousePress(canvas, button, pos=first)
+        QTest.mouseRelease(canvas, button, pos=last)
+
+    def test_draw_and_save(self) -> None:
+        """A region dragged and made a title is saved on Quit."""
+        from PySide6.QtCore import Qt
+
+        # The page starts with its suggestions; clear them.
+        self.assertIn("Suggested", self.app.status.text())
+        self.app.command("c")
+        self.assertEqual(self.app.regions, [])
+
+        # Drag around the title, and make it a title.
+        self.drag(Qt.MouseButton.LeftButton, (60.0, 50.0), (300.0, 80.0))
+        self.assertEqual(len(self.app.regions), 1)
+        self.assertEqual(self.app.selected, 0)
+        self.app.kind_buttons["title"].click()
+        self.assertEqual(self.app.regions[0].kind, "title")
+        self.assertTrue(self.app.kind_buttons["title"].isChecked())
+        self.assertFalse(self.app.kind_buttons["table"].isChecked())
+
+        # Quit saves the page.
+        self.app.command("q")
+        markdown: str = (self.out / "page_001" / "page_001.md").read_text()
+        self.assertTrue(markdown.startswith("# Page 1\n"))
+        self.assertIn("## Catalog Title", markdown)
+        saved: Any = json.loads(
+            (self.out / "page_001" / "page_001.json").read_text()
+        )
+        self.assertEqual(saved["regions"][0]["kind"], "title")
+
+    def test_click_and_ignore(self) -> None:
+        """A click selects a region; the right button ignores it."""
+        from PySide6.QtCore import Qt
+
+        # A region, then a click inside it elsewhere selects it.
+        self.app.command("c")
+        self.drag(Qt.MouseButton.LeftButton, (60.0, 50.0), (300.0, 80.0))
+        self.app.command("u")
+        self.assertEqual(self.app.regions, [])
+        self.drag(Qt.MouseButton.LeftButton, (60.0, 50.0), (300.0, 80.0))
+        self.app.selected = -1
+        self.click(Qt.MouseButton.LeftButton, 100.0, 60.0)
+        self.assertEqual(self.app.selected, 0)
+
+        # The right button moves it to the ignored regions.
+        self.click(Qt.MouseButton.RightButton, 100.0, 60.0)
+        self.assertEqual(self.app.regions, [])
+        self.assertEqual(len(self.app.ignored), 1)
+
+    def test_page_buttons(self) -> None:
+        """With one page, the page buttons have nowhere to go."""
+        self.assertEqual(
+            {key: b.isEnabled() for key, b in self.app.page_buttons.items()},
+            {"P": False, "p": False, "n": False, "N": False},
+        )
+        from PySide6.QtTest import QTest
+
+        QTest.keyClicks(self.app.goto, "a1b234567")
+        self.assertEqual(self.app.goto.text(), "12345")
+        self.app.goto.clear()
+        self.app.go_to()
+        self.assertIn("Type a page number first.", self.app.status.text())
 
 
 if __name__ == "__main__":

@@ -289,3 +289,61 @@ Suspended by the user in favor of `T.osiade~5.1.9` (Organize Shop
 Information and Data Entry): shop information has no organizing
 strategy yet.  Open questions 14-21 (above) and deleting
 `../catxtract/` (22) wait on it.
+
+## 2026-11-12: Reopened: port `catxtract` to Qt first
+
+Reopened by the user, as `catxtract.py` is the last `tkinter` code
+(the HMI is Qt now, `T.hs~5.1.5`).  Decided: a straight port to Qt
+first (same look and behaviour, `python3 -m scraftcam.catalog.catxtract
+PDF OUTDIR`), before any Catalogs tab.  #14 replaced by
+`T.osiade~5.1.9` #64 (the user's data in a directory under their own
+version control).  #15 settled by `T.osiade~5.1.9` #1 (LinuxCNC only
+when needed).  #16-#22 will probably be re-architected completely.
+(Paths above say `scraftcnc`; the package is now `scraftcam`, and
+`SharsMD/` is at the top of the tree, ignored by git and hg; the
+link `../catxtract/SharsMD` -> `../scraftcnc/SharsMD` broke when the
+directory was renamed.)
+
+## 2026-11-12: `catxtract` in Qt
+
+Straight port: `App(QWidget)` (`App(pdf, out_dir, parent=None)`, so
+it can be the Catalogs tab later), same three button rows, status
+line and mouse use; a `PageView(QWidget)` paints the page (a
+`QPixmap` from `Page.png()`) and the regions (`QPainter`; selected
+thick and dashed) and the rectangle being dragged (`dragging`), and
+passes presses (left: drag/select, right: ignore) to `App.on_press()`,
+`on_release()`, `on_delete()` (screen x, y now, not Tk events).
+Mode buttons: checkable, in an exclusive `QButtonGroup`
+(`kind_buttons`, was `kind_var`), text in the kind's color
+(`dark orange` is now `darkorange`).  Goto box: a
+`QRegularExpressionValidator` (`\d{0,5}`).  Quit and the window's
+close both reach `closeEvent()`, which saves and closes the PDF once
+(`closed`).  `require("PySide6")` at import.  `App.save()`'s lambdas
+became local functions.  `tests/test_catalog_pdf.py` no longer needs
+`tkinter`, and has `AppTest` (3, offscreen through `tests/qt_hmi.py`:
+drag a title with `QTest` mouse events and save on Quit, click
+select and right-button ignore, page buttons and the Goto box).  All
+10 pass; checkers clean.  No `tkinter` code is left in the tree.  Not
+yet: the user's GUI check on the real catalog
+(`2026_Shars_Catalog.pdf` at the top, `SharsMD/`, 253 pages).
+
+## 2026-11-12: First GUI run of the Qt `catxtract`
+
+The user ran it on a scratch copy of `SharsMD/` (in Claude's
+scratchpad): it closed cleanly (exit 0, nothing on standard error),
+with 10 new pages saved (207, 409-417); the only changes to old pages
+are the neighbor links (206, 210, 345), as expected.  The real
+`SharsMD/` is untouched.  Waiting on the user's verdict.
+
+## 2026-11-12: The Qt port is a success (the user)
+
+Second GUI run, on a fresh scratch copy, pages 207-209 (the first
+three unmarked pages in a row): the user checked that their edits
+were kept, and is happy with what was saved.  The "kind of broken"
+of the first run was not the port: a page with no saved regions
+starts with suggestions carried over from the nearest earlier saved
+page (`suggest()`, unchanged from `tkinter`), which look like another
+page's content when the layout differs; the user usually presses
+Clear first.  Worth a rethink with #16-#22 (e.g. carry-over only on
+request).  The `tkinter` replacement is done.  The scratch copies'
+pages were not copied into the real `SharsMD/`.

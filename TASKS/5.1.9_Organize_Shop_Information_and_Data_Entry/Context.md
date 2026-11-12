@@ -198,3 +198,18 @@ replaced), and the package is `scraftcam`.  Offscreen widget tests
 use `tests/qt_hmi.py`.  Still open here: #61 the new step order (#22),
 #62 a pass over #1-#17 against Qt, and `catxtract.py`'s `tkinter`
 window (to Qt, in this GUI).
+
+## 2026-11-12: Round after the Qt HMI (#61, #62, #64)
+
+* #61 (step order): many earlier decisions need revisiting first; the
+  order waits on that.
+* #62: broken out into #62.1-#62.N, one decision of #1-#17 each,
+  worked through one by one.
+* #1 confirmed: LinuxCNC is deferred until it is really needed (the
+  HMI tab); settles `T.cm~5.1.10` #15.
+* #64 (new): where everything lives must be rethought.  The user: all
+  of the user's shop, tool, etc. data lives in a directory that they
+  keep under their own favorite version control system.  Replaces
+  `T.cm~5.1.10` #14 (`~/.scraftcam/catalogs/`).
+* First: `catxtract` ported to Qt (`T.cm~5.1.10`), to remove the last
+  `tkinter` code.
