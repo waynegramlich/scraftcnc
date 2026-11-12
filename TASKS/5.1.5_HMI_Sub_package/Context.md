@@ -506,3 +506,32 @@ end-to-end suite's) became `hmi`.  No `SC` names were left in
 `index_conversion_issues.md` (the matches were words like
 "Scraper"); `shars_catalog.md` is left alone (written by another
 tool).  The directory was renamed with `aic`.
+
+## 2026-11-12: Reopened: port the HMI to Qt
+
+`T.osiade~5.1.9` chose Qt (PySide6) over `tkinter` (#18-#68 in its
+`Context.md`).  The user agreed these steps:
+
+* S1: rename `scraftcnc` to `scraftcam` (package, imports, tests,
+  `show_demo.py`, docs, configs, CI, `SCRAFTCNC_LINUXCNC`); `home.py`
+  moves `~/.scraftcnc/` to `~/.scraftcam/` once, with a message.
+  `TASKS/` and `ISSUES/` keep the old name.  The GitHub repository and
+  the local directory are renamed by the user.  The full test suite
+  runs once (asked).
+* S2: development venv `~/.scraftcam/venv/` (`venv --without-pip`,
+  `pip` wheel checked by SHA-256, PySide6-Essentials) by a small
+  script, the seed of the bootstrap installer; `pylint`
+  `extension-pkg-allow-list = PySide6` (agreed); `mypy`/`pylint`
+  pointed at the venv.
+* S3: `lcnc_hmi_qt.py` beside the `tkinter` HMI: layout, widgets,
+  wired to the same logic; offscreen widget tests
+  (`QT_QPA_PLATFORM=offscreen`).
+* S4: the rest of the behaviour (setup list, keep-out toggle, Open,
+  port commands, SolidCraft link, position and tool).
+* S5: `show_demo.py` starts the Qt HMI with the venv's Python; the
+  headless run passes; the user does a GUI run (presses Start); the
+  `tkinter` HMI is deleted; `README.md` gets a development setup note.
+
+Scope: a straight port, same look and behaviour; the HMI as a tab of
+the larger GUI comes later.  S3 and S4 go to step agents (asked
+first).

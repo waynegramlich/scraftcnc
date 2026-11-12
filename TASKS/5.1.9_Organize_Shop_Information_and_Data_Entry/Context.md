@@ -173,3 +173,9 @@ window drew an end mill sketch with dimension letters;
   system Python 3.12, PEP 668), so PySide6 needs a development venv
   on the host before the port.
 * (Earlier hg messages today say `T.oside`; the tag is `T.osiade`.)
+
+## 2026-11-12: Git settled
+
+The user force pushed: `github/main` is `1fe9d36` with the reworded
+"5.1.9" commits; the 2026-11-08 "do not pull with rebase" caution is
+over.

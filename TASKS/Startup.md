@@ -8,6 +8,8 @@
 @4_Implementing_Keepout_Zones/Details.md
 @5_Integration/Details.md
 @5_Integration/Context.md
+@5.1.5_HMI_Sub_package/Details.md
+@5.1.5_HMI_Sub_package/Context.md
 @5.1.9_Organize_Shop_Information_and_Data_Entry/Details.md
 @5.1.9_Organize_Shop_Information_and_Data_Entry/Context.md
 @5.1.10_Catalog_Management/Details.md
