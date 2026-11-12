@@ -287,6 +287,31 @@ def drop_old_layout() -> None:
             entry.unlink()
 
 
+# Function `link_current()`:
+def link_current() -> None:
+    """Point `current` beside `PACKAGES_DIRECTORY` at it.
+
+    `mypy.ini` and `.pylintrc` find `PySide6` through
+    `~/.scraftcam/packages/current/`, so they need no Python version.
+    Where a link can not be made (Windows, without the right), it is
+    left out: the checkers run on Linux.
+    """
+    # Leave a link that is right alone.
+    link: Path = PACKAGES_DIRECTORY.parent / "current"
+    target: str = PACKAGES_DIRECTORY.name
+    try:
+        if link.is_symlink() and str(link.readlink()) == target:
+            return
+
+        # Make it under a temporary name, then put it in place.
+        partial: Path = link.with_name(".current.part")
+        partial.unlink(missing_ok=True)
+        partial.symlink_to(target, target_is_directory=True)
+        partial.replace(link)
+    except OSError:
+        pass
+
+
 # Function `require()`:
 def require(module: str) -> None:
     """Make `module` importable, installing its packages if need be.
@@ -305,6 +330,7 @@ def require(module: str) -> None:
     try:
         # Install it, unless it is there already.
         drop_old_layout()
+        link_current()
         text: str = requirements(module)
         directory: Path = PACKAGES_DIRECTORY / module
         stamp: Path = directory / STAMP

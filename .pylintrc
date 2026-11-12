@@ -1,9 +1,10 @@
 # Configuration for `pylint`.
 
 [MAIN]
-# `PySide6`, where `scraftcam.packages` installs it for the system
-# Python 3.12 (as in `mypy.ini`).
-init-hook = import pathlib, sys; sys.path.insert(0, str(pathlib.Path.home() / ".scraftcam/packages/cpython-312/PySide6"))
+# `PySide6`, where `scraftcam.packages` installs it for this Python
+# (`current` is a link to its directory; see `mypy.ini` if `pylint`
+# can not find it).
+init-hook = import pathlib, sys; sys.path.insert(0, str(pathlib.Path.home() / ".scraftcam/packages/current/PySide6"))
 # `PySide6` is compiled, so `pylint` may load it to see its names
 # (agreed with the user, 2026-11-12).
 extension-pkg-allow-list = PySide6
@@ -12,3 +13,9 @@ extension-pkg-allow-list = PySide6
 # Long single file programs (e.g. `catxtract.py`) are fine (the user,
 # 2026-11-07).
 max-module-lines = 10000
+
+[TYPECHECK]
+# Qt's signals are made by `shiboken6` at run time, so `pylint` sees
+# no `connect` (or `emit`, `disconnect`) on them; `mypy` checks them
+# from `PySide6`'s stubs (agreed with the user, 2026-11-12).
+generated-members = connect, disconnect, emit

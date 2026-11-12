@@ -147,6 +147,21 @@ class TestPackages(unittest.TestCase):
             ["checked"],
         )
 
+    # Method `TestPackages.test_current_link()`:
+    def test_current_link(self) -> None:
+        """`current` points at this Python's directory, kept right."""
+        # Made by `require()`.
+        packages.require("unchecked")
+        link: Path = self.packages_directory.parent / "current"
+        self.assertEqual(str(link.readlink()), "tag")
+        self.assertTrue((link / "unchecked" / packages.STAMP).is_file())
+
+        # A link to another Python's directory is moved.
+        link.unlink()
+        link.symlink_to("other", target_is_directory=True)
+        packages.require("unchecked")
+        self.assertEqual(str(link.readlink()), "tag")
+
     # Method `TestPackages.test_unchecked()`:
     def test_unchecked(self) -> None:
         """Without digests, `pip` is not asked to check any."""

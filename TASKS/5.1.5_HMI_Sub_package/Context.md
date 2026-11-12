@@ -595,3 +595,48 @@ new way.  `mypy.ini`: `mypy_path` to the PySide6 directory, errors in
 catches a wrong argument type (pylint does not see Qt methods).  Both
 hard-code `cpython-312`.  New `tests/test_packages.py` (8).  Checkers
 clean; `mypy` on the whole tree clean (84 files).  Next: S3.
+
+## 2026-11-12: #14 the `current` link; #15 no sub-agents
+
+#14: `require()` keeps `~/.scraftcam/packages/current` linked to this
+Python's directory (`link_current()`; skipped where a link can not be
+made); `mypy.ini` and `.pylintrc` name `current/PySide6`, so no
+Python version is hard-coded.  Test `test_current_link`.  #15: no
+sub-agents unless asked; steps inline, long test runs as background
+shell commands.  Next: S3, inline.
+
+## 2026-11-12: S3 done (inline): `lcnc_hmi_qt.py`
+
+The user chose #16: convert `HMI` to Qt, headless = offscreen Qt,
+`lcnc_hmi_headless.py` to go in S5.  New `scraftcam/hmi/lcnc_hmi_qt.py`
+(executable): `HMI(QWidget)` (`HMI(machine, max_speed, port,
+parent=None)`, so it can be a tab later), same tabs, labels, layout
+and methods; everything toolkit-free imported from `lcnc_hmi.py`
+unchanged.  `QTimer` (`timer`, `POLL_MS`) calls `poll()` (split into
+`show_drawing()`, `show_program()`); `QButtonGroup` jog steps
+(`step()`); a 1000-step logarithmic `QSlider` (`on_slider()`,
+`set_speed()` blocks its signal); entry colors by `paint()` (style
+sheet plus a `background` property, read by `show`).  `show()` is
+`QWidget`'s, so ours is `show_state()` (the port word is still
+`show`).  Questions: `ask_yes_no()` (No default), `ask_choice()`,
+`ask_open_file()`, headless from `ANSWERS`/`ASKED` (module level);
+`use_headless()` sets `HEADLESS` and `QT_QPA_PLATFORM=offscreen`.
+`require("PySide6")` at import.  `SIGTERM` closes it (seen by Python
+at the next poll).  No lambdas.  pylint: `no-member` quieted in the
+file (it sees no `connect` on Qt signals; mypy checks them).  New
+`tests/test_lcnc_hmi_qt.py` (14, offscreen, 0.2 s).  Probed as a
+process (`--headless --dry-run --port`, the demo): origin from the
+setup comments, `G0 Z-4` refused (vise), Start, `SIGTERM` exit.  The
+offscreen plugin prints "This plugin does not support
+propagateSizeHints()" on `show()`, harmless.  Next: S4.
+
+## 2026-11-12: S3 wrap-up (#19, #20)
+
+#19: `.pylintrc` `[TYPECHECK] generated-members = connect, disconnect,
+emit` (the user agreed, project wide), in place of the file's
+`no-member` disable.  #20: `use_headless()` installs a Qt message
+handler (`qt_message()`) that drops only `OFFSCREEN_NOISE`
+("propagateSizeHints"); every other Qt message still goes to standard
+error (test `test_qt_messages`; 15 tests).  Next: S4 = move the five
+`tkinter` HMI test files (`test_lcnc_hmi.py`, `test_hmi_*.py`) to the
+Qt HMI and fix what they find (#21, proposed; the user to confirm).
