@@ -6,9 +6,9 @@ import re
 import unittest
 from typing import Any, cast
 
-from scraftcnc.gcode import CNC
-from scraftcnc.geometry import ArcSegment
-from scraftcnc.plot import (
+from scraftcam.gcode import CNC
+from scraftcam.geometry import ArcSegment
+from scraftcam.plot import (
     command_moves,
     path_moves,
     plot_html,

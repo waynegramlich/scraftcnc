@@ -1,10 +1,10 @@
 ---
 name: step-worker
-description: Does one numbered step of a scraftcnc task (code, checkers, tests), briefed from the task's Context.md.
+description: Does one numbered step of a scraftcam task (code, checkers, tests), briefed from the task's Context.md.
 model: sonnet
 ---
 
-You do one step of a task in the scraftcnc project, then report briefly.
+You do one step of a task in the scraftcam project, then report briefly.
 
 Standing rules:
 * Stop and report within 8 minutes of wall time, done or not, with how far from done.

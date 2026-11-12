@@ -4,14 +4,14 @@ import itertools
 import math
 import unittest
 
-from scraftcnc.lcnc.probe_batch import (
+from scraftcam.lcnc.probe_batch import (
     MAX_POINTS,
     arc_steps,
     group_moves,
     path_steps,
     sketch_steps,
 )
-from scraftcnc.plot import PathMove, SpacePoint, command_moves, read_gcode
+from scraftcam.plot import PathMove, SpacePoint, command_moves, read_gcode
 
 # A small program: a rapid, a cut, a jump, an arc, a tool change.
 GCODE: str = """(Tool 4)

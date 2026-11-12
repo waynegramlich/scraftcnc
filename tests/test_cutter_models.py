@@ -7,12 +7,12 @@ import unittest
 from pathlib import Path
 from typing import cast
 
-from scraftcnc import shops
-from scraftcnc.pybind.scraftpybind import HeadlessTransport, PyBind
-from scraftcnc.shops import read
-from scraftcnc.tooling import cutter_models
-from scraftcnc.tooling.cutter_models import EXAMPLE_SHOP
-from scraftcnc.tooling.shop_registries import use_shop
+from scraftcam import shops
+from scraftcam.pybind.scraftpybind import HeadlessTransport, PyBind
+from scraftcam.shops import read
+from scraftcam.tooling import cutter_models
+from scraftcam.tooling.cutter_models import EXAMPLE_SHOP
+from scraftcam.tooling.shop_registries import use_shop
 
 # The example shop, and an extracted `solidcraft-cli` (as the demo
 # uses) for the live test.

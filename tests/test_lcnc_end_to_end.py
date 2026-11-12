@@ -3,11 +3,11 @@
 G-code from `demo.py`, through a `lcnc_hmi.py --headless`
 pressed through its command port, to `serve_linuxcnc` and a real LinuxCNC
 simulator.  This takes about two minutes and needs LinuxCNC installed
-(`install_linuxcnc` from `scraftcnc/lcnc/`) with nothing on its port, so
+(`install_linuxcnc` from `scraftcam/lcnc/`) with nothing on its port, so
 it runs only when asked:
 
 ```
-SCRAFTCNC_LINUXCNC=1 python3 -m unittest -v test_lcnc_end_to_end
+SCRAFTCAM_LINUXCNC=1 python3 -m unittest -v test_lcnc_end_to_end
 ```
 """
 
@@ -30,9 +30,9 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, ClassVar
 
-from scraftcnc import shops
-from scraftcnc.lcnc import lcnc_client
-from scraftcnc.plot import PathMove, command_moves, read_gcode
+from scraftcam import shops
+from scraftcam.lcnc import lcnc_client
+from scraftcam.plot import PathMove, command_moves, read_gcode
 
 HERE: Path = Path(__file__).resolve().parent.parent
 SERVER_DIRECTORY: Path = HERE
@@ -121,7 +121,7 @@ def path_segments(moves: list[PathMove]) -> list[Segment]:
 
 
 @unittest.skipUnless(
-    os.environ.get("SCRAFTCNC_LINUXCNC"), "SCRAFTCNC_LINUXCNC is not set"
+    os.environ.get("SCRAFTCAM_LINUXCNC"), "SCRAFTCAM_LINUXCNC is not set"
 )
 class TestEndToEnd(unittest.TestCase):
     """A person's session at the HMI, against a real LinuxCNC."""
@@ -136,7 +136,7 @@ class TestEndToEnd(unittest.TestCase):
         """Start LinuxCNC's server, then the HMI."""
         cls.directory = tempfile.TemporaryDirectory()
         cls.server = subprocess.Popen(
-            [sys.executable, "-u", "-m", "scraftcnc.lcnc.serve_linuxcnc"],
+            [sys.executable, "-u", "-m", "scraftcam.lcnc.serve_linuxcnc"],
             cwd=SERVER_DIRECTORY,
             stdout=subprocess.DEVNULL,
         )
@@ -188,7 +188,7 @@ class TestEndToEnd(unittest.TestCase):
         """Start an HMI, and wait until it answers."""
         cls.port = free_port()
         cls.hmi = subprocess.Popen(
-            [sys.executable, "-m", "scraftcnc.hmi.lcnc_hmi", "--headless",
+            [sys.executable, "-m", "scraftcam.hmi.lcnc_hmi", "--headless",
              "--port", str(cls.port)],
             cwd=HERE,
         )  # fmt: skip
@@ -430,7 +430,7 @@ class TestEndToEnd(unittest.TestCase):
     def test_path_of_the_demonstration(self) -> None:
         """The whole demonstration: every sample lies on its path."""
         done = subprocess.run(
-            [sys.executable, "-m", "scraftcnc.demo"],
+            [sys.executable, "-m", "scraftcam.demo"],
             cwd=HERE,
             capture_output=True,
             text=True,

@@ -1,10 +1,10 @@
-# `scraftcnc`: 3-Axis CNC Milling for SolidCraft
+# `scraftcam`: 3-Axis CNC Milling for SolidCraft
 
-`scraftcnc` writes RS-274 G-code for a 3-axis CNC mill from shapes
+`scraftcam` writes RS-274 G-code for a 3-axis CNC mill from shapes
 described in Python, and can show the part and its tool path in
 [SolidCraft](https://github.com/tangency-labs/solidcraft), an open
 source CAD program.  It drives SolidCraft through its
-Python bindings, `scraftcnc/pybind/`.
+Python bindings, `scraftcam/pybind/`.
 
 What it does today:
 
@@ -41,10 +41,10 @@ screen.
 ## Requirements
 
 * Python 3.11 or newer; nothing outside the standard library, except
-  for the catalog extractor (`scraftcnc/catalog/`), which fetches
+  for the catalog extractor (`scraftcam/catalog/`), which fetches
   `pdfplumber` and `pypdfium2` from PyPI the first time it opens a PDF
   (a network connection is needed then).  They go into
-  `~/.scraftcnc/packages/`, never into Python itself; `pip` is fetched
+  `~/.scraftcam/packages/`, never into Python itself; `pip` is fetched
   too, since some Pythons (e.g. Ubuntu's) have none.
 * `git`, to get the code.
 * SolidCraft, only to see the part: its GUI, or `solidcraft-cli` on
@@ -55,25 +55,25 @@ screen.
 ## Getting It
 
 One repository holds everything: the Python bindings for SolidCraft
-(`scraftcnc/pybind/`) and the LinuxCNC side (`scraftcnc/lcnc/`)
+(`scraftcam/pybind/`) and the LinuxCNC side (`scraftcam/lcnc/`)
 included.  Everything is run from its top directory, with `python3 -m`;
 nothing is installed:
 
 ```
-git clone https://github.com/waynegramlich/scraftcnc.git
-cd scraftcnc
+git clone https://github.com/waynegramlich/scraftcam.git
+cd scraftcam
 ```
 
 ## Trying It
 
-`scraftcnc/demo.py` makes a notched 4 x 3 inch plate, 1/2 inch
+`scraftcam/demo.py` makes a notched 4 x 3 inch plate, 1/2 inch
 thick, with a hole through it and a pocket around three islands.
 Each step below needs a little more than the one before it.
 
 1. The G-code alone (no SolidCraft needed):
 
    ```
-   python3 -m scraftcnc.demo > demo.ngc
+   python3 -m scraftcam.demo > demo.ngc
    ```
 
    It prints an estimate of the run time (about 12 minutes).
@@ -81,7 +81,7 @@ Each step below needs a little more than the one before it.
 2. The tool path viewer (no SolidCraft needed):
 
    ```
-   python3 -m scraftcnc.demo --plot demo.html > demo.ngc
+   python3 -m scraftcam.demo --plot demo.html > demo.ngc
    ```
 
    Open `demo.html` in a web browser.  Drag to turn the view, play
@@ -91,7 +91,7 @@ Each step below needs a little more than the one before it.
    `solidcraft-cli` on the `PATH`):
 
    ```
-   python3 -m scraftcnc.demo headless > demo.ngc
+   python3 -m scraftcam.demo headless > demo.ngc
    ```
 
    It prints the number of closed profiles it sketched (6).
@@ -102,7 +102,7 @@ Each step below needs a little more than the one before it.
 
    ```
    solidcraft --control 8080 &
-   python3 -m scraftcnc.demo 8080 > demo.ngc
+   python3 -m scraftcam.demo 8080 > demo.ngc
    ```
 
    The plate is see-through, so the tool path shows inside it (it
@@ -111,7 +111,7 @@ Each step below needs a little more than the one before it.
 
 5. All of it connected, in one command, on Linux, with LinuxCNC's
    simulator (installed by `python3 -m
-   scraftcnc.lcnc.install_linuxcnc`) and no other SolidCraft on its
+   scraftcam.lcnc.install_linuxcnc`) and no other SolidCraft on its
    port:
 
    ```
@@ -136,7 +136,7 @@ Each step below needs a little more than the one before it.
 
 ## The Files
 
-The code is the package `scraftcnc/`:
+The code is the package `scraftcam/`:
 
 * `gcode.py`: `CNC`, which writes the G-code (profiles, pockets,
   drilling, edge finishing).
@@ -145,13 +145,13 @@ The code is the package `scraftcnc/`:
 * `shops.py` (with `Shops.md` and `examples/shop/`): the shop
   description files, their reader (every problem reported at its file
   and line), and the example shop that the demonstration uses.
-* `home.py`: `~/.scraftcnc/`, where `scraftcnc` keeps everything it
+* `home.py`: `~/.scraftcam/`, where `scraftcam` keeps everything it
   writes for itself (the package is treated as read only); created on
   first use, with a message, and hidden on Windows.
 * `packages.py`: fetches optional packages from PyPI into
-  `~/.scraftcnc/packages/` the first time they are needed.
+  `~/.scraftcam/packages/` the first time they are needed.
 * `model_cache.py`: keeps models of tools and tooling as STEP files in
-  `~/.scraftcnc/tool_cache/`, so the second start is much faster.  One
+  `~/.scraftcam/tool_cache/`, so the second start is much faster.  One
   not used for a week is deleted, and deleting them all is always safe.
 * `setups.py` (with `examples/setup/`): a whole setup, read from JSON:
   where each piece of tooling, material and finished part goes.
@@ -185,7 +185,7 @@ The code is the package `scraftcnc/`:
   version.
 * `catalog/`: `catxtract.py`, which pulls titles, text, images and
   tables out of a vendor's PDF catalog into a Markdown file per page
-  (`python3 -m scraftcnc.catalog.catxtract PDF OUTDIR`), and `pdf.py`,
+  (`python3 -m scraftcam.catalog.catxtract PDF OUTDIR`), and `pdf.py`,
   the only module that touches the PDF packages.
 
 Beside it, `tests/` holds the tests and `show_demo.py` the
@@ -203,12 +203,12 @@ python3 -m unittest discover -s tests -t .
 
 The tests need no SolidCraft, and no display.  One more suite follows
 the whole path, from the demonstration's G-code, through the
-headless HMI (`scraftcnc/hmi/`) and `serve_linuxcnc`, to a real
+headless HMI (`scraftcam/hmi/`) and `serve_linuxcnc`, to a real
 LinuxCNC simulator, in about two minutes, when asked (it needs LinuxCNC, from
-`python3 -m scraftcnc.lcnc.install_linuxcnc`):
+`python3 -m scraftcam.lcnc.install_linuxcnc`):
 
 ```
-SCRAFTCNC_LINUXCNC=1 python3 -m unittest -v tests.test_lcnc_end_to_end
+SCRAFTCAM_LINUXCNC=1 python3 -m unittest -v tests.test_lcnc_end_to_end
 ```
 
 ## License

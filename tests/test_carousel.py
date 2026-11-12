@@ -1,4 +1,4 @@
-"""Tests for `scraftcnc.carousel`: the slot plan and its messages."""
+"""Tests for `scraftcam.carousel`: the slot plan and its messages."""
 
 import dataclasses
 import tempfile
@@ -6,12 +6,12 @@ import unittest
 from pathlib import Path
 from typing import Any, cast
 
-from scraftcnc import carousel, demo, shops
-from scraftcnc.gcode import CNC
-from scraftcnc.hmi import lcnc_hmi, lcnc_hmi_headless
-from scraftcnc.machine import Machine
-from scraftcnc.setups import SHOP as EXAMPLE_SHOP
-from scraftcnc.tooling.shop_registries import use_shop
+from scraftcam import carousel, demo, shops
+from scraftcam.gcode import CNC
+from scraftcam.hmi import lcnc_hmi, lcnc_hmi_headless
+from scraftcam.machine import Machine
+from scraftcam.setups import SHOP as EXAMPLE_SHOP
+from scraftcam.tooling.shop_registries import use_shop
 
 
 class TestPlan(unittest.TestCase):

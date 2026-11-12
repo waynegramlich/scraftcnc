@@ -1,8 +1,8 @@
-"""Tests for `scraftcnc.catalog.pdf` and the PDF side of `catxtract`.
+"""Tests for `scraftcam.catalog.pdf` and the PDF side of `catxtract`.
 
 The PDF is written by `write_pdf()` into a temporary directory, so no
 binary file is kept in `git`.  The tests are skipped when `pdfplumber`
-has not been fetched into `~/.scraftcnc/packages/` (the tests never
+has not been fetched into `~/.scraftcam/packages/` (the tests never
 fetch it), or when `tkinter` is missing.
 """
 
@@ -12,9 +12,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scraftcnc.packages import PACKAGES_DIRECTORY
+from scraftcam.packages import PACKAGES_DIRECTORY
 
-# Look where `scraftcnc.packages` puts the PDF packages.
+# Look where `scraftcam.packages` puts the PDF packages.
 if str(PACKAGES_DIRECTORY) not in sys.path:
     sys.path.insert(0, str(PACKAGES_DIRECTORY))
 READY: bool = all(
@@ -139,7 +139,7 @@ class PdfTest(unittest.TestCase):
 
     def setUp(self) -> None:
         """Write the PDF and open it."""
-        from scraftcnc.catalog import catxtract, pdf
+        from scraftcam.catalog import catxtract, pdf
 
         self.catxtract = catxtract
         self.pdf = pdf

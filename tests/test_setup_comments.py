@@ -1,15 +1,15 @@
-"""Tests for `scraftcnc.setup_comments`."""
+"""Tests for `scraftcam.setup_comments`."""
 
 import tempfile
 import unittest
 import warnings
 from pathlib import Path
 
-from scraftcnc import __version__, demo, setup_comments
-from scraftcnc.assembly import Assembly, AssemblyItem
-from scraftcnc.shops import read
-from scraftcnc.tooling.cutter_models import EXAMPLE_SHOP
-from scraftcnc.tooling.shop_registries import use_shop
+from scraftcam import __version__, demo, setup_comments
+from scraftcam.assembly import Assembly, AssemblyItem
+from scraftcam.shops import read
+from scraftcam.tooling.cutter_models import EXAMPLE_SHOP
+from scraftcam.tooling.shop_registries import use_shop
 from tests.test_assembly import assert_same
 
 
@@ -26,7 +26,7 @@ def _assembly() -> Assembly:
             AssemblyItem(
                 kind="tooling",
                 name="vise (6 in)",
-                call="scraftcnc.tooling.tools:MachineVise.make",
+                call="scraftcam.tooling.tools:MachineVise.make",
                 args={
                     "width": "6 in",
                     "opening": "6 in",
@@ -57,7 +57,7 @@ def _assembly() -> Assembly:
             AssemblyItem(
                 kind="stock",
                 name="stock",
-                call="scraftcnc.assembly:Stock",
+                call="scraftcam.assembly:Stock",
                 args={
                     "material": "aluminum_6061",
                     "size": ["4 in", "3 in", "1/2 in"],
@@ -93,7 +93,7 @@ class TestSetupComments(unittest.TestCase):
     def test_optional_fields_absent(self) -> None:
         """An item with only the needed fields reads back the same."""
         assembly: Assembly = Assembly(
-            [AssemblyItem("part", "plate", "scraftcnc.demo:model", {})]
+            [AssemblyItem("part", "plate", "scraftcam.demo:model", {})]
         )
         lines: list[str] = setup_comments.write(assembly)
         self.assertFalse(any("note" in line for line in lines))
@@ -102,7 +102,7 @@ class TestSetupComments(unittest.TestCase):
     def test_header(self) -> None:
         """The shop and machine are written after the version, and read."""
         assembly: Assembly = Assembly(
-            [AssemblyItem("part", "plate", "scraftcnc.demo:model", {})],
+            [AssemblyItem("part", "plate", "scraftcam.demo:model", {})],
             "Home shop",
             "Shop mill",
         )

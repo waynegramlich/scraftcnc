@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from typing import Any, cast
 
-from scraftcnc import shops
+from scraftcam import shops
 
 # The example shop.
 EXAMPLES: Path = Path(__file__).parent.parent / "examples" / "shop"

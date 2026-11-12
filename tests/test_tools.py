@@ -8,11 +8,11 @@ import unittest
 from pathlib import Path
 from typing import Any
 
-from scraftcnc.pybind.scraftpybind import JSON, HeadlessTransport, PyBind
-from scraftcnc.shops import read
-from scraftcnc.tooling import tools
-from scraftcnc.tooling.cutter_models import EXAMPLE_SHOP
-from scraftcnc.tooling.shop_registries import use_shop
+from scraftcam.pybind.scraftpybind import JSON, HeadlessTransport, PyBind
+from scraftcam.shops import read
+from scraftcam.tooling import tools
+from scraftcam.tooling.cutter_models import EXAMPLE_SHOP
+from scraftcam.tooling.shop_registries import use_shop
 
 # An extracted `solidcraft-cli` (as the demo uses) for the live test.
 HERE: Path = Path(__file__).resolve().parent.parent

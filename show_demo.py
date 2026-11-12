@@ -2,7 +2,7 @@
 """Bring up the whole chain, for showing it off, in one command.
 
 On Linux, this starts LinuxCNC's simulator (`serve_linuxcnc`, from
-`scraftcnc/lcnc/`, in its `lcnc` box), a SolidCraft window, the
+`scraftcam/lcnc/`, in its `lcnc` box), a SolidCraft window, the
 watcher that moves the tool in SolidCraft (`sim_linuxcnc --watch`, in
 the box), and last the HMI (`lcnc_hmi.py`), stopped, with the
 demonstration's program open.  The HMI draws the program's setup
@@ -17,7 +17,7 @@ Press Start in the HMI; the tool cuts the plate in SolidCraft.  The
 HMI's slider starts at `SPEED`.  The HMI's Quit button (or closing
 the HMI or SolidCraft, or Control-C here) closes everything.
 What each program prints goes to
-`~/.cache/scraftcnc/show/`, and the end of it is shown after a failure.
+`~/.cache/scraftcam/show/`, and the end of it is shown after a failure.
 
 It will not disturb what is already running: a port in use stops it,
 with a message.  SolidCraft has no command to quit, so it gets a
@@ -46,12 +46,12 @@ from types import FrameType
 from typing import Any, cast
 
 # Run as `./show_demo.py` (from any directory): the repository root
-# goes on the path, so that the `scraftcnc` package can be imported.
+# goes on the path, so that the `scraftcam` package can be imported.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from scraftcnc.lcnc.lcnc_client import PORT as LINUXCNC_PORT
-from scraftcnc.lcnc.lcnc_client import BridgeClient, BridgeError
-from scraftcnc.pybind.scraftpybind import PyBind, connect
+from scraftcam.lcnc.lcnc_client import PORT as LINUXCNC_PORT
+from scraftcam.lcnc.lcnc_client import BridgeClient, BridgeError
+from scraftcam.pybind.scraftpybind import PyBind, connect
 
 # Where everything is.
 PROJECT: Path = Path(__file__).resolve().parent
@@ -59,7 +59,7 @@ SERVER_PROJECT: Path = PROJECT
 SOLIDCRAFT_BESIDE: Path = (
     PROJECT.parent / "solidcraft" / "solidcraft-linux-x86_64.AppImage"
 )
-WORK: Path = Path.home() / ".cache" / "scraftcnc" / "show"
+WORK: Path = Path.home() / ".cache" / "scraftcam" / "show"
 SOLIDCRAFT_DATA: Path = Path.home() / ".local" / "share" / "solidcraft"
 
 # The `distrobox` box that LinuxCNC is in.
@@ -163,7 +163,7 @@ def check_ready(ports: dict[str, int]) -> None:
     """
     if not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
         raise DemoShowFailed("There is no display to show this on.")
-    if not (SERVER_PROJECT / "scraftcnc" / "lcnc").is_dir():
+    if not (SERVER_PROJECT / "scraftcam" / "lcnc").is_dir():
         raise DemoShowFailed(f"{SERVER_PROJECT} is not there.")
     if shutil.which("podman") is None:
         raise DemoShowFailed("`podman` is not installed.")
@@ -545,7 +545,7 @@ class DemoShow:  # pylint: disable=too-many-public-methods
         self.logs["install_linuxcnc"] = WORK / "install_linuxcnc.log"
         with self.logs["install_linuxcnc"].open("wb") as log:
             done = subprocess.run(
-                [sys.executable, "-u", "-m", "scraftcnc.lcnc.install_linuxcnc",
+                [sys.executable, "-u", "-m", "scraftcam.lcnc.install_linuxcnc",
                  "--box", BOX],
                 cwd=SERVER_PROJECT,
                 stdin=subprocess.DEVNULL,
@@ -557,7 +557,7 @@ class DemoShow:  # pylint: disable=too-many-public-methods
         if done.returncode != 0:
             raise DemoShowFailed(
                 "The LinuxCNC installation is not right; run "
-                "`python3 -m scraftcnc.lcnc.install_linuxcnc` in "
+                "`python3 -m scraftcam.lcnc.install_linuxcnc` in "
                 f"{SERVER_PROJECT}.\n{self.log_end('install_linuxcnc')}"
             )
 
@@ -605,7 +605,7 @@ class DemoShow:  # pylint: disable=too-many-public-methods
             self.logs["program"].open("wb") as log,
         ):
             done = subprocess.run(
-                [sys.executable, "-m", "scraftcnc.demo"],
+                [sys.executable, "-m", "scraftcam.demo"],
                 cwd=PROJECT,
                 stdin=subprocess.DEVNULL,
                 stdout=program,
@@ -628,7 +628,7 @@ class DemoShow:  # pylint: disable=too-many-public-methods
         self.start(
             "watcher",
             ["podman", "exec", "-u", getpass.getuser(), "-w", str(PROJECT),
-             BOX, "python3", "-u", "-m", "scraftcnc.lcnc.sim_linuxcnc",
+             BOX, "python3", "-u", "-m", "scraftcam.lcnc.sim_linuxcnc",
              "--watch",
              str(self.program),
              "--solidcraft", str(self.options.solidcraft_port)],
@@ -656,7 +656,7 @@ class DemoShow:  # pylint: disable=too-many-public-methods
         say("Starting the HMI.")
         self.start(
             "hmi",
-            [sys.executable, "-m", "scraftcnc.hmi.lcnc_hmi",
+            [sys.executable, "-m", "scraftcam.hmi.lcnc_hmi",
              "--port", str(port),
              "--solidcraft", str(self.options.solidcraft_port),
              *(["--headless"] if self.options.headless else []),
@@ -692,7 +692,7 @@ class DemoShow:  # pylint: disable=too-many-public-methods
         say("Starting LinuxCNC.")
         self.start(
             "linuxcnc",
-            [sys.executable, "-u", "-m", "scraftcnc.lcnc.serve_linuxcnc",
+            [sys.executable, "-u", "-m", "scraftcam.lcnc.serve_linuxcnc",
              "--box", BOX],
             SERVER_PROJECT,
         )  # fmt: skip
@@ -716,7 +716,7 @@ class DemoShow:  # pylint: disable=too-many-public-methods
         say("Starting a headless SolidCraft.")
         self.start(
             "solidcraft_headless",
-            [sys.executable, "-u", "-m", "scraftcnc.pybind.headless_server",
+            [sys.executable, "-u", "-m", "scraftcam.pybind.headless_server",
              str(port)],
         )  # fmt: skip
         self.wait_for_port("solidcraft_headless", port)
@@ -949,7 +949,7 @@ class DemoShow:  # pylint: disable=too-many-public-methods
         if "watcher" in self.running:
             subprocess.run(
                 ["pkill", "-INT", "-f",
-                 f"scraftcnc.lcnc.sim_linuxcnc --watch {self.program}"],
+                 f"scraftcam.lcnc.sim_linuxcnc --watch {self.program}"],
                 check=False,
             )  # fmt: skip
             self.close_one("watcher")

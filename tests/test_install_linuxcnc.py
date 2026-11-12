@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from scraftcnc.lcnc import install_linuxcnc
+from scraftcam.lcnc import install_linuxcnc
 
 # A small `Packages` index with three versions and another package.
 INDEX: str = """Package: linuxcnc-uspace
@@ -159,7 +159,7 @@ class TestInstallLinuxCNC(unittest.TestCase):
     def test_ask_user_yes(self) -> None:
         """With `--yes`, the command is run, not asked for."""
         with (
-            mock.patch("scraftcnc.lcnc.install_linuxcnc.run") as run,
+            mock.patch("scraftcam.lcnc.install_linuxcnc.run") as run,
             mock.patch("sys.stdin", new=io.StringIO()),
             mock.patch("sys.stdout", new=io.StringIO()),
         ):
@@ -221,7 +221,7 @@ class TestInstallLinuxCNC(unittest.TestCase):
         )
         target = install_linuxcnc.box_steps(options)[0]
         path = Path("/x/p.deb")
-        with mock.patch("scraftcnc.lcnc.install_linuxcnc.run") as run:
+        with mock.patch("scraftcam.lcnc.install_linuxcnc.run") as run:
             inside = install_linuxcnc.send_file(target, path)
         self.assertEqual(inside, str(path))
         run.assert_not_called()

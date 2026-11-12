@@ -5,15 +5,15 @@ import re
 import unittest
 from collections.abc import Sequence
 
-from scraftcnc.demo import demo_islands, demo_pocket
-from scraftcnc.gcode import (
+from scraftcam.demo import demo_islands, demo_pocket
+from scraftcam.gcode import (
     CNC,
     Ring,
     _number,
     cut_order,
     plan_pocket,
 )
-from scraftcnc.geometry import (
+from scraftcam.geometry import (
     ArcSegment,
     Corner,
     Loop,
@@ -21,7 +21,7 @@ from scraftcnc.geometry import (
     XYSegment,
     distance_to,
 )
-from scraftcnc.machine import Machine, ToolEntry
+from scraftcam.machine import Machine, ToolEntry
 from tests.test_geometry import dumbbell, square
 
 

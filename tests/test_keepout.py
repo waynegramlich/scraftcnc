@@ -6,19 +6,19 @@ import random
 import unittest
 from collections.abc import Iterator
 
-from scraftcnc import keepout, setups
-from scraftcnc.demo import (
+from scraftcam import keepout, setups
+from scraftcam.demo import (
     MACHINE,
     MATERIAL,
     SHOP_FILE,
     cut_demo,
     demo_assembly,
 )
-from scraftcnc.gcode import CNC
-from scraftcnc.geometry import SLOP, ArcSegment, LineSegment, RoundedPolygon
-from scraftcnc.machine import Machine, ToolEntry
-from scraftcnc.shops import cnc_machine, read
-from scraftcnc.tooling.shop_registries import use_shop
+from scraftcam.gcode import CNC
+from scraftcam.geometry import SLOP, ArcSegment, LineSegment, RoundedPolygon
+from scraftcam.machine import Machine, ToolEntry
+from scraftcam.shops import cnc_machine, read
+from scraftcam.tooling.shop_registries import use_shop
 
 JAWS = ("Kurt D688 fixed jaw", "Kurt D688 movable jaw")
 PARALLELS = ("Parallel 1-1/2 in A", "Parallel 1-1/2 in B")

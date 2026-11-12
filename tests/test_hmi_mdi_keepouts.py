@@ -3,8 +3,8 @@
 import unittest
 from typing import Any, cast
 
-from scraftcnc.geometry import Corner, RoundedPolygon
-from scraftcnc.hmi import lcnc_hmi, lcnc_hmi_headless
+from scraftcam.geometry import Corner, RoundedPolygon
+from scraftcam.hmi import lcnc_hmi, lcnc_hmi_headless
 
 
 def clamp(x0: float, x1: float, top: float) -> RoundedPolygon:

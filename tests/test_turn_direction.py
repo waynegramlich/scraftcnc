@@ -13,8 +13,8 @@ import unittest
 from pathlib import Path
 from typing import Any, cast
 
-from scraftcnc import model_cache
-from scraftcnc.pybind.scraftpybind import HeadlessTransport, PyBind
+from scraftcam import model_cache
+from scraftcam.pybind.scraftpybind import HeadlessTransport, PyBind
 
 HERE: Path = Path(__file__).resolve().parent.parent
 CLI: Path = HERE / "solidcraft/squashfs-root/usr/bin/solidcraft-cli"

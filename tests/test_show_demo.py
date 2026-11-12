@@ -16,7 +16,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import show_demo
-from scraftcnc.pybind import headless_server
+from scraftcam.pybind import headless_server
 
 
 class TestLeftovers(unittest.TestCase):

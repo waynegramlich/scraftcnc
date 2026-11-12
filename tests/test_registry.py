@@ -1,18 +1,18 @@
-"""Tests for `scraftcnc.tooling.registry` and the tooling registries."""
+"""Tests for `scraftcam.tooling.registry` and the tooling registries."""
 
 import unittest
 from typing import Any
 
-from scraftcnc.shops import read
-from scraftcnc.tooling import tools
-from scraftcnc.tooling.cutter_models import (
+from scraftcam.shops import read
+from scraftcam.tooling import tools
+from scraftcam.tooling.cutter_models import (
     EXAMPLE_SHOP,
     Cutter,
     register_cutters,
     shop_tools,
 )
-from scraftcnc.tooling.registry import Registry, key
-from scraftcnc.tooling.shop_registries import use_shop
+from scraftcam.tooling.registry import Registry, key
+from scraftcam.tooling.shop_registries import use_shop
 
 
 # Function `setUpModule()`:

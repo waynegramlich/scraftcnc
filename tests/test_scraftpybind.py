@@ -38,8 +38,8 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
-from scraftcnc.pybind import scraftpybind, scraftpybind_generate
-from scraftcnc.pybind.scraftpybind import (
+from scraftcam.pybind import scraftpybind, scraftpybind_generate
+from scraftcam.pybind.scraftpybind import (
     JSON,
     CommandNamespace,
     ControlTransport,
@@ -51,11 +51,11 @@ from scraftcnc.pybind.scraftpybind import (
 
 # Where things are.
 ROOT: Path = Path(__file__).resolve().parent.parent
-HERE: Path = ROOT / "scraftcnc" / "pybind"
+HERE: Path = ROOT / "scraftcam" / "pybind"
 MODULE: Path = HERE / "scraftpybind.py"
 GENERATOR: Path = HERE / "scraftpybind_generate.py"
 CACHE: Path = HERE / "scraftpybind_commands.json"
-EXAMPLE: str = "scraftcnc.pybind.examples.plate_with_holes"
+EXAMPLE: str = "scraftcam.pybind.examples.plate_with_holes"
 
 # The `solidcraft-cli` version that `scraftpybind_commands.json` came
 # from; another version may well have other commands.

@@ -14,13 +14,13 @@ from pathlib import Path
 from typing import Any, cast
 from unittest import mock
 
-from scraftcnc import shops
-from scraftcnc.assembly import Assembly
-from scraftcnc.demo import demo_assembly, with_setup
-from scraftcnc.hmi import lcnc_hmi, lcnc_hmi_headless
-from scraftcnc.lcnc.lcnc_client import BridgeError
-from scraftcnc.setups import SHOP as EXAMPLE_SHOP
-from scraftcnc.tooling.shop_registries import use_shop
+from scraftcam import shops
+from scraftcam.assembly import Assembly
+from scraftcam.demo import demo_assembly, with_setup
+from scraftcam.hmi import lcnc_hmi, lcnc_hmi_headless
+from scraftcam.lcnc.lcnc_client import BridgeError
+from scraftcam.setups import SHOP as EXAMPLE_SHOP
+from scraftcam.tooling.shop_registries import use_shop
 
 # The constants that `FakeClient` answers with.
 IDLE = 1
@@ -927,7 +927,7 @@ class TestHeadlessProgram(unittest.TestCase):
         }
         code = (
             "import sys; sys.modules['tkinter'] = None; "
-            "from scraftcnc.hmi import lcnc_hmi; "
+            "from scraftcam.hmi import lcnc_hmi; "
             "sys.exit(lcnc_hmi.main(sys.argv[1:]))"
         )
         with subprocess.Popen(
@@ -949,7 +949,7 @@ class TestHeadlessProgram(unittest.TestCase):
         """With no `tkinter`, a window can not open, and it says so."""
         code = (
             "import sys; sys.modules['tkinter'] = None; "
-            "from scraftcnc.hmi import lcnc_hmi; "
+            "from scraftcam.hmi import lcnc_hmi; "
             "sys.exit(lcnc_hmi.main(['--dry-run']))"
         )
         done = subprocess.run(

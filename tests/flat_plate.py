@@ -9,7 +9,7 @@ import dataclasses
 import unittest
 from unittest import mock
 
-from scraftcnc.tooling import tools
+from scraftcam.tooling import tools
 
 # `GRID_PLATE` without its chamfers: the same shape for every check.
 FLAT_PLATE: tools.GridPlate = dataclasses.replace(

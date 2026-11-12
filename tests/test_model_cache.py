@@ -13,12 +13,12 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
-from scraftcnc import model_cache, setups
-from scraftcnc.assembly import AssemblyItem
-from scraftcnc.pybind.scraftpybind import JSON, HeadlessTransport, PyBind
-from scraftcnc.shops import read
-from scraftcnc.tooling import cutter_models, mount, tools
-from scraftcnc.tooling.shop_registries import use_shop
+from scraftcam import model_cache, setups
+from scraftcam.assembly import AssemblyItem
+from scraftcam.pybind.scraftpybind import JSON, HeadlessTransport, PyBind
+from scraftcam.shops import read
+from scraftcam.tooling import cutter_models, mount, tools
+from scraftcam.tooling.shop_registries import use_shop
 from tests.flat_plate import use_flat_plate
 
 HERE: Path = Path(__file__).resolve().parent.parent
@@ -101,7 +101,7 @@ class TestItemKey(unittest.TestCase):
         return AssemblyItem(
             "tooling",
             "vise",
-            "scraftcnc.tooling.mount:MachineViseLayer.named",
+            "scraftcam.tooling.mount:MachineViseLayer.named",
             dict(args),
         )
 

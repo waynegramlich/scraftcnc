@@ -535,3 +535,26 @@ tool).  The directory was renamed with `aic`.
 Scope: a straight port, same look and behaviour; the HMI as a tab of
 the larger GUI comes later.  S3 and S4 go to step agents (asked
 first).
+
+## 2026-11-12: S1 done: `scraftcnc` renamed `scraftcam`
+
+`git mv scraftcnc scraftcam`, and the name replaced in the 67 tracked
+files outside `TASKS/`, `ISSUES/`, `RULES/` (also `SCRAFTCAM_LINUXCNC`,
+`SCRAFTCAM_SOLIDCRAFT`).  Left alone: `README.md`'s clone URL and `cd
+scraftcnc`, until the user renames the GitHub repository (then both
+change).  `home.py` moves `~/.scraftcnc/` to `~/.scraftcam/` once,
+with a message, the first time anything under it is needed (not yet
+happened on this machine); `tests/test_home.py` keeps every test away
+from the real one.  The model cache hashes source files, so the
+5-minute grid plate is rebuilt once.  Full suite: 667 tests OK (20
+skipped), 203 s; ruff, `mypy --strict` (82 files), pylint (edited
+files) clean.  The LinuxCNC end-to-end suite was not run.
+
+## 2026-11-12: Repository and directory rename
+
+`README.md` now clones `waynegramlich/scraftcam` (`cd scraftcam`).
+The user renames the GitHub repository (`gh repo rename scraftcam`,
+blocked for Claude by auto mode) and sets the remote, commits, then
+renames the local directory to `projects/scraftcam` and restarts
+Claude Code there (its memory folder was copied to the new path's
+name beforehand).  Next: S2.

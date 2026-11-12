@@ -1,4 +1,4 @@
-# Run the offline tests of `scraftcnc.lcnc`, install LinuxCNC's
+# Run the offline tests of `scraftcam.lcnc`, install LinuxCNC's
 # simulator (`--yes` runs the commands it would ask the user to run), then
 # run a G-code program by JSON from outside the target, with no display.
 # The programs print the time on every line, so a timeout still shows
@@ -51,8 +51,8 @@ jobs:
       - name: install_linuxcnc --yes
         id: install
         if: ${{ !cancelled() }}
-        run: python -m scraftcnc.lcnc.install_linuxcnc --yes
+        run: python -m scraftcam.lcnc.install_linuxcnc --yes
 
       - name: demo_linuxcnc
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-        run: python -m scraftcnc.lcnc.demo_linuxcnc
+        run: python -m scraftcam.lcnc.demo_linuxcnc

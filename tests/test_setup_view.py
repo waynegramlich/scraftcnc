@@ -1,4 +1,4 @@
-"""Tests for `scraftcnc.setup_view`."""
+"""Tests for `scraftcam.setup_view`."""
 
 import json
 import os
@@ -11,21 +11,21 @@ from pathlib import Path
 from typing import Any, cast
 from unittest.mock import patch
 
-from scraftcnc.assembly import (
+from scraftcam.assembly import (
     Assembly,
     AssemblyItem,
     Stock,
     millimeters,
     resolve,
 )
-from scraftcnc.demo import DemoPart, demo_assembly
-from scraftcnc.model_cache import Cacheable, InsertedModel
-from scraftcnc.pybind.scraftpybind import (
+from scraftcam.demo import DemoPart, demo_assembly
+from scraftcam.model_cache import Cacheable, InsertedModel
+from scraftcam.pybind.scraftpybind import (
     HeadlessTransport,
     PyBind,
     SolidCraftError,
 )
-from scraftcnc.setup_view import (
+from scraftcam.setup_view import (
     PlacedItem,
     SetupView,
     box_edges,
@@ -34,11 +34,11 @@ from scraftcnc.setup_view import (
     named_origins,
     place,
 )
-from scraftcnc.shops import read
-from scraftcnc.tooling.cutter_models import EXAMPLE_SHOP
-from scraftcnc.tooling.mount import ParallelLayer
-from scraftcnc.tooling.shop_registries import use_shop
-from scraftcnc.tooling.tools import GridPlate, Point, quarter_turn
+from scraftcam.shops import read
+from scraftcam.tooling.cutter_models import EXAMPLE_SHOP
+from scraftcam.tooling.mount import ParallelLayer
+from scraftcam.tooling.shop_registries import use_shop
+from scraftcam.tooling.tools import GridPlate, Point, quarter_turn
 from tests.flat_plate import FLAT_PLATE
 
 # The demonstration's setup file.
@@ -583,12 +583,12 @@ class TestSetupView(unittest.TestCase):
         self.assertEqual(len(set(keys)), 2)
 
 
-# A live check needs `SCRAFTCNC_SOLIDCRAFT=1` and `solidcraft-cli`.
+# A live check needs `SCRAFTCAM_SOLIDCRAFT=1` and `solidcraft-cli`.
 CLI: str | None = shutil.which("solidcraft-cli")
-LIVE: bool = os.environ.get("SCRAFTCNC_SOLIDCRAFT") == "1" and bool(CLI)
+LIVE: bool = os.environ.get("SCRAFTCAM_SOLIDCRAFT") == "1" and bool(CLI)
 
 
-@unittest.skipUnless(LIVE, "needs SCRAFTCNC_SOLIDCRAFT=1 and solidcraft-cli")
+@unittest.skipUnless(LIVE, "needs SCRAFTCAM_SOLIDCRAFT=1 and solidcraft-cli")
 class TestLive(unittest.TestCase):
     """The demonstration's setup, shown in a headless SolidCraft."""
 

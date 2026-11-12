@@ -28,4 +28,4 @@ SharsMD
 build/
 dist/
 # STEP files written by the pybind examples.
-scraftcnc/pybind/examples/*.step
+scraftcam/pybind/examples/*.step

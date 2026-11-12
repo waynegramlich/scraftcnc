@@ -11,7 +11,7 @@ import unittest
 from collections.abc import Sequence
 from typing import cast
 
-from scraftcnc.geometry import (
+from scraftcam.geometry import (
     SLOP,
     ArcSegment,
     Corner,
@@ -29,7 +29,7 @@ from scraftcnc.geometry import (
     reverse_segment,
     split_at,
 )
-from scraftcnc.pybind.scraftpybind import PyBind
+from scraftcam.pybind.scraftpybind import PyBind
 
 
 # Function `notched()`:

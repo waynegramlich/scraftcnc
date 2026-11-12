@@ -6,10 +6,10 @@ import unittest
 from pathlib import Path
 from typing import Any, ClassVar, cast
 
-from scraftcnc import demo, shops
-from scraftcnc.hmi import lcnc_hmi, lcnc_hmi_headless
-from scraftcnc.setups import SHOP as EXAMPLE_SHOP
-from scraftcnc.tooling.shop_registries import use_shop
+from scraftcam import demo, shops
+from scraftcam.hmi import lcnc_hmi, lcnc_hmi_headless
+from scraftcam.setups import SHOP as EXAMPLE_SHOP
+from scraftcam.tooling.shop_registries import use_shop
 from tests.test_lcnc_hmi import RUNNING, client_machine
 
 

@@ -1,7 +1,7 @@
 # Tool Models
 
-This document is written by `scraftcnc/tooling/tool_models.py`
-(`python3 -m scraftcnc.tooling.tool_models`), from the code; do not
+This document is written by `scraftcam/tooling/tool_models.py`
+(`python3 -m scraftcam.tooling.tool_models`), from the code; do not
 edit it.
 
 Each model below can be made from a description of it, in any of three
@@ -38,10 +38,10 @@ form raises `ShopError`.
 
 ## Python Interface
 
-### `scraftcnc.tooling.cutter_models.model_description`
+### `scraftcam.tooling.cutter_models.model_description`
 
 ```python
-scraftcnc.tooling.cutter_models.model_description(
+scraftcam.tooling.cutter_models.model_description(
     solidcraft: PyBind,
     description: dict[str, object],
     at: tuple[float, float, float] = (0.0, 0.0, 0.0),
@@ -72,10 +72,10 @@ Raises:
 * `ConnectionError`:
   If nothing listens on the port, or SolidCraft goes away.
 
-### `scraftcnc.tooling.cutter_models.ModeledTool`
+### `scraftcam.tooling.cutter_models.ModeledTool`
 
 ```python
-scraftcnc.tooling.cutter_models.ModeledTool(
+scraftcam.tooling.cutter_models.ModeledTool(
     body: str,
     sketch: str,
     occurrence: str,
@@ -95,10 +95,10 @@ ModeledTool.items() -> list[str]
 
 Return what `browser.visibility` shows or hides for the tool.
 
-### `scraftcnc.shops.check_tool`
+### `scraftcam.shops.check_tool`
 
 ```python
-scraftcnc.shops.check_tool(
+scraftcam.shops.check_tool(
     description: dict[str, object],
 ) -> tuple[str, dict[str, object]]
 ```
@@ -121,10 +121,10 @@ Returns:
 Raises:
 * `ShopError`: With every problem found.
 
-### `scraftcnc.shops.ShopError`
+### `scraftcam.shops.ShopError`
 
 ```python
-scraftcnc.shops.ShopError(problems: list[str])
+scraftcam.shops.ShopError(problems: list[str])
 ```
 
 The problems found in a shop description.
@@ -133,10 +133,10 @@ Attributes:
 * `problems` (`list[str]`):
   Each problem, as `FILE:LINE: KEY: message`.
 
-### `scraftcnc.pybind.scraftpybind.connect`
+### `scraftcam.pybind.scraftpybind.connect`
 
 ```python
-scraftcnc.pybind.scraftpybind.connect(where: str) -> Transport
+scraftcam.pybind.scraftpybind.connect(where: str) -> Transport
 ```
 
 Return a transport for a port number, or for `headless`.
@@ -152,18 +152,18 @@ Returns:
 Raises:
 * `ValueError`: If `where` is neither.
 
-### `scraftcnc.pybind.scraftpybind.PyBind`
+### `scraftcam.pybind.scraftpybind.PyBind`
 
 ```python
-scraftcnc.pybind.scraftpybind.PyBind(transport: Transport)
+scraftcam.pybind.scraftpybind.PyBind(transport: Transport)
 ```
 
 The top level of `scraftpybind`: SolidCraft's commands.
 
-### `scraftcnc.pybind.scraftpybind.SolidCraftError`
+### `scraftcam.pybind.scraftpybind.SolidCraftError`
 
 ```python
-scraftcnc.pybind.scraftpybind.SolidCraftError(
+scraftcam.pybind.scraftpybind.SolidCraftError(
     method: str,
     error: str,
     running: bool,
@@ -209,7 +209,7 @@ Other keys:
 JSON:
 
 ```
-python3 -m scraftcnc.tooling.cutter_models 8080 '{
+python3 -m scraftcam.tooling.cutter_models 8080 '{
   "kind": "end_mill",
   "material": "carbide",
   "finish": "uncoated",
@@ -226,8 +226,8 @@ python3 -m scraftcnc.tooling.cutter_models 8080 '{
 Python:
 
 ```python
-from scraftcnc.pybind.scraftpybind import PyBind, connect
-from scraftcnc.tooling.cutter_models import model_description
+from scraftcam.pybind.scraftpybind import PyBind, connect
+from scraftcam.tooling.cutter_models import model_description
 
 with connect("8080") as transport:
     model_description(
@@ -291,7 +291,7 @@ Other keys:
 JSON:
 
 ```
-python3 -m scraftcnc.tooling.cutter_models 8080 '{
+python3 -m scraftcam.tooling.cutter_models 8080 '{
   "kind": "drill",
   "material": "HSS",
   "finish": "black oxide",
@@ -307,8 +307,8 @@ python3 -m scraftcnc.tooling.cutter_models 8080 '{
 Python:
 
 ```python
-from scraftcnc.pybind.scraftpybind import PyBind, connect
-from scraftcnc.tooling.cutter_models import model_description
+from scraftcam.pybind.scraftpybind import PyBind, connect
+from scraftcam.tooling.cutter_models import model_description
 
 with connect("8080") as transport:
     model_description(
@@ -367,7 +367,7 @@ Other keys:
 JSON:
 
 ```
-python3 -m scraftcnc.tooling.cutter_models 8080 '{
+python3 -m scraftcam.tooling.cutter_models 8080 '{
   "kind": "chamfer_mill",
   "material": "carbide",
   "finish": "uncoated",
@@ -382,8 +382,8 @@ python3 -m scraftcnc.tooling.cutter_models 8080 '{
 Python:
 
 ```python
-from scraftcnc.pybind.scraftpybind import PyBind, connect
-from scraftcnc.tooling.cutter_models import model_description
+from scraftcam.pybind.scraftpybind import PyBind, connect
+from scraftcam.tooling.cutter_models import model_description
 
 with connect("8080") as transport:
     model_description(
@@ -440,7 +440,7 @@ Other keys:
 JSON:
 
 ```
-python3 -m scraftcnc.tooling.cutter_models 8080 '{
+python3 -m scraftcam.tooling.cutter_models 8080 '{
   "kind": "corner_rounding_mill",
   "material": "carbide",
   "finish": "uncoated",
@@ -454,8 +454,8 @@ python3 -m scraftcnc.tooling.cutter_models 8080 '{
 Python:
 
 ```python
-from scraftcnc.pybind.scraftpybind import PyBind, connect
-from scraftcnc.tooling.cutter_models import model_description
+from scraftcam.pybind.scraftpybind import PyBind, connect
+from scraftcam.tooling.cutter_models import model_description
 
 with connect("8080") as transport:
     model_description(
@@ -515,7 +515,7 @@ Other keys:
 JSON:
 
 ```
-python3 -m scraftcnc.tooling.cutter_models 8080 '{
+python3 -m scraftcam.tooling.cutter_models 8080 '{
   "kind": "double_angle_cutter",
   "material": "carbide",
   "finish": "uncoated",
@@ -532,8 +532,8 @@ python3 -m scraftcnc.tooling.cutter_models 8080 '{
 Python:
 
 ```python
-from scraftcnc.pybind.scraftpybind import PyBind, connect
-from scraftcnc.tooling.cutter_models import model_description
+from scraftcam.pybind.scraftpybind import PyBind, connect
+from scraftcam.tooling.cutter_models import model_description
 
 with connect("8080") as transport:
     model_description(
@@ -600,7 +600,7 @@ Other keys:
 JSON:
 
 ```
-python3 -m scraftcnc.tooling.cutter_models 8080 '{
+python3 -m scraftcam.tooling.cutter_models 8080 '{
   "kind": "single_countersink",
   "material": "HSS",
   "finish": "uncoated",
@@ -617,8 +617,8 @@ python3 -m scraftcnc.tooling.cutter_models 8080 '{
 Python:
 
 ```python
-from scraftcnc.pybind.scraftpybind import PyBind, connect
-from scraftcnc.tooling.cutter_models import model_description
+from scraftcam.pybind.scraftpybind import PyBind, connect
+from scraftcam.tooling.cutter_models import model_description
 
 with connect("8080") as transport:
     model_description(
@@ -685,7 +685,7 @@ Other keys:
 JSON:
 
 ```
-python3 -m scraftcnc.tooling.cutter_models 8080 '{
+python3 -m scraftcam.tooling.cutter_models 8080 '{
   "kind": "double_countersink",
   "material": "HSS",
   "finish": "uncoated",
@@ -701,8 +701,8 @@ python3 -m scraftcnc.tooling.cutter_models 8080 '{
 Python:
 
 ```python
-from scraftcnc.pybind.scraftpybind import PyBind, connect
-from scraftcnc.tooling.cutter_models import model_description
+from scraftcam.pybind.scraftpybind import PyBind, connect
+from scraftcam.tooling.cutter_models import model_description
 
 with connect("8080") as transport:
     model_description(
@@ -860,8 +860,8 @@ A machine vise has no tools file entry yet, so it is made in
 Python, in millimeters, like `tools.KURT_D688`:
 
 ```python
-from scraftcnc.pybind.scraftpybind import PyBind, connect
-from scraftcnc.tooling.tools import KURT_D688
+from scraftcam.pybind.scraftpybind import PyBind, connect
+from scraftcam.tooling.tools import KURT_D688
 
 with connect("8080") as transport:
     KURT_D688.model(PyBind(transport), opening=76.2)
@@ -883,10 +883,10 @@ A setup file (`examples/setup/`) names one by its `type`:
 }
 ```
 
-### `scraftcnc.tooling.tools.MachineVise`
+### `scraftcam.tooling.tools.MachineVise`
 
 ```python
-scraftcnc.tooling.tools.MachineVise(
+scraftcam.tooling.tools.MachineVise(
     name: str,
     base: ViseBlock,
     body: ViseBlock,
@@ -1069,10 +1069,10 @@ MachineVise.cacheable(opening: float) -> tuple[Cacheable, ...]
 
 Return the vise as models that can be cached.
 
-### `scraftcnc.tooling.tools.ViseBlock`
+### `scraftcam.tooling.tools.ViseBlock`
 
 ```python
-scraftcnc.tooling.tools.ViseBlock(
+scraftcam.tooling.tools.ViseBlock(
     length: float,
     width: float,
     height: float,
@@ -1118,10 +1118,10 @@ ViseBlock.model(
 
 Model the block, up from the center of its bottom face.
 
-### `scraftcnc.tooling.tools.ViseNotches`
+### `scraftcam.tooling.tools.ViseNotches`
 
 ```python
-scraftcnc.tooling.tools.ViseNotches(
+scraftcam.tooling.tools.ViseNotches(
     centers: tuple[float, ...],
     width: float,
     depth: float,
@@ -1204,17 +1204,17 @@ Not a size:
 Like the vise, it is made in Python, in millimeters:
 
 ```python
-from scraftcnc.pybind.scraftpybind import PyBind, connect
-from scraftcnc.tooling.tools import KURT_JAW_PLATE
+from scraftcam.pybind.scraftpybind import PyBind, connect
+from scraftcam.tooling.tools import KURT_JAW_PLATE
 
 with connect("8080") as transport:
     KURT_JAW_PLATE.model(PyBind(transport), "Jaw plate")
 ```
 
-### `scraftcnc.tooling.tools.JawPlate`
+### `scraftcam.tooling.tools.JawPlate`
 
 ```python
-scraftcnc.tooling.tools.JawPlate(
+scraftcam.tooling.tools.JawPlate(
     screw: str,
     length: float,
     width: float,
@@ -1320,8 +1320,8 @@ A or B (`Parallel 3/4 in A`).
 It is made in Python, in millimeters:
 
 ```python
-from scraftcnc.pybind.scraftpybind import PyBind, connect
-from scraftcnc.tooling.tools import Parallel
+from scraftcam.pybind.scraftpybind import PyBind, connect
+from scraftcam.tooling.tools import Parallel
 
 # Its sizes in millimeters; the holes are optional.
 parallel = Parallel(
@@ -1352,10 +1352,10 @@ A setup file (`examples/setup/`) names one of the set by its
 }
 ```
 
-### `scraftcnc.tooling.tools.Parallel`
+### `scraftcam.tooling.tools.Parallel`
 
 ```python
-scraftcnc.tooling.tools.Parallel(
+scraftcam.tooling.tools.Parallel(
     name: str,
     height: float,
     thickness: float,
@@ -1453,7 +1453,7 @@ Chamfers take a lot of computing, once.  `GRID_PLATE`'s 200 took
 SolidCraft about 4-1/2 minutes, keeping four processors busy, against 2
 seconds without them.  The model cache (`model_cache.py`, which
 `setups.py` and `show_demo.py` use) keeps the plate as a STEP file in
-`~/.scraftcnc/tool_cache/`, which loads in about a second, so the cost
+`~/.scraftcam/tool_cache/`, which loads in about a second, so the cost
 comes again only when the plate's numbers change, or `tools.py`,
 `mount.py` or `geometry.py` does.  `model()` called directly does not
 use the cache.
@@ -1528,9 +1528,9 @@ close_diameter = "0.196 in"
 Or it is made in Python, in millimeters:
 
 ```python
-from scraftcnc.model_cache import ModelCache
-from scraftcnc.pybind.scraftpybind import PyBind, connect
-from scraftcnc.tooling.tools import GRID_PLATE
+from scraftcam.model_cache import ModelCache
+from scraftcam.pybind.scraftpybind import PyBind, connect
+from scraftcam.tooling.tools import GRID_PLATE
 
 # Through the cache: slow the first time, then about a second.
 with connect("8080") as transport:
@@ -1554,10 +1554,10 @@ the shop's tooling files or `tools.py`:
 }
 ```
 
-### `scraftcnc.tooling.tools.GridPlate`
+### `scraftcam.tooling.tools.GridPlate`
 
 ```python
-scraftcnc.tooling.tools.GridPlate(
+scraftcam.tooling.tools.GridPlate(
     name: str,
     length: float,
     width: float,
@@ -1598,7 +1598,7 @@ Chamfers take a lot of computing, once.  `GRID_PLATE`'s 200 took
 SolidCraft about 4-1/2 minutes, keeping four processors busy,
 against 2 seconds without them.  The model cache (`model_cache.py`,
 which `setups.py` and `show_demo.py` use) keeps the plate as a STEP
-file in `~/.scraftcnc/tool_cache/`, which loads in about a second,
+file in `~/.scraftcam/tool_cache/`, which loads in about a second,
 so the cost comes again only when the plate's numbers change, or
 `tools.py`, `mount.py` or `geometry.py` does.  `model()` called
 directly does not use the cache.

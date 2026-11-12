@@ -1,4 +1,4 @@
-"""Tests for `scraftcnc.assembly`."""
+"""Tests for `scraftcam.assembly`."""
 
 import json
 import unittest
@@ -6,7 +6,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from scraftcnc.assembly import (
+from scraftcam.assembly import (
     Assembly,
     AssemblyItem,
     Stock,
@@ -14,12 +14,12 @@ from scraftcnc.assembly import (
     millimeters,
     resolve,
 )
-from scraftcnc.demo import DemoPart, demo_assembly
-from scraftcnc.setups import Setup
-from scraftcnc.shops import read
-from scraftcnc.tooling.cutter_models import EXAMPLE_SHOP
-from scraftcnc.tooling.shop_registries import use_shop
-from scraftcnc.tooling.tools import GridPlate
+from scraftcam.demo import DemoPart, demo_assembly
+from scraftcam.setups import Setup
+from scraftcam.shops import read
+from scraftcam.tooling.cutter_models import EXAMPLE_SHOP
+from scraftcam.tooling.shop_registries import use_shop
+from scraftcam.tooling.tools import GridPlate
 
 
 # Function `setUpModule()`:
@@ -93,7 +93,7 @@ def _assembly() -> Assembly:
             AssemblyItem(
                 "tooling",
                 "vise",
-                "scraftcnc.tooling.mount:vise_mount",
+                "scraftcam.tooling.mount:vise_mount",
                 {"opening": "4 in"},
                 keep_out=((0.0, 0.0, 0.0, 10.0, 20.0, 30.0),),
                 note="Clean the jaws.",
@@ -101,7 +101,7 @@ def _assembly() -> Assembly:
             AssemblyItem(
                 "stock",
                 "plate",
-                "scraftcnc.assembly:Stock",
+                "scraftcam.assembly:Stock",
                 {
                     "material": "aluminum_6061",
                     "size": ["4 in", "3 in", "1/2 in"],
@@ -155,7 +155,7 @@ class TestAssembly(unittest.TestCase):
             {
                 "kind": "part",
                 "name": "part",
-                "call": "scraftcnc.demo:demo_part",
+                "call": "scraftcam.demo:demo_part",
                 "location": ["1 in", "0 in", "2mm"],
                 "keep_out": [["0 in", "0 in", "0 in", "1 in", "1mm", "1mm"]],
             },
@@ -259,14 +259,14 @@ class TestResolve(unittest.TestCase):
     def test_errors_name_the_item(self) -> None:
         """A bad call or bad arguments name the item."""
         bad: AssemblyItem = AssemblyItem(
-            "tooling", "odd", "scraftcnc.assembly:Nope", {}
+            "tooling", "odd", "scraftcam.assembly:Nope", {}
         )
         with self.assertRaisesRegex(ValueError, "'odd'"):
             resolve(bad)
         unknown: AssemblyItem = AssemblyItem(
             "tooling",
             "vise",
-            "scraftcnc.tooling.mount:MachineViseLayer.named",
+            "scraftcam.tooling.mount:MachineViseLayer.named",
             {"vise": "no_such_vise", "opening": "1 in"},
         )
         with self.assertRaisesRegex(ValueError, "'vise'.*kurt_d688"):

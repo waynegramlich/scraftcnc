@@ -8,12 +8,12 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from unittest import mock
 
-from scraftcnc.geometry import Corner, Hole, RoundedPolygon
-from scraftcnc.pybind.scraftpybind import HeadlessTransport, PyBind
-from scraftcnc.shops import read
-from scraftcnc.tooling import mount, tools
-from scraftcnc.tooling.cutter_models import EXAMPLE_SHOP
-from scraftcnc.tooling.shop_registries import use_shop
+from scraftcam.geometry import Corner, Hole, RoundedPolygon
+from scraftcam.pybind.scraftpybind import HeadlessTransport, PyBind
+from scraftcam.shops import read
+from scraftcam.tooling import mount, tools
+from scraftcam.tooling.cutter_models import EXAMPLE_SHOP
+from scraftcam.tooling.shop_registries import use_shop
 
 # An extracted `solidcraft-cli` (as the demo uses) for the live test.
 HERE: Path = Path(__file__).resolve().parent.parent

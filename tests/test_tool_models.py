@@ -7,9 +7,9 @@ import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from scraftcnc import shops
-from scraftcnc.pybind.scraftpybind import HeadlessTransport, PyBind
-from scraftcnc.tooling import cutter_models, tool_models
+from scraftcam import shops
+from scraftcam.pybind.scraftpybind import HeadlessTransport, PyBind
+from scraftcam.tooling import cutter_models, tool_models
 
 
 class TestFiles(unittest.TestCase):
@@ -21,7 +21,7 @@ class TestFiles(unittest.TestCase):
             tool_models.DOCUMENT.read_text(encoding="utf-8"),
             tool_models.document(),
             "Tool_Models.md is out of date: "
-            "python3 -m scraftcnc.tooling.tool_models",
+            "python3 -m scraftcam.tooling.tool_models",
         )
 
     def test_sketches_are_current(self) -> None:

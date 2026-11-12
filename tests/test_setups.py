@@ -8,12 +8,12 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from scraftcnc import setups
-from scraftcnc.pybind.scraftpybind import HeadlessTransport, PyBind
-from scraftcnc.shops import grid_plates, read
-from scraftcnc.tooling import tools
-from scraftcnc.tooling.mount import MachineViseLayer, ParallelLayer
-from scraftcnc.tooling.shop_registries import use_shop
+from scraftcam import setups
+from scraftcam.pybind.scraftpybind import HeadlessTransport, PyBind
+from scraftcam.shops import grid_plates, read
+from scraftcam.tooling import tools
+from scraftcam.tooling.mount import MachineViseLayer, ParallelLayer
+from scraftcam.tooling.shop_registries import use_shop
 from tests.flat_plate import FLAT_PLATE, use_flat_plate
 
 # An extracted `solidcraft-cli` (as the demo uses) for the live test.

@@ -6,9 +6,9 @@ from types import SimpleNamespace
 from typing import Any, cast
 from unittest import mock
 
-from scraftcnc.carousel import Plan, Swap, spoke_ends
-from scraftcnc.lcnc import sim_solidcraft
-from scraftcnc.tooling import cutter_models
+from scraftcam.carousel import Plan, Swap, spoke_ends
+from scraftcam.lcnc import sim_solidcraft
+from scraftcam.tooling import cutter_models
 
 
 class TestSpokeEnds(unittest.TestCase):

@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from typing import Any, cast
 
-from scraftcnc.hmi import lcnc_hmi, lcnc_hmi_headless
+from scraftcam.hmi import lcnc_hmi, lcnc_hmi_headless
 
 
 class TestOriginAxes(unittest.TestCase):

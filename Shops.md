@@ -1,7 +1,7 @@
 # Shops: The Shop Description Files
 
-This document is written by `scraftcnc/shops.py` (`python3 -m
-scraftcnc.shops markdown > Shops.md`) from the schema that its reader
+This document is written by `scraftcam/shops.py` (`python3 -m
+scraftcam.shops markdown > Shops.md`) from the schema that its reader
 checks files against; a change is made there, never here.
 
 A shop is described in Nested TOML files: what machines it has (and,

@@ -3,8 +3,8 @@
 import unittest
 from pathlib import Path
 
-from scraftcnc.machine import Machine, ToolEntry
-from scraftcnc.shops import cnc_machine, read
+from scraftcam.machine import Machine, ToolEntry
+from scraftcam.shops import cnc_machine, read
 from tests.test_gcode import machine
 
 # The example shop.
