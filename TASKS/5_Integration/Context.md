@@ -53,3 +53,10 @@ be published on PyPI with a standard-library bootstrap installer into
 `~/.scraftcnc/venv/`; macOS is dropped; Linux is Wayland only.  Next:
 port the HMI to Qt (`T.hs~5.1.5`, to be reopened).  See `T.osiade~5.1.9`'s
 `Context.md`, #18-#63.
+
+## 2026-11-12: `T.hs~5.1.5` closed again: the HMI is Qt
+
+The package is `scraftcam`; the HMI is Qt (`scraftcam/hmi/lcnc_hmi.py`,
+with `hmi_machine.py`), headless as offscreen Qt; PySide6 comes from
+`packages.require()` (`scraftcam/pins.toml`); no venv (the
+`~/.scraftcnc/venv/` plan above is replaced).  Next: `T.osiade~5.1.9`.

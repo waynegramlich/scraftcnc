@@ -660,3 +660,44 @@ runs `lcnc_hmi_qt` (no `tkinter`, no display, empty standard error);
 Checkers clean.  `tests/test_lcnc_hmi_qt.py` overlaps
 `TestHeadless` a little.  Left for S5: `show_demo.py:659` and
 `tests/test_lcnc_end_to_end.py:191` still start `lcnc_hmi`.
+
+## 2026-11-12: S5 so far
+
+`show_demo.py` and `tests/test_lcnc_end_to_end.py` start
+`lcnc_hmi_qt`.  `tests/test_lcnc_hmi_qt.py` cut to its 4 Qt-only tests
+(#22).  `./show_demo.py --headless`: fine, 105 s.  End-to-end: first
+run 2 of 10 failed (`test_path_of_the_demonstration`,
+`test_tool_buttons`) on `test_mdi()`'s deliberate `G0 Z30` messages,
+kept by the HMI since it started; the same with the `tkinter` HMI, so
+not the port (the suite last passed 2026-11-05).  Fixed in the suite:
+`setUp()` records `seen`, `messages()` returns only this test's
+(`all_messages()`).  Rerun: see below.  Next: the user's GUI run
+(`./show_demo.py`, press Start), then delete the `tkinter` HMI and
+`lcnc_hmi_headless.py`, and the docs.
+Rerun: all 10 pass on the Qt HMI, 136 s.
+
+## 2026-11-12: S5: `tkinter` HMI gone, modules renamed (#24, #25)
+
+The user agreed (#24, #25).  `git mv`: the old `lcnc_hmi.py` ->
+`scraftcam/hmi/hmi_machine.py` (its `tkinter` imports,
+`use_headless()`, `ask_choice()`, `BUTTONS`, `HMI` and `main()`
+removed; a new docstring; not executable), `lcnc_hmi_qt.py` ->
+`lcnc_hmi.py` (the HMI, with the old module's full docstring, for
+Qt), `tests/test_lcnc_hmi_qt.py` -> `tests/test_hmi_qt_widgets.py`;
+`lcnc_hmi_headless.py` deleted.  Tests import `hmi_machine` for the
+toolkit-free parts, `lcnc_hmi` for the HMI.  `README.md`: Qt is the
+HMI's download (about 250 MB, SHA-256 checked), and the `hmi/` files.
+`show_demo.py`: its 3 old pylint `wrong-import-position` findings
+(imports after its `sys.path` line) quieted by name.  Checkers clean
+(mypy 86 files); 104 HMI, carousel and packages tests pass;
+`./show_demo.py --headless` fine after the rename.  End-to-end last
+run before the rename (10 OK).  Left: `catxtract.py` still uses
+`tkinter` (its own window; for `T.osiade~5.1.9`).  S1-S5 of the Qt
+port are done; `T.hs~5.1.5` can be closed when the user says so.
+
+## 2026-11-12: Closed again
+
+The user ran `./show_demo.py` (GUI) under the new names: fine.  #26
+agreed (`catxtract.py`'s `tkinter` waits for `T.osiade~5.1.9`).
+`Summary.md` has a paragraph for the Qt port.  Next: the user
+commits and pushes, then `T.osiade~5.1.9` is reopened and resumed.

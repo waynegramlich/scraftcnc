@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scraftcam.hmi import lcnc_hmi
+from scraftcam.hmi import hmi_machine
 from tests.qt_hmi import make_hmi
 
 
@@ -12,7 +12,7 @@ class TestOriginAxes(unittest.TestCase):
     """Set X, Set Y and Set Z, through the command port's words."""
 
     def setUp(self) -> None:
-        self.machine = lcnc_hmi.HMIMachine(True)
+        self.machine = hmi_machine.HMIMachine(True)
         self.hmi = make_hmi(self.machine)
         # pylint: disable-next=consider-using-with
         scratch = tempfile.TemporaryDirectory()
@@ -51,7 +51,7 @@ class TestOriginAxes(unittest.TestCase):
         self.assertEqual(self.hmi.show_state()["buttons"]["Set Y"], "disabled")
         self.assertEqual(
             str(self.hmi.axis_entries["Y"].property("background")),
-            lcnc_hmi.BAD,
+            hmi_machine.BAD,
         )
         self.assertIn("greyed out", self.ask("press Set Y"))
         self.assertIn("error: no axis", self.ask("origin W 1"))

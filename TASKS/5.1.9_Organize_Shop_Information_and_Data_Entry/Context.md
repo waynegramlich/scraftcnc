@@ -186,3 +186,15 @@ No venv anywhere: packages go in with `pip --target` into
 `~/.scraftcam/packages/<cache_tag>/` (`packages.require()`), and
 `scraftcam` itself too, from the bootstrap installer; its launcher
 puts the directory on `sys.path`.  See `T.hs~5.1.5`'s `Context.md`.
+
+## 2026-11-12: The HMI is in Qt; resume here
+
+`T.hs~5.1.5` is closed again: the HMI is Qt (`scraftcam/hmi/lcnc_hmi.py`,
+an `HMI(QWidget)`, so it can become a tab of this GUI; the parts with
+no toolkit in `hmi_machine.py`; headless is offscreen Qt), PySide6 is
+fetched by `packages.require("PySide6")` into its own directory
+(pins and SHA-256 digests in `scraftcam/pins.toml`; no venv, #55
+replaced), and the package is `scraftcam`.  Offscreen widget tests
+use `tests/qt_hmi.py`.  Still open here: #61 the new step order (#22),
+#62 a pass over #1-#17 against Qt, and `catxtract.py`'s `tkinter`
+window (to Qt, in this GUI).

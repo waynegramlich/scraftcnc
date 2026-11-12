@@ -7,7 +7,7 @@ from pathlib import Path
 
 from scraftcam import carousel, demo, shops
 from scraftcam.gcode import CNC
-from scraftcam.hmi import lcnc_hmi
+from scraftcam.hmi import hmi_machine
 from scraftcam.machine import Machine
 from scraftcam.setups import SHOP as EXAMPLE_SHOP
 from scraftcam.tooling.shop_registries import use_shop
@@ -95,7 +95,7 @@ class TestDemo(unittest.TestCase):
 
     def test_tools_tab(self) -> None:
         """The HMI's Tools tab lists the carousel's load and swaps."""
-        hmi = make_hmi(lcnc_hmi.HMIMachine(True))
+        hmi = make_hmi(hmi_machine.HMIMachine(True))
         with tempfile.TemporaryDirectory() as scratch:
             path = Path(scratch, "demo.ngc")
             path.write_text(demo.cut_demo()[0].gcode(), encoding="utf-8")

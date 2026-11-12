@@ -3,7 +3,7 @@
 import unittest
 
 from scraftcam.geometry import Corner, RoundedPolygon
-from scraftcam.hmi import lcnc_hmi
+from scraftcam.hmi import hmi_machine
 from tests.qt_hmi import make_hmi
 
 
@@ -21,7 +21,7 @@ class TestJogKeepOuts(unittest.TestCase):
     """
 
     def setUp(self) -> None:
-        self.machine = lcnc_hmi.HMIMachine(True)
+        self.machine = hmi_machine.HMIMachine(True)
         self.hmi = make_hmi(self.machine)
 
     def guard(self, zone: RoundedPolygon) -> None:
@@ -79,11 +79,13 @@ class TestJogKeepOuts(unittest.TestCase):
         """The tool's radius counts: a wide tool beside a keep-out hits."""
         zones = [clamp(0.5, 1.5, 0.25)]
         start = (0.0, 0.0, 0.0)
-        self.assertEqual(lcnc_hmi.jog_hit(zones, start, (0.3, 0, 0), 0.1), "")
         self.assertEqual(
-            lcnc_hmi.jog_hit(zones, start, (0.3, 0, 0), 0.25), "clamp"
+            hmi_machine.jog_hit(zones, start, (0.3, 0, 0), 0.1), ""
         )
-        self.assertEqual(lcnc_hmi.jog_hit(zones, start, (0, 0, 1), 9.0), "")
+        self.assertEqual(
+            hmi_machine.jog_hit(zones, start, (0.3, 0, 0), 0.25), "clamp"
+        )
+        self.assertEqual(hmi_machine.jog_hit(zones, start, (0, 0, 1), 9.0), "")
 
 
 if __name__ == "__main__":

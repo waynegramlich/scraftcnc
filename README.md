@@ -41,11 +41,14 @@ screen.
 ## Requirements
 
 * Python 3.11 or newer; nothing outside the standard library, except
-  for the catalog extractor (`scraftcam/catalog/`), which fetches
-  `pdfplumber` and `pypdfium2` from PyPI the first time it opens a PDF
-  (a network connection is needed then).  They go into
-  `~/.scraftcam/packages/`, never into Python itself; `pip` is fetched
-  too, since some Pythons (e.g. Ubuntu's) have none.
+  for the HMI (`scraftcam/hmi/`), which fetches Qt (`PySide6`, about
+  250 MB) from PyPI the first time it starts, and the catalog
+  extractor (`scraftcam/catalog/`), which fetches `pdfplumber` and
+  `pypdfium2` the first time it opens a PDF (a network connection is
+  needed then).  They go into `~/.scraftcam/packages/`, never into
+  Python itself, each in a directory of its own (`PySide6` checked
+  against the SHA-256 digests in `scraftcam/pins.toml`); `pip` is
+  fetched too, since some Pythons (e.g. Ubuntu's) have none.
 * `git`, to get the code.
 * SolidCraft, only to see the part: its GUI, or `solidcraft-cli` on
   the `PATH` for sessions with no window.  Downloads are on the
@@ -130,7 +133,7 @@ Each step below needs a little more than the one before it.
    leave them be.
 
    `./show_demo.py --headless` runs the same thing with no windows
-   (a headless SolidCraft session, the HMI without `tkinter`),
+   (a headless SolidCraft session, the HMI drawn offscreen),
    presses Start itself, and prints what was built, with bounding
    boxes.
 
@@ -181,8 +184,9 @@ The code is the package `scraftcam/`:
 * `lcnc/`: LinuxCNC's simulator (`install_linuxcnc.py`), the bridge
   and server that drive it, and the simulations that show it in
   SolidCraft.
-* `hmi/`: the operator's HMI (`lcnc_hmi.py`) and its headless
-  version.
+* `hmi/`: the operator's HMI (`lcnc_hmi.py`, in Qt), and its link
+  to LinuxCNC with everything else it does but draw
+  (`hmi_machine.py`).
 * `catalog/`: `catxtract.py`, which pulls titles, text, images and
   tables out of a vendor's PDF catalog into a Markdown file per page
   (`python3 -m scraftcam.catalog.catxtract PDF OUTDIR`), and `pdf.py`,

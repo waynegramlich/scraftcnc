@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """A minimal LinuxCNC HMI, in place of AXIS (`T.mlcp~3.4`).
 
-A small `tkinter` window that drives the LinuxCNC back end through its
-Python API.  On top, on every tab, are the work position and the tool
-in the spindle, LinuxCNC's last message, and how much of the setup is
-drawn; under the tabs, Open and Quit.  The tabs, one for each task:
+A small Qt window (`PySide6`, fetched into `~/.scraftcam/packages/`
+the first time, by `scraftcam.packages`) that drives the LinuxCNC
+back end through its Python API.  On top, on every tab, are the work
+position and the tool in the spindle, LinuxCNC's last message, and
+how much of the setup is drawn; under the tabs, Open and Quit.  The
+tabs, one for each task:
 
 * Run: the G-code already run, the G-code coming next, one line of
   G-code to run as MDI (Execute, while stopped; green when it reads
@@ -21,10 +23,11 @@ drawn; under the tabs, Open and Quit.  The tabs, one for each task:
   stock outline, SolidCraft's origin and the tools' holders
   (`TOGGLES`).
 
-The LinuxCNC calls are kept in `HMIMachine`, a client (through
+The LinuxCNC calls are kept in `HMIMachine` (`hmi_machine.py`, with
+everything else that does not draw), a client (through
 `scraftcam.lcnc.lcnc_client`) of `serve_linuxcnc` from
 `scraftcam/lcnc/`, which runs LinuxCNC in its `lcnc` box, or in WSL on
-Windows.  So this runs outside the box, and needs only `tkinter`.
+Windows.  So this runs outside the box.
 Closing it leaves LinuxCNC running, for another HMI.  When it starts,
 the machine is taken out of E-stop, turned on and homed if it needs to
 be, it is sent the shop's tool table, and the INI file's
@@ -46,10 +49,12 @@ python3 -m scraftcam.hmi.lcnc_hmi --dry-run demo.ngc
 python3 -m scraftcam.hmi.lcnc_hmi --headless --port 5007
 ```
 
-With `--headless`, the HMI is built from `lcnc_hmi_headless.py` in
-place of `tkinter`, so it needs no display and no `tkinter`, and
-otherwise runs the same code, with its buttons pressed through the
-command port.
+With `--headless`, Qt draws offscreen (`QT_QPA_PLATFORM=offscreen`),
+so no display is needed, and otherwise the same code runs, with its
+buttons pressed through the command port.  A question that would open
+a window then takes its answer from `ANSWERS`, in order (the port's
+`answer VALUE`), or else the answer that does nothing (No, or no
+file), and is added to `ASKED`.
 
 A program is opened from the command line, with Open, or through the
 command port
@@ -71,1473 +76,354 @@ echo "open demo.ngc" | nc -q 1 127.0.0.1 5007
 ```
 """
 
-# Half of the module is docstrings, which the type hints and the
-# argument lists make long, so it passes 1000 lines.
+# The HMI's methods each need their docstring, so it passes 1000
+# lines, as `lcnc_hmi.py` does.
 # pylint: disable=too-many-lines
 
 import argparse
 import functools
-import itertools
 import json
 import math
-import queue
-import re
+import os
 import signal
-import socket
 import sys
-import threading
-import time
-from collections.abc import Callable, Iterator
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Protocol, cast
+from types import FrameType
+from typing import Any
 
 from .. import shops
-from ..assembly import Assembly, AssemblyItem, millimeters
+from ..assembly import Assembly, AssemblyItem
 from ..carousel import gcode_sequence, plan_text
-from ..geometry import LineSegment, RoundedPolygon
+from ..geometry import RoundedPolygon
 from ..keepout import assembly_zones
-from ..lcnc.lcnc_client import PORT, BridgeClient, BridgeError, constant
+from ..lcnc.lcnc_client import PORT, BridgeError
 from ..machine import Machine
 from ..model_cache import ModelCache
-from ..plot import PathMove, command_moves, read_gcode
+from ..packages import require
 from ..pybind.scraftpybind import PyBind, connect
 from ..setup_comments import read_file
 from ..setup_view import SetupView, named_origins
 from ..tooling.shop_registries import use_shop
 from ..tooling.tools import Point
-from . import lcnc_hmi_headless
-
-# A computer with no `tkinter` can still run `--headless`.
-try:
-    import tkinter as tk
-    from tkinter import filedialog, messagebox, ttk
-except ImportError:
-    # pylint: disable=reimported,ungrouped-imports
-    from . import lcnc_hmi_headless as filedialog  # type: ignore[no-redef]
-    from . import lcnc_hmi_headless as messagebox  # type: ignore[no-redef]
-    from . import lcnc_hmi_headless as tk  # type: ignore[no-redef]
-    from . import lcnc_hmi_headless as ttk  # type: ignore[no-redef]
-
-# The protocol of `serve_linuxcnc` that this needs, at least.
-PROTOCOL: int = 2
-
-# How long a new LinuxCNC gets to turn on and to home (seconds).
-START_SECONDS: float = 60.0
-
-# The steps a jog button can move (inches), the one chosen at start,
-# and how fast a jog moves (inches per second).
-JOG_STEPS: tuple[str, ...] = ("1", ".1", ".01", ".001", ".0001")
-JOG_STEP: str = ".0001"
-JOG_SPEED: float = 1.0
-
-# The background of the jog step chosen.
-STEP_CHOSEN: str = "#a8c8f0"
-
-# How close to the work origin counts as there (inches).
-AT_ORIGIN: float = 0.00005
-
-# How often the HMI polls LinuxCNC and the command port
-# (milliseconds).
-POLL_MS: int = 100
-
-# The speed slider's range (feed override, on a logarithmic scale; 0
-# is left out, since Pause stops), its top limited by the INI file's
-# `MAX_FEED_OVERRIDE`.
-MIN_SPEED: float = 0.01
-MAX_SPEED: float = 10.0
-
-# The axes whose origin can be set one at a time.
-AXES: tuple[str, ...] = ("X", "Y", "Z")
-
-# The rapid speed (inches per minute) when LinuxCNC does not say, as
-# the example shop's mill.
-RAPID_SPEED: float = 60.0
-
-# How many lines the executed and coming windows show.
-SHOWN: int = 6
-
-# A tool change line (`M6`, outside a comment).
-TOOL_CHANGE: re.Pattern[str] = re.compile(r"\bM0*6\b", re.IGNORECASE)
-
-# A line that leads up to a tool change: the operator's message
-# (`(MSG, ...)`) and the pause (`M0` or `M1`).
-CHANGE_LEAD: re.Pattern[str] = re.compile(
-    r"^\s*(\(MSG,[^()]*\)|M0*[01])\s*$", re.IGNORECASE
+from .hmi_machine import (
+    AT_ORIGIN,
+    AXES,
+    BAD,
+    BLANK,
+    COMMENT,
+    GOOD,
+    INCH,
+    INCREMENTAL,
+    JOG_STEP,
+    JOG_STEPS,
+    MATERIAL,
+    MAX_SPEED,
+    METRIC,
+    MIN_SPEED,
+    POLL_MS,
+    SHOP_FILE,
+    SHOP_MACHINE,
+    SHOWN,
+    STEP_CHOSEN,
+    TABS,
+    TOGGLES,
+    CommandPort,
+    HMIMachine,
+    HMIStatus,
+    SetupDrawer,
+    change_spans,
+    jog_hit,
+    line_kind,
+    line_minutes,
+    material_names,
+    mdi_segments,
+    next_tool_text,
+    origin_lines,
+    program_inches,
+    setup_material,
+    setup_origin,
+    setup_warning,
+    shop_name,
+    tool_changes,
+    tool_speeds,
 )
 
-# A units word: `G20` (inches) or `G21` (millimeters).
-UNITS: re.Pattern[str] = re.compile(r"\bG(2[01])\b", re.IGNORECASE)
-
-# Comments: in parentheses, or from `;` to the end of the line.
-COMMENT: re.Pattern[str] = re.compile(r"\([^)]*\)|;.*")
-
-# The words of a typed line that set the distance mode or the units.
-INCREMENTAL: re.Pattern[str] = re.compile(r"\bG0*91(?![.\d])", re.IGNORECASE)
-METRIC: re.Pattern[str] = re.compile(r"\bG0*21(?![.\d])", re.IGNORECASE)
-INCH: re.Pattern[str] = re.compile(r"\bG0*20(?![.\d])", re.IGNORECASE)
-
-# A word that starts a move, and an axis word: a line with an axis word
-# but no move word moves in LinuxCNC's current (modal) motion mode.
-MOTION: re.Pattern[str] = re.compile(
-    r"\bG0*(?:[0-3]|8[0-9])(?![.\d])", re.IGNORECASE
+# `PySide6` lives in `~/.scraftcam/packages/`, so it is put on
+# `sys.path` (and fetched, the first time) before it is imported.
+require("PySide6")
+# pylint: disable=wrong-import-position,wrong-import-order
+from PySide6.QtCore import (  # noqa: E402
+    QMessageLogContext,
+    Qt,
+    QTimer,
+    QtMsgType,
+    qInstallMessageHandler,
 )
-AXIS: re.Pattern[str] = re.compile(r"[XYZ]\s*[-+.\d]", re.IGNORECASE)
-
-# A line of RS-274 words, simply: letters, each followed by a number.
-WORDS: re.Pattern[str] = re.compile(
-    r"\s*([A-Za-z]\s*[-+]?(\d+\.?\d*|\.\d+)\s*)+"
-)
-
-# The shop and machine whose tools the Tools window lists, and the
-# material it starts with.
-SHOP_FILE: Path = (
-    Path(__file__).resolve().parents[2] / "examples/shop/home_shop.toml"
-)
-SHOP_MACHINE: str = "Shop mill"
-MATERIAL: str = "6061 aluminum"
-
-# The classes of the widgets that `press` can press.
-BUTTONS: tuple[str, ...] = ("TButton", "Radiobutton", "TCheckbutton")
-
-# The View tab's toggles: each label, and what it shows (of
-# `setup_view.HIDEABLE`), and whether it starts shown.
-TOGGLES: tuple[tuple[str, str, bool], ...] = (
-    ("Keep-outs", "keep_out", False),
-    ("Stock outline", "stock", True),
-    ("Origin", "origin", True),
-    ("Holders", "holder", True),
+from PySide6.QtGui import QFont, QFontDatabase  # noqa: E402
+from PySide6.QtWidgets import (  # noqa: E402
+    QAbstractButton,
+    QApplication,
+    QButtonGroup,
+    QCheckBox,
+    QComboBox,
+    QFileDialog,
+    QHBoxLayout,
+    QInputDialog,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPlainTextEdit,
+    QProgressBar,
+    QPushButton,
+    QSlider,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
 )
 
-# The HMI's tabs, one for each task, in their order.
-TABS: tuple[str, ...] = ("Run", "Setup", "Tools", "View")
+# pylint: enable=wrong-import-position,wrong-import-order
 
-# The MDI line's backgrounds: empty, RS-274, and not.
-BLANK: str = "white"
-GOOD: str = "#d8f5d0"
-BAD: str = "#f8d0d0"
+# True when Qt draws offscreen, with no one to answer questions.
+HEADLESS: bool = False
+
+# The answers waiting for questions, and the questions asked (headless).
+ANSWERS: list[str] = []
+ASKED: list[str] = []
+
+# How many steps the speed slider has, from `MIN_SPEED` to its top.
+SLIDER_STEPS: int = 1000
+
+# What Qt's offscreen platform says each time a window is shown; it
+# means nothing here, so `use_headless()` drops it.
+OFFSCREEN_NOISE: str = "This plugin does not support propagateSizeHints()"
 
 
 # Function `use_headless()`:
 def use_headless() -> None:
-    """Build every window from now on with `lcnc_hmi_headless`."""
-    # The window code stays the same, by using the same names.
+    """Draw offscreen from now on, and answer questions from `ANSWERS`.
+
+    It must be called before the `QApplication` is made.
+    """
     # pylint: disable-next=global-statement
-    global tk, ttk, filedialog, messagebox
-    tk = ttk = filedialog = messagebox = lcnc_hmi_headless
+    global HEADLESS
+    HEADLESS = True
+    os.environ["QT_QPA_PLATFORM"] = "offscreen"
+    qInstallMessageHandler(qt_message)
 
 
-# Function `material_names()`:
-def material_names(shop: dict[str, object]) -> list[str]:
-    """Return the names of a shop's materials.
-
-    Arguments:
-    * `shop` (`dict[str, object]`): The shop, from `shops.read()`.
-
-    Returns:
-    * (`list[str]`): The names, in the shop's order.
-    """
-    materials: dict[str, Any] = cast(dict[str, Any], shop.get("materials", {}))
-    return [str(entry["name"]) for entry in materials.get("materials", [])]
-
-
-# Function `setup_material()`:
-def setup_material(assembly: Assembly, names: list[str]) -> str:
-    """Return the material a setup says is cut, as the shop names it.
-
-    The part's `material` is looked at first, then the stock's (the
-    setup comments carry no shop or machine, `T.hs~5.1.5` S4).
+# Function `qt_message()`:
+def qt_message(
+    _kind: QtMsgType, _context: QMessageLogContext, message: str
+) -> None:
+    """Write a message from Qt, less `OFFSCREEN_NOISE` (headless).
 
     Arguments:
-    * `assembly` (`Assembly`): The setup.
-    * `names` (`list[str]`): The shop's material names.
-
-    Returns:
-    * (`str`): The material, or `""` when no item names one of the
-      shop's.
+    * `_kind` (`QtMsgType`): Debug, warning and so on (ignored).
+    * `_context` (`QMessageLogContext`): Where it came from (ignored).
+    * `message` (`str`): The message.
     """
-    item: AssemblyItem
-    for item in reversed(assembly.items):
-        material: object = item.args.get("material")
-        if isinstance(material, str) and material in names:
-            return material
-    return ""
+    if message != OFFSCREEN_NOISE:
+        print(message, file=sys.stderr)
 
 
-# Function `shop_name()`:
-def shop_name() -> str:
-    """Return the name of the HMI's shop (`SHOP_FILE`).
-
-    Returns:
-    * (`str`): Its name, or `""` when it can not be read.
-    """
-    try:
-        return str(shops.read(SHOP_FILE).get("name", ""))
-    except ValueError:
-        return ""
-
-
-# Function `setup_warning()`:
-def setup_warning(assembly: Assembly, shop: str) -> str:
-    """Return why a setup for another shop or machine is refused.
+# Function `next_answer()`:
+def next_answer(question: str) -> str:
+    """Record a question asked headless, and return its answer.
 
     Arguments:
-    * `assembly` (`Assembly`): The setup.
-    * `shop` (`str`): The name of the HMI's shop.
+    * `question` (`str`): The question.
 
     Returns:
-    * (`str`): The reason, or `""` when the setup names neither, or
-      this shop and `SHOP_MACHINE`.
+    * (`str`): The next of `ANSWERS`, or `""` when there is none.
     """
-    if assembly.machine and assembly.machine != SHOP_MACHINE:
-        return (
-            f"Not opened: the program is for {assembly.machine}, "
-            f"not {SHOP_MACHINE}"
-        )
-    if assembly.shop and shop and assembly.shop != shop:
-        return f"Not opened: the program is for {assembly.shop}, not {shop}"
-    return ""
+    ASKED.append(question)
+    return ANSWERS.pop(0) if ANSWERS else ""
 
 
-# Function `setup_origin()`:
-def setup_origin(
-    assembly: Assembly, shop: dict[str, object], machine: str
-) -> tuple[float, float, float] | None:
-    """Return the work origin (G54) a setup gives on a machine.
-
-    It is where the machine's table sits (its `table`'s `x`, `y` and
-    `z`, in machine coordinates) less where the setup puts the table
-    (its bottom item, which names a `table`), as the setup frame is
-    the work frame.
+# Function `ask_yes_no()`:
+def ask_yes_no(parent: QWidget, title: str, message: str) -> bool:
+    """Ask a question, with No as the default.
 
     Arguments:
-    * `assembly` (`Assembly`): The setup.
-    * `shop` (`dict[str, object]`): The shop, from `shops.read()`.
-    * `machine` (`str`): The machine's name.
+    * `parent` (`QWidget`): The HMI.
+    * `title` (`str`): The window's title.
+    * `message` (`str`): The question.
 
     Returns:
-    * (`tuple[float, float, float] | None`): The origin (inches), or
-      `None` when the machine's table has no place or the setup's
-      bottom item is not a table.
+    * (`bool`): True for Yes.
     """
-    # Where the machine's table sits, if the shop says.
-    machines: list[Any] = cast(list[Any], shop.get("machines", []))
-    table: dict[str, Any] = next(
-        (
-            cast(dict[str, Any], entry.get("table", {}))
-            for entry in machines
-            if entry.get("name") == machine
-        ),
-        {},
+    if HEADLESS:
+        return next_answer(f"{title}: {message}") == "yes"
+    answer: QMessageBox.StandardButton = QMessageBox.question(
+        parent,
+        title,
+        message,
+        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        QMessageBox.StandardButton.No,
     )
-    axes: tuple[str, ...] = ("x", "y", "z")
-    if not assembly.items or not all(axis in table for axis in axes):
-        return None
-    bottom: AssemblyItem = assembly.items[0]
-    if "table" not in bottom.args:
-        return None
-
-    # The table's place, less its place in the setup.
-    x, y, z = (
-        (millimeters(table[axis], f"table {axis}") - at) / 25.4
-        for axis, at in zip(axes, bottom.location, strict=True)
-    )
-    return (x, y, z)
-
-
-# Function `tool_speeds()`:
-def tool_speeds(shop: dict[str, object], machine: str, material: str) -> str:
-    """Return a table of a machine's tools' speeds and feeds.
-
-    Arguments:
-    * `shop` (`dict[str, object]`): The shop, from `shops.read()`.
-    * `machine` (`str`): The machine's name.
-    * `material` (`str`): The material being cut.
-
-    Returns:
-    * (`str`):
-      One line per loaded tool (T number, RPM, feed, plunge, name),
-      or the problem, if they can not be worked out.
-    """
-    # Work them out, as the G-code would.
-    try:
-        tools = shops.cnc_machine(shop, machine, material).tools
-    except ValueError as error:
-        return str(error)
-    lines: list[str] = [
-        f"Feeds in in/min, cutting {material}:",
-        "  T    RPM  Feed  Plunge  Tool",
-    ]
-    lines.extend(
-        f"{tool.number:3d} {tool.rpm:6.0f} {tool.feed:5.1f} "
-        f"{tool.plunge:7.1f}  {tool.name}"
-        for tool in tools
-    )
-    return "\n".join(lines)
-
-
-# Function `line_kind()`:
-def line_kind(line: str) -> str:
-    """Return whether a line reads as RS-274 words, with comments left out.
-
-    Arguments:
-    * `line` (`str`): The line.
-
-    Returns:
-    * (`str`): `empty` (nothing but comments or spaces), `good` or
-      `bad`.
-    """
-    words: str = COMMENT.sub("", line).strip()
-    if not words:
-        return "empty"
-    return "good" if WORDS.fullmatch(words) else "bad"
-
-
-# Function `tool_changes()`:
-def tool_changes(lines: list[str]) -> list[int]:
-    """Return the lines that start each tool change (`change_spans()`).
-
-    Arguments:
-    * `lines` (`list[str]`): The program's lines.
-
-    Returns:
-    * (`list[int]`): Their numbers, counted from 1, in order.
-    """
-    return [start for start, _ in change_spans(lines)]
-
-
-# Function `change_spans()`:
-def change_spans(lines: list[str]) -> list[tuple[int, int]]:
-    """Return the lines that start each tool change.
-
-    A change starts at its message and pause (`CHANGE_LEAD`) when it
-    has them, so that a run started there tells the operator first.
-
-    Arguments:
-    * `lines` (`list[str]`): The program's lines.
-
-    Returns:
-    * (`list[tuple[int, int]]`): Each change's first line and its `M6`
-      line, counted from 1, in order.
-    """
-    spans: list[tuple[int, int]] = []
-    number: int
-    line: str
-    for number, line in enumerate(lines, 1):
-        if TOOL_CHANGE.search(COMMENT.sub("", line)):
-            start: int = number
-            while start > 1 and CHANGE_LEAD.match(lines[start - 2]):
-                start -= 1
-            spans.append((start, number))
-    return spans
-
-
-# Function `line_minutes()`:
-def line_minutes(lines: list[str], rapid_speed: float) -> list[float]:
-    """Return how long each line of a program takes, roughly.
-
-    The moves are read as the tool path viewer reads them
-    (`plot.command_moves()`): rapids at `rapid_speed`, feeds at the `F`
-    in effect, arcs by their length, and a canned drilling cycle as a
-    rapid over each hole and one feed down (its pecks left out).
-    Acceleration is ignored, so a program of many short moves takes
-    longer than this.  Units are as the program's (inches here); a
-    line that can not be read takes no time.
-
-    Arguments:
-    * `lines` (`list[str]`): The program's lines.
-    * `rapid_speed` (`float`): How fast a rapid goes, per minute.
-
-    Returns:
-    * (`list[float]`): Minutes, one per line.
-    """
-    # Read each line by itself, so that one odd line costs nothing.
-    commands: list[dict[str, Any]] = []
-    line: str
-    for line in lines:
-        try:
-            commands.append(cast(dict[str, Any], read_gcode(line)[0]))
-        except (ValueError, IndexError):
-            commands.append({})
-
-    # Add up each move's length over its speed.
-    minutes: list[float] = [0.0] * len(lines)
-    move: PathMove
-    for move in command_moves(cast(Any, commands)):
-        speed: float = rapid_speed if move["g"] == 0 else move["f"]
-        if speed > 0.0:
-            length: float = sum(
-                math.dist(start, end)
-                for start, end in itertools.pairwise(move["pts"])
-            )
-            minutes[move["line"]] += length / speed
-    return minutes
-
-
-# Function `jog_hit()`:
-def jog_hit(
-    zones: list[RoundedPolygon],
-    start: tuple[float, float, float],
-    end: tuple[float, float, float],
-    radius: float,
-) -> str:
-    """Return the keep-out a straight jog would enter, if any.
-
-    The tool is checked as `keepout.py` checks a program's moves: a
-    vertical cylinder of the tool's widest radius reaching up forever,
-    at the move's lowest tip height.  So a jog up (+Z) never enters
-    anything, and one that starts inside a keep-out, other than up,
-    is refused (raise Z first).
-
-    Arguments:
-    * `zones` (`list[RoundedPolygon]`): The keep-outs, work inches.
-    * `start` (`tuple[float, float, float]`): Where the tip is.
-    * `end` (`tuple[float, float, float]`): Where the jog takes it.
-    * `radius` (`float`): The tool's widest radius (0 for none).
-
-    Returns:
-    * (`str`): The keep-out's name, or `""` when the jog is clear.
-    """
-    if end[2] > start[2] and end[:2] == start[:2]:
-        return ""
-    move: LineSegment = LineSegment(start[:2], end[:2])
-    low: float = min(start[2], end[2])
-    zone: RoundedPolygon
-    for zone in zones:
-        if zone.hits(move, low, radius):
-            return zone.name
-    return ""
-
-
-# Function `mdi_segments()`:
-def mdi_segments(
-    line: str, start: tuple[float, float, float], metric: bool
-) -> list[tuple[tuple[float, float, float], tuple[float, float, float]]]:
-    """Return the straight pieces a typed (MDI) line moves the tip by.
-
-    The line is read by the tool path viewer's reader
-    (`plot.read_gcode()`), after a move to where the tip is, in
-    absolute (`G90`) mode; arcs come back as short straight pieces.
-    A line with axis words but no move word (e.g. `Z-4`) moves in the
-    modal motion mode, which the reader does not follow, so it is
-    read as a straight `G1` (the user drove through the grid plate
-    with `Z-4`).
-
-    Arguments:
-    * `line` (`str`): The typed line.
-    * `start` (`tuple[float, float, float]`): Where the tip is (work
-      inches).
-    * `metric` (`bool`): True when the line's numbers are millimeters.
-
-    Returns:
-    * (`list[tuple[tuple[float, float, float], tuple[float, float,
-      float]]]`): Each piece's start and end (work inches); none for a
-      line that does not move.
-
-    Raises:
-    * `ValueError`: If the line can not be read, or has axis words
-      but reads as no move.
-    """
-    words: str = COMMENT.sub("", line)
-    if re.search(r"\bG0*(?:28|30|53)(?![.\d])", words, re.IGNORECASE):
-        raise ValueError("moves by machine coordinates (G28, G30, G53)")
-    if AXIS.search(words) and not MOTION.search(words):
-        line = f"G1 {line}"
-    scale: float = 25.4 if metric else 1.0
-    x, y, z = (value * scale for value in start)
-    text: str = (
-        f"{'G21' if metric else 'G20'} G90\n"
-        f"G0 X{x:.6f} Y{y:.6f} Z{z:.6f}\n{line}"
-    )
-    try:
-        moves: list[PathMove] = command_moves(read_gcode(text))
-    except (KeyError, IndexError) as error:
-        raise ValueError(str(error)) from error
-    pieces: list[
-        tuple[tuple[float, float, float], tuple[float, float, float]]
-    ] = []
-    move: PathMove
-    for move in moves:
-        points: list[tuple[float, float, float]] = [
-            (point[0] / scale, point[1] / scale, point[2] / scale)
-            for point in move["pts"]
-        ]
-        pieces += itertools.pairwise(points)
-    if (
-        not pieces
-        and AXIS.search(words)
-        and not re.search(r"\bG0*(?:10|92|43|5[4-9])\b", words, re.IGNORECASE)
-    ):
-        raise ValueError(f"no move read from {line!r}")
-    return pieces
-
-
-# Function `clock()`:
-def clock(minutes: float) -> str:
-    """Return minutes as `M:SS`.
-
-    Arguments:
-    * `minutes` (`float`): The time.
-
-    Returns:
-    * (`str`): E.g. `3:42`.
-    """
-    seconds: int = round(minutes * 60.0)
-    return f"{seconds // 60}:{seconds % 60:02d}"
-
-
-# Function `change_tool_label()`:
-def change_tool_label(lines: list[str], span: tuple[int, int]) -> str:
-    """Return the tool a change puts in, with its description.
-
-    Arguments:
-    * `lines` (`list[str]`): The program's lines.
-    * `span` (`tuple[int, int]`): The change's first and `M6` lines.
-
-    Returns:
-    * (`str`): E.g. `T05 1/8 in 90 deg carbide chamfer mill`, from its
-      `MSG` line, else its `M6` line and comment.
-    """
-    start, change = span
-    message: re.Match[str] | None = re.match(
-        r"^\s*\(MSG,\s*Insert\s+(T\d+):\s*([^()]*)\)", lines[start - 1]
-    )
-    if message is not None:
-        return f"{message.group(1)} {message.group(2).strip()}"
-    tool: re.Match[str] | None = re.search(r"\bT\d+", lines[change - 1])
-    note: re.Match[str] | None = re.search(r"\(([^()]*)\)", lines[change - 1])
-    return " ".join(
-        found.group(index)
-        for found, index in ((tool, 0), (note, 1))
-        if found is not None
-    )
-
-
-# Function `next_tool_text()`:
-def next_tool_text(
-    lines: list[str],
-    sums: list[float],
-    spans: list[tuple[int, int]],
-    line: int,
-    override: float,
-) -> str:
-    """Return the next tool, and the time left until it.
-
-    Arguments:
-    * `lines` (`list[str]`): The program's lines.
-    * `sums` (`list[float]`): Minutes up to each line: `sums[n]` is
-      the time of lines 1 to `n` (so `len(lines) + 1` of them).
-    * `spans` (`list[tuple[int, int]]`): The tool changes
-      (`change_spans()`).
-    * `line` (`int`): The line being run, or run from (from 1).
-    * `override` (`float`): The feed override.
-
-    Returns:
-    * (`str`): E.g. `Next: T05 ... in 3:42`, `Now: T05 ..., cut 3:42`
-      at a change (as at its prompt), or `Last tool: 2:10 to the
-      end`; `""` for no program.
-    """
-    if not lines:
-        return ""
-    line = min(max(line, 1), len(lines))
-    rate: float = max(override, 1e-6)
-    index: int
-    span: tuple[int, int]
-    for index, span in enumerate(spans):
-        start, change = span
-        end: int = (
-            spans[index + 1][0] if index + 1 < len(spans) else len(lines) + 1
-        )
-        if start <= line <= change:
-            cut: float = (sums[end - 1] - sums[change]) / rate
-            return f"Now: {change_tool_label(lines, span)}, cut {clock(cut)}"
-        if start > line:
-            left: float = (sums[start - 1] - sums[line - 1]) / rate
-            return f"Next: {change_tool_label(lines, span)} in {clock(left)}"
-    left = (sums[len(lines)] - sums[line - 1]) / rate
-    return f"Last tool: {clock(left)} to the end"
-
-
-# Class `HMIStatus`:
-@dataclass(slots=True)
-class HMIStatus:
-    """What the HMI shows of the machine, from one poll.
-
-    Attributes:
-    * `file` (`str`): The open program ("" for none).
-    * `line` (`int`): The line being run (counted from 1; 0 for none).
-    * `position` (`tuple[float, float, float]`): X, Y and Z, in work
-      coordinates (inches).
-    * `tool` (`int`): The T number in the spindle (0 for none).
-    * `messages` (`list[str]`): LinuxCNC's new error messages.
-    * `state` (`str`): `idle`, `running` or `paused` (`""` for a dry
-      run, where the HMI's own idea of it stands).
-
-    Constructor:
-    * `HMIStatus(file, line, position, tool, messages, state)`
-    """
-
-    # Constructor arguments:
-    file: str = field(init=True)
-    line: int = field(init=True)
-    position: tuple[float, float, float] = field(init=True)
-    tool: int = field(init=True)
-    messages: list[str] = field(init=True)
-    state: str = field(init=True)
-
-
-# Class `HMIMachine`:
-class HMIMachine:
-    """The LinuxCNC back end, as the HMI sees it.
-
-    It is a client of `scraftcam.lcnc`'s `serve_linuxcnc`, which runs
-    LinuxCNC wherever that is installed.  With `dry_run`, nothing is
-    sent anywhere and every call only records what it would have done,
-    so the window can be built and tested without LinuxCNC.
-
-    Nothing here waits for a move, so the window stays alive and Reset
-    works during one: `status()` starts the next line of a run of MDI
-    lines (such as Home's) when the one before it has finished.
-
-    Attributes:
-    * `constants` (`dict[str, Any]`): The `linuxcnc` module's constants.
-    * `dry_run` (`bool`): True when no LinuxCNC is used.
-    * `file` (`str`): The program opened: where it is on the server,
-      or its own path for a dry run.
-    * `lcnc` (`BridgeClient | None`): The connection, or `None`.
-    * `log` (`list[str]`): What was asked of the machine, in order.
-    * `mdi_lines` (`list[str]`): The MDI lines waiting to be run.
-    * `messages` (`list[str]`): Every message LinuxCNC has sent.
-    """
-
-    # Method `HMIMachine.__init__()`:
-    def __init__(self, dry_run: bool, port: int = PORT) -> None:
-        """Connect to `serve_linuxcnc`, unless `dry_run`.
-
-        Arguments:
-        * `dry_run` (`bool`):
-          True to use no LinuxCNC at all.
-        * `port` (`int`):
-          The port that `serve_linuxcnc` is on.
-
-        Raises:
-        * `RuntimeError`: If it does not answer, or is out of date.
-        """
-        self.constants: dict[str, Any] = {}
-        self.dry_run: bool = dry_run
-        self.file: str = ""
-        self.lcnc: BridgeClient | None = None
-        self.log: list[str] = []
-        self.mdi_lines: list[str] = []
-        self.messages: list[str] = []
-        if dry_run:
-            return
-
-        # Connect, and check that it knows the calls used here.
-        try:
-            self.lcnc = BridgeClient(port=port)
-        except OSError as error:
-            raise RuntimeError(
-                f"No LinuxCNC on port {port} ({error}); "
-                "start it with serve_linuxcnc."
-            ) from error
-        protocol: int = self.lcnc.call("ping")["protocol"]
-        if protocol < PROTOCOL:
-            raise RuntimeError(
-                f"serve_linuxcnc speaks protocol {protocol}, not {PROTOCOL}; "
-                "stop it, run install_linuxcnc, and start it again."
-            )
-        self.constants = self.lcnc.call("constants")
-
-    # Method `HMIMachine._mode()`:
-    def _mode(self, name: str) -> None:
-        """Switch LinuxCNC to a mode (`MODE_AUTO`, `MODE_MDI`, ...).
-
-        Arguments:
-        * `name` (`str`):
-          The name of the mode constant in `linuxcnc`.
-        """
-        if self.lcnc is not None:
-            self.lcnc.call("command.mode", constant(name))
-            self.lcnc.call("command.wait_complete")
-
-    # Method `HMIMachine._wait_for()`:
-    def _wait_for(self, what: str, test: Callable[[], bool]) -> None:
-        """Wait, as LinuxCNC starts up, until something is true.
-
-        Arguments:
-        * `what` (`str`): What is waited for, for the error message.
-        * `test` (`Callable[[], bool]`): Tells whether it is true yet.
-
-        Raises:
-        * `TimeoutError`: If it is not true in `START_SECONDS`.
-        """
-        end: float = time.monotonic() + START_SECONDS
-        while not test():
-            if time.monotonic() > end:
-                raise TimeoutError(f"Timed out waiting for {what}.")
-            time.sleep(POLL_MS / 1000.0)
-
-    # Method `HMIMachine._home()`:
-    def _home(self) -> bool:
-        """Take it out of E-stop, turn it on, and home every joint.
-
-        A machine already on and homed is left alone, since it may be
-        running a program for an HMI that has since closed.
-
-        Returns:
-        * (`bool`): True if it had to be homed, as a new LinuxCNC does.
-        """
-        lcnc: BridgeClient = cast(BridgeClient, self.lcnc)
-        state_on: int = self.constants["STATE_ON"]
-
-        def homed() -> bool:
-            stat: dict[str, Any] = lcnc.stat("homed", "joints")
-            return all(stat["homed"][: stat["joints"]])
-
-        # Out of E-stop, and on.
-        if lcnc.stat("task_state")["task_state"] != state_on:
-            lcnc.call("command.state", constant("STATE_ESTOP_RESET"))
-            lcnc.call("command.state", constant("STATE_ON"))
-            self._wait_for(
-                "the machine to turn on",
-                lambda: lcnc.stat("task_state")["task_state"] == state_on,
-            )
-
-        # Home in joint mode, in the configuration's `HOME_SEQUENCE`.
-        if homed():
-            return False
-        self._mode("MODE_MANUAL")
-        lcnc.call("command.teleop_enable", False)
-        lcnc.call("command.wait_complete")
-        lcnc.call("command.home", -1)
-        self._wait_for("homing", homed)
-        return True
-
-    # Method `HMIMachine.start()`:
-    def start(self) -> None:
-        """Get LinuxCNC ready, keeping what it has if already running.
-
-        It is turned on and homed if it needs to be.  G54 is left as
-        LinuxCNC has it: each program gets its own origin, from its
-        setup or from the operator (`HMI.mark_origin_set()`).
-        The shop's tool table is sent unless a program is running.
-
-        Raises:
-        * `ValueError`: If the shop can not give a tool table.
-        """
-        self.log.append("start")
-        if self.lcnc is None:
-            return
-        self._home()
-        interp_state: int = self.lcnc.stat("interp_state")["interp_state"]
-        if interp_state != self.constants["INTERP_IDLE"]:
-            return
-
-        # The tool table, from the shop.
-        self.write_tool_table(MATERIAL)
-
-    # Method `HMIMachine.set_work_origin()`:
-    def set_work_origin(self, origin: tuple[float, float, float]) -> bool:
-        """Set G54 to a point in machine coordinates, unless running.
-
-        Arguments:
-        * `origin` (`tuple[float, float, float]`): The point (inches).
-
-        Returns:
-        * (`bool`): `True` when it was set (always, with no LinuxCNC);
-          `False` when a program is running.
-        """
-        x, y, z = (round(value, 4) for value in origin)
-        self.log.append(f"origin {x} {y} {z}")
-        if self.lcnc is None:
-            return True
-        interp_state: int = self.lcnc.stat("interp_state")["interp_state"]
-        if interp_state != self.constants["INTERP_IDLE"]:
-            return False
-
-        # `G20` first: otherwise the numbers may be read as millimeters.
-        self._mode("MODE_MDI")
-        self.lcnc.call("command.mdi", f"G20 G10 L2 P1 X{x} Y{y} Z{z}")
-        self.lcnc.call("command.wait_complete")
-        return True
-
-    # Method `HMIMachine.write_tool_table()`:
-    def write_tool_table(self, material: str) -> bool:
-        """Send LinuxCNC the shop's tool table, unless it is running.
-
-        Arguments:
-        * `material` (`str`): The material being cut (the shop's
-          name for it), for the drills.
-
-        Returns:
-        * (`bool`): `True` when the table was sent (always, with no
-          LinuxCNC); `False` when a program is running.
-
-        Raises:
-        * `ValueError`: If the shop can not give a tool table.
-        """
-        text: str = shops.tool_table_text(
-            shops.read(SHOP_FILE), SHOP_MACHINE, material
-        )
-        self.log.append(f"tool table {material}")
-        if self.lcnc is None:
-            return True
-        interp_state: int = self.lcnc.stat("interp_state")["interp_state"]
-        if interp_state != self.constants["INTERP_IDLE"]:
-            return False
-        self.lcnc.call("tool_table.write", text)
-        self.lcnc.call("command.load_tool_table")
-        self.lcnc.call("command.wait_complete")
-        return True
-
-    # Method `HMIMachine.rapid_speed()`:
-    def rapid_speed(self) -> float:
-        """Return how fast a rapid goes, from the INI file.
-
-        Returns:
-        * (`float`): Its `[TRAJ] MAX_LINEAR_VELOCITY` (or
-          `MAX_VELOCITY`), per minute, or `RAPID_SPEED`.
-        """
-        if self.lcnc is None:
-            return RAPID_SPEED
-        key: str
-        for key in ("MAX_LINEAR_VELOCITY", "MAX_VELOCITY"):
-            found: str | None = self.lcnc.call("ini.find", "TRAJ", key)
-            if found:
-                return float(found) * 60.0
-        return RAPID_SPEED
-
-    # Method `HMIMachine.max_speed()`:
-    def max_speed(self) -> float:
-        """Return the highest feed override the INI file allows.
-
-        Returns:
-        * (`float`): Its `[DISPLAY] MAX_FEED_OVERRIDE`, or
-          `MAX_SPEED` when there is none.
-        """
-        if self.lcnc is None:
-            return MAX_SPEED
-        found: str | None = self.lcnc.call(
-            "ini.find", "DISPLAY", "MAX_FEED_OVERRIDE"
-        )
-        return float(found) if found else MAX_SPEED
-
-    # Method `HMIMachine.open()`:
-    def open(self, path: str) -> None:
-        """Send a program to LinuxCNC, ready to run from its start.
-
-        Arguments:
-        * `path` (`str`): The G-code file, here (a relative path is
-          from the HMI's directory).
-
-        Raises:
-        * `FileNotFoundError`: If there is no such file.
-        """
-        if not Path(path).is_file():
-            raise FileNotFoundError(f"no file {path}")
-        local: Path = Path(path).resolve()
-        self.file = str(local)
-        self.log.append(f"open {self.file}")
-        if self.lcnc is not None:
-            self._mode("MODE_AUTO")
-            self.file = self.lcnc.call(
-                "program.write", local.name, local.read_text(encoding="utf-8")
-            )
-            self.lcnc.call("command.program_open", self.file)
-            self.lcnc.call("command.wait_complete")
-
-    # Method `HMIMachine.program_lines()`:
-    def program_lines(self, file: str) -> list[str]:
-        """Return the lines of the program that LinuxCNC has open.
-
-        Arguments:
-        * `file` (`str`): Its file, from `status()`.
-
-        Returns:
-        * (`list[str]`): Its lines, or none if it can not be read.
-        """
-        try:
-            text: str = (
-                Path(file).read_text(encoding="utf-8")
-                if self.lcnc is None
-                else self.lcnc.call("program.read", file)
-            )
-        except (OSError, BridgeError):
-            return []
-        return text.splitlines()
-
-    # Method `HMIMachine.run()`:
-    def run(self, start: int) -> None:
-        """Run the open program from a line.
-
-        Arguments:
-        * `start` (`int`): The line to start at (counted from 1, as
-          `motion_line` is; 0 for the program's start).  The lines
-          before it are read, not run, so their modes still hold.
-        """
-        self.log.append(f"run {start}")
-        if self.lcnc is not None:
-            self._mode("MODE_AUTO")
-            self.lcnc.call("command.auto", constant("AUTO_RUN"), start)
-
-    # Method `HMIMachine.pause()`:
-    def pause(self) -> None:
-        """Pause the running program."""
-        self.log.append("pause")
-        if self.lcnc is not None:
-            self.lcnc.call("command.auto", constant("AUTO_PAUSE"))
-
-    # Method `HMIMachine.resume()`:
-    def resume(self) -> None:
-        """Resume a paused program.
-
-        It is in `MODE_AUTO` already; setting that again can end the
-        program, with no message, so the mode is left alone.
-        """
-        self.log.append("resume")
-        if self.lcnc is not None:
-            self.lcnc.call("command.auto", constant("AUTO_RESUME"))
-
-    # Method `HMIMachine.stop()`:
-    def stop(self) -> None:
-        """Stop at once (`command.abort()`), with any MDI lines waiting."""
-        self.log.append("stop")
-        self.mdi_lines.clear()
-        if self.lcnc is not None:
-            self.lcnc.call("command.abort")
-            self.lcnc.call("command.wait_complete")
-
-    # Method `HMIMachine.mdi()`:
-    def mdi(self, *lines: str) -> None:
-        """Start lines of G-code as manual (MDI) commands, one at a time.
-
-        This returns as the first starts; `status()` starts the others.
-
-        Arguments:
-        * `lines` (`str`):
-          The G-code lines.
-
-        Raises:
-        * `RuntimeError`: If LinuxCNC will not switch to MDI, as while
-          a program runs or is paused (LinuxCNC 2.9 does not allow
-          MDI then, and says nothing).
-        """
-        self.log.extend(f"mdi {line}" for line in lines)
-        if self.lcnc is not None:
-            self._mode("MODE_MDI")
-            task_mode: int = self.lcnc.stat("task_mode")["task_mode"]
-            if task_mode != self.constants["MODE_MDI"]:
-                raise RuntimeError("Reset the program first")
-            self.mdi_lines = list(lines[1:])
-            self.lcnc.call("command.mdi", lines[0])
-
-    # Method `HMIMachine.set_origin()`:
-    def set_origin(self) -> None:
-        """Make the current position the program's zero (G54)."""
-        self.mdi("G10 L20 P1 X0 Y0 Z0")
-
-    # Method `HMIMachine.jog()`:
-    def jog(self, axis: int, direction: int, step: float) -> None:
-        """Jog one axis by one step.
-
-        Arguments:
-        * `axis` (`int`):
-          The axis: 0 for X, 1 for Y, 2 for Z.
-        * `direction` (`int`):
-          +1 or -1.
-        * `step` (`float`):
-          How far (inches).
-        """
-        self.log.append(f"jog {'XYZ'[axis]} {direction:+d}")
-        if self.lcnc is not None:
-            self._mode("MODE_MANUAL")
-            self.lcnc.call("command.teleop_enable", True)
-            self.lcnc.call(
-                "command.jog",
-                constant("JOG_INCREMENT"),
-                False,
-                axis,
-                JOG_SPEED,
-                direction * step,
-            )
-
-    # Method `HMIMachine.go_origin()`:
-    def go_origin(self, z: float) -> None:
-        """Rapid to the work origin, never moving sideways below Z0.
-
-        Arguments:
-        * `z` (`float`): The work Z now (inches).
-        """
-        self.mdi(f"G20 G90 G0 Z{max(z, 0.0):.4f}", "G0 X0 Y0", "G0 Z0")
-
-    # Method `HMIMachine.set_speed()`:
-    def set_speed(self, speed: float) -> None:
-        """Set the feed override.
-
-        Arguments:
-        * `speed` (`float`):
-          The feed override (1.0 is the programmed feed).
-        """
-        self.log.append(f"speed {speed:.2f}")
-        if self.lcnc is not None:
-            self.lcnc.call("command.feedrate", speed)
-
-    # Method `HMIMachine.top_z()`:
-    def top_z(self) -> float:
-        """Return the highest work Z the tool's tip can reach.
-
-        Returns:
-        * (`float`): Z's upper travel limit less the G5x, G92 and tool
-          length offsets (inches).
-        """
-        stat: dict[str, Any] = cast(BridgeClient, self.lcnc).stat(
-            "axis", "g5x_offset", "g92_offset", "tool_offset"
-        )
-        return float(
-            stat["axis"][2]["max_position_limit"]
-            - stat["g5x_offset"][2]
-            - stat["g92_offset"][2]
-            - stat["tool_offset"][2]
-        )
-
-    # Method `HMIMachine._read_messages()`:
-    def _read_messages(self) -> list[str]:
-        """Read LinuxCNC's new messages, and keep them.
-
-        Returns:
-        * (`list[str]`): The new messages.
-        """
-        lcnc: BridgeClient = cast(BridgeClient, self.lcnc)
-        messages: list[str] = []
-        error: Any = lcnc.call("error_channel.poll")
-        while error:
-            # An `(MSG, ...)` comes with the space after its comma.
-            messages.append(str(error[1]).strip())
-            error = lcnc.call("error_channel.poll")
-
-        # LinuxCNC's message for a move outside the travel says
-        # nothing of why; say how high work Z can go (the usual cause
-        # is an origin set too high for the tool's length).
-        messages = [
-            f"{message}: work Z can reach only {self.top_z():.4f} "
-            "with this origin and tool"
-            if "invalid params in linear command" in message
-            else message
-            for message in messages
-        ]
-        self.messages += messages
-        return messages
-
-    # Method `HMIMachine._next_mdi()`:
-    def _next_mdi(self, idle: bool, messages: list[str]) -> bool:
-        """Start the next MDI line waiting, if its time has come.
-
-        A message means that something went wrong, so the lines still
-        waiting (which assumed otherwise) are dropped.
-
-        Arguments:
-        * `idle` (`bool`): True if the interpreter is idle.
-        * `messages` (`list[str]`): LinuxCNC's new messages.
-
-        Returns:
-        * (`bool`): True if lines are still to be finished.
-        """
-        lcnc: BridgeClient = cast(BridgeClient, self.lcnc)
-        if messages:
-            self.mdi_lines.clear()
-        if not self.mdi_lines:
-            return False
-        if idle and lcnc.call("command.wait_complete", 0) != -1:
-            lcnc.call("command.mdi", self.mdi_lines.pop(0))
-        return True
-
-    # Method `HMIMachine.modes()`:
-    def modes(self) -> tuple[bool, bool]:
-        """Return LinuxCNC's distance mode and units, as now set.
-
-        Returns:
-        * (`tuple[bool, bool]`): True when incremental (`G91`), and
-          True when metric (`G21`); both False without LinuxCNC.
-        """
-        if self.lcnc is None:
-            return (False, False)
-        gcodes: list[int] = list(self.lcnc.stat("gcodes")["gcodes"])
-        return (910 in gcodes, 210 in gcodes)
-
-    # Method `HMIMachine.status()`:
-    def status(self) -> HMIStatus:
-        """Poll LinuxCNC, and start the next MDI line when it is time.
-
-        Returns:
-        * (`HMIStatus`): The program, line, position, tool and messages.
-        """
-        if self.lcnc is None:
-            return HMIStatus(self.file, 0, (0.0, 0.0, 0.0), 0, [], "")
-        stat: dict[str, Any] = self.lcnc.stat(
-            "actual_position",
-            "file",
-            "g5x_offset",
-            "g92_offset",
-            "interp_state",
-            "motion_line",
-            "paused",
-            "tool_in_spindle",
-            "tool_offset",
-        )
-        messages: list[str] = self._read_messages()
-        idle: bool = stat["interp_state"] == self.constants["INTERP_IDLE"]
-        busy: bool = self._next_mdi(idle, messages)
-
-        # The position in work (program) coordinates: the machine's
-        # less the G54 (or other G5x), G92 and tool length offsets.
-        x, y, z = (
-            stat["actual_position"][axis]
-            - stat["g5x_offset"][axis]
-            - stat["g92_offset"][axis]
-            - stat["tool_offset"][axis]
-            for axis in range(3)
-        )
-        return HMIStatus(
-            str(stat["file"]),
-            int(stat["motion_line"]),
-            (x, y, z),
-            int(stat["tool_in_spindle"]),
-            messages,
-            "idle"
-            if idle and not busy
-            else "paused"
-            if stat["paused"]
-            else "running",
-        )
-
-
-# Class `CommandPort`:
-class CommandPort:  # pylint: disable=too-few-public-methods
-    """A command port on 127.0.0.1: one line in, one line back.
-
-    Attributes:
-    * `server` (`socket.socket`): The listening socket (not blocking).
-    """
-
-    # Method `CommandPort.__init__()`:
-    def __init__(self, port: int) -> None:
-        """Listen on a port.
-
-        Arguments:
-        * `port` (`int`): The port.
-        """
-        self.server: socket.socket = socket.socket()
-        self.server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.server.bind(("127.0.0.1", port))
-        self.server.listen()
-        self.server.setblocking(False)
-
-    # Method `CommandPort.poll()`:
-    def poll(self, handle: Any) -> None:
-        """Answer each waiting connection.
-
-        Arguments:
-        * `handle` (`Callable[[str], str]`): Answers a command line.
-        """
-        while True:
-            try:
-                connection: socket.socket = self.server.accept()[0]
-            except BlockingIOError:
-                return
-            with connection:
-                connection.settimeout(1.0)
-                try:
-                    data: bytes = b""
-                    while b"\n" not in data:
-                        chunk: bytes = connection.recv(1024)
-                        if not chunk:
-                            break
-                        data += chunk
-                    line: str = data.decode(errors="replace").strip()
-                    connection.sendall((handle(line) + "\n").encode())
-                except OSError:
-                    pass
-
-
-# Function `program_inches()`:
-def program_inches(lines: list[str]) -> bool:
-    """Return whether a program works in inches (its first `G20`/`G21`).
-
-    Arguments:
-    * `lines` (`list[str]`): The program.
-
-    Returns:
-    * (`bool`): True for `G20` first, False for `G21` or neither.
-    """
-    line: str
-    for line in lines:
-        found: re.Match[str] | None = UNITS.search(COMMENT.sub("", line))
-        if found is not None:
-            return found.group(1) == "20"
-    return False
-
-
-# Function `origin_lines()`:
-def origin_lines(point: Point, inches: bool) -> list[str]:
-    """Return the MDI lines that make the tool tip read a point.
-
-    Arguments:
-    * `point` (`Point`): Where the tool tip is, in work coordinates
-      (millimeters).
-    * `inches` (`bool`): True for a program in inches.
-
-    Returns:
-    * (`list[str]`): The units word, then `G10 L20 P1` for G54.
-    """
-    scale: float = 1.0 / 25.4 if inches else 1.0
-    places: int = 4 if inches else 3
-    x, y, z = (round(value * scale, places) + 0.0 for value in point)
-    return [
-        "G20" if inches else "G21",
-        f"G10 L20 P1 X{x:.{places}f} Y{y:.{places}f} Z{z:.{places}f}",
-    ]
+    return answer == QMessageBox.StandardButton.Yes
 
 
 # Function `ask_choice()`:
 def ask_choice(
-    root: tk.Tk, title: str, message: str, choices: list[str]
+    parent: QWidget, title: str, message: str, choices: list[str]
 ) -> str:
-    """Ask the operator to pick one of a list, in a window of its own.
+    """Ask the operator to pick one of a list.
 
     Arguments:
-    * `root` (`tk.Tk`): The HMI's window.
+    * `parent` (`QWidget`): The HMI.
     * `title` (`str`): The window's title.
     * `message` (`str`): The question.
     * `choices` (`list[str]`): What may be picked.
 
     Returns:
-    * (`str`): The choice, or `""` for Cancel.
+    * (`str`): The choice, or `""` for Cancel (or, headless, an
+      answer that is not one of `choices`).
     """
-    if tk is lcnc_hmi_headless:
-        return lcnc_hmi_headless.askchoice(title, message, choices)
-
-    # A small window: the question, the list, OK and Cancel.
-    window: tk.Toplevel = tk.Toplevel(root)
-    window.title(title)
-    ttk.Label(window, text=message).pack(padx=8, pady=4)
-    chosen: tk.StringVar = tk.StringVar(value="")
-    picker: ttk.Combobox = ttk.Combobox(
-        window, values=choices, state="readonly", width=40
+    if HEADLESS:
+        answer: str = next_answer(f"{title}: {message}")
+        return answer if answer in choices else ""
+    choice: str
+    accepted: bool
+    choice, accepted = QInputDialog.getItem(
+        parent, title, message, choices, 0, False
     )
-    picker.pack(padx=8, pady=4)
-    buttons: ttk.Frame = ttk.Frame(window)
-    buttons.pack(pady=4)
-
-    def done() -> None:
-        """Keep the choice, and close the window."""
-        chosen.set(picker.get())
-        window.destroy()
-
-    ttk.Button(buttons, text="OK", command=done).pack(side="left")
-    ttk.Button(buttons, text="Cancel", command=window.destroy).pack(
-        side="left"
-    )
-    window.transient(root)
-    window.grab_set()
-    root.wait_window(window)
-    return chosen.get()
+    return choice if accepted else ""
 
 
-# Class `View`:
-class View(Protocol):  # pylint: disable=too-few-public-methods
-    """What shows an assembly (`setup_view.SetupView`, or a fake).
+# Function `ask_open_file()`:
+def ask_open_file(parent: QWidget) -> str:
+    """Ask for a G-code file.
 
-    Attributes:
-    * `hidden` (`set[str]`): What to hide (`setup_view.HIDEABLE`).
-    * `keep_outs` (`bool`): True to show the items' keep-outs too.
-    * `progress` (`tuple[int, int]`): Changes done, of how many.
+    Arguments:
+    * `parent` (`QWidget`): The HMI.
+
+    Returns:
+    * (`str`): The file, or `""` for Cancel.
     """
-
-    hidden: set[str]
-    keep_outs: bool
-    progress: tuple[int, int]
-
-    # Method `View.show()`:
-    def show(self, assembly: Assembly) -> None:
-        """Show an assembly.
-
-        Arguments:
-        * `assembly` (`Assembly`): The items, bottom first.
-        """
+    if HEADLESS:
+        return next_answer("Open G-code")
+    path: str
+    path, _ = QFileDialog.getOpenFileName(
+        parent, "Open G-code", "", "G-code (*.ngc *.nc *.gcode);;All (*)"
+    )
+    return path
 
 
-# Class `SetupDrawer`:
-@dataclass(slots=True)
-class SetupDrawer:
-    """Draws setups one at a time, on a thread, the newest first.
+# Function `fixed_font()`:
+def fixed_font() -> QFont:
+    """Return the system's fixed width font.
 
-    A setup handed in while another is drawn waits; a newer one
-    replaces it, so only the newest is drawn next.  Tk is not thread
-    safe, so errors wait in `errors` for the HMI's poll.
-
-    Attributes:
-    * `view` (`View`): What draws an assembly; kept for the whole
-      run, so a new setup changes only what differs (`T.emsagc~5.2`
-      #68).
-    * `busy` (`bool`): True while the thread is drawing.
-    * `hidden` (`set[str]`): What the next drawing hides (it draws
-      the keep-outs always, so they can be shown without a redraw).
-    * `errors` (`queue.SimpleQueue[str]`): Messages for the HMI.
-    * `lock` (`threading.Lock`): Guards `busy`, `pending`, `thread`.
-    * `pending` (`Assembly | None`): The next setup to draw.
-    * `thread` (`threading.Thread | None`): The drawing thread.
-
-    Constructor:
-    * `SetupDrawer(view)`
+    Returns:
+    * (`QFont`): The font.
     """
+    return QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont)
 
-    # Constructor arguments:
-    view: View = field(init=True)
 
-    # Remaining attributes (alphabetized):
-    busy: bool = field(init=False, default=False)
-    hidden: set[str] = field(
-        init=False,
-        default_factory=lambda: {
-            kind for _, kind, shown in TOGGLES if not shown
-        },
-    )
-    errors: "queue.SimpleQueue[str]" = field(
-        init=False, default_factory=queue.SimpleQueue
-    )
-    lock: threading.Lock = field(init=False, default_factory=threading.Lock)
-    pending: Assembly | None = field(init=False, default=None)
-    thread: threading.Thread | None = field(init=False, default=None)
+# Function `paint()`:
+def paint(entry: QLineEdit, color: str) -> None:
+    """Color an entry's background, and remember the color for `show`.
 
-    # Method `SetupDrawer.draw()`:
-    def draw(self, assembly: Assembly) -> None:
-        """Draw a setup when the thread is free, dropping older ones.
+    Arguments:
+    * `entry` (`QLineEdit`): The entry.
+    * `color` (`str`): A color, such as `GOOD`.
+    """
+    entry.setStyleSheet(f"QLineEdit {{ background: {color}; }}")
+    entry.setProperty("background", color)
 
-        Arguments:
-        * `assembly` (`Assembly`): The setup to draw.
-        """
-        with self.lock:
-            self.pending = assembly
-            if not self.busy:
-                self.busy = True
-                self.thread = threading.Thread(
-                    target=self.work, name="setup drawer", daemon=True
-                )
-                self.thread.start()
 
-    # Method `SetupDrawer.work()`:
-    def work(self) -> None:
-        """Draw the pending setups until there are none (the thread)."""
-        while True:
-            # Take the newest setup, or stop when there is none.
-            assembly: Assembly | None
-            with self.lock:
-                assembly = self.pending
-                self.pending = None
-                if assembly is None:
-                    self.busy = False
-                    return
+# Function `row()`:
+def row(
+    layout: QVBoxLayout, *widgets: QWidget, spaces: dict[int, int]
+) -> None:
+    """Add a row of widgets, centered, to a layout.
 
-            # Draw it; any error goes to the HMI.
-            try:
-                self.view.keep_outs = True
-                self.view.hidden = set(self.hidden)
-                self.view.show(assembly)
-            # pylint: disable-next=broad-exception-caught
-            except Exception as error:  # noqa: BLE001
-                self.errors.put(f"Setup not drawn: {error}")
-
-    # Method `SetupDrawer.wait()`:
-    def wait(self) -> None:
-        """Wait until every setup handed in is drawn (for tests)."""
-        while True:
-            thread: threading.Thread | None
-            with self.lock:
-                thread = self.thread if self.busy else None
-            if thread is None:
-                return
-            thread.join()
-
-    # Method `SetupDrawer.message()`:
-    def message(self) -> str:
-        """Return the newest error message, or "" when there is none.
-
-        Returns:
-        * (`str`): The message.
-        """
-        text: str = ""
-        while not self.errors.empty():
-            text = self.errors.get()
-        return text
+    Arguments:
+    * `layout` (`QVBoxLayout`): Where the row goes, under what is
+      there.
+    * `widgets` (`QWidget`): The row, left to right.
+    * `spaces` (`dict[int, int]`): Extra room (pixels) before the
+      widgets at these indexes.
+    """
+    line: QHBoxLayout = QHBoxLayout()
+    line.addStretch(1)
+    index: int
+    widget: QWidget
+    for index, widget in enumerate(widgets):
+        if index in spaces:
+            line.addSpacing(spaces[index])
+        line.addWidget(widget)
+    line.addStretch(1)
+    layout.addLayout(line)
 
 
 # Class `HMI`:
 # pylint: disable-next=too-many-instance-attributes,too-many-public-methods
-class HMI:
+class HMI(QWidget):
     """The HMI window, laid out as in `T.mlcp~3.4`.
 
     Attributes:
-    * `coming` (`tk.Text`): The G-code coming next (read only).
+    * `coming` (`QPlainTextEdit`): The G-code coming next (read only).
     * `inches` (`bool`): True when the open program is in inches.
     * `assembly` (`Assembly | None`): The open program's setup.
-    * `next_step_button` (`ttk.Button`): Shows the setup's next item.
+    * `next_step_button` (`QPushButton`): Shows the setup's next item.
     * `note` (`str`): The setup step shown, kept ahead of any error.
     * `drawing` (`bool`): True while a setup is drawn (Start is
       greyed out).
-    * `progress` (`ttk.Progressbar`): How much of the setup is drawn.
+    * `progress` (`QProgressBar`): How much of the setup is drawn.
     * `drawn` (`Assembly | None`): The setup (or the steps of it)
       last handed to `drawer`.
-    * `toggles` (`dict[str, tk.BooleanVar]`): The View tab's check
-      buttons' states, by label (`TOGGLES`).
+    * `toggles` (`dict[str, QCheckBox]`): The View tab's check
+      buttons, by label (`TOGGLES`).
     * `setup_step` (`int`): How many of the setup's items Next Step
       has shown (0: the whole setup).
     * `origins` (`list[tuple[str, Point]]`): The open program's
       setup's named origins (work millimeters), or none.
     * `drawer` (`SetupDrawer | None`): What draws an opened
       program's setup in SolidCraft, or `None` to draw nothing.
-    * `execute_button` (`ttk.Button`): Runs the MDI line.
-    * `executed` (`tk.Text`): The G-code already run (read only).
-    * `home_button` (`ttk.Button`): Rapids to the work origin.
-    * `jog_buttons` (`list[ttk.Button | tk.Radiobutton]`): -X, +X,
-      -Y, +Y, -Z, +Z, and the step buttons.
+    * `execute_button` (`QPushButton`): Runs the MDI line.
+    * `executed` (`QPlainTextEdit`): The G-code already run (read
+      only).
+    * `home_button` (`QPushButton`): Rapids to the work origin.
+    * `jog_buttons` (`list[QPushButton]`): -X, +X, -Y, +Y, -Z, +Z,
+      and the step buttons.
     * `lines` (`list[str]`): The open program's lines.
     * `lines_file` (`str`): The file `lines` was read from.
     * `machine` (`HMIMachine`): The LinuxCNC back end.
-    * `mdi` (`tk.StringVar`): The MDI line's text.
-    * `mdi_entry` (`tk.Entry`): The MDI line, colored as it is typed.
-    * `message` (`ttk.Label`): LinuxCNC's last error message.
-    * `origin_button` (`ttk.Button`): The Set Origin button.
+    * `mdi_entry` (`QLineEdit`): The MDI line, colored as it is
+      typed.
+    * `message` (`QLabel`): LinuxCNC's last error message.
+    * `origin_button` (`QPushButton`): The Set Origin button.
     * `paused` (`bool`): True while the program is paused.
-    * `pause_button` (`ttk.Button`): The Pause button.
+    * `pause_button` (`QPushButton`): The Pause button.
     * `port` (`CommandPort | None`): The command port, if any.
-    * `position` (`ttk.Label`): The work position and the tool.
-    * `root` (`tk.Tk`): The window.
-    * `run_button` (`ttk.Button`): The Start button (Resume while
+    * `position` (`QLabel`): The work position and the tool.
+    * `run_button` (`QPushButton`): The Start button (Resume while
       paused).
     * `running` (`bool`): True while a program runs (or is paused).
     * `scrolling` (`bool`): True once the whole program is in the two
       G-code windows, to scroll while paused.
-    * `speed` (`tk.DoubleVar`): The speed slider's value: the base 10
-      logarithm of the feed override.
-    * `speed_text` (`tk.StringVar`): The feed override, shown.
+    * `slider` (`QSlider`): The speed slider, `SLIDER_STEPS` steps
+      on a logarithmic scale.
+    * `speed_text` (`QLabel`): The feed override, shown.
     * `top_speed` (`float`): The slider's highest feed override.
-    * `step` (`tk.StringVar`): The jog step chosen (inches).
+    * `steps` (`QButtonGroup`): The jog step buttons (inches), one
+      chosen at a time.
     * `start` (`int`): The line Start runs from (counted from 1; 0
       for the program's start), chosen with -Tool and +Tool.
-    * `tool_buttons` (`list[ttk.Button]`): -Tool and +Tool.
-    * `material` (`tk.StringVar`): The material the Tools tab shows.
-    * `material_chooser` (`ttk.Combobox`): Chooses that material.
-    * `next_tool` (`ttk.Label`): Room for the next tool and the time
-      left to it (`T.hs~5.1.5` S6).
-    * `notebook` (`ttk.Notebook`): The tabs.
+    * `tool_buttons` (`list[QPushButton]`): -Tool and +Tool.
+    * `material_chooser` (`QComboBox`): The material the Tools tab
+      shows.
+    * `next_tool` (`QLabel`): The next tool and the time left to it
+      (`T.hs~5.1.5` S6).
+    * `notebook` (`QTabWidget`): The tabs.
     * `operator_paused` (`bool`): True while paused by Pause (not by
       the program's own `M0`).
     * `axes_set` (`set[str]`): The axes whose origin is set since the
       program was opened.
-    * `axis_buttons` (`dict[str, ttk.Button]`): Set X, Set Y, Set Z.
-    * `axis_entries` (`dict[str, tk.Entry]`): Their numbers' entries.
-    * `axis_texts` (`dict[str, tk.StringVar]`): The numbers typed.
+    * `axis_buttons` (`dict[str, QPushButton]`): Set X, Set Y, Set Z.
+    * `axis_entries` (`dict[str, QLineEdit]`): Their numbers'
+      entries.
     * `jog_note` (`str`): Why jogs are not checked, once said.
     * `last_tool` (`int`): The tool in the spindle at the last poll.
     * `jog_refusal` (`str`): Why the last jog or MDI line was refused
@@ -1556,18 +442,19 @@ class HMI:
       set (`mark_origin_set()`); Start waits for it.
     * `program_machine` (`str`): The machine the program is for.
     * `program_material` (`str`): The material it cuts.
-    * `tabs` (`dict[str, ttk.Frame]`): Each tab, by its name.
-    * `tools_table` (`tk.Text`): The tools' speeds and feeds.
+    * `tabs` (`dict[str, QWidget]`): Each tab, by its name.
+    * `timer` (`QTimer`): Calls `poll()` every `POLL_MS`.
+    * `tools_table` (`QPlainTextEdit`): The tools' speeds and feeds.
     """
 
     # Method `HMI.__init__()`:
     # pylint: disable-next=too-many-locals,too-many-statements
     def __init__(
         self,
-        root: tk.Tk,
         machine: HMIMachine,
         max_speed: float,
         port: CommandPort | None,
+        parent: QWidget | None = None,
     ) -> None:
         """Build the window.
 
@@ -1575,16 +462,16 @@ class HMI:
         locals and statements.
 
         Arguments:
-        * `root` (`tk.Tk`):
-          The window to build in.
         * `machine` (`HMIMachine`):
           The LinuxCNC back end.
         * `max_speed` (`float`):
           The speed slider's highest setting.
         * `port` (`CommandPort | None`):
           The command port, if any.
+        * `parent` (`QWidget | None`):
+          What it is shown in, or `None` for a window of its own.
         """
-        self.root: tk.Tk = root
+        super().__init__(parent)
         self.machine: HMIMachine = machine
         self.port: CommandPort | None = port
         self.paused: bool = False
@@ -1614,150 +501,135 @@ class HMI:
         self.rapid: float = machine.rapid_speed()
         self.sums: list[float] = [0.0]
         self.spans: list[tuple[int, int]] = []
-        root.title("SolidCraft LinuxCNC")
+        self.setWindowTitle("SolidCraft LinuxCNC")
+        layout: QVBoxLayout = QVBoxLayout(self)
 
         # Above the tabs, on every tab: the work position and the tool,
         # LinuxCNC's messages, and how much of the setup is drawn.
-        self.position: ttk.Label = ttk.Label(root, font="TkFixedFont")
-        self.position.grid(row=0, column=0, padx=4, sticky="w")
-        self.message: ttk.Label = ttk.Label(root, foreground="red")
-        self.message.grid(row=1, column=0, padx=4, sticky="w")
-        self.progress: ttk.Progressbar = ttk.Progressbar(
-            root, length=120, maximum=1, value=0
-        )
-        self.progress.grid(row=1, column=0, padx=4, sticky="e")
+        self.position: QLabel = QLabel()
+        self.position.setFont(fixed_font())
+        layout.addWidget(self.position)
+        self.message: QLabel = QLabel()
+        self.message.setStyleSheet("QLabel { color: red; }")
+        self.progress: QProgressBar = QProgressBar()
+        self.progress.setRange(0, 1)
+        self.progress.setValue(0)
+        self.progress.setTextVisible(False)
+        self.progress.setFixedWidth(120)
+        message_line: QHBoxLayout = QHBoxLayout()
+        message_line.addWidget(self.message, 1)
+        message_line.addWidget(self.progress)
+        layout.addLayout(message_line)
 
         # The tabs, one for each task, in the order of `TABS`.
-        self.notebook: ttk.Notebook = ttk.Notebook(root)
-        self.notebook.grid(row=2, column=0, padx=4, pady=2, sticky="nsew")
-        self.tabs: dict[str, ttk.Frame] = {}
+        self.notebook: QTabWidget = QTabWidget()
+        layout.addWidget(self.notebook, 1)
+        self.tabs: dict[str, QWidget] = {}
+        name: str
         for name in TABS:
-            self.tabs[name] = ttk.Frame(self.notebook)
-            self.notebook.add(self.tabs[name], text=name)
-        self.notebook.bind(
-            "<<NotebookTabChanged>>", lambda _event: self.on_tab_changed()
-        )
-        run_tab: ttk.Frame = self.tabs["Run"]
+            self.tabs[name] = QWidget()
+            self.notebook.addTab(self.tabs[name], name)
+        self.notebook.currentChanged.connect(self.on_tab_changed)
+        run_tab: QVBoxLayout = QVBoxLayout(self.tabs["Run"])
 
         # Run: the G-code run and coming, and below them the MDI line
         # and Execute.
-        self.executed: tk.Text = self.scrolled_text(run_tab)
-        self.coming: tk.Text = self.scrolled_text(run_tab)
-        mdi: ttk.Frame = ttk.Frame(run_tab)
-        mdi.pack(fill="x", padx=4, pady=2)
-        self.mdi: tk.StringVar = tk.StringVar()
-        self.mdi_entry: tk.Entry = tk.Entry(
-            mdi, textvariable=self.mdi, font="TkFixedFont", background=BLANK
-        )
-        self.mdi_entry.pack(side="left", fill="x", expand=True)
-        self.execute_button: ttk.Button = ttk.Button(
-            mdi, text="Execute", command=self.on_execute, state="disabled"
-        )
-        self.execute_button.pack(side="left", padx=(4, 0))
-        self.mdi.trace_add("write", lambda *_: self.check_mdi())
+        self.executed: QPlainTextEdit = self.scrolled_text(run_tab)
+        self.coming: QPlainTextEdit = self.scrolled_text(run_tab)
+        self.mdi_entry: QLineEdit = QLineEdit()
+        self.mdi_entry.setFont(fixed_font())
+        paint(self.mdi_entry, BLANK)
+        self.execute_button: QPushButton = QPushButton("Execute")
+        self.execute_button.setEnabled(False)
+        self.execute_button.clicked.connect(self.on_execute)
+        mdi_line: QHBoxLayout = QHBoxLayout()
+        mdi_line.addWidget(self.mdi_entry, 1)
+        mdi_line.addWidget(self.execute_button)
+        run_tab.addLayout(mdi_line)
+        self.mdi_entry.textChanged.connect(self.check_mdi)
 
         # Run: the run line, -Tool and +Tool, Start, Pause and Reset.
-        buttons: ttk.Frame = ttk.Frame(run_tab)
-        buttons.pack(pady=(6, 2))
-        self.tool_buttons: list[ttk.Button] = [
-            ttk.Button(
-                buttons,
-                text=label,
-                width=6,
-                command=functools.partial(self.on_tool, step),
-            )
-            for label, step in (("-Tool", -1), ("+Tool", +1))
-        ]
-        self.run_button: ttk.Button = ttk.Button(
-            buttons, text="Start", width=7, command=self.on_run
+        self.tool_buttons: list[QPushButton] = []
+        label: str
+        step: int
+        for label, step in (("-Tool", -1), ("+Tool", +1)):
+            tool_button: QPushButton = QPushButton(label)
+            tool_button.clicked.connect(functools.partial(self.on_tool, step))
+            self.tool_buttons.append(tool_button)
+        self.run_button: QPushButton = QPushButton("Start")
+        self.run_button.clicked.connect(self.on_run)
+        self.pause_button: QPushButton = QPushButton("Pause")
+        self.pause_button.setEnabled(False)
+        self.pause_button.clicked.connect(self.on_pause)
+        reset: QPushButton = QPushButton("Reset")
+        reset.clicked.connect(self.on_stop)
+        row(
+            run_tab,
+            *self.tool_buttons,
+            self.run_button,
+            self.pause_button,
+            reset,
+            spaces={2: 12},
         )
-        self.pause_button: ttk.Button = ttk.Button(
-            buttons,
-            text="Pause",
-            width=6,
-            command=self.on_pause,
-            state="disabled",
-        )
-        reset: ttk.Button = ttk.Button(
-            buttons, text="Reset", width=6, command=self.on_stop
-        )
-        for index, button in enumerate(
-            (*self.tool_buttons, self.run_button, self.pause_button, reset)
-        ):
-            button.pack(side="left", padx=(12 if index in (0, 2) else 1, 1))
 
-        # Run: the speed slider (logarithmic), and room for the next
-        # tool and the time left (`T.hs~5.1.5` S6).
-        self.speed: tk.DoubleVar = tk.DoubleVar(value=0.0)
-        self.speed_text: tk.StringVar = tk.StringVar(value="1x")
+        # Run: the speed slider (logarithmic), and the next tool and
+        # the time left (`T.hs~5.1.5` S6).
         self.top_speed: float = min(max_speed, MAX_SPEED)
-        slider: ttk.Frame = ttk.Frame(run_tab)
-        slider.pack(fill="x", pady=4)
-        ttk.Label(slider, text="speed").pack(side="left", padx=4)
-        ttk.Scale(
-            slider,
-            from_=math.log10(MIN_SPEED),
-            to=math.log10(self.top_speed),
-            orient="horizontal",
-            variable=self.speed,
-            command=lambda _value: self.set_speed(10 ** self.speed.get()),
-        ).pack(side="left", fill="x", expand=True, padx=4)
-        ttk.Label(slider, textvariable=self.speed_text, width=6).pack(
-            side="left"
+        self.slider: QSlider = QSlider(Qt.Orientation.Horizontal)
+        self.slider.setRange(0, SLIDER_STEPS)
+        self.slider.valueChanged.connect(self.on_slider)
+        self.speed_text: QLabel = QLabel("1x")
+        self.speed_text.setMinimumWidth(
+            self.speed_text.fontMetrics().horizontalAdvance("0.00x0")
         )
-        self.next_tool: ttk.Label = ttk.Label(run_tab, text="")
-        self.next_tool.pack(anchor="w", padx=4)
+        slider_line: QHBoxLayout = QHBoxLayout()
+        slider_line.addWidget(QLabel("speed"))
+        slider_line.addWidget(self.slider, 1)
+        slider_line.addWidget(self.speed_text)
+        run_tab.addLayout(slider_line)
+        self.next_tool: QLabel = QLabel("")
+        run_tab.addWidget(self.next_tool)
+        run_tab.addStretch(1)
 
         # Setup: Next Step, Set Origin and Home.
-        setup_tab: ttk.Frame = self.tabs["Setup"]
-        setup_line: ttk.Frame = ttk.Frame(setup_tab)
-        setup_line.pack(pady=(6, 2))
-        self.next_step_button: ttk.Button = ttk.Button(
-            setup_line, text="Next Step", command=self.on_next_step
+        setup_tab: QVBoxLayout = QVBoxLayout(self.tabs["Setup"])
+        self.next_step_button: QPushButton = QPushButton("Next Step")
+        self.next_step_button.clicked.connect(self.on_next_step)
+        self.origin_button: QPushButton = QPushButton("Set Origin")
+        self.origin_button.clicked.connect(self.on_set_origin)
+        self.home_button: QPushButton = QPushButton("Home")
+        self.home_button.clicked.connect(self.on_home)
+        row(
+            setup_tab,
+            self.next_step_button,
+            self.origin_button,
+            self.home_button,
+            spaces={1: 12},
         )
-        self.next_step_button.pack(side="left", padx=(1, 12))
-        self.origin_button: ttk.Button = ttk.Button(
-            setup_line, text="Set Origin", command=self.on_set_origin
-        )
-        self.home_button: ttk.Button = ttk.Button(
-            setup_line, text="Home", width=5, command=self.on_home
-        )
-        self.origin_button.pack(side="left", padx=1)
-        self.home_button.pack(side="left", padx=1)
 
         # Setup: each axis of the origin set by hand, to a number.
-        axis_line: ttk.Frame = ttk.Frame(setup_tab)
-        axis_line.pack(pady=2)
-        self.axis_texts: dict[str, tk.StringVar] = {}
-        self.axis_entries: dict[str, tk.Entry] = {}
-        self.axis_buttons: dict[str, ttk.Button] = {}
+        self.axis_entries: dict[str, QLineEdit] = {}
+        self.axis_buttons: dict[str, QPushButton] = {}
         self.axes_set: set[str] = set()
+        axis_widgets: list[QWidget] = []
         axis: str
         for axis in AXES:
-            self.axis_texts[axis] = tk.StringVar()
-            self.axis_entries[axis] = tk.Entry(
-                axis_line,
-                textvariable=self.axis_texts[axis],
-                width=9,
-                font="TkFixedFont",
-                background=BLANK,
+            entry: QLineEdit = QLineEdit()
+            entry.setFont(fixed_font())
+            entry.setFixedWidth(
+                entry.fontMetrics().horizontalAdvance("0" * 10)
             )
-            self.axis_entries[axis].pack(side="left", padx=(8, 1))
-            self.axis_buttons[axis] = ttk.Button(
-                axis_line,
-                text=f"Set {axis}",
-                width=6,
-                state="disabled",
-                command=functools.partial(self.on_set_axis, axis),
-            )
-            self.axis_buttons[axis].pack(side="left", padx=1)
-            self.axis_texts[axis].trace_add(
-                "write", lambda *_: self.check_axes()
-            )
+            paint(entry, BLANK)
+            entry.textChanged.connect(self.check_axes)
+            button: QPushButton = QPushButton(f"Set {axis}")
+            button.setEnabled(False)
+            button.clicked.connect(functools.partial(self.on_set_axis, axis))
+            self.axis_entries[axis] = entry
+            self.axis_buttons[axis] = button
+            axis_widgets += [entry, button]
+        row(setup_tab, *axis_widgets, spaces={2: 8, 4: 8})
 
         # Setup: the jog buttons and their step (one chosen at a time).
-        jog_line: ttk.Frame = ttk.Frame(setup_tab)
-        jog_line.pack(pady=(2, 6))
         jogs: tuple[tuple[str, int, int], ...] = (
             ("-X", 0, -1),
             ("+X", 0, +1),
@@ -1766,92 +638,117 @@ class HMI:
             ("-Z", 2, -1),
             ("+Z", 2, +1),
         )
-        self.jog_buttons: list[ttk.Button | tk.Radiobutton] = [
-            ttk.Button(
-                jog_line,
-                text=label,
-                width=3,
-                command=functools.partial(self.on_jog, axis, direction),
+        self.jog_buttons: list[QPushButton] = []
+        direction: int
+        axis_number: int
+        for label, axis_number, direction in jogs:
+            jog: QPushButton = QPushButton(label)
+            jog.clicked.connect(
+                functools.partial(self.on_jog, axis_number, direction)
             )
-            for label, axis, direction in jogs
-        ]
-        self.step: tk.StringVar = tk.StringVar(value=JOG_STEP)
-        self.jog_buttons += [
-            tk.Radiobutton(
-                jog_line,
-                text=step,
-                value=step,
-                variable=self.step,
-                indicatoron=False,
-                selectcolor=STEP_CHOSEN,
-                width=len(step) + 1,
-                pady=3,
+            self.jog_buttons.append(jog)
+        self.steps: QButtonGroup = QButtonGroup(self)
+        self.steps.setExclusive(True)
+        step_text: str
+        for step_text in JOG_STEPS:
+            choice: QPushButton = QPushButton(step_text)
+            choice.setCheckable(True)
+            choice.setChecked(step_text == JOG_STEP)
+            choice.setStyleSheet(
+                f"QPushButton:checked {{ background: {STEP_CHOSEN}; }}"
             )
-            for step in JOG_STEPS
-        ]
-        for index, jog in enumerate(self.jog_buttons):
-            jog.pack(side="left", padx=(12 if index == 6 else 1, 1))
+            self.steps.addButton(choice)
+            self.jog_buttons.append(choice)
+        row(setup_tab, *self.jog_buttons, spaces={6: 12})
+        setup_tab.addStretch(1)
 
         # Tools: a material, and the tools' speeds and feeds for it
         # (filled each time the tab is shown).
-        tools_tab: ttk.Frame = self.tabs["Tools"]
-        self.material: tk.StringVar = tk.StringVar(value=MATERIAL)
-        self.material_chooser: ttk.Combobox = ttk.Combobox(
-            tools_tab, textvariable=self.material, state="readonly", width=30
+        tools_tab: QVBoxLayout = QVBoxLayout(self.tabs["Tools"])
+        self.material_chooser: QComboBox = QComboBox()
+        self.material_chooser.addItem(MATERIAL)
+        self.material_chooser.setMinimumContentsLength(30)
+        self.material_chooser.activated.connect(self.show_tools)
+        tools_tab.addWidget(
+            self.material_chooser, 0, Qt.AlignmentFlag.AlignLeft
         )
-        self.material_chooser.pack(anchor="w", padx=4, pady=4)
-        self.material_chooser.bind(
-            "<<ComboboxSelected>>", lambda _event: self.show_tools()
-        )
-        self.tools_table: tk.Text = tk.Text(
-            tools_tab, width=72, height=12, font="TkFixedFont"
-        )
-        self.tools_table.pack(fill="both", expand=True, padx=4, pady=(0, 4))
+        self.tools_table: QPlainTextEdit = QPlainTextEdit()
+        self.tools_table.setReadOnly(True)
+        self.tools_table.setFont(fixed_font())
+        tools_tab.addWidget(self.tools_table, 1)
 
         # View: what SolidCraft shows.
-        self.toggles: dict[str, tk.BooleanVar] = {}
-        label: str
+        view_tab: QVBoxLayout = QVBoxLayout(self.tabs["View"])
+        self.toggles: dict[str, QCheckBox] = {}
         shown: bool
         for label, _, shown in TOGGLES:
-            self.toggles[label] = tk.BooleanVar(value=shown)
-            ttk.Checkbutton(
-                self.tabs["View"],
-                text=label,
-                variable=self.toggles[label],
-                command=self.on_toggle,
-            ).pack(anchor="w", padx=4, pady=2)
+            self.toggles[label] = QCheckBox(label)
+            self.toggles[label].setChecked(shown)
+            self.toggles[label].clicked.connect(self.on_toggle)
+            view_tab.addWidget(self.toggles[label])
+        view_tab.addStretch(1)
 
         # Under the tabs, for every task: Open and Quit.
-        bottom: ttk.Frame = ttk.Frame(root)
-        bottom.grid(row=3, column=0, pady=4, sticky="e")
-        ttk.Button(bottom, text="Open", command=self.on_open).pack(
-            side="left", padx=1
-        )
-        ttk.Button(bottom, text="Quit", command=root.destroy).pack(
-            side="left", padx=(12, 4)
-        )
-        root.after(POLL_MS, self.poll)
+        open_button: QPushButton = QPushButton("Open")
+        open_button.clicked.connect(self.on_open)
+        quit_button: QPushButton = QPushButton("Quit")
+        quit_button.clicked.connect(self.close)
+        bottom: QHBoxLayout = QHBoxLayout()
+        bottom.addStretch(1)
+        bottom.addWidget(open_button)
+        bottom.addSpacing(12)
+        bottom.addWidget(quit_button)
+        layout.addLayout(bottom)
+
+        # `poll()` runs every `POLL_MS`.
+        self.timer: QTimer = QTimer(self)
+        self.timer.setInterval(POLL_MS)
+        self.timer.timeout.connect(self.poll)
+        self.timer.start()
 
     # Method `HMI.scrolled_text()`:
     @staticmethod
-    def scrolled_text(parent: ttk.Frame) -> tk.Text:
-        """Make a read only text window with a scroll bar.
+    def scrolled_text(layout: QVBoxLayout) -> QPlainTextEdit:
+        """Make a read only text window, `SHOWN` lines high.
 
         Arguments:
-        * `parent` (`ttk.Frame`): The tab to put it in, under what
+        * `layout` (`QVBoxLayout`): The tab to put it in, under what
           is there already.
 
         Returns:
-        * (`tk.Text`): The text window.
+        * (`QPlainTextEdit`): The text window (it scrolls by itself).
         """
-        frame: ttk.Frame = ttk.Frame(parent)
-        frame.pack(fill="x", padx=4, pady=2)
-        text: tk.Text = tk.Text(frame, height=SHOWN, width=50)
-        scroll: ttk.Scrollbar = ttk.Scrollbar(frame, command=text.yview)
-        text.configure(yscrollcommand=scroll.set, state="disabled")
-        text.pack(side="left", fill="x", expand=True)
-        scroll.pack(side="left", fill="y")
+        text: QPlainTextEdit = QPlainTextEdit()
+        text.setReadOnly(True)
+        text.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+        margins: int = round(
+            2 * (text.frameWidth() + text.document().documentMargin())
+        )
+        text.setFixedHeight(text.fontMetrics().lineSpacing() * SHOWN + margins)
+        text.setMinimumWidth(text.fontMetrics().horizontalAdvance("0" * 50))
+        layout.addWidget(text)
         return text
+
+    # Method `HMI.step()`:
+    def step(self) -> str:
+        """Return the jog step chosen.
+
+        Returns:
+        * (`str`): One of `JOG_STEPS` (inches).
+        """
+        chosen: QAbstractButton | None = self.steps.checkedButton()
+        return chosen.text() if chosen is not None else JOG_STEP
+
+    # Method `HMI.on_slider()`:
+    def on_slider(self, position: int) -> None:
+        """Take the feed override from the speed slider.
+
+        Arguments:
+        * `position` (`int`): Where the slider is, 0 to `SLIDER_STEPS`.
+        """
+        low: float = math.log10(MIN_SPEED)
+        high: float = math.log10(self.top_speed)
+        self.set_speed(10 ** (low + (high - low) * position / SLIDER_STEPS))
 
     # Method `HMI.set_speed()`:
     def set_speed(self, speed: float) -> None:
@@ -1861,27 +758,18 @@ class HMI:
         * `speed` (`float`): The feed override, kept within the
           slider's range.
         """
+        # The slider is moved without calling `on_slider()` again.
         speed = min(max(speed, MIN_SPEED), self.top_speed)
         self.override = speed
-        self.speed.set(math.log10(speed))
-        self.speed_text.set(f"{speed:.2g}x")
+        low: float = math.log10(MIN_SPEED)
+        high: float = math.log10(self.top_speed)
+        blocked: bool = self.slider.blockSignals(True)
+        self.slider.setValue(
+            round((math.log10(speed) - low) / (high - low) * SLIDER_STEPS)
+        )
+        self.slider.blockSignals(blocked)
+        self.speed_text.setText(f"{speed:.2g}x")
         self.machine.set_speed(speed)
-
-    # Method `HMI.set_text()`:
-    @staticmethod
-    def set_text(text: tk.Text, lines: list[str]) -> None:
-        """Replace the contents of a read only text window.
-
-        Arguments:
-        * `text` (`tk.Text`):
-          The text window.
-        * `lines` (`list[str]`):
-          Its new lines.
-        """
-        text.configure(state="normal")
-        text.delete("1.0", "end")
-        text.insert("1.0", "\n".join(lines))
-        text.configure(state="disabled")
 
     # Method `HMI.set_running()`:
     def set_running(self, running: bool, paused: bool) -> None:
@@ -1893,24 +781,22 @@ class HMI:
         """
         self.paused = paused
         self.running = running
+        button: QPushButton
         for button in self.tool_buttons:
-            button.configure(state="disabled" if running else "normal")
-        self.run_button.configure(
-            text="Resume" if paused else "Start",
-            state="disabled"
-            if (running and not paused) or self.drawing or not self.origin_set
-            else "normal",
+            button.setEnabled(not running)
+        self.run_button.setText("Resume" if paused else "Start")
+        self.run_button.setEnabled(
+            not (
+                (running and not paused) or self.drawing or not self.origin_set
+            )
         )
-        self.pause_button.configure(
-            state="normal" if running and not paused else "disabled"
-        )
+        self.pause_button.setEnabled(running and not paused)
 
         # Jogs only while stopped: LinuxCNC 2.9 will not change modes
         # while a program runs or is paused.  (`poll()` sets Set Origin
         # and Home, which also depend on the position.)
-        widget: ttk.Button | tk.Radiobutton
-        for widget in self.jog_buttons:
-            widget.configure(state="disabled" if running else "normal")
+        for button in self.jog_buttons:
+            button.setEnabled(not running)
         self.check_mdi()
         self.check_axes()
 
@@ -1921,15 +807,9 @@ class HMI:
         LinuxCNC 2.9 runs MDI only when no program is running or
         paused (its task refuses the change of mode).
         """
-        kind: str = line_kind(self.mdi.get())
-        self.mdi_entry.configure(
-            background={"empty": BLANK, "good": GOOD, "bad": BAD}[kind]
-        )
-        self.execute_button.configure(
-            state="normal"
-            if not self.running and kind == "good"
-            else "disabled"
-        )
+        kind: str = line_kind(self.mdi_entry.text())
+        paint(self.mdi_entry, {"empty": BLANK, "good": GOOD, "bad": BAD}[kind])
+        self.execute_button.setEnabled(not self.running and kind == "good")
 
     # Method `HMI.open()`:
     def open(self, path: str) -> None:
@@ -1951,14 +831,14 @@ class HMI:
         if assembly is not None:
             refusal: str = setup_warning(assembly, shop_name())
             if refusal:
-                self.message.configure(text=refusal)
+                self.message.setText(refusal)
                 raise ValueError(refusal)
 
         # Open it; it may not run until its origin is set.
         self.machine.open(path)
         self.start = 0
         self.lines_file = ""  # Read it again, even when the same file.
-        self.message.configure(text="")
+        self.message.setText("")
         self.origin_set = False
         self.zones = None
         self.jog_note = ""
@@ -1988,12 +868,12 @@ class HMI:
         self.origin_set = origin_set
         self.axes_set = set(AXES) if origin_set else set()
         first: str = "Set the origin first"
-        if not origin_set and not str(self.message.cget("text")):
-            self.message.configure(text=first)
-        elif origin_set and str(self.message.cget("text")).startswith(
+        if not origin_set and not self.message.text():
+            self.message.setText(first)
+        elif origin_set and self.message.text().startswith(
             (first, "Origin still to set")
         ):
-            self.message.configure(text="")
+            self.message.setText("")
         self.set_running(self.running, self.paused)
 
     # Method `HMI.check_axes()`:
@@ -2005,18 +885,17 @@ class HMI:
         """
         axis: str
         for axis in AXES:
-            text: str = self.axis_texts[axis].get().strip()
+            text: str = self.axis_entries[axis].text().strip()
             number: bool = True
             try:
                 float(text)
             except ValueError:
                 number = False
-            self.axis_entries[axis].configure(
-                background=BLANK if not text else GOOD if number else BAD
+            paint(
+                self.axis_entries[axis],
+                BLANK if not text else GOOD if number else BAD,
             )
-            self.axis_buttons[axis].configure(
-                state="normal" if number and not self.running else "disabled"
-            )
+            self.axis_buttons[axis].setEnabled(number and not self.running)
 
     # Method `HMI.on_set_axis()`:
     def on_set_axis(self, axis: str) -> None:
@@ -2031,23 +910,23 @@ class HMI:
         if self.running:
             return
         try:
-            value: float = float(self.axis_texts[axis].get())
+            value: float = float(self.axis_entries[axis].text())
         except ValueError:
             return
         lines: list[str] = [
             "G20" if self.inches else "G21",
             f"G10 L20 P1 {axis}{value:g}",
         ]
-        if not messagebox.askyesno(
+        if not ask_yes_no(
+            self,
             f"Set {axis}",
             f"Make the current {axis} read {value:g}: run {lines[-1]}?",
-            default="no",
         ):
             return
         try:
             self.machine.mdi(*lines)
         except RuntimeError as error:
-            self.message.configure(text=str(error))
+            self.message.setText(str(error))
             return
 
         # All three axes set, one by one, make the origin set.
@@ -2056,7 +935,7 @@ class HMI:
             self.mark_origin_set()
         else:
             left: str = " ".join(a for a in AXES if a not in self.axes_set)
-            self.message.configure(text=f"Origin still to set: {left}")
+            self.message.setText(f"Origin still to set: {left}")
 
     # Method `HMI.use_setup()`:
     def use_setup(self, assembly: Assembly) -> None:
@@ -2069,7 +948,7 @@ class HMI:
         try:
             shop: dict[str, object] = shops.read(SHOP_FILE)
         except ValueError as error:
-            self.message.configure(text=f"Shop not read: {error}")
+            self.message.setText(f"Shop not read: {error}")
             shop = {}
         self.program_material = (
             setup_material(assembly, material_names(shop)) or MATERIAL
@@ -2085,9 +964,7 @@ class HMI:
             if self.machine.set_work_origin(origin):
                 self.origin_set = True
             else:
-                self.message.configure(
-                    text="Origin not set: a program is running"
-                )
+                self.message.setText("Origin not set: a program is running")
 
         # Its keep-outs and its tools' radii, for checking jogs.
         try:
@@ -2100,30 +977,43 @@ class HMI:
             }
         except (ValueError, KeyError) as error:
             self.zones = None
-            self.message.configure(text=f"Setup keep-outs: {error}")
+            self.message.setText(f"Setup keep-outs: {error}")
 
         # Its origins, for Set Origin, then its drawing.
         try:
             self.origins = named_origins(assembly)
         except ValueError as error:
-            self.message.configure(text=f"Setup origins: {error}")
+            self.message.setText(f"Setup origins: {error}")
         if self.drawer is not None:
             self.drawn = assembly
             self.drawer.draw(assembly)
             self.drawing = True
             self.set_running(self.running, self.paused)
 
+    # Method `HMI.set_material()`:
+    def set_material(self, material: str) -> None:
+        """Show a material in the Tools tab's chooser.
+
+        Arguments:
+        * `material` (`str`): The material's name.
+        """
+        index: int = self.material_chooser.findText(material)
+        if index < 0:
+            self.material_chooser.addItem(material)
+            index = self.material_chooser.count() - 1
+        self.material_chooser.setCurrentIndex(index)
+
     # Method `HMI.load_tools()`:
     def load_tools(self) -> None:
         """Send the tool table for the program's material, if idle."""
-        self.material.set(self.program_material)
+        self.set_material(self.program_material)
         try:
             if not self.machine.write_tool_table(self.program_material):
-                self.message.configure(
-                    text="Tool table not sent: a program is running"
+                self.message.setText(
+                    "Tool table not sent: a program is running"
                 )
         except (ValueError, RuntimeError, BridgeError) as error:
-            self.message.configure(text=f"Tool table: {error}")
+            self.message.setText(f"Tool table: {error}")
 
     # Method `HMI.open_setup()`:
     def open_setup(self, path: str) -> None:
@@ -2148,7 +1038,7 @@ class HMI:
             text: str = Path(path).read_text(encoding="utf-8")
         except (OSError, ValueError) as error:
             self.load_tools()
-            self.message.configure(text=f"Setup not read: {error}")
+            self.message.setText(f"Setup not read: {error}")
             return
         self.inches = program_inches(text.splitlines())
         if assembly is not None:
@@ -2159,33 +1049,35 @@ class HMI:
     # Method `HMI.on_open()`:
     def on_open(self) -> None:
         """Choose a program with a file window, and open it."""
-        path: str = filedialog.askopenfilename(
-            title="Open G-code",
-            filetypes=[("G-code", "*.ngc *.nc *.gcode"), ("All", "*")],
-        )
+        path: str = ask_open_file(self)
         if path:
             try:
                 self.open(path)
             except (ValueError, OSError) as error:
-                self.message.configure(text=str(error))
+                self.message.setText(str(error))
 
     # Method `HMI.show_tools()`:
     def show_tools(self) -> None:
         """Fill the Tools tab: the tools' speeds and feeds."""
         # The shop is read again each time, so edits to it show.
         text: str
+        material: str = self.material_chooser.currentText()
         try:
             shop: dict[str, object] = shops.read(SHOP_FILE)
         except ValueError as error:
             text = f"The shop could not be read:\n{error}"
         else:
-            self.material_chooser.configure(values=material_names(shop))
-            text = tool_speeds(shop, SHOP_MACHINE, self.material.get())
+            blocked: bool = self.material_chooser.blockSignals(True)
+            self.material_chooser.clear()
+            self.material_chooser.addItems(material_names(shop))
+            self.material_chooser.blockSignals(blocked)
+            self.set_material(material)
+            text = tool_speeds(shop, SHOP_MACHINE, material)
 
             # The carousel's slots and swaps for the program open.
             try:
                 machine: Machine = shops.cnc_machine(
-                    shop, SHOP_MACHINE, self.material.get()
+                    shop, SHOP_MACHINE, material
                 )
                 loads: list[str] = plan_text(
                     machine, gcode_sequence(self.lines)
@@ -2194,10 +1086,7 @@ class HMI:
                 loads = [f"Carousel: {error}"]
             if loads:
                 text = "\n".join([*loads, "", text])
-        self.tools_table.configure(state="normal")
-        self.tools_table.delete("1.0", "end")
-        self.tools_table.insert("1.0", text)
-        self.tools_table.configure(state="disabled")
+        self.tools_table.setPlainText(text)
 
     # Method `HMI.tab()`:
     def tab(self) -> str:
@@ -2206,11 +1095,7 @@ class HMI:
         Returns:
         * (`str`): One of `TABS`.
         """
-        # `typeshed` leaves `Notebook.index()` untyped.
-        current: int = self.notebook.index(  # type: ignore[no-untyped-call]
-            "current"
-        )
-        return TABS[current]
+        return TABS[self.notebook.currentIndex()]
 
     # Method `HMI.select_tab()`:
     def select_tab(self, name: str) -> None:
@@ -2224,12 +1109,7 @@ class HMI:
         """
         if name not in self.tabs:
             raise ValueError(f"no tab {name} (tabs: {', '.join(TABS)})")
-        # `typeshed` leaves `Notebook.select()` untyped.
-        self.notebook.select(  # type: ignore[no-untyped-call]
-            self.tabs[name]
-        )
-        if tk is lcnc_hmi_headless:
-            self.on_tab_changed()
+        self.notebook.setCurrentWidget(self.tabs[name])
 
     # Method `HMI.on_tab_changed()`:
     def on_tab_changed(self) -> None:
@@ -2240,7 +1120,7 @@ class HMI:
     # Method `HMI.on_run()`:
     def on_run(self) -> None:
         """Run the program, or resume it after a pause."""
-        self.message.configure(text="")
+        self.message.setText("")
         self.operator_paused = False
         if self.paused:
             self.machine.resume()
@@ -2275,15 +1155,30 @@ class HMI:
     # Method `HMI.on_execute()`:
     def on_execute(self) -> None:
         """Run the MDI line, unless it would enter a keep-out."""
-        line: str = self.mdi.get().strip()
+        line: str = self.mdi_entry.text().strip()
         self.jog_refusal = self.mdi_refusal(line)
         if self.jog_refusal:
-            self.message.configure(text=self.jog_refusal)
+            self.message.setText(self.jog_refusal)
             return
         try:
             self.machine.mdi(line)
         except RuntimeError as error:
-            self.message.configure(text=str(error))
+            self.message.setText(str(error))
+
+    # Method `HMI.unchecked()`:
+    def unchecked(self) -> str:
+        """Return why moves are not checked against keep-outs now.
+
+        Keep-outs mean something only with a setup and its origin.
+
+        Returns:
+        * (`str`): `no setup`, `origin not set`, or `""` to check.
+        """
+        if self.zones is None:
+            return "no setup"
+        if not self.origin_set:
+            return "origin not set"
+        return ""
 
     # Method `HMI.mdi_refusal()`:
     def mdi_refusal(self, line: str) -> str:
@@ -2300,18 +1195,12 @@ class HMI:
         Returns:
         * (`str`): Why it is refused, or `""` to run it.
         """
-        # Keep-outs mean something only with a setup and its origin.
-        unchecked: str = (
-            "no setup"
-            if self.zones is None
-            else "origin not set"
-            if not self.origin_set
-            else ""
-        )
+        # Nothing to check against: said once.
+        unchecked: str = self.unchecked()
         if unchecked:
             if unchecked != self.jog_note:
                 self.jog_note = unchecked
-                self.message.configure(text=f"MDI not checked: {unchecked}")
+                self.message.setText(f"MDI not checked: {unchecked}")
             return ""
 
         # The distance mode and units: LinuxCNC's, unless the line sets
@@ -2346,7 +1235,7 @@ class HMI:
     # Method `HMI.on_stop()`:
     def on_stop(self) -> None:
         """Stop at once, ready to run again from the program's start."""
-        self.message.configure(text="")
+        self.message.setText("")
         self.operator_paused = False
         self.machine.stop()
         self.start = 0
@@ -2360,21 +1249,15 @@ class HMI:
         * `axis` (`int`): The axis: 0 for X, 1 for Y, 2 for Z.
         * `direction` (`int`): +1 or -1.
         """
-        step: float = float(self.step.get())
+        step: float = float(self.step())
         self.jog_refusal = ""
 
-        # Keep-outs mean something only with a setup and its origin.
-        unchecked: str = (
-            "no setup"
-            if self.zones is None
-            else "origin not set"
-            if not self.origin_set
-            else ""
-        )
+        # Nothing to check against: said once, and the jog is sent.
+        unchecked: str = self.unchecked()
         if unchecked:
             if unchecked != self.jog_note:
                 self.jog_note = unchecked
-                self.message.configure(text=f"Jogs not checked: {unchecked}")
+                self.message.setText(f"Jogs not checked: {unchecked}")
             self.machine.jog(axis, direction, step)
             return
 
@@ -2395,7 +1278,7 @@ class HMI:
                 f"Jog refused: it would enter {hit}; choose a smaller "
                 "step and try again"
             )
-            self.message.configure(text=self.jog_refusal)
+            self.message.setText(self.jog_refusal)
             return
         self.machine.jog(axis, direction, step)
 
@@ -2405,7 +1288,7 @@ class HMI:
         try:
             self.machine.go_origin(self.machine.status().position[2])
         except RuntimeError as error:
-            self.message.configure(text=str(error))
+            self.message.setText(str(error))
 
     # Method `HMI.on_set_origin()`:
     def on_set_origin(self) -> None:
@@ -2417,15 +1300,13 @@ class HMI:
         if self.origins:
             self.set_named_origin()
             return
-        if messagebox.askyesno(
-            "Set Origin",
-            "Make the current position the program's zero?",
-            default="no",
+        if ask_yes_no(
+            self, "Set Origin", "Make the current position the program's zero?"
         ):
             try:
                 self.machine.set_origin()
             except RuntimeError as error:
-                self.message.configure(text=str(error))
+                self.message.setText(str(error))
             else:
                 self.mark_origin_set()
 
@@ -2437,7 +1318,7 @@ class HMI:
         the step after the last shows the whole setup again.
         """
         if self.assembly is None:
-            self.message.configure(text="This program has no setup.")
+            self.message.setText("This program has no setup.")
             return
         items: list[AssemblyItem] = self.assembly.items
         self.setup_step += 1
@@ -2454,7 +1335,7 @@ class HMI:
                 f"{item.name.replace('_', ' ')}: {item.note}"
             )
         self.note = text
-        self.message.configure(text=text)
+        self.message.setText(text)
         if self.drawer is not None:
             self.drawn = shown
             self.drawer.draw(shown)
@@ -2468,12 +1349,12 @@ class HMI:
         made later (Next Step, a new open) keeps the same choices.
         """
         if self.drawer is None:
-            self.message.configure(text="No SolidCraft to show them in.")
+            self.message.setText("No SolidCraft to show them in.")
             return
         self.drawer.hidden = {
             kind
             for label, kind, _ in TOGGLES
-            if not bool(self.toggles[label].get())
+            if not self.toggles[label].isChecked()
         }
         if self.drawn is not None:
             self.drawer.draw(self.drawn)
@@ -2483,37 +1364,37 @@ class HMI:
         """Pick the origin the tool tip is at, confirm, and set G54."""
         names: list[str] = [name for name, _ in self.origins]
         picked: str = ask_choice(
-            self.root, "Set Origin", "Where is the tool tip now?", names
+            self, "Set Origin", "Where is the tool tip now?", names
         )
         if not picked:
             return
         point: Point = dict(self.origins)[picked]
         lines: list[str] = origin_lines(point, self.inches)
-        if messagebox.askyesno(
+        if ask_yes_no(
+            self,
             "Set Origin",
             f"The tool tip is at {picked}: run {lines[-1]}?",
-            default="no",
         ):
             try:
                 self.machine.mdi(*lines)
             except RuntimeError as error:
-                self.message.configure(text=str(error))
+                self.message.setText(str(error))
             else:
                 self.mark_origin_set()
 
-    # Method `HMI.widgets()`:
-    def widgets(self, parent: Any = None) -> Iterator[Any]:
-        """Walk every widget, top windows and their insides.
+    # Method `HMI.buttons()`:
+    def buttons(self) -> list[QAbstractButton]:
+        """Return every button with a label, on every tab.
 
-        Arguments:
-        * `parent` (`Any`): Where to start (`None` for the root).
-
-        Yields:
-        * (`Any`): Each widget inside it.
+        Returns:
+        * (`list[QAbstractButton]`): The buttons, check buttons and
+          jog steps.
         """
-        for widget in (parent or self.root).winfo_children():
-            yield widget
-            yield from self.widgets(widget)
+        return [
+            button
+            for button in self.findChildren(QAbstractButton)
+            if button.text()
+        ]
 
     # Method `HMI.press()`:
     def press(self, label: str) -> str:
@@ -2526,79 +1407,76 @@ class HMI:
         * (`str`): `ok`, or `error: ...` when there is no such button
           or it is greyed out.
         """
-        for widget in self.widgets():
-            if (
-                widget.winfo_class() in BUTTONS
-                and str(widget.cget("text")) == label
-            ):
-                if str(widget.cget("state")) == "disabled":
+        button: QAbstractButton
+        for button in self.buttons():
+            if button.text() == label:
+                if not button.isEnabled():
                     return f"error: {label} is greyed out"
                 self.jog_refusal = ""
-                widget.invoke()
+                button.click()
                 return (
                     f"error: {self.jog_refusal}" if self.jog_refusal else "ok"
                 )
         return f"error: no button {label}"
 
-    # Method `HMI.show()`:
-    def show(self) -> dict[str, Any]:
-        """Return what the window shows.
+    # Method `HMI.show_state()`:
+    def show_state(self) -> dict[str, Any]:
+        """Return what the window shows (`show()` is `QWidget`'s).
 
         Returns:
         * (`dict[str, Any]`): `executed` and `coming` (the G-code
           windows), `position`, `message`, `mdi` and `mdi_color` (the
           MDI line), `step` and `speed` (those shown), `buttons` (each
-          button's state, by its text) and `texts` (the contents of
-          every text window, such as Tools), and `drawing` (True while
-          a setup is being drawn in SolidCraft) and `origins` (the
-          setup's named origins, work millimeters) and `setup_step`
-          (how many setup items Next Step shows; 0 for all),
-          `origin_set` (True once the program's origin is set),
-          `toggles` (each View toggle, True when shown), `axes_set`
-          (the axes set one by one, or all), `axis_entries`
-          (the numbers typed for them),
-          `next_tool` (the next tool and the time left until it), and
-          `tab` (the name of the tab shown).
+          button's state, `normal` or `disabled`, by its text) and
+          `texts` (the contents of every text window, such as Tools),
+          and `drawing` (True while a setup is being drawn in
+          SolidCraft) and `origins` (the setup's named origins, work
+          millimeters) and `setup_step` (how many setup items Next
+          Step shows; 0 for all), `origin_set` (True once the
+          program's origin is set), `toggles` (each View toggle, True
+          when shown), `axes_set` (the axes set one by one, or all),
+          `axis_entries` (the numbers typed for them), `next_tool`
+          (the next tool and the time left until it), `tab` (the name
+          of the tab shown), and `setup_progress` (how much of the
+          setup is drawn, of how much).
         """
-        widgets: list[Any] = list(self.widgets())
         return {
-            "executed": self.executed.get("1.0", "end-1c"),
-            "coming": self.coming.get("1.0", "end-1c"),
-            "position": str(self.position.cget("text")),
-            "message": str(self.message.cget("text")),
-            "mdi": self.mdi.get(),
-            "mdi_color": str(self.mdi_entry.cget("background")),
-            "step": self.step.get(),
-            "speed": self.speed_text.get(),
+            "executed": self.executed.toPlainText(),
+            "coming": self.coming.toPlainText(),
+            "position": self.position.text(),
+            "message": self.message.text(),
+            "mdi": self.mdi_entry.text(),
+            "mdi_color": str(self.mdi_entry.property("background")),
+            "step": self.step(),
+            "speed": self.speed_text.text(),
             "drawing": self.drawer is not None and self.drawer.busy,
             "origins": dict(self.origins),
             "setup_step": self.setup_step,
             "origin_set": self.origin_set,
             "toggles": {
-                label: bool(self.toggles[label].get())
+                label: self.toggles[label].isChecked()
                 for label, _, _ in TOGGLES
             },
             "axes_set": sorted(self.axes_set),
             "axis_entries": {
-                axis: self.axis_texts[axis].get() for axis in AXES
+                axis: self.axis_entries[axis].text() for axis in AXES
             },
-            "next_tool": str(self.next_tool.cget("text")),
+            "next_tool": self.next_tool.text(),
             "tab": self.tab(),
-            "setup_progress": [
-                int(float(self.progress.cget("value"))),
-                int(float(self.progress.cget("maximum"))),
-            ],
+            "setup_progress": [self.progress.value(), self.progress.maximum()],
             "buttons": {
-                str(widget.cget("text")): str(widget.cget("state") or "normal")
-                for widget in widgets
-                if widget.winfo_class() in BUTTONS
+                button.text(): "normal" if button.isEnabled() else "disabled"
+                for button in self.buttons()
             },
             "texts": [
-                widget.get("1.0", "end-1c")
-                for widget in widgets
-                if widget.winfo_class() == "Text"
+                text.toPlainText()
+                for text in self.findChildren(QPlainTextEdit)
             ],
         }
+
+    # Method `HMI.ping()`:
+    def ping(self) -> None:
+        """Do nothing (the port's `ping`)."""
 
     # Method `HMI.handle()`:
     # A flat list of commands reads best, so it has many returns and
@@ -2615,7 +1493,7 @@ class HMI:
         """
         word, _, rest = line.partition(" ")
         actions: dict[str, Any] = {
-            "ping": lambda: None,
+            "ping": self.ping,
             "run": self.on_run,
             "start": self.on_run,
             "pause": self.on_pause,
@@ -2623,7 +1501,7 @@ class HMI:
             "reset": self.on_stop,
             "tool+": functools.partial(self.on_tool, +1),
             "tool-": functools.partial(self.on_tool, -1),
-            "quit": self.root.destroy,
+            "quit": self.close,
         }
         try:
             if word in actions:
@@ -2634,15 +1512,15 @@ class HMI:
                 axis, _, value = rest.strip().partition(" ")
                 if axis.upper() not in AXES:
                     return f"error: no axis {axis}"
-                self.axis_texts[axis.upper()].set(value.strip())
+                self.axis_entries[axis.upper()].setText(value.strip())
             elif word == "tab" and rest:
                 self.select_tab(rest.strip())
             elif word == "type":
-                self.mdi.set(rest)
+                self.mdi_entry.setText(rest)
             elif word == "show":
-                return json.dumps(self.show())
-            elif word == "answer" and tk is lcnc_hmi_headless:
-                lcnc_hmi_headless.ANSWERS.append(rest.strip())
+                return json.dumps(self.show_state())
+            elif word == "answer" and HEADLESS:
+                ANSWERS.append(rest.strip())
             elif word == "open" and rest:
                 self.open(rest.strip())
             elif word == "speed" and rest:
@@ -2686,45 +1564,78 @@ class HMI:
         ):
             self.drawer.draw(self.drawn)
 
-    # Method `HMI.poll()`:
-    # One pass over everything the window shows, so many branches.
-    def poll(self) -> None:  # pylint: disable=too-many-branches
-        """Show the machine's state, answer the port, then poll again."""
+    # Method `HMI.show_drawing()`:
+    def show_drawing(self) -> None:
+        """Show how far the setup's drawing is, and any error in it."""
         # While a setup is drawn, Start waits, and the bar shows how far.
-        if self.drawer is not None:
-            done, total = self.drawer.view.progress
-            self.progress.configure(maximum=max(total, 1), value=done)
-            if self.drawer.busy != self.drawing:
-                self.drawing = self.drawer.busy
-                self.set_running(self.running, self.paused)
+        if self.drawer is None:
+            return
+        done, total = self.drawer.view.progress
+        self.progress.setRange(0, max(total, 1))
+        self.progress.setValue(done)
+        if self.drawer.busy != self.drawing:
+            self.drawing = self.drawer.busy
+            self.set_running(self.running, self.paused)
 
-        # A setup that could not be drawn (from the drawing thread).
-        if self.drawer is not None:
-            problem: str = self.drawer.message()
-            if problem:
-                # A step's note stays first, the error after it.
-                self.message.configure(
-                    text=f"{self.note} ({problem})" if self.note else problem
-                )
+        # A setup that could not be drawn (from the drawing thread); a
+        # step's note stays first, the error after it.
+        problem: str = self.drawer.message()
+        if problem:
+            self.message.setText(
+                f"{self.note} ({problem})" if self.note else problem
+            )
+
+    # Method `HMI.show_program()`:
+    def show_program(self, status: HMIStatus) -> None:
+        """Show the program around the line being run.
+
+        Before a run, the lines from the start line on are coming.
+        While paused, the whole program is in the two windows, put
+        there once so that they can be scrolled.
+
+        Arguments:
+        * `status` (`HMIStatus`): LinuxCNC's state.
+        """
+        current: int = status.line if self.running else max(0, self.start - 1)
+        if self.paused and not self.scrolling:
+            self.executed.setPlainText("\n".join(self.lines[:current]))
+            self.coming.setPlainText("\n".join(self.lines[current:]))
+            done: Any = self.executed.verticalScrollBar()
+            done.setValue(done.maximum())
+            self.coming.verticalScrollBar().setValue(0)
+            self.scrolling = True
+        elif not self.paused:
+            self.scrolling = False
+            self.executed.setPlainText(
+                "\n".join(self.lines[max(0, current - SHOWN) : current])
+            )
+            self.coming.setPlainText(
+                "\n".join(self.lines[current : current + SHOWN])
+            )
+
+    # Method `HMI.poll()`:
+    def poll(self) -> None:
+        """Show the machine's state, and answer the port (`timer`)."""
+        # The setup's drawing.
+        self.show_drawing()
 
         # A LinuxCNC that has gone is reported, while the port still
         # answers, and the window stays up to be read.
         try:
             status: HMIStatus = self.machine.status()
         except (OSError, BridgeError) as error:
-            self.message.configure(text=f"LinuxCNC is not answering: {error}")
+            self.message.setText(f"LinuxCNC is not answering: {error}")
             if self.port is not None:
                 self.port.poll(self.handle)
-            self.root.after(POLL_MS, self.poll)
             return
 
-        # The program around the line being run, read once per file.
+        # The program, read once per file.  The buttons follow
+        # LinuxCNC's state (a program may end, or be stopped, without
+        # the HMI).
         if status.file != self.lines_file:
             self.lines_file = status.file
             self.lines = self.machine.program_lines(status.file)
             self.time_program()
-        # The buttons follow LinuxCNC's state (a program may end, or be
-        # stopped, without the HMI).
         if status.state and (
             (status.state != "idle", status.state == "paused")
             != (self.running, self.paused)
@@ -2734,42 +1645,18 @@ class HMI:
         # A pause no one asked for is the program's (`M0`, at a tool
         # change; its `MSG` is on the message line).  A person presses
         # Start (Resume); with no one there (headless), it goes on.
-        if (
-            status.state == "paused"
-            and not self.operator_paused
-            and tk is lcnc_hmi_headless
-        ):
+        if status.state == "paused" and not self.operator_paused and HEADLESS:
             self.machine.resume()
             self.set_running(True, False)
-
-        # Before a run, the lines from the start line on are coming.
-        # While paused, the whole program is in the two windows, put
-        # there once so that they can be scrolled.
-        current: int = status.line if self.running else max(0, self.start - 1)
-        if self.paused and not self.scrolling:
-            self.set_text(self.executed, self.lines[:current])
-            self.set_text(self.coming, self.lines[current:])
-            self.executed.see("end")
-            self.coming.yview_moveto(0.0)
-            self.scrolling = True
-        elif not self.paused:
-            self.scrolling = False
-            self.set_text(
-                self.executed, self.lines[max(0, current - SHOWN) : current]
-            )
-            self.set_text(self.coming, self.lines[current : current + SHOWN])
+        self.show_program(status)
 
         # Home only while stopped, away from the origin; Set Origin
         # also while this program's origin is not set yet.
         x, y, z = status.position
         away: bool = max(abs(x), abs(y), abs(z)) > AT_ORIGIN
-        self.home_button.configure(
-            state="normal" if away and not self.running else "disabled"
-        )
-        self.origin_button.configure(
-            state="normal"
-            if (away or not self.origin_set) and not self.running
-            else "disabled"
+        self.home_button.setEnabled(away and not self.running)
+        self.origin_button.setEnabled(
+            (away or not self.origin_set) and not self.running
         )
 
         # A tool drawn since (a tool change) follows the Holders toggle.
@@ -2777,8 +1664,8 @@ class HMI:
 
         # The next tool, and the time left until it (cheap: the line
         # times are added up once per program).
-        self.next_tool.configure(
-            text=next_tool_text(
+        self.next_tool.setText(
+            next_tool_text(
                 self.lines,
                 self.sums,
                 self.spans,
@@ -2788,18 +1675,30 @@ class HMI:
         )
 
         # The position, the tool and any message.
-        self.position.configure(
-            text=f"X {x:9.4f}  Y {y:9.4f}  Z {z:9.4f}  T{status.tool:02d}"
+        self.position.setText(
+            f"X {x:9.4f}  Y {y:9.4f}  Z {z:9.4f}  T{status.tool:02d}"
             f"  start line {self.start}  "
             f"{self.program_machine}, {self.program_material}"
         )
         if status.messages:
-            self.message.configure(text=status.messages[-1])
+            self.message.setText(status.messages[-1])
 
         # Commands from the port.
         if self.port is not None:
             self.port.poll(self.handle)
-        self.root.after(POLL_MS, self.poll)
+
+
+# Function `run()`:
+def run(application: QApplication) -> int:
+    """Run Qt's loop until the last window closes.
+
+    Arguments:
+    * `application` (`QApplication`): The application.
+
+    Returns:
+    * (`int`): The exit status.
+    """
+    return application.exec()
 
 
 # Function `main()`:
@@ -2842,14 +1741,11 @@ def main(arguments: list[str]) -> int:
     parser.add_argument(
         "--headless",
         action="store_true",
-        help="use no display or tkinter, for tests through --port",
+        help="draw nothing (Qt offscreen), for tests through --port",
     )
     options: argparse.Namespace = parser.parse_args(arguments)
     if options.headless:
         use_headless()
-    elif tk is lcnc_hmi_headless:
-        print("lcnc_hmi.py: tkinter is not installed.", file=sys.stderr)
-        return 1
 
     # The machine, on and homed, and the command port.
     try:
@@ -2878,21 +1774,33 @@ def main(arguments: list[str]) -> int:
         else None
     )
 
-    # The window.  A `SIGTERM` closes it as its close button does.  An
-    # earlier HMI may have left another speed, and the slider starts
-    # at the programmed feed.
-    root: tk.Tk = tk.Tk()
-    panel: HMI = HMI(root, machine, top_speed, port)
-    panel.set_speed(1.0)
-    panel.drawer = drawer
-    signal.signal(signal.SIGTERM, lambda *_: root.destroy())
+    # The window.  An earlier HMI may have left another speed, and the
+    # slider starts at the programmed feed.
+    found: Any = QApplication.instance()
+    application: QApplication = found or QApplication(sys.argv[:1])
+    hmi: HMI = HMI(machine, top_speed, port)
+    hmi.set_speed(1.0)
+    hmi.drawer = drawer
+
+    # A `SIGTERM` closes it as Quit does (Python sees the signal at
+    # the next `poll()`, as Qt's loop is not Python's).
+    def terminate(_number: int, _frame: FrameType | None) -> None:
+        """Close the window on a `SIGTERM`.
+
+        Arguments:
+        * `_number` (`int`): The signal (ignored).
+        * `_frame` (`FrameType | None`): Where Python was (ignored).
+        """
+        hmi.close()
+
+    signal.signal(signal.SIGTERM, terminate)
     if options.program:
         try:
-            panel.open(options.program)
+            hmi.open(options.program)
         except (ValueError, OSError) as error:
-            panel.message.configure(text=str(error))
-    root.mainloop()
-    return 0
+            hmi.message.setText(str(error))
+    hmi.show()
+    return run(application)
 
 
 if __name__ == "__main__":

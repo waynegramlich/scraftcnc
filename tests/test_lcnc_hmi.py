@@ -17,7 +17,7 @@ from unittest import mock
 from scraftcam import shops
 from scraftcam.assembly import Assembly
 from scraftcam.demo import demo_assembly, with_setup
-from scraftcam.hmi import lcnc_hmi, lcnc_hmi_qt
+from scraftcam.hmi import hmi_machine, lcnc_hmi
 from scraftcam.lcnc.lcnc_client import BridgeError
 from scraftcam.setups import SHOP as EXAMPLE_SHOP
 from scraftcam.tooling.shop_registries import use_shop
@@ -34,24 +34,26 @@ class TestToolSpeeds(unittest.TestCase):
     """The tools' speeds and feeds, as the Tools window lists them."""
 
     def setUp(self) -> None:
-        self.shop = shops.read(lcnc_hmi.SHOP_FILE)
+        self.shop = shops.read(hmi_machine.SHOP_FILE)
 
     def test_materials(self) -> None:
         """The chooser lists the shop's materials."""
-        names = lcnc_hmi.material_names(self.shop)
+        names = hmi_machine.material_names(self.shop)
         self.assertIn("6061 aluminum", names)
         self.assertIn("hdpe", names)
 
     def test_table(self) -> None:
         """One line per loaded tool."""
-        text = lcnc_hmi.tool_speeds(self.shop, lcnc_hmi.SHOP_MACHINE, "steel")
+        text = hmi_machine.tool_speeds(
+            self.shop, hmi_machine.SHOP_MACHINE, "steel"
+        )
         self.assertIn("cutting steel", text)
         self.assertIn("1630   6.5     6.5  15/64 in HSS jobber drill", text)
 
     def test_problem(self) -> None:
         """A problem is shown in place of the table."""
-        text = lcnc_hmi.tool_speeds(
-            self.shop, lcnc_hmi.SHOP_MACHINE, "unobtainium"
+        text = hmi_machine.tool_speeds(
+            self.shop, hmi_machine.SHOP_MACHINE, "unobtainium"
         )
         self.assertIn('"unobtainium" is not one of', text)
 
@@ -104,9 +106,9 @@ class FakeClient:
         return [call[1:] for call in self.calls if call[0] == name]
 
 
-def client_machine() -> tuple[lcnc_hmi.HMIMachine, FakeClient]:
+def client_machine() -> tuple[hmi_machine.HMIMachine, FakeClient]:
     """Return a machine connected to a `FakeClient`."""
-    machine = lcnc_hmi.HMIMachine(True)
+    machine = hmi_machine.HMIMachine(True)
     lcnc = FakeClient()
     machine.lcnc = cast(Any, lcnc)
     machine.constants = {
@@ -126,17 +128,19 @@ class TestConnecting(unittest.TestCase):
             unused.bind(("127.0.0.1", 0))
             port = unused.getsockname()[1]
         with self.assertRaisesRegex(RuntimeError, "serve_linuxcnc"):
-            lcnc_hmi.HMIMachine(False, port)
+            hmi_machine.HMIMachine(False, port)
 
     def test_old_server(self) -> None:
         """A server of an older protocol says what to do."""
         client = mock.MagicMock()
         client.call.return_value = {"protocol": 1}
         with (
-            mock.patch.object(lcnc_hmi, "BridgeClient", return_value=client),
+            mock.patch.object(
+                hmi_machine, "BridgeClient", return_value=client
+            ),
             self.assertRaisesRegex(RuntimeError, "install_linuxcnc"),
         ):
-            lcnc_hmi.HMIMachine(False)
+            hmi_machine.HMIMachine(False)
 
 
 class TestStart(unittest.TestCase):
@@ -327,7 +331,7 @@ class TestMessages(unittest.TestCase):
 
         # The port shows them, and something when there are none.
         panel = mock.MagicMock(machine=machine)
-        handle = lcnc_hmi_qt.HMI.handle
+        handle = lcnc_hmi.HMI.handle
         self.assertEqual(handle(panel, "messages"), "messages: first")
         machine.messages = []
         self.assertEqual(handle(panel, "messages"), "messages: ")
@@ -337,7 +341,7 @@ class TestHeadless(unittest.TestCase):
     """The whole panel, with no display, pressed through its port's words."""
 
     def setUp(self) -> None:
-        self.machine = lcnc_hmi.HMIMachine(True)
+        self.machine = hmi_machine.HMIMachine(True)
         self.panel = make_hmi(self.machine)
         # pylint: disable-next=consider-using-with
         scratch = tempfile.TemporaryDirectory()
@@ -428,10 +432,12 @@ class TestHeadless(unittest.TestCase):
     def test_mdi_line(self) -> None:
         """The MDI line is colored, and only good lines can run."""
         self.ask("type not a line")
-        self.assertEqual(self.panel.show_state()["mdi_color"], lcnc_hmi.BAD)
+        self.assertEqual(self.panel.show_state()["mdi_color"], hmi_machine.BAD)
         self.assertIn("greyed out", self.ask("press Execute"))
         self.ask("type G0 X1")
-        self.assertEqual(self.panel.show_state()["mdi_color"], lcnc_hmi.GOOD)
+        self.assertEqual(
+            self.panel.show_state()["mdi_color"], hmi_machine.GOOD
+        )
         self.assertEqual(self.ask("press Execute"), "ok")
         self.assertEqual(self.machine.log[-1], "mdi G0 X1")
 
@@ -445,12 +451,14 @@ class TestHeadless(unittest.TestCase):
     def test_set_origin_asks(self) -> None:
         """Set Origin does nothing unless the answer is yes."""
         self.machine.status = mock.MagicMock(  # type: ignore[method-assign]
-            return_value=lcnc_hmi.HMIStatus("", 0, (1.0, 0.0, 0.0), 0, [], "")
+            return_value=hmi_machine.HMIStatus(
+                "", 0, (1.0, 0.0, 0.0), 0, [], ""
+            )
         )
         self.tick()
         self.assertEqual(self.ask("press Set Origin"), "ok")
         self.assertNotIn("mdi G10 L20 P1 X0 Y0 Z0", self.machine.log)
-        self.assertIn("Set Origin", lcnc_hmi_qt.ASKED[0])
+        self.assertIn("Set Origin", lcnc_hmi.ASKED[0])
         self.ask("answer yes")
         self.ask("press Set Origin")
         self.assertIn("mdi G10 L20 P1 X0 Y0 Z0", self.machine.log)
@@ -463,7 +471,7 @@ class TestHeadless(unittest.TestCase):
         self.ask("press Open")
         self.assertEqual(
             self.machine.log,
-            [f"open {self.file}", f"tool table {lcnc_hmi.MATERIAL}"],
+            [f"open {self.file}", f"tool table {hmi_machine.MATERIAL}"],
         )
 
     def test_tools_tab(self) -> None:
@@ -475,7 +483,7 @@ class TestHeadless(unittest.TestCase):
     def test_tabs(self) -> None:
         """Each tab can be shown, and `show` says which one is."""
         self.assertEqual(self.panel.show_state()["tab"], "Run")
-        for name in lcnc_hmi.TABS:
+        for name in hmi_machine.TABS:
             self.assertEqual(self.ask(f"tab {name}"), "ok")
             self.assertEqual(self.panel.show_state()["tab"], name)
         self.assertIn("error: no tab Nope", self.ask("tab Nope"))
@@ -541,10 +549,10 @@ class TestSetupDrawing(unittest.TestCase):
 
     def setUp(self) -> None:
         use_shop(shops.read(EXAMPLE_SHOP))
-        self.machine = lcnc_hmi.HMIMachine(True)
+        self.machine = hmi_machine.HMIMachine(True)
         self.panel = make_hmi(self.machine)
         self.view = FakeView()
-        self.panel.drawer = lcnc_hmi.SetupDrawer(self.view)
+        self.panel.drawer = hmi_machine.SetupDrawer(self.view)
         # pylint: disable-next=consider-using-with
         scratch = tempfile.TemporaryDirectory()
         self.addCleanup(scratch.cleanup)
@@ -596,7 +604,7 @@ class TestSetupDrawing(unittest.TestCase):
         """No setup, or a material the shop lacks: `MATERIAL` is used."""
         self.panel.open(self.program(self.gcode))
         self.assertEqual(
-            self.machine.log[-1], f"tool table {lcnc_hmi.MATERIAL}"
+            self.machine.log[-1], f"tool table {hmi_machine.MATERIAL}"
         )
         assembly = demo_assembly()
         for item in assembly.items:
@@ -604,17 +612,17 @@ class TestSetupDrawing(unittest.TestCase):
                 item.args["material"] = "unobtainium"
         self.panel.open(self.program(with_setup(self.gcode, assembly)))
         self.assertEqual(
-            self.machine.log[-1], f"tool table {lcnc_hmi.MATERIAL}"
+            self.machine.log[-1], f"tool table {hmi_machine.MATERIAL}"
         )
         self.assertEqual(
-            self.panel.material_chooser.currentText(), lcnc_hmi.MATERIAL
+            self.panel.material_chooser.currentText(), hmi_machine.MATERIAL
         )
 
     def test_origin_from_setup(self) -> None:
         """The demo's table and the shop's table place: (4, 3, -6) in."""
         assembly = demo_assembly()
-        origin = lcnc_hmi.setup_origin(
-            assembly, shops.read(EXAMPLE_SHOP), lcnc_hmi.SHOP_MACHINE
+        origin = hmi_machine.setup_origin(
+            assembly, shops.read(EXAMPLE_SHOP), hmi_machine.SHOP_MACHINE
         )
         assert origin is not None
         for got, want in zip(origin, (4.0, 3.0, -6.0), strict=True):
@@ -638,10 +646,12 @@ class TestSetupDrawing(unittest.TestCase):
         """Without the table's place, no origin is worked out."""
         shop = shops.read(EXAMPLE_SHOP)
         self.assertIsNone(
-            lcnc_hmi.setup_origin(demo_assembly(), shop, "Shop router")
+            hmi_machine.setup_origin(demo_assembly(), shop, "Shop router")
         )
         self.assertIsNone(
-            lcnc_hmi.setup_origin(Assembly([]), shop, lcnc_hmi.SHOP_MACHINE)
+            hmi_machine.setup_origin(
+                Assembly([]), shop, hmi_machine.SHOP_MACHINE
+            )
         )
 
     def test_other_machine(self) -> None:
@@ -802,7 +812,7 @@ class TestSetupDrawing(unittest.TestCase):
             gate.wait(5.0)
             shown(assembly)
 
-        drawer = lcnc_hmi.SetupDrawer(cast(Any, mock.Mock(show=slow)))
+        drawer = hmi_machine.SetupDrawer(cast(Any, mock.Mock(show=slow)))
         first, second, third = Assembly(), Assembly(), Assembly()
         drawer.draw(first)
         self.assertTrue(started.wait(5.0))
@@ -820,7 +830,7 @@ class TestSetOrigin(unittest.TestCase):
 
     def setUp(self) -> None:
         use_shop(shops.read(EXAMPLE_SHOP))
-        self.machine = lcnc_hmi.HMIMachine(True)
+        self.machine = hmi_machine.HMIMachine(True)
         self.panel = make_hmi(self.machine)
         # pylint: disable-next=consider-using-with
         scratch = tempfile.TemporaryDirectory()
@@ -839,7 +849,7 @@ class TestSetOrigin(unittest.TestCase):
         """Picking the stock's corner sets G54 to read it, in inches."""
         self.open(True)
         self.assertTrue(self.panel.inches)
-        lcnc_hmi_qt.ANSWERS.extend(["stock: top left outer", "yes"])
+        lcnc_hmi.ANSWERS.extend(["stock: top left outer", "yes"])
         self.panel.on_set_origin()
         self.assertEqual(
             self.machine.log[-2:],
@@ -849,7 +859,7 @@ class TestSetOrigin(unittest.TestCase):
     def test_cancel(self) -> None:
         """No pick, or No at the question, sets nothing."""
         self.open(True)
-        lcnc_hmi_qt.ANSWERS.extend(["", "stock: top left outer", "no"])
+        lcnc_hmi.ANSWERS.extend(["", "stock: top left outer", "no"])
         before = list(self.machine.log)
         self.panel.on_set_origin()
         self.panel.on_set_origin()
@@ -859,22 +869,22 @@ class TestSetOrigin(unittest.TestCase):
         """Without a setup, Set Origin zeroes the position, as before."""
         self.open(False)
         self.assertEqual(self.panel.origins, [])
-        lcnc_hmi_qt.ANSWERS.append("yes")
+        lcnc_hmi.ANSWERS.append("yes")
         self.panel.on_set_origin()
         self.assertEqual(self.machine.log[-1], "mdi G10 L20 P1 X0 Y0 Z0")
 
     def test_lines(self) -> None:
         """The units word and `G10 L20 P1`, in the program's units."""
         self.assertEqual(
-            lcnc_hmi.origin_lines((25.4, -12.7, 0.0), True),
+            hmi_machine.origin_lines((25.4, -12.7, 0.0), True),
             ["G20", "G10 L20 P1 X1.0000 Y-0.5000 Z0.0000"],
         )
         self.assertEqual(
-            lcnc_hmi.origin_lines((1.0, 2.0, -3.0), False),
+            hmi_machine.origin_lines((1.0, 2.0, -3.0), False),
             ["G21", "G10 L20 P1 X1.000 Y2.000 Z-3.000"],
         )
-        self.assertTrue(lcnc_hmi.program_inches(["(G21)", "G20 G90"]))
-        self.assertFalse(lcnc_hmi.program_inches(["G0 X1"]))
+        self.assertTrue(hmi_machine.program_inches(["(G21)", "G20 G90"]))
+        self.assertFalse(hmi_machine.program_inches(["G0 X1"]))
 
 
 class TestMainSolidCraft(unittest.TestCase):
@@ -885,13 +895,13 @@ class TestMainSolidCraft(unittest.TestCase):
         handler = signal.getsignal(signal.SIGTERM)
         self.addCleanup(signal.signal, signal.SIGTERM, handler)
         with (
-            mock.patch.object(lcnc_hmi_qt, "run", return_value=0),
-            mock.patch.object(lcnc_hmi_qt, "connect"),
-            mock.patch.object(lcnc_hmi_qt, "PyBind"),
-            mock.patch.object(lcnc_hmi_qt, "ModelCache"),
-            mock.patch.object(lcnc_hmi_qt, "SetupView") as view,
+            mock.patch.object(lcnc_hmi, "run", return_value=0),
+            mock.patch.object(lcnc_hmi, "connect"),
+            mock.patch.object(lcnc_hmi, "PyBind"),
+            mock.patch.object(lcnc_hmi, "ModelCache"),
+            mock.patch.object(lcnc_hmi, "SetupView") as view,
         ):
-            code = lcnc_hmi_qt.main(["--headless", "--dry-run", *extra])
+            code = lcnc_hmi.main(["--headless", "--dry-run", *extra])
         self.assertEqual(code, 0)
         return view
 
@@ -919,8 +929,8 @@ class TestHeadlessProgram(unittest.TestCase):
         }
         code = (
             "import sys; sys.modules['tkinter'] = None; "
-            "from scraftcam.hmi import lcnc_hmi_qt; "
-            "sys.exit(lcnc_hmi_qt.main(sys.argv[1:]))"
+            "from scraftcam.hmi import lcnc_hmi; "
+            "sys.exit(lcnc_hmi.main(sys.argv[1:]))"
         )
         with subprocess.Popen(
             [sys.executable, "-c", code, "--headless", "--dry-run",

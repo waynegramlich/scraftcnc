@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import ClassVar
 
 from scraftcam import demo, shops
-from scraftcam.hmi import lcnc_hmi
+from scraftcam.hmi import hmi_machine
 from scraftcam.setups import SHOP as EXAMPLE_SHOP
 from scraftcam.tooling.shop_registries import use_shop
 from tests.qt_hmi import make_hmi
@@ -24,7 +24,7 @@ class TestToolChangePause(unittest.TestCase):
         changes = [
             number
             for number, line in enumerate(lines)
-            if lcnc_hmi.TOOL_CHANGE.search(line)
+            if hmi_machine.TOOL_CHANGE.search(line)
         ]
         self.assertGreater(len(changes), 1)
         paused = [number for number in changes if lines[number - 1] == "M0"]
@@ -36,7 +36,7 @@ class TestToolChangePause(unittest.TestCase):
         self.assertEqual(sum(line == "M0" for line in lines), 1)
 
         # -Tool and +Tool land on the swap's message, else on the `M6`.
-        starts = lcnc_hmi.tool_changes(lines)
+        starts = hmi_machine.tool_changes(lines)
         self.assertEqual(
             starts,
             [
@@ -48,7 +48,7 @@ class TestToolChangePause(unittest.TestCase):
     def test_starts(self) -> None:
         """A change without a message starts at its `M6`."""
         lines = ["G20", "(MSG, Insert T01: a)", "M0", "T01 M6", "T02 M6"]
-        self.assertEqual(lcnc_hmi.tool_changes(lines), [2, 5])
+        self.assertEqual(hmi_machine.tool_changes(lines), [2, 5])
 
     def test_headless_goes_on(self) -> None:
         """Headless, the program's own pause goes on; Pause's does not."""
@@ -92,13 +92,13 @@ class TestNextTool(unittest.TestCase):
     def sums(self) -> list[float]:
         """Return the minutes up to each line."""
         sums = [0.0]
-        for minutes in lcnc_hmi.line_minutes(self.LINES, 60.0):
+        for minutes in hmi_machine.line_minutes(self.LINES, 60.0):
             sums.append(sums[-1] + minutes)
         return sums
 
     def test_line_minutes(self) -> None:
         """Rapids, feeds, arcs and a drill cycle each take their time."""
-        minutes = lcnc_hmi.line_minutes(self.LINES, 60.0)
+        minutes = hmi_machine.line_minutes(self.LINES, 60.0)
         self.assertAlmostEqual(minutes[5], 6.0 / 60.0)  # Rapid X0 to X6.
         self.assertAlmostEqual(minutes[6], 1.0 / 10.0)  # Feed Z1 to Z0.
         self.assertAlmostEqual(minutes[7], math.pi / 10.0, places=2)
@@ -109,22 +109,22 @@ class TestNextTool(unittest.TestCase):
     def test_labels(self) -> None:
         """At the start, at a change, and after the last change."""
         sums = self.sums()
-        spans = lcnc_hmi.change_spans(self.LINES)
+        spans = hmi_machine.change_spans(self.LINES)
         self.assertEqual(spans, [(3, 5), (9, 11)])
-        text = lcnc_hmi.next_tool_text(self.LINES, sums, spans, 0, 1.0)
+        text = hmi_machine.next_tool_text(self.LINES, sums, spans, 0, 1.0)
         self.assertEqual(text, "Next: T01 a mill in 0:00")
-        text = lcnc_hmi.next_tool_text(self.LINES, sums, spans, 6, 1.0)
+        text = hmi_machine.next_tool_text(self.LINES, sums, spans, 6, 1.0)
         self.assertEqual(text, "Next: T02 a drill in 0:31")
-        text = lcnc_hmi.next_tool_text(self.LINES, sums, spans, 10, 1.0)
+        text = hmi_machine.next_tool_text(self.LINES, sums, spans, 10, 1.0)
         self.assertEqual(text, "Now: T02 a drill, cut 0:08")
-        text = lcnc_hmi.next_tool_text(self.LINES, sums, spans, 12, 1.0)
+        text = hmi_machine.next_tool_text(self.LINES, sums, spans, 12, 1.0)
         self.assertEqual(text, "Last tool: 0:08 to the end")
 
     def test_override(self) -> None:
         """Twice the feed override, half the time."""
         sums = self.sums()
-        spans = lcnc_hmi.change_spans(self.LINES)
-        text = lcnc_hmi.next_tool_text(self.LINES, sums, spans, 6, 2.0)
+        spans = hmi_machine.change_spans(self.LINES)
+        text = hmi_machine.next_tool_text(self.LINES, sums, spans, 6, 2.0)
         self.assertEqual(text, "Next: T02 a drill in 0:15")
 
     def test_demo_total(self) -> None:
@@ -132,12 +132,12 @@ class TestNextTool(unittest.TestCase):
         use_shop(shops.read(EXAMPLE_SHOP))
         cnc = demo.cut_demo()[0]
         lines = cnc.gcode().splitlines()
-        total = sum(lcnc_hmi.line_minutes(lines, 60.0))
+        total = sum(hmi_machine.line_minutes(lines, 60.0))
         self.assertAlmostEqual(total, cnc.minutes, delta=0.05 * cnc.minutes)
 
     def test_shown(self) -> None:
         """The HMI shows it, and `show` has it (headless)."""
-        machine = lcnc_hmi.HMIMachine(True)
+        machine = hmi_machine.HMIMachine(True)
         panel = make_hmi(machine)
         with tempfile.TemporaryDirectory() as scratch:
             path = Path(scratch, "two.ngc")

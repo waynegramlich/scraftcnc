@@ -3,7 +3,7 @@
 import unittest
 
 from scraftcam.geometry import Corner, RoundedPolygon
-from scraftcam.hmi import lcnc_hmi
+from scraftcam.hmi import hmi_machine
 from tests.qt_hmi import make_hmi
 
 
@@ -21,7 +21,7 @@ class TestMdiKeepOuts(unittest.TestCase):
     """
 
     def setUp(self) -> None:
-        self.machine = lcnc_hmi.HMIMachine(True)
+        self.machine = hmi_machine.HMIMachine(True)
         self.hmi = make_hmi(self.machine)
 
     def guard(self) -> None:
@@ -84,7 +84,7 @@ class TestMdiKeepOuts(unittest.TestCase):
         self.assertIn("refused", self.run_line("X1"))
         self.assertEqual(self.sent(), [])
         self.assertEqual(
-            len(lcnc_hmi.mdi_segments("Z-4", (1, 0, 1), False)), 1
+            len(hmi_machine.mdi_segments("Z-4", (1, 0, 1), False)), 1
         )
 
     def test_machine_coordinates_refused(self) -> None:
@@ -96,7 +96,7 @@ class TestMdiKeepOuts(unittest.TestCase):
 
     def test_segments(self) -> None:
         """An arc comes back as short pieces, end to end, in inches."""
-        pieces = lcnc_hmi.mdi_segments(
+        pieces = hmi_machine.mdi_segments(
             "G2 X2 Y0 I1 J0 F5", (0.0, 0.0, 0.0), False
         )
         self.assertGreater(len(pieces), 2)

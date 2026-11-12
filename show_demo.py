@@ -49,9 +49,13 @@ from typing import Any, cast
 # goes on the path, so that the `scraftcam` package can be imported.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+# These need the path above, so they come after it.
+# pylint: disable=wrong-import-position
 from scraftcam.lcnc.lcnc_client import PORT as LINUXCNC_PORT
 from scraftcam.lcnc.lcnc_client import BridgeClient, BridgeError
 from scraftcam.pybind.scraftpybind import PyBind, connect
+
+# pylint: enable=wrong-import-position
 
 # Where everything is.
 PROJECT: Path = Path(__file__).resolve().parent

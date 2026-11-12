@@ -213,7 +213,13 @@ class TestEndToEnd(unittest.TestCase):
         cls.directory.cleanup()
 
     def setUp(self) -> None:
-        """Start each test stopped, at the work origin, at full speed."""
+        """Start each test stopped, at the work origin, at full speed.
+
+        The HMI keeps every message since it started; `messages()`
+        returns only those after `seen` (an earlier test may have
+        left some on purpose, as `test_mdi()` does).
+        """
+        self.seen: int = len(self.all_messages())
         self.press("Reset")
         self.wait_idle()
         self.ask("speed 10")
@@ -296,19 +302,24 @@ class TestEndToEnd(unittest.TestCase):
             self.wait_idle()
         self.assertTrue(self.shown()["origin_set"])
 
+    def all_messages(self) -> list[str]:
+        """Return every message LinuxCNC has sent since the HMI started."""
+        text: str = self.ask("messages").removeprefix("messages:")
+        return [
+            message.strip() for message in text.split(" | ") if message.strip()
+        ]
+
     def messages(self) -> str:
-        """Return every message LinuxCNC has sent, but tool prompts.
+        """Return the messages LinuxCNC sent in this test, but prompts.
 
         The tool change prompts (`(MSG, Insert T..: ...)`, and a
         carousel's `(MSG, Swap tool ...)`) are left out: the headless
         HMI goes on from each one by itself.
         """
-        text: str = self.ask("messages").removeprefix("messages:")
         return " | ".join(
-            message.strip()
-            for message in text.split(" | ")
-            if message.strip()
-            and not message.strip().startswith(("Insert T", "Swap tool"))
+            message
+            for message in self.all_messages()[self.seen :]
+            if not message.startswith(("Insert T", "Swap tool"))
         )
 
     def test_start_up(self) -> None:
