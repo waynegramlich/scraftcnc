@@ -640,3 +640,23 @@ handler (`qt_message()`) that drops only `OFFSCREEN_NOISE`
 error (test `test_qt_messages`; 15 tests).  Next: S4 = move the five
 `tkinter` HMI test files (`test_lcnc_hmi.py`, `test_hmi_*.py`) to the
 Qt HMI and fix what they find (#21, proposed; the user to confirm).
+
+## 2026-11-12: S4 done: the HMI tests run on the Qt HMI
+
+#21 as proposed.  `test_lcnc_hmi.py`, the four `test_hmi_*.py` and
+`test_carousel.py`'s Tools tab test now build `lcnc_hmi_qt.HMI`
+through the new `tests/qt_hmi.py` (`make_hmi()`; importing it makes
+Qt offscreen and the one `QApplication`).  Mostly mechanical
+(`root.run_one()` -> `poll()`, `show()` -> `show_state()`,
+`ANSWERS`/`ASKED` from `lcnc_hmi_qt`); by hand: labels by
+`buttons()`, Quit by `isVisible()`, the lost server by
+`timer.isActive()`, colors by `property("background")`, the material
+by `material_chooser.currentText()`.  `main()` reuses a
+`QApplication` and runs Qt's loop through `run()` (patched in
+`TestMainSolidCraft`).  `TestHeadlessProgram.test_runs_without_tkinter`
+runs `lcnc_hmi_qt` (no `tkinter`, no display, empty standard error);
+`test_refuses_without_tkinter` was dropped (Qt needs no `tkinter`).
+98 HMI tests + carousel pass, nothing in the HMI needed fixing.
+Checkers clean.  `tests/test_lcnc_hmi_qt.py` overlaps
+`TestHeadless` a little.  Left for S5: `show_demo.py:659` and
+`tests/test_lcnc_end_to_end.py:191` still start `lcnc_hmi`.

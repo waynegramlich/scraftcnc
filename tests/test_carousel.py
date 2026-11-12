@@ -4,14 +4,14 @@ import dataclasses
 import tempfile
 import unittest
 from pathlib import Path
-from typing import Any, cast
 
 from scraftcam import carousel, demo, shops
 from scraftcam.gcode import CNC
-from scraftcam.hmi import lcnc_hmi, lcnc_hmi_headless
+from scraftcam.hmi import lcnc_hmi
 from scraftcam.machine import Machine
 from scraftcam.setups import SHOP as EXAMPLE_SHOP
 from scraftcam.tooling.shop_registries import use_shop
+from tests.qt_hmi import make_hmi
 
 
 class TestPlan(unittest.TestCase):
@@ -95,18 +95,14 @@ class TestDemo(unittest.TestCase):
 
     def test_tools_tab(self) -> None:
         """The HMI's Tools tab lists the carousel's load and swaps."""
-        lcnc_hmi.use_headless()
-        root: Any = lcnc_hmi_headless.Tk()
-        hmi = lcnc_hmi.HMI(
-            cast(Any, root), lcnc_hmi.HMIMachine(True), 10.0, None
-        )
+        hmi = make_hmi(lcnc_hmi.HMIMachine(True))
         with tempfile.TemporaryDirectory() as scratch:
             path = Path(scratch, "demo.ngc")
             path.write_text(demo.cut_demo()[0].gcode(), encoding="utf-8")
             hmi.open(str(path))
-            root.run_one()
+            hmi.poll()
             hmi.handle("tab Tools")
-        table = hmi.show()["texts"][-1]
+        table = hmi.show_state()["texts"][-1]
         self.assertIn("Load the carousel before Start", table)
         self.assertIn("slot 1: tool 5 (black/green) T04", table)
         self.assertIn("Swaps during the run: 1", table)

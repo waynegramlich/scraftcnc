@@ -4,12 +4,13 @@ import math
 import tempfile
 import unittest
 from pathlib import Path
-from typing import Any, ClassVar, cast
+from typing import ClassVar
 
 from scraftcam import demo, shops
-from scraftcam.hmi import lcnc_hmi, lcnc_hmi_headless
+from scraftcam.hmi import lcnc_hmi
 from scraftcam.setups import SHOP as EXAMPLE_SHOP
 from scraftcam.tooling.shop_registries import use_shop
+from tests.qt_hmi import make_hmi
 from tests.test_lcnc_hmi import RUNNING, client_machine
 
 
@@ -51,22 +52,20 @@ class TestToolChangePause(unittest.TestCase):
 
     def test_headless_goes_on(self) -> None:
         """Headless, the program's own pause goes on; Pause's does not."""
-        lcnc_hmi.use_headless()
         machine, lcnc = client_machine()
-        root: Any = lcnc_hmi_headless.Tk()
-        panel = lcnc_hmi.HMI(cast(Any, root), machine, 10.0, None)
+        panel = make_hmi(machine)
         lcnc.interp_state = RUNNING
         lcnc.values["paused"] = True
         lcnc.errors = [[13, "Insert T04: a drill"]]
         panel.running = True
-        root.run_one()
-        self.assertIn("Insert T04: a drill", panel.show()["message"])
+        panel.poll()
+        self.assertIn("Insert T04: a drill", panel.show_state()["message"])
         self.assertEqual(len(lcnc.sent("command.auto")), 1)
 
         # A pause from Pause waits for a person.
         panel.on_pause()
         sent = len(lcnc.sent("command.auto"))
-        root.run_one()
+        panel.poll()
         self.assertEqual(len(lcnc.sent("command.auto")), sent)
 
 
@@ -138,13 +137,13 @@ class TestNextTool(unittest.TestCase):
 
     def test_shown(self) -> None:
         """The HMI shows it, and `show` has it (headless)."""
-        lcnc_hmi.use_headless()
         machine = lcnc_hmi.HMIMachine(True)
-        root: Any = lcnc_hmi_headless.Tk()
-        panel = lcnc_hmi.HMI(cast(Any, root), machine, 10.0, None)
+        panel = make_hmi(machine)
         with tempfile.TemporaryDirectory() as scratch:
             path = Path(scratch, "two.ngc")
             path.write_text("\n".join(self.LINES) + "\n", encoding="utf-8")
             panel.open(str(path))
-            root.run_one()
-        self.assertEqual(panel.show()["next_tool"], "Next: T01 a mill in 0:00")
+            panel.poll()
+        self.assertEqual(
+            panel.show_state()["next_tool"], "Next: T01 a mill in 0:00"
+        )

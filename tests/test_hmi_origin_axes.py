@@ -3,21 +3,17 @@
 import tempfile
 import unittest
 from pathlib import Path
-from typing import Any, cast
 
-from scraftcam.hmi import lcnc_hmi, lcnc_hmi_headless
+from scraftcam.hmi import lcnc_hmi
+from tests.qt_hmi import make_hmi
 
 
 class TestOriginAxes(unittest.TestCase):
     """Set X, Set Y and Set Z, through the command port's words."""
 
     def setUp(self) -> None:
-        lcnc_hmi.use_headless()
-        lcnc_hmi_headless.ANSWERS.clear()
-        lcnc_hmi_headless.ASKED.clear()
         self.machine = lcnc_hmi.HMIMachine(True)
-        self.root: Any = lcnc_hmi_headless.Tk()
-        self.hmi = lcnc_hmi.HMI(cast(Any, self.root), self.machine, 10.0, None)
+        self.hmi = make_hmi(self.machine)
         # pylint: disable-next=consider-using-with
         scratch = tempfile.TemporaryDirectory()
         self.addCleanup(scratch.cleanup)
@@ -43,7 +39,7 @@ class TestOriginAxes(unittest.TestCase):
         """One axis sets only that axis, in the program's units."""
         self.assertEqual(self.set_axis("X", "1.25"), "ok")
         self.assertEqual(self.mdi(), ["mdi G20", "mdi G10 L20 P1 X1.25"])
-        shown = self.hmi.show()
+        shown = self.hmi.show_state()
         self.assertEqual(shown["axes_set"], ["X"])
         self.assertFalse(shown["origin_set"])
         self.assertEqual(shown["message"], "Origin still to set: Y Z")
@@ -52,9 +48,10 @@ class TestOriginAxes(unittest.TestCase):
     def test_bad_number(self) -> None:
         """A bad number is colored, and greys its button out."""
         self.ask("origin Y 1.2.3")
-        self.assertEqual(self.hmi.show()["buttons"]["Set Y"], "disabled")
+        self.assertEqual(self.hmi.show_state()["buttons"]["Set Y"], "disabled")
         self.assertEqual(
-            str(self.hmi.axis_entries["Y"].cget("background")), lcnc_hmi.BAD
+            str(self.hmi.axis_entries["Y"].property("background")),
+            lcnc_hmi.BAD,
         )
         self.assertIn("greyed out", self.ask("press Set Y"))
         self.assertIn("error: no axis", self.ask("origin W 1"))
@@ -64,21 +61,21 @@ class TestOriginAxes(unittest.TestCase):
         self.ask("origin Z 0")
         self.assertEqual(self.ask("press Set Z"), "ok")
         self.assertEqual(self.mdi(), [])
-        self.assertEqual(self.hmi.show()["axes_set"], [])
+        self.assertEqual(self.hmi.show_state()["axes_set"], [])
 
     def test_all_three(self) -> None:
         """All three axes, in any order, set the origin; Start comes up."""
         for axis, value in (("Z", "0"), ("X", "-1"), ("Y", "2.5")):
             self.assertEqual(self.set_axis(axis, value), "ok")
-        self.root.run_one()
-        shown = self.hmi.show()
+        self.hmi.poll()
+        shown = self.hmi.show_state()
         self.assertTrue(shown["origin_set"])
         self.assertEqual(shown["buttons"]["Start"], "normal")
         self.assertEqual(shown["message"], "")
 
         # A new open clears them.
         self.ask(f"open {self.file}")
-        shown = self.hmi.show()
+        shown = self.hmi.show_state()
         self.assertEqual((shown["axes_set"], shown["origin_set"]), ([], False))
 
     def test_not_while_running(self) -> None:
@@ -87,7 +84,7 @@ class TestOriginAxes(unittest.TestCase):
         self.hmi.set_running(True, False)
         self.assertIn("greyed out", self.ask("press Set X"))
         self.hmi.set_running(True, True)
-        self.assertEqual(self.hmi.show()["buttons"]["Set X"], "disabled")
+        self.assertEqual(self.hmi.show_state()["buttons"]["Set X"], "disabled")
         self.assertEqual(self.mdi(), [])
 
 

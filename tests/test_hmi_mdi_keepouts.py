@@ -1,10 +1,10 @@
 """Tests for checking typed (MDI) moves against keep-outs (S12)."""
 
 import unittest
-from typing import Any, cast
 
 from scraftcam.geometry import Corner, RoundedPolygon
-from scraftcam.hmi import lcnc_hmi, lcnc_hmi_headless
+from scraftcam.hmi import lcnc_hmi
+from tests.qt_hmi import make_hmi
 
 
 def clamp(x0: float, x1: float, top: float) -> RoundedPolygon:
@@ -21,10 +21,8 @@ class TestMdiKeepOuts(unittest.TestCase):
     """
 
     def setUp(self) -> None:
-        lcnc_hmi.use_headless()
         self.machine = lcnc_hmi.HMIMachine(True)
-        self.root: Any = lcnc_hmi_headless.Tk()
-        self.hmi = lcnc_hmi.HMI(cast(Any, self.root), self.machine, 10.0, None)
+        self.hmi = make_hmi(self.machine)
 
     def guard(self) -> None:
         """Give the HMI a setup's keep-out, with its origin set."""
@@ -45,7 +43,7 @@ class TestMdiKeepOuts(unittest.TestCase):
         self.guard()
         answer: str = self.run_line("G0 X1")
         self.assertIn("MDI refused: it would enter clamp", answer)
-        self.assertIn("would enter clamp", self.hmi.show()["message"])
+        self.assertIn("would enter clamp", self.hmi.show_state()["message"])
         self.assertEqual(self.sent(), [])
 
         # One that stays clear is sent.
@@ -75,7 +73,7 @@ class TestMdiKeepOuts(unittest.TestCase):
         """No setup: the line runs, and that is said once."""
         self.assertEqual(self.run_line("G0 X1"), "ok")
         self.assertEqual(
-            self.hmi.show()["message"], "MDI not checked: no setup"
+            self.hmi.show_state()["message"], "MDI not checked: no setup"
         )
         self.assertEqual(self.sent(), ["mdi G0 X1"])
 

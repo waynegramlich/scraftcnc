@@ -1638,6 +1638,19 @@ class HMI(QWidget):
             self.port.poll(self.handle)
 
 
+# Function `run()`:
+def run(application: QApplication) -> int:
+    """Run Qt's loop until the last window closes.
+
+    Arguments:
+    * `application` (`QApplication`): The application.
+
+    Returns:
+    * (`int`): The exit status.
+    """
+    return application.exec()
+
+
 # Function `main()`:
 def main(arguments: list[str]) -> int:
     """Show the HMI until its window is closed.
@@ -1713,7 +1726,8 @@ def main(arguments: list[str]) -> int:
 
     # The window.  An earlier HMI may have left another speed, and the
     # slider starts at the programmed feed.
-    application: QApplication = QApplication(sys.argv[:1])
+    found: Any = QApplication.instance()
+    application: QApplication = found or QApplication(sys.argv[:1])
     hmi: HMI = HMI(machine, top_speed, port)
     hmi.set_speed(1.0)
     hmi.drawer = drawer
@@ -1736,7 +1750,7 @@ def main(arguments: list[str]) -> int:
         except (ValueError, OSError) as error:
             hmi.message.setText(str(error))
     hmi.show()
-    return application.exec()
+    return run(application)
 
 
 if __name__ == "__main__":

@@ -17,10 +17,11 @@ from unittest import mock
 from scraftcam import shops
 from scraftcam.assembly import Assembly
 from scraftcam.demo import demo_assembly, with_setup
-from scraftcam.hmi import lcnc_hmi, lcnc_hmi_headless
+from scraftcam.hmi import lcnc_hmi, lcnc_hmi_qt
 from scraftcam.lcnc.lcnc_client import BridgeError
 from scraftcam.setups import SHOP as EXAMPLE_SHOP
 from scraftcam.tooling.shop_registries import use_shop
+from tests.qt_hmi import make_hmi
 
 # The constants that `FakeClient` answers with.
 IDLE = 1
@@ -326,7 +327,7 @@ class TestMessages(unittest.TestCase):
 
         # The port shows them, and something when there are none.
         panel = mock.MagicMock(machine=machine)
-        handle = lcnc_hmi.HMI.handle
+        handle = lcnc_hmi_qt.HMI.handle
         self.assertEqual(handle(panel, "messages"), "messages: first")
         machine.messages = []
         self.assertEqual(handle(panel, "messages"), "messages: ")
@@ -336,14 +337,8 @@ class TestHeadless(unittest.TestCase):
     """The whole panel, with no display, pressed through its port's words."""
 
     def setUp(self) -> None:
-        lcnc_hmi.use_headless()
-        lcnc_hmi_headless.ANSWERS.clear()
-        lcnc_hmi_headless.ASKED.clear()
         self.machine = lcnc_hmi.HMIMachine(True)
-        self.root: Any = lcnc_hmi_headless.Tk()
-        self.panel = lcnc_hmi.HMI(
-            cast(Any, self.root), self.machine, 10.0, None
-        )
+        self.panel = make_hmi(self.machine)
         # pylint: disable-next=consider-using-with
         scratch = tempfile.TemporaryDirectory()
         self.addCleanup(scratch.cleanup)
@@ -353,8 +348,8 @@ class TestHeadless(unittest.TestCase):
 
     def tick(self) -> dict[str, Any]:
         """Run the HMI's next poll, and return what it shows."""
-        self.root.run_one()
-        return self.panel.show()
+        self.panel.poll()
+        return self.panel.show_state()
 
     def ask(self, line: str) -> str:
         """Send one line, as the command port would."""
@@ -433,17 +428,17 @@ class TestHeadless(unittest.TestCase):
     def test_mdi_line(self) -> None:
         """The MDI line is colored, and only good lines can run."""
         self.ask("type not a line")
-        self.assertEqual(self.panel.show()["mdi_color"], lcnc_hmi.BAD)
+        self.assertEqual(self.panel.show_state()["mdi_color"], lcnc_hmi.BAD)
         self.assertIn("greyed out", self.ask("press Execute"))
         self.ask("type G0 X1")
-        self.assertEqual(self.panel.show()["mdi_color"], lcnc_hmi.GOOD)
+        self.assertEqual(self.panel.show_state()["mdi_color"], lcnc_hmi.GOOD)
         self.assertEqual(self.ask("press Execute"), "ok")
         self.assertEqual(self.machine.log[-1], "mdi G0 X1")
 
     def test_jog_step(self) -> None:
         """A step button chooses the step, and a jog button moves."""
         self.assertEqual(self.ask("press .01"), "ok")
-        self.assertEqual(self.panel.show()["step"], ".01")
+        self.assertEqual(self.panel.show_state()["step"], ".01")
         self.assertEqual(self.ask("press -Z"), "ok")
         self.assertEqual(self.machine.log[-1], "jog Z -1")
 
@@ -455,7 +450,7 @@ class TestHeadless(unittest.TestCase):
         self.tick()
         self.assertEqual(self.ask("press Set Origin"), "ok")
         self.assertNotIn("mdi G10 L20 P1 X0 Y0 Z0", self.machine.log)
-        self.assertIn("Set Origin", lcnc_hmi_headless.ASKED[0])
+        self.assertIn("Set Origin", lcnc_hmi_qt.ASKED[0])
         self.ask("answer yes")
         self.ask("press Set Origin")
         self.assertIn("mdi G10 L20 P1 X0 Y0 Z0", self.machine.log)
@@ -474,15 +469,15 @@ class TestHeadless(unittest.TestCase):
     def test_tools_tab(self) -> None:
         """The Tools tab lists the tools for a material."""
         self.ask("tab Tools")
-        texts = self.panel.show()["texts"]
+        texts = self.panel.show_state()["texts"]
         self.assertIn("cutting 6061 aluminum", texts[-1])
 
     def test_tabs(self) -> None:
         """Each tab can be shown, and `show` says which one is."""
-        self.assertEqual(self.panel.show()["tab"], "Run")
+        self.assertEqual(self.panel.show_state()["tab"], "Run")
         for name in lcnc_hmi.TABS:
             self.assertEqual(self.ask(f"tab {name}"), "ok")
-            self.assertEqual(self.panel.show()["tab"], name)
+            self.assertEqual(self.panel.show_state()["tab"], name)
         self.assertIn("error: no tab Nope", self.ask("tab Nope"))
 
         # A button on another tab is still pressed by its label.
@@ -491,24 +486,21 @@ class TestHeadless(unittest.TestCase):
 
     def test_labels_unique(self) -> None:
         """No two buttons, on any tab, have the same label."""
-        labels: list[str] = [
-            str(widget.cget("text"))
-            for widget in self.panel.widgets()
-            if widget.winfo_class() in lcnc_hmi.BUTTONS
-        ]
+        labels: list[str] = [button.text() for button in self.panel.buttons()]
         self.assertEqual(len(labels), len(set(labels)))
 
     def test_speed(self) -> None:
         """The speed stays in the slider's range, and is shown."""
         self.ask("speed 500")
-        self.assertEqual(self.panel.show()["speed"], "10x")
+        self.assertEqual(self.panel.show_state()["speed"], "10x")
         self.assertEqual(self.machine.log[-1], "speed 10.00")
 
     def test_quit_button(self) -> None:
         """Quit closes the window, which ends the HMI."""
-        self.assertTrue(self.root.alive)
+        self.panel.show()
+        self.assertTrue(self.panel.isVisible())
         self.assertEqual(self.ask("press Quit"), "ok")
-        self.assertFalse(self.root.alive)
+        self.assertFalse(self.panel.isVisible())
 
     def test_unknown(self) -> None:
         """A word or button it does not know is an error."""
@@ -521,7 +513,7 @@ class TestHeadless(unittest.TestCase):
             side_effect=BrokenPipeError("gone")
         )
         self.assertIn("not answering", self.tick()["message"])
-        self.assertTrue(self.root.due)
+        self.assertTrue(self.panel.timer.isActive())
 
 
 # A stand-in, which needs only `show()`.
@@ -549,12 +541,8 @@ class TestSetupDrawing(unittest.TestCase):
 
     def setUp(self) -> None:
         use_shop(shops.read(EXAMPLE_SHOP))
-        lcnc_hmi.use_headless()
         self.machine = lcnc_hmi.HMIMachine(True)
-        self.root: Any = lcnc_hmi_headless.Tk()
-        self.panel = lcnc_hmi.HMI(
-            cast(Any, self.root), self.machine, 10.0, None
-        )
+        self.panel = make_hmi(self.machine)
         self.view = FakeView()
         self.panel.drawer = lcnc_hmi.SetupDrawer(self.view)
         # pylint: disable-next=consider-using-with
@@ -590,7 +578,9 @@ class TestSetupDrawing(unittest.TestCase):
         assert self.panel.drawer is not None
         self.panel.drawer.wait()
         self.assertEqual(self.view.shown, [])
-        self.assertEqual(self.panel.show()["message"], "Set the origin first")
+        self.assertEqual(
+            self.panel.show_state()["message"], "Set the origin first"
+        )
 
     def test_material_from_setup(self) -> None:
         """The setup's material picks the tool table and the Tools tab."""
@@ -598,9 +588,9 @@ class TestSetupDrawing(unittest.TestCase):
         assembly.items[-1].args["material"] = "brass"
         self.panel.open(self.program(with_setup(self.gcode, assembly)))
         self.assertIn("tool table brass", self.machine.log)
-        self.assertEqual(self.panel.material.get(), "brass")
-        self.root.run_one()
-        self.assertIn("brass", self.panel.show()["position"])
+        self.assertEqual(self.panel.material_chooser.currentText(), "brass")
+        self.panel.poll()
+        self.assertIn("brass", self.panel.show_state()["position"])
 
     def test_material_fallback(self) -> None:
         """No setup, or a material the shop lacks: `MATERIAL` is used."""
@@ -616,7 +606,9 @@ class TestSetupDrawing(unittest.TestCase):
         self.assertEqual(
             self.machine.log[-1], f"tool table {lcnc_hmi.MATERIAL}"
         )
-        self.assertEqual(self.panel.material.get(), lcnc_hmi.MATERIAL)
+        self.assertEqual(
+            self.panel.material_chooser.currentText(), lcnc_hmi.MATERIAL
+        )
 
     def test_origin_from_setup(self) -> None:
         """The demo's table and the shop's table place: (4, 3, -6) in."""
@@ -631,16 +623,16 @@ class TestSetupDrawing(unittest.TestCase):
         self.assertIn("origin 4.0 3.0 -6.0", self.machine.log)
         assert self.panel.drawer is not None
         self.panel.drawer.wait()
-        self.root.run_one()
-        shown = self.panel.show()
+        self.panel.poll()
+        shown = self.panel.show_state()
         self.assertTrue(shown["origin_set"])
         self.assertEqual(shown["buttons"]["Start"], "normal")
         self.assertIn("Shop mill, 6061 aluminum", self.tick_position())
 
     def tick_position(self) -> str:
         """Run one poll, and return the position line."""
-        self.root.run_one()
-        return str(self.panel.show()["position"])
+        self.panel.poll()
+        return str(self.panel.show_state()["position"])
 
     def test_no_origin(self) -> None:
         """Without the table's place, no origin is worked out."""
@@ -662,7 +654,7 @@ class TestSetupDrawing(unittest.TestCase):
         other.write_text(with_setup(self.gcode, assembly), encoding="utf-8")
         answer = self.panel.handle(f"open {other}")
         self.assertIn("Not opened: the program is for Shop router", answer)
-        self.assertIn("Not opened", self.panel.show()["message"])
+        self.assertIn("Not opened", self.panel.show_state()["message"])
         self.assertEqual(self.machine.log, log)
         self.assertEqual(self.machine.file, self.program_path())
         self.assertIsNone(self.panel.assembly)
@@ -670,7 +662,7 @@ class TestSetupDrawing(unittest.TestCase):
     def test_bad_setup(self) -> None:
         """A wrong setup line is reported; the program still opens."""
         self.panel.open(self.program("(SCC: [[item]\n" + self.gcode))
-        self.assertIn("Setup not read", self.panel.show()["message"])
+        self.assertIn("Setup not read", self.panel.show_state()["message"])
         self.assertEqual(self.view.shown, [])
         self.assertEqual(self.machine.file, self.program_path())
 
@@ -686,7 +678,7 @@ class TestSetupDrawing(unittest.TestCase):
         for step in range(1, count + 2):
             self.assertEqual(self.ask("press Next Step"), "ok")
             self.panel.drawer.wait()
-            messages.append(self.panel.show()["message"])
+            messages.append(self.panel.show_state()["message"])
             self.assertEqual(len(self.view.shown[-1].items), min(step, count))
         self.assertEqual(messages[0], "Step 1/7, mill table: Clean the table.")
         self.assertTrue(messages[count - 1].startswith("Step 7/7, demo"))
@@ -703,7 +695,7 @@ class TestSetupDrawing(unittest.TestCase):
         self.panel.drawer.wait()
         self.panel.poll()
         self.assertEqual(
-            self.panel.show()["message"],
+            self.panel.show_state()["message"],
             "Step 1/7, mill table: Clean the table. "
             "(Setup not drawn: no such vise)",
         )
@@ -718,7 +710,7 @@ class TestSetupDrawing(unittest.TestCase):
         self.panel.drawer.wait()
         self.assertEqual(self.view.keep_out_shows, [False, True, False])
         self.assertEqual(
-            self.panel.show()["toggles"],
+            self.panel.show_state()["toggles"],
             {
                 "Keep-outs": False,
                 "Stock outline": True,
@@ -766,21 +758,23 @@ class TestSetupDrawing(unittest.TestCase):
         self.panel.open(self.program(with_setup(self.gcode, demo_assembly())))
         self.assertTrue(started.wait(5.0))
         self.panel.poll()
-        self.assertEqual(self.panel.show()["buttons"]["Start"], "disabled")
-        self.assertEqual(self.panel.show()["setup_progress"], [1, 7])
+        self.assertEqual(
+            self.panel.show_state()["buttons"]["Start"], "disabled"
+        )
+        self.assertEqual(self.panel.show_state()["setup_progress"], [1, 7])
         gate.set()
         assert self.panel.drawer is not None
         self.panel.drawer.wait()
         self.panel.poll()
-        self.assertEqual(self.panel.show()["buttons"]["Start"], "normal")
-        self.assertEqual(self.panel.show()["setup_progress"], [7, 7])
+        self.assertEqual(self.panel.show_state()["buttons"]["Start"], "normal")
+        self.assertEqual(self.panel.show_state()["setup_progress"], [7, 7])
 
     def test_no_steps(self) -> None:
         """Next Step without a setup says so."""
         self.panel.open(self.program(self.gcode))
         self.ask("press Next Step")
         self.assertEqual(
-            self.panel.show()["message"], "This program has no setup."
+            self.panel.show_state()["message"], "This program has no setup."
         )
 
     def ask(self, line: str) -> str:
@@ -794,7 +788,7 @@ class TestSetupDrawing(unittest.TestCase):
         self.panel.open(self.program(with_setup(self.gcode, demo_assembly())))
         self.panel.drawer.wait()
         self.panel.poll()
-        self.assertIn("no such vise", self.panel.show()["message"])
+        self.assertIn("no such vise", self.panel.show_state()["message"])
 
     def test_newest_drawn(self) -> None:
         """Setups handed in while drawing: only the newest is drawn."""
@@ -826,12 +820,8 @@ class TestSetOrigin(unittest.TestCase):
 
     def setUp(self) -> None:
         use_shop(shops.read(EXAMPLE_SHOP))
-        lcnc_hmi.use_headless()
-        lcnc_hmi_headless.ANSWERS.clear()
         self.machine = lcnc_hmi.HMIMachine(True)
-        self.panel = lcnc_hmi.HMI(
-            cast(Any, lcnc_hmi_headless.Tk()), self.machine, 10.0, None
-        )
+        self.panel = make_hmi(self.machine)
         # pylint: disable-next=consider-using-with
         scratch = tempfile.TemporaryDirectory()
         self.addCleanup(scratch.cleanup)
@@ -849,7 +839,7 @@ class TestSetOrigin(unittest.TestCase):
         """Picking the stock's corner sets G54 to read it, in inches."""
         self.open(True)
         self.assertTrue(self.panel.inches)
-        lcnc_hmi_headless.ANSWERS.extend(["stock: top left outer", "yes"])
+        lcnc_hmi_qt.ANSWERS.extend(["stock: top left outer", "yes"])
         self.panel.on_set_origin()
         self.assertEqual(
             self.machine.log[-2:],
@@ -859,7 +849,7 @@ class TestSetOrigin(unittest.TestCase):
     def test_cancel(self) -> None:
         """No pick, or No at the question, sets nothing."""
         self.open(True)
-        lcnc_hmi_headless.ANSWERS.extend(["", "stock: top left outer", "no"])
+        lcnc_hmi_qt.ANSWERS.extend(["", "stock: top left outer", "no"])
         before = list(self.machine.log)
         self.panel.on_set_origin()
         self.panel.on_set_origin()
@@ -869,7 +859,7 @@ class TestSetOrigin(unittest.TestCase):
         """Without a setup, Set Origin zeroes the position, as before."""
         self.open(False)
         self.assertEqual(self.panel.origins, [])
-        lcnc_hmi_headless.ANSWERS.append("yes")
+        lcnc_hmi_qt.ANSWERS.append("yes")
         self.panel.on_set_origin()
         self.assertEqual(self.machine.log[-1], "mdi G10 L20 P1 X0 Y0 Z0")
 
@@ -895,13 +885,13 @@ class TestMainSolidCraft(unittest.TestCase):
         handler = signal.getsignal(signal.SIGTERM)
         self.addCleanup(signal.signal, signal.SIGTERM, handler)
         with (
-            mock.patch.object(lcnc_hmi_headless.Tk, "mainloop"),
-            mock.patch.object(lcnc_hmi, "connect"),
-            mock.patch.object(lcnc_hmi, "PyBind"),
-            mock.patch.object(lcnc_hmi, "ModelCache"),
-            mock.patch.object(lcnc_hmi, "SetupView") as view,
+            mock.patch.object(lcnc_hmi_qt, "run", return_value=0),
+            mock.patch.object(lcnc_hmi_qt, "connect"),
+            mock.patch.object(lcnc_hmi_qt, "PyBind"),
+            mock.patch.object(lcnc_hmi_qt, "ModelCache"),
+            mock.patch.object(lcnc_hmi_qt, "SetupView") as view,
         ):
-            code = lcnc_hmi.main(["--headless", "--dry-run", *extra])
+            code = lcnc_hmi_qt.main(["--headless", "--dry-run", *extra])
         self.assertEqual(code, 0)
         return view
 
@@ -923,12 +913,14 @@ class TestHeadlessProgram(unittest.TestCase):
             unused.bind(("127.0.0.1", 0))
             port = unused.getsockname()[1]
         environment = {
-            key: value for key, value in os.environ.items() if key != "DISPLAY"
+            key: value
+            for key, value in os.environ.items()
+            if key not in ("DISPLAY", "WAYLAND_DISPLAY")
         }
         code = (
             "import sys; sys.modules['tkinter'] = None; "
-            "from scraftcam.hmi import lcnc_hmi; "
-            "sys.exit(lcnc_hmi.main(sys.argv[1:]))"
+            "from scraftcam.hmi import lcnc_hmi_qt; "
+            "sys.exit(lcnc_hmi_qt.main(sys.argv[1:]))"
         )
         with subprocess.Popen(
             [sys.executable, "-c", code, "--headless", "--dry-run",
@@ -944,23 +936,6 @@ class TestHeadlessProgram(unittest.TestCase):
                 panel.kill()
             assert panel.stderr is not None
             self.assertEqual(panel.stderr.read(), b"")
-
-    def test_refuses_without_tkinter(self) -> None:
-        """With no `tkinter`, a window can not open, and it says so."""
-        code = (
-            "import sys; sys.modules['tkinter'] = None; "
-            "from scraftcam.hmi import lcnc_hmi; "
-            "sys.exit(lcnc_hmi.main(['--dry-run']))"
-        )
-        done = subprocess.run(
-            [sys.executable, "-c", code],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=30.0,
-        )
-        self.assertEqual(done.returncode, 1)
-        self.assertIn("tkinter is not installed", done.stderr)
 
 
 def ask_port(port: int, line: str) -> str:

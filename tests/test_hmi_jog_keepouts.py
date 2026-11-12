@@ -1,10 +1,10 @@
 """Tests for checking jogs against the setup's keep-outs (`T.hs~5.1.5` S8)."""
 
 import unittest
-from typing import Any, cast
 
 from scraftcam.geometry import Corner, RoundedPolygon
-from scraftcam.hmi import lcnc_hmi, lcnc_hmi_headless
+from scraftcam.hmi import lcnc_hmi
+from tests.qt_hmi import make_hmi
 
 
 def clamp(x0: float, x1: float, top: float) -> RoundedPolygon:
@@ -21,10 +21,8 @@ class TestJogKeepOuts(unittest.TestCase):
     """
 
     def setUp(self) -> None:
-        lcnc_hmi.use_headless()
         self.machine = lcnc_hmi.HMIMachine(True)
-        self.root: Any = lcnc_hmi_headless.Tk()
-        self.hmi = lcnc_hmi.HMI(cast(Any, self.root), self.machine, 10.0, None)
+        self.hmi = make_hmi(self.machine)
 
     def guard(self, zone: RoundedPolygon) -> None:
         """Give the HMI a setup's keep-out, with its origin set."""
@@ -41,7 +39,7 @@ class TestJogKeepOuts(unittest.TestCase):
         self.hmi.handle("press 1")
         answer = self.hmi.handle("press +X")
         self.assertIn("Jog refused: it would enter clamp", answer)
-        self.assertIn("smaller step", self.hmi.show()["message"])
+        self.assertIn("smaller step", self.hmi.show_state()["message"])
         self.assertEqual(self.jogs(), [])
 
         # A smaller step that stays clear is sent.
@@ -53,17 +51,18 @@ class TestJogKeepOuts(unittest.TestCase):
         """No setup, or no origin: jogs go, and that is said once."""
         self.assertEqual(self.hmi.handle("press +X"), "ok")
         self.assertEqual(
-            self.hmi.show()["message"], "Jogs not checked: no setup"
+            self.hmi.show_state()["message"], "Jogs not checked: no setup"
         )
-        self.hmi.message.configure(text="")
+        self.hmi.message.setText("")
         self.hmi.handle("press -X")
-        self.assertEqual(self.hmi.show()["message"], "")
+        self.assertEqual(self.hmi.show_state()["message"], "")
 
         self.hmi.zones = [clamp(0.5, 1.5, 0.25)]
         self.hmi.handle("press 1")
         self.assertEqual(self.hmi.handle("press +X"), "ok")
         self.assertEqual(
-            self.hmi.show()["message"], "Jogs not checked: origin not set"
+            self.hmi.show_state()["message"],
+            "Jogs not checked: origin not set",
         )
         self.assertEqual(len(self.jogs()), 3)
 
