@@ -45,3 +45,11 @@ spacers under the part (through cuts), `T.sm2~5.5`.
 The HMI work (S1-S14) is done and checked by the user in a GUI run;
 see its `Summary.md`.  Next candidates: `T.npfetc~5.4` (a path per
 tool change), `T.cmt~5.3` (more tools), `T.sm2~5.5`.
+
+## 2026-11-12: Qt, PyPI, no macOS (`T.osiade~5.1.9`)
+
+The GUI toolkit is now Qt (PySide6), not `tkinter`; `scraftcnc` will
+be published on PyPI with a standard-library bootstrap installer into
+`~/.scraftcnc/venv/`; macOS is dropped; Linux is Wayland only.  Next:
+port the HMI to Qt (`T.hs~5.1.5`, to be reopened).  See `T.osiade~5.1.9`'s
+`Context.md`, #18-#63.
