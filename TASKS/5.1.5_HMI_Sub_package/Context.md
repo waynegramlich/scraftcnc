@@ -558,3 +558,40 @@ blocked for Claude by auto mode) and sets the remote, commits, then
 renames the local directory to `projects/scraftcam` and restarts
 Claude Code there (its memory folder was copied to the new path's
 name beforehand).  Next: S2.
+
+## 2026-11-12: S2 redefined: no venv
+
+The user: a venv only sets a few variables, so skip it.
+`packages.require()` already installs with `pip --target` into
+`~/.scraftcam/packages/<cache_tag>/` and puts that first on
+`sys.path`; the HMI calls it for `PySide6-Essentials==6.12.0` before
+importing Qt.  Decided: no venv anywhere (replaces `T.osiade~5.1.9`
+#55; the bootstrap installer also installs `scraftcam` with
+`--target`, its launcher sets `sys.path`) (#8).  PySide6 is checked
+by SHA-256 now (`--require-hashes`, pinned hashes) (#9).  Downloads
+happen without asking, for now (#10).  `mypy` and `pylint` are pointed
+at the packages directory, `extension-pkg-allow-list = PySide6`; all
+code goes through `ruff`, `mypy`, `pylint` (#12).  #11 (stale files
+left by upgrades with `--target`) is being explained.
+
+## 2026-11-12: S2 done
+
+#11/#13: each module gets its own directory,
+`~/.scraftcam/packages/<cache_tag>/<module>/`, holding a
+`requirements.txt` stamp written last.  When the module's table in
+the new `scraftcam/pins.toml` changes, `pip --target` installs into
+`.<module>.part`, which is swapped in whole (a failure leaves the old
+one), so versions never mix.  `require(module)` (was `require(module,
+requirement)`); `pdf.py` and `test_catalog_pdf.py` follow.  PySide6
+6.12.0 and shiboken6 are pinned with every wheel's SHA-256
+(`--require-hashes --only-binary=:all:`); `python3 -m
+scraftcam.packages NAME==VERSION ...` prints the pins.  A real wrong
+digest was refused.  `drop_old_layout()` deletes the old shared
+install (the module directories kept).  On this machine: `~/.scraftcnc/`
+moved to `~/.scraftcam/`, PySide6 (12 s) and pdfplumber installed the
+new way.  `mypy.ini`: `mypy_path` to the PySide6 directory, errors in
+`PySide6.*`/`shiboken6.*` ignored; `.pylintrc`: `init-hook` and
+`extension-pkg-allow-list = PySide6`; probed: both see PySide6, mypy
+catches a wrong argument type (pylint does not see Qt methods).  Both
+hard-code `cpython-312`.  New `tests/test_packages.py` (8).  Checkers
+clean; `mypy` on the whole tree clean (84 files).  Next: S3.

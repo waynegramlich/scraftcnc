@@ -15,8 +15,9 @@ from pathlib import Path
 from scraftcam.packages import PACKAGES_DIRECTORY
 
 # Look where `scraftcam.packages` puts the PDF packages.
-if str(PACKAGES_DIRECTORY) not in sys.path:
-    sys.path.insert(0, str(PACKAGES_DIRECTORY))
+PDF_DIRECTORY: Path = PACKAGES_DIRECTORY / "pdfplumber"
+if str(PDF_DIRECTORY) not in sys.path:
+    sys.path.insert(0, str(PDF_DIRECTORY))
 READY: bool = all(
     importlib.util.find_spec(name) is not None
     for name in ("pdfplumber", "pypdfium2", "tkinter")

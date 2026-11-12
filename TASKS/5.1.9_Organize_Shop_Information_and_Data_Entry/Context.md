@@ -179,3 +179,10 @@ window drew an end mill sketch with dimension letters;
 The user force pushed: `github/main` is `1fe9d36` with the reworded
 "5.1.9" commits; the 2026-11-08 "do not pull with rebase" caution is
 over.
+
+## 2026-11-12: #55 replaced: no venv
+
+No venv anywhere: packages go in with `pip --target` into
+`~/.scraftcam/packages/<cache_tag>/` (`packages.require()`), and
+`scraftcam` itself too, from the bootstrap installer; its launcher
+puts the directory on `sys.path`.  See `T.hs~5.1.5`'s `Context.md`.

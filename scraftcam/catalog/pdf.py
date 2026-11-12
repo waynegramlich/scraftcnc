@@ -373,7 +373,7 @@ class Document:
         Raises:
         * `SystemExit`: If the packages can not be fetched.
         """
-        require("pdfplumber", "pdfplumber>=0.11")
+        require("pdfplumber")
         self.pdfplumber: Any = importlib.import_module("pdfplumber")
         pypdfium2: Any = importlib.import_module("pypdfium2")
         self.path: Path = path

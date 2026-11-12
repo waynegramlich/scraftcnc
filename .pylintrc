@@ -1,5 +1,13 @@
 # Configuration for `pylint`.
 
+[MAIN]
+# `PySide6`, where `scraftcam.packages` installs it for the system
+# Python 3.12 (as in `mypy.ini`).
+init-hook = import pathlib, sys; sys.path.insert(0, str(pathlib.Path.home() / ".scraftcam/packages/cpython-312/PySide6"))
+# `PySide6` is compiled, so `pylint` may load it to see its names
+# (agreed with the user, 2026-11-12).
+extension-pkg-allow-list = PySide6
+
 [FORMAT]
 # Long single file programs (e.g. `catxtract.py`) are fine (the user,
 # 2026-11-07).
