@@ -26,7 +26,7 @@ import math
 import textwrap
 import xml.etree.ElementTree as ET
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from types import ModuleType
 from typing import TypeAlias
@@ -43,6 +43,7 @@ from ..shops import (
     TableField,
     check_tool,
     dimension_letters,
+    free_letters,
     markdown_table,
     measure,
 )
@@ -81,6 +82,12 @@ ARROW_WIDTH: float = 0.03
 LETTER_OFF: float = 0.14
 CENTER_LINE_PAST: float = 0.12
 
+# How long a bracket's end ticks are (inches).
+TICK: float = 0.08
+
+# The sizes that are counts, not lengths (#36).
+COUNTS: tuple[str, ...] = ("columns", "rows")
+
 # The radius of the arc that marks a point angle (inches).
 ANGLE_RADIUS: float = 0.26
 
@@ -92,7 +99,7 @@ LETTER_SIZE: int = 18
 
 # Class `Dimension`:
 @dataclass(frozen=True, slots=True)
-class Dimension:
+class Dimension:  # pylint: disable=too-many-instance-attributes
     """One dimension line on a sketch, in the sample's inches.
 
     Attributes:
@@ -108,9 +115,14 @@ class Dimension:
       tool, in the other direction.  A `reach` equal to `at` means no
       extension lines, with the letter in line with the line.
     * `letter_shift` (`float`): How far along the line to move its letter.
+    * `bracket` (`bool`):
+      True for a count (a grid's rows or columns) rather than a size:
+      a bracket over what it counts, its ends ticked toward the tool,
+      with no arrows and no extension lines (`T.osiade~5.1.9` #36).
 
     Constructor:
-    * `Dimension(key, across, low, high, at, reach, letter_shift)`
+    * `Dimension(key, across, low, high, at, reach, letter_shift,
+      bracket)`
     """
 
     # Constructor arguments:
@@ -121,6 +133,7 @@ class Dimension:
     at: float = field(init=True)
     reach: tuple[float, float] = field(init=True)
     letter_shift: float = field(init=True, default=0.0)
+    bracket: bool = field(init=True, default=False)
 
 
 # Class `Angle`:
@@ -824,6 +837,18 @@ def _dimension(root: ET.Element, dimension: Dimension, letter: str) -> None:
     sign: float = _away(dimension)
     past: float = sign * ARROW_LENGTH / 2
     bare: bool = at == dimension.reach[0]
+    if dimension.bracket:
+        # A count: the line, its ends ticked toward the tool.
+        _line(root, place(low, at), place(high, at))
+        for end in (low, high):
+            _line(root, place(end, at), place(end, at - sign * TICK))
+        x_at: float
+        z_at: float
+        x_at, z_at = place(
+            (low + high) / 2 + dimension.letter_shift, at + sign * LETTER_OFF
+        )
+        _letter(root, x_at, z_at, letter)
+        return
     if not bare:
         _line(root, place(low, dimension.reach[0]), place(low, at + past))
         _line(root, place(high, dimension.reach[1]), place(high, at + past))
@@ -1954,12 +1979,21 @@ def size_letters(views: list[View], kind: str = "") -> dict[str, str]:
     * (`dict[str, str]`): Each size's path and letters.
     """
     keys: list[str] = [mark.key for view in views for mark in view.marks]
-    if kind in KINDS:
-        fields: dict[str, str] = {
-            schema.key: schema.letter for schema in KINDS[kind].fields
-        }
-        return {key: fields[key] for key in dict.fromkeys(keys)}
-    return dimension_letters(list(dict.fromkeys(keys)))
+    drawn: list[str] = list(dict.fromkeys(keys))
+    if kind not in KINDS:
+        return dimension_letters(drawn)
+
+    # The kind's fields' letters; a size that is not a field (such as
+    # a plate's length, from its grid) takes a letter still free.
+    fields: dict[str, str] = {
+        schema.key: schema.letter
+        for schema in KINDS[kind].fields
+        if schema.letter
+    }
+    others: dict[str, str] = free_letters(
+        [key for key in drawn if key not in fields], set(fields.values())
+    )
+    return {key: fields.get(key) or others[key] for key in drawn}
 
 
 # Function `view_sketch()`:
@@ -2143,7 +2177,13 @@ def _size_rows(
     """
     rows: list[list[str]] = [["Letter", "Units", "Description"]]
     for key, letter in letters.items():
-        units: str = "Lengths" if key.endswith(".centers") else "Length"
+        units: str = (
+            "Count"
+            if key in COUNTS
+            else "Lengths"
+            if key.endswith(".centers")
+            else "Length"
+        )
         rows.append([letter, units, f"`{key}`: {meanings[key]}"])
     return rows
 
@@ -2439,7 +2479,173 @@ def parallel_section() -> str:
 # The grid plate that its section is drawn from, and how much larger
 # its hole's section is drawn.
 GRID: GridPlate = GRID_PLATE
-DETAIL: float = 8.0
+DETAIL: float = 6.0
+
+
+# The grid plate the top view draws: made up (#33), so that each
+# broken corner's 4 by 4 grid holes take in 2 by 2 tooling holes, a
+# checkerboard with its tooling pitch on one piece.  The sample shop's
+# plate (`GRID`), with its 3 in tooling pitch, would need corners 7
+# rows tall.
+SKETCH_GRID: GridPlate = replace(
+    GRID_PLATE,
+    name="Sketch grid plate",
+    rows=16,
+    columns=12,
+    tooling_pitch=2.0 * GRID_PLATE.pitch,
+)
+
+# How much of the grid plate each broken corner shows: grid columns
+# and rows of holes (#28).
+BREAK_COLUMNS: int = 4
+BREAK_ROWS: int = 4
+
+# The gap between the corners' long break lines, and the size of a
+# break line's zigzag (inches).
+BREAK_GAP: float = 0.6
+ZIG_HALF: float = 0.12
+ZIG_HIGH: float = 0.12
+
+
+# Class `_Broken`:
+@dataclass(slots=True, frozen=True)
+class _Broken:
+    """A plate drawn broken: its four corners, the middle left out.
+
+    Each corner is drawn true, out to a long break line; the corners
+    sit `BREAK_GAP` apart, so the plate's sizes are not to scale.
+
+    Attributes:
+    * `half_x` (`float`): Half the plate's length (inches).
+    * `half_y` (`float`): Half its width (inches).
+    * `reach_x` (`float`): How far each corner reaches in from the
+      side, along X (inches).
+    * `reach_y` (`float`): How far it reaches in along Y (inches).
+    * `drawn_x` (`float`): Half the drawing's length (inches).
+    * `drawn_y` (`float`): Half its width (inches).
+
+    Constructor:
+    * `_Broken(half_x, half_y, reach_x, reach_y)`
+    """
+
+    # Constructor arguments:
+    half_x: float = field(init=True)
+    half_y: float = field(init=True)
+    reach_x: float = field(init=True)
+    reach_y: float = field(init=True)
+
+    # Remaining attributes (alphabetized):
+    drawn_x: float = field(init=False, default=0.0)
+    drawn_y: float = field(init=False, default=0.0)
+
+    def __post_init__(self) -> None:
+        """Work out the drawing's size."""
+        object.__setattr__(self, "drawn_x", self.reach_x + BREAK_GAP / 2.0)
+        object.__setattr__(self, "drawn_y", self.reach_y + BREAK_GAP / 2.0)
+
+    def shows(self, x: float, y: float) -> bool:
+        """Return True if a point of the plate is in a corner drawn.
+
+        Arguments:
+        * `x` (`float`): Its X on the plate (inches, from the center).
+        * `y` (`float`): Its Y.
+
+        Returns:
+        * (`bool`): True if it is drawn.
+        """
+        return (
+            abs(x) > self.half_x - self.reach_x
+            and abs(y) > self.half_y - self.reach_y
+        )
+
+    def at(self, x: float, y: float) -> tuple[float, float]:
+        """Return where a point of a corner is drawn.
+
+        Arguments:
+        * `x` (`float`): Its X on the plate (inches, from the center).
+        * `y` (`float`): Its Y.
+
+        Returns:
+        * (`tuple[float, float]`): Its X and Z in the drawing.
+        """
+        shift_x: float = self.half_x - self.drawn_x
+        shift_y: float = self.half_y - self.drawn_y
+        return (
+            x - math.copysign(shift_x, x),
+            y - math.copysign(shift_y, y),
+        )
+
+    def piece(self, sx: int, sy: int, corner: float) -> ViewShape:
+        """Return one corner's outline, out to its long break lines.
+
+        Arguments:
+        * `sx` (`int`): 1 for a corner on the right, -1 on the left.
+        * `sy` (`int`): 1 for a corner at the top, -1 at the bottom.
+        * `corner` (`float`): The plate's corner radius (inches).
+
+        Returns:
+        * (`ViewShape`): The corner, filled.
+        """
+        # From the end of the top (or bottom) break line, round the
+        # rounded corner, then along both break lines, drawn after
+        # mirroring so that facing ones mesh.
+        inner_x: float = sx * BREAK_GAP / 2.0
+        inner_y: float = sy * BREAK_GAP / 2.0
+        hx: float = sx * self.drawn_x
+        hy: float = sy * self.drawn_y
+        points: Profile = [
+            (hx - sx * corner, hy),
+            (hx, hy - sy * corner),
+            *_zigzag((hx, inner_y), (inner_x, inner_y)),
+            *_zigzag((inner_x, inner_y), (inner_x, hy)),
+        ]
+
+        # The rounded corner is the one arc; mirroring once reverses
+        # its direction.
+        pixels: float = corner * SCALE
+        sweep: int = 1 if sx * sy > 0 else 0
+        path: str = f"M {_xy(*points[-1])} L {_xy(*points[0])}"
+        path += f" A {pixels:.1f} {pixels:.1f} 0 0 {sweep} {_xy(*points[1])}"
+        path += "".join(f" L {_xy(x, y)}" for x, y in points[2:])
+        return ViewShape(path + " Z", points, TOOL_FILL, "")
+
+
+# Function `_zigzag()`:
+def _zigzag(start: tuple[float, float], end: tuple[float, float]) -> Profile:
+    """Return a long break line: straight, with a zigzag in its middle.
+
+    The line runs along X or along Z.  Its zigzag goes the same way
+    whichever way the line is drawn, so the break lines of two
+    corners that face each other mesh: a peak of one sits in the
+    other's valley (#28).
+
+    Arguments:
+    * `start` (`tuple[float, float]`): Where it starts (inches).
+    * `end` (`tuple[float, float]`): Where it ends.
+
+    Returns:
+    * (`Profile`): Its points, `start` and `end` included.
+    """
+    # Along the line, from its low end: the zigzag's points, each
+    # with how far it is off the line (up, or right).
+    along_x: bool = start[1] == end[1]
+    axis: int = 0 if along_x else 1
+    low: float = min(start[axis], end[axis])
+    middle: float = (start[axis] + end[axis]) / 2.0
+    offsets: list[tuple[float, float]] = [
+        (middle - ZIG_HALF, 0.0),
+        (middle - ZIG_HALF / 3.0, ZIG_HIGH),
+        (middle + ZIG_HALF / 3.0, -ZIG_HIGH),
+        (middle + ZIG_HALF, 0.0),
+    ]
+    if start[axis] != low:
+        offsets.reverse()
+    line: float = start[1 - axis]
+    points: Profile = [
+        (along, line + off) if along_x else (line + off, along)
+        for along, off in offsets
+    ]
+    return [start, *points, end]
 
 
 # Function `grid_plate_views()`:
@@ -2447,145 +2653,235 @@ def grid_plate_views() -> list[View]:
     """Return the views of the grid plate, in the document's order.
 
     Returns:
-    * (`list[View]`): The view from above, and a section through one
-      grid hole, drawn larger.
+    * (`list[View]`): The view from above (of `SKETCH_GRID`, broken),
+      and a section along a row of grid holes, drawn larger.
     """
-    # The plate, its grid holes with their chamfers, and its tooling
-    # holes: the tap drill holes filled, the close fit holes open.
-    g: GridPlate = GRID
-    half_x: float = _in(g.length) / 2.0
-    half_y: float = _in(g.width) / 2.0
+    # The plate, broken (#28): its four corners, each with its grid
+    # holes, their chamfers, and a tooling hole (the tap drill holes
+    # filled, the close fit holes open), the middle left out.
+    g: GridPlate = SKETCH_GRID
+    broken: _Broken = _Broken(
+        _in(g.length) / 2.0,
+        _in(g.width) / 2.0,
+        _in(g.edge) + (BREAK_COLUMNS - 0.5) * _in(g.pitch),
+        _in(g.edge) + (BREAK_ROWS - 0.5) * _in(g.pitch),
+    )
     hole: float = _in(g.hole_diameter) / 2.0
     top: float = _in(g.chamfered_diameter()) / 2.0
-    shapes: list[ViewShape] = [
-        _outline(g.outline((0.0, 0.0)), TOOL_FILL),
-    ]
-    for x, y in g.hole_centers():
-        shapes.append(_circle((_in(x), _in(y)), top, "white"))
-        if top > hole:
-            shapes.append(_circle((_in(x), _in(y)), hole, "white"))
-    for x, y, diameter in g.tooling_holes():
-        fill: str = POCKET_FILL if diameter == g.tap_diameter else "white"
-        shapes.append(_circle((_in(x), _in(y)), _in(diameter) / 2.0, fill))
-
-    # Along the bottom: the edge, the pitch and the length; up the left
-    # side, the width; the tooling holes along the top.
-    columns: list[float] = [_in(x) for x, _ in g.hole_centers()[:2]]
-    tooling: list[tuple[float, float, float]] = [
-        (_in(x), _in(y), _in(d) / 2.0) for x, y, d in g.tooling_holes()
-    ]
-    below: float = -half_y - STAND_OFF
     corner: float = _in(g.corner_radius)
+    shapes: list[ViewShape] = [
+        broken.piece(sx, sy, corner) for sx in (-1, 1) for sy in (-1, 1)
+    ]
+    x: float
+    y: float
+    for x, y in g.hole_centers():
+        if broken.shows(_in(x), _in(y)):
+            center: tuple[float, float] = broken.at(_in(x), _in(y))
+            shapes.append(_circle(center, top, "white"))
+            if top > hole:
+                shapes.append(_circle(center, hole, "white"))
+    tooling: list[tuple[float, float, float]] = [
+        (*broken.at(_in(x), _in(y)), _in(d) / 2.0)
+        for x, y, d in g.tooling_holes()
+        if broken.shows(_in(x), _in(y))
+    ]
+    radius: float
+    for x, y, radius in tooling:
+        fill: str = (
+            POCKET_FILL
+            if math.isclose(2.0 * radius, _in(g.tooling_tap_diameter))
+            else "white"
+        )
+        shapes.append(_circle((x, y), radius, fill))
+
+    # Along the bottom: the edge and the pitch, then the columns; up
+    # the left side, the same and the rows (#36).
+    half_x: float = broken.drawn_x
+    half_y: float = broken.drawn_y
+    drawn: list[tuple[float, float]] = [
+        broken.at(_in(x), _in(y))
+        for x, y in g.hole_centers()
+        if broken.shows(_in(x), _in(y))
+    ]
+    columns: list[float] = sorted({x for x, _ in drawn})
+    rows: list[float] = sorted({y for _, y in drawn})
+    below: float = -half_y - STAND_OFF
+    left: float = -half_x - STAND_OFF
     marks: list[Mark] = [
         Dimension(
-            "edge",
+            "edge", True, -half_x, columns[0], below, (-half_y, rows[0])
+        ),
+        Dimension(
+            "pitch", True, columns[0], columns[1], below, (rows[0], rows[0])
+        ),
+        Dimension(
+            "columns",
             True,
-            -half_x,
             columns[0],
-            below,
-            (-half_y, -half_y + _in(g.edge)),
+            columns[-1],
+            below - ROW,
+            (-half_y, -half_y),
+            bracket=True,
+        ),
+        Dimension(
+            "edge", False, -half_y, rows[0], left, (-half_x, columns[0])
         ),
         Dimension(
             "pitch",
+            False,
+            rows[0],
+            rows[1],
+            left,
+            (columns[0], columns[0]),
+        ),
+        Dimension(
+            "rows",
+            False,
+            rows[0],
+            rows[-1],
+            left - ROW,
+            (-half_x, -half_x),
+            bracket=True,
+        ),
+        Dimension(
+            "hole_diameter",
             True,
-            columns[0],
-            columns[1],
+            columns[-1] - hole,
+            columns[-1] + hole,
             below,
-            (-half_y + _in(g.edge), -half_y + _in(g.edge)),
-        ),
-        Dimension(
-            "length", True, -half_x, half_x, below - ROW, (below, below)
-        ),
-        Dimension(
-            "width", False, -half_y, half_y, -half_x - STAND_OFF, (0.0, 0.0)
+            (rows[0], rows[0]),
         ),
         Radius(
             "corner_radius",
-            (half_x - corner, -half_y + corner),
+            (half_x - corner, half_y - corner),
             corner,
-            -45.0,
-            (0.35, -0.35),
+            45.0,
+            (0.35, 0.35),
         ),
     ]
-    if tooling:
-        # The top row: one of each size, and the distance between them.
-        (x_tap, y_top, r_tap), (x_close, _, r_close) = tooling[-2:]
-        if r_tap > r_close:
-            (x_tap, r_tap), (x_close, r_close) = (
-                (x_close, r_close),
-                (x_tap, r_tap),
-            )
-        above: float = half_y + STAND_OFF
-        marks += [
+
+    # Along the top: the tooling pitch over the upper left corner's top
+    # tooling holes, and each size over the upper right corner's.
+    top_row: float = max((y for _, y, _ in tooling), default=0.0)
+    upper: list[tuple[float, float, float]] = sorted(
+        hole for hole in tooling if hole[1] == top_row
+    )
+    above: float = half_y + STAND_OFF
+    on_left: list[tuple[float, float, float]] = [
+        hole for hole in upper if hole[0] < 0.0
+    ]
+    if len(on_left) >= 2:
+        marks.append(
             Dimension(
                 "tooling_pitch",
                 True,
-                tooling[-2][0],
-                tooling[-1][0],
-                above + ROW,
-                (y_top, y_top),
-            ),
-            Dimension(
-                "tap_diameter",
-                True,
-                x_tap - r_tap,
-                x_tap + r_tap,
+                on_left[0][0],
+                on_left[1][0],
                 above,
-                (y_top, y_top),
-            ),
-            Dimension(
-                "close_diameter",
-                True,
-                x_close - r_close,
-                x_close + r_close,
-                above,
-                (y_top, y_top),
-            ),
-        ]
+                (top_row, top_row),
+            )
+        )
+    for x, y, radius in upper:
+        if x > 0.0:
+            tap: bool = math.isclose(2.0 * radius, _in(g.tooling_tap_diameter))
+            marks.append(
+                Dimension(
+                    (
+                        "tooling_tap_diameter"
+                        if tap
+                        else "tooling_close_diameter"
+                    ),
+                    True,
+                    x - radius,
+                    x + radius,
+                    above,
+                    (y, y),
+                )
+            )
     return [
         View("top", "Top", shapes, marks),
-        _grid_hole_section(),
+        _grid_section(),
     ]
 
 
-# Function `_grid_hole_section()`:
-def _grid_hole_section() -> View:
-    """Return a section through one grid hole, `DETAIL` times size.
+# Function `_grid_section()`:
+def _grid_section() -> View:
+    """Return a section along a row of grid holes, `DETAIL` times size.
+
+    The cut runs through the centers of the row nearest a side, from
+    the plate's side across two holes, to a long break line
+    (`T.osiade~5.1.9` #32, #37): the edge's chamfer, and each hole's.
 
     Returns:
-    * (`View`): The section, across the hole, a pitch wide.
+    * (`View`): The section.
     """
+    # Across the cut from the side (X 0), up from the bottom: the solid
+    # between the side and the first hole, between the holes, and past
+    # the second to the break.
     g: GridPlate = GRID
-    side: float = _in(g.pitch) / 2.0 * DETAIL
+    tall: float = _in(g.thickness) * DETAIL
+    bevel: float = _in(g.edge_chamfer) * DETAIL
+    deep: float = _in(g.chamfer_width) * DETAIL
     hole: float = _in(g.hole_diameter) / 2.0 * DETAIL
-    deep: float = _in(g.chamfer_depth) * DETAIL
-    tall: float = _in(g.height) * DETAIL
-    left: Profile = [
-        (-side, 0.0),
-        (-hole, 0.0),
-        (-hole, tall - deep),
-        (-hole - deep, tall),
-        (-side, tall),
+    top: float = hole + deep
+    first: float = _in(g.edge) * DETAIL
+    second: float = first + _in(g.pitch) * DETAIL
+    end: float = second + _in(g.pitch) / 2.0 * DETAIL
+    side: Profile = [
+        (0.0, 0.0),
+        (first - hole, 0.0),
+        (first - hole, tall - deep),
+        (first - top, tall),
+        (bevel, tall),
+        (0.0, tall - bevel),
     ]
-    right: Profile = [(-x, z) for x, z in reversed(left)]
+    between: Profile = [
+        (first + hole, 0.0),
+        (second - hole, 0.0),
+        (second - hole, tall - deep),
+        (second - top, tall),
+        (first + top, tall),
+        (first + hole, tall - deep),
+    ]
+    past: Profile = [
+        (second + hole, 0.0),
+        *_zigzag((end, 0.0), (end, tall)),
+        (second + top, tall),
+        (second + hole, tall - deep),
+    ]
     shapes: list[ViewShape] = [
-        _polygon(left),
-        _polygon(right),
-        _center_line(False, 0.0, 0.0, tall),
+        _polygon(side),
+        _polygon(between),
+        _polygon(past),
+        _center_line(False, first, 0.0, tall),
+        _center_line(False, second, 0.0, tall),
     ]
+
+    # The thickness on the left; the chamfers above; the hole below.
+    above: float = tall + STAND_OFF
     marks: list[Mark] = [
-        Dimension("height", False, 0.0, tall, side + STAND_OFF, (side, side)),
-        Dimension("hole_diameter", True, -hole, hole, -STAND_OFF, (0.0, 0.0)),
+        Dimension("thickness", False, 0.0, tall, -STAND_OFF, (0.0, 0.0)),
         Dimension(
-            "chamfer_depth",
-            False,
-            tall - deep,
-            tall,
-            -side - STAND_OFF,
-            (-hole, -side),
+            "edge_chamfer", True, 0.0, bevel, above, (tall - bevel, tall)
+        ),
+        Dimension(
+            "chamfer_width",
+            True,
+            first - top,
+            first - hole,
+            above,
+            (tall, tall - deep),
+        ),
+        Dimension(
+            "hole_diameter",
+            True,
+            second - hole,
+            second + hole,
+            -STAND_OFF,
+            (0.0, 0.0),
         ),
     ]
-    title: str = f"Section through a grid hole ({DETAIL:.0f} times size)"
+    title: str = f"Section along a row of grid holes ({DETAIL:.0f} times size)"
     return View("section", title, shapes, marks)
 
 

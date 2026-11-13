@@ -1447,17 +1447,19 @@ Model the parallel, up from the center of its bottom edge.
 
 A grid plate: a plate with a grid of holes, for holding work down.
 
-The grid has the same pitch along X and Y, and fills the plate, with its
-outer holes `edge` in from all four sides.  Each hole's top edge may be
-chamfered at 45 degrees.
+The grid is `rows` by `columns` holes, with the same pitch along X and
+Y, its outer holes `edge` in from all four sides; the plate's length and
+width follow (`T.osiade~5.1.9` #29).  Each hole's top edge may be
+chamfered at 45 degrees, `chamfer_width` wide, and the plate's top outer
+edge too, `edge_chamfer` wide (#37).
 
-It may also have tooling holes, in an even number of rows and columns,
-centered on the plate, each one dead center between four of the grid's
-holes.  They come in two sizes, a tap drill for a thread and a close fit
-for the same screw, in a checkerboard: a tooling hole's neighbors along
-X and Y are the other size.  With them, grid plates are easy to make in
-pairs in a home shop, and pairs of them hold many parts made at the same
-time.
+It may also have tooling holes, on a square pattern `tooling_pitch`
+apart, centered on the plate, each one dead center between four of the
+grid's holes, as many as fit inside the grid's outer holes (#30).  They
+come in two sizes, a tap drill for a thread and a close fit for the same
+screw, in a checkerboard: a tooling hole's neighbors along X and Y are
+the other size.  With them, grid plates are easy to make in pairs in a
+home shop, and pairs of them hold many parts made at the same time.
 
 Its outline is an `RoundedPolygon` with its four corners rounded and all
 of the holes inside, so that one extrude makes the plate; one chamfer
@@ -1486,7 +1488,7 @@ Top:
 
 ![Grid plate, top](docs/tool_models/grid_plate_top.svg)
 
-Section through a grid hole (8 times size):
+Section along a row of grid holes (6 times size):
 
 ![Grid plate, section](docs/tool_models/grid_plate_section.svg)
 
@@ -1494,28 +1496,30 @@ Section through a grid hole (8 times size):
 | ------ | ------ | --------------------------------------------------------- |
 | E      | Length | `edge`: The distance from a side to the nearest holes.    |
 | P      | Length | `pitch`: The distance between grid holes, along X and Y.  |
-| L      | Length | `length`: Its size along X.                               |
-| W      | Length | `width`: Its size along Y.                                |
-| C      | Length | `corner_radius`: Optional. The radius of its corners.     |
-| T      | Length | `tooling_pitch`: Optional. The distance between tooling   |
-|        |        | holes, along X and Y.                                     |
-| Td     | Length | `tap_diameter`: Optional. The diameter of the tooling     |
-|        |        | holes to be threaded (the tap drill).                     |
-| Cl     | Length | `close_diameter`: Optional. The diameter of the close fit |
-|        |        | tooling holes.                                            |
-| H      | Length | `height`: Its size along Z, its thickness.                |
-| Hd     | Length | `hole_diameter`: The diameter of the grid's holes.        |
-| Cd     | Length | `chamfer_depth`: Optional. How deep the 45 degree chamfer |
-|        |        | on each grid hole's top edge is; 0 for none. Slow to      |
-|        |        | model the first time (above).                             |
+| C      | Count  | `columns`: The number of columns of grid holes (along X). |
+| R      | Count  | `rows`: The number of rows of grid holes (along Y).       |
+| H      | Length | `hole_diameter`: The diameter of the grid's holes.        |
+| Cr     | Length | `corner_radius`: Optional. The radius of its corners.     |
+| Tp     | Length | `tooling_pitch`: Optional. The distance between tooling   |
+|        |        | holes, along X and Y; 0 for none.                         |
+| Tc     | Length | `tooling_close_diameter`: Optional. The diameter of the   |
+|        |        | close fit tooling holes.                                  |
+| Tt     | Length | `tooling_tap_diameter`: Optional. The diameter of the     |
+|        |        | tooling holes to be threaded (the tap drill).             |
+| T      | Length | `thickness`: Its size along Z.                            |
+| Ec     | Length | `edge_chamfer`: Optional. How wide (and deep) the 45      |
+|        |        | degree chamfer on the plate's top outer edge is; 0 for    |
+|        |        | none. Square corners, or corners rounded at least that    |
+|        |        | much.                                                     |
+| Cw     | Length | `chamfer_width`: Optional. How wide (and so how deep) the |
+|        |        | 45 degree chamfer on each grid hole's top edge is; 0 for  |
+|        |        | none. Slow to model the first time (above).               |
 
 Not a size:
 
 * `name`: What it is.
-* `tooling_columns`: Optional.  The number of columns of tooling holes,
-  an even number; 0 for none.
-* `tooling_rows`: Optional.  The number of rows of tooling holes, an
-  even number; 0 for none.
+* `length`: Its size along X, from the grid.
+* `width`: Its size along Y, from the grid.
 
 A shop describes each grid plate in a file in its `tooling/`
 (`Shops.md`), as `examples/shop/tooling/grid_plate.toml`
@@ -1531,19 +1535,18 @@ notes = """\
   `tools.GRID_PLATE`, so that a setup naming it uses the same cached \
   model."""
 description = "Aluminum, made in the shop, with tooling holes for #10-32"
-length = "5-1/2 in"
-width = "10-1/2 in"
-height = "1/2 in"
+rows = 20
+columns = 10
 pitch = "1/2 in"
 edge = "1/2 in"
+thickness = "1/2 in"
 hole_diameter = "0.144 in"
 corner_radius = "1/4 in"
-chamfer_depth = "1/32 in"
-tooling_columns = 2
-tooling_rows = 4
+chamfer_width = "1/32 in"
+edge_chamfer = "1/32 in"
 tooling_pitch = "3 in"
-tap_diameter = "0.159 in"
-close_diameter = "0.196 in"
+tooling_tap_diameter = "0.159 in"
+tooling_close_diameter = "0.196 in"
 ```
 
 Or it is made in Python, in millimeters:
@@ -1580,33 +1583,35 @@ the shop's tooling files or `tools.py`:
 ```python
 scraftcam.tooling.tools.GridPlate(
     name: str,
-    length: float,
-    width: float,
-    height: float,
+    rows: int,
+    columns: int,
     pitch: float,
     edge: float,
+    thickness: float,
     hole_diameter: float,
     corner_radius: float,
-    chamfer_depth: float,
-    tooling_columns: int,
-    tooling_rows: int,
+    chamfer_width: float,
+    edge_chamfer: float,
     tooling_pitch: float,
-    tap_diameter: float,
-    close_diameter: float,
+    tooling_tap_diameter: float,
+    tooling_close_diameter: float,
 )
 ```
 
 A grid plate: a plate with a grid of holes, for holding work down.
 
-The grid has the same pitch along X and Y, and fills the plate, with
-its outer holes `edge` in from all four sides.  Each hole's top edge
-may be chamfered at 45 degrees.
+The grid is `rows` by `columns` holes, with the same pitch along X
+and Y, its outer holes `edge` in from all four sides; the plate's
+length and width follow (`T.osiade~5.1.9` #29).  Each hole's top
+edge may be chamfered at 45 degrees, `chamfer_width` wide, and the
+plate's top outer edge too, `edge_chamfer` wide (#37).
 
-It may also have tooling holes, in an even number of rows and
-columns, centered on the plate, each one dead center between four of
-the grid's holes.  They come in two sizes, a tap drill for a thread
-and a close fit for the same screw, in a checkerboard: a tooling
-hole's neighbors along X and Y are the other size.  With them, grid
+It may also have tooling holes, on a square pattern `tooling_pitch`
+apart, centered on the plate, each one dead center between four of
+the grid's holes, as many as fit inside the grid's outer holes
+(#30).  They come in two sizes, a tap drill for a thread and a
+close fit for the same screw, in a checkerboard: a tooling hole's
+neighbors along X and Y are the other size.  With them, grid
 plates are easy to make in pairs in a home shop, and pairs of them
 hold many parts made at the same time.
 
@@ -1626,29 +1631,31 @@ directly does not use the cache.
 
 Attributes:
 * `name` (`str`): What it is.
-* `length` (`float`): Its size along X.
-* `width` (`float`): Its size along Y.
-* `height` (`float`): Its size along Z, its thickness.
+* `rows` (`int`): The number of rows of grid holes (along Y).
+* `columns` (`int`): The number of columns of grid holes (along X).
 * `pitch` (`float`): The distance between grid holes, along X and Y.
 * `edge` (`float`): The distance from a side to the nearest holes.
+* `thickness` (`float`): Its size along Z.
 * `hole_diameter` (`float`): The diameter of the grid's holes.
 * `corner_radius` (`float`): Optional.  The radius of its corners.
-* `chamfer_depth` (`float`):
-  Optional.  How deep the 45 degree chamfer on each grid hole's top
-  edge is; 0 for none.  Slow to model the first time (above).
-* `tooling_columns` (`int`):
-  Optional.  The number of columns of tooling holes, an even number;
-  0 for none.
-* `tooling_rows` (`int`):
-  Optional.  The number of rows of tooling holes, an even number; 0
-  for none.
+* `chamfer_width` (`float`):
+  Optional.  How wide (and so how deep) the 45 degree chamfer on
+  each grid hole's top edge is; 0 for none.  Slow to model the
+  first time (above).
+* `edge_chamfer` (`float`):
+  Optional.  How wide (and deep) the 45 degree chamfer on the
+  plate's top outer edge is; 0 for none.  Square corners, or
+  corners rounded at least that much.
 * `tooling_pitch` (`float`):
-  Optional.  The distance between tooling holes, along X and Y.
-* `tap_diameter` (`float`):
+  Optional.  The distance between tooling holes, along X and Y; 0
+  for none.
+* `tooling_tap_diameter` (`float`):
   Optional.  The diameter of the tooling holes to be threaded (the
   tap drill).
-* `close_diameter` (`float`):
+* `tooling_close_diameter` (`float`):
   Optional.  The diameter of the close fit tooling holes.
+* `length` (`float`): Its size along X, from the grid.
+* `width` (`float`): Its size along Y, from the grid.
 
 ```python
 GridPlate.named(name: str, chamfer: bool = True) -> 'GridPlate'

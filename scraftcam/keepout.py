@@ -511,7 +511,7 @@ def grid_plate_program(turns: int, machine: Machine) -> CNC:
     half_x: float = GRID_PLATE.length / 2.0 / MM_PER_INCH
     half_y: float = GRID_PLATE.width / 2.0 / MM_PER_INCH
     radius: float = GRID_PLATE.corner_radius / MM_PER_INCH
-    bottom: float = -GRID_PLATE.height / MM_PER_INCH
+    bottom: float = -GRID_PLATE.thickness / MM_PER_INCH
     outline: RoundedPolygon = RoundedPolygon(
         GRID_PLATE.name,
         [

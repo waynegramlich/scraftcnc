@@ -3204,15 +3204,18 @@ SCREW_FITS: dict[str, ScrewFit] = {
 class GridPlate:
     """A grid plate: a plate with a grid of holes, for holding work down.
 
-    The grid has the same pitch along X and Y, and fills the plate, with
-    its outer holes `edge` in from all four sides.  Each hole's top edge
-    may be chamfered at 45 degrees.
+    The grid is `rows` by `columns` holes, with the same pitch along X
+    and Y, its outer holes `edge` in from all four sides; the plate's
+    length and width follow (`T.osiade~5.1.9` #29).  Each hole's top
+    edge may be chamfered at 45 degrees, `chamfer_width` wide, and the
+    plate's top outer edge too, `edge_chamfer` wide (#37).
 
-    It may also have tooling holes, in an even number of rows and
-    columns, centered on the plate, each one dead center between four of
-    the grid's holes.  They come in two sizes, a tap drill for a thread
-    and a close fit for the same screw, in a checkerboard: a tooling
-    hole's neighbors along X and Y are the other size.  With them, grid
+    It may also have tooling holes, on a square pattern `tooling_pitch`
+    apart, centered on the plate, each one dead center between four of
+    the grid's holes, as many as fit inside the grid's outer holes
+    (#30).  They come in two sizes, a tap drill for a thread and a
+    close fit for the same screw, in a checkerboard: a tooling hole's
+    neighbors along X and Y are the other size.  With them, grid
     plates are easy to make in pairs in a home shop, and pairs of them
     hold many parts made at the same time.
 
@@ -3232,34 +3235,36 @@ class GridPlate:
 
     Attributes:
     * `name` (`str`): What it is.
-    * `length` (`float`): Its size along X.
-    * `width` (`float`): Its size along Y.
-    * `height` (`float`): Its size along Z, its thickness.
+    * `rows` (`int`): The number of rows of grid holes (along Y).
+    * `columns` (`int`): The number of columns of grid holes (along X).
     * `pitch` (`float`): The distance between grid holes, along X and Y.
     * `edge` (`float`): The distance from a side to the nearest holes.
+    * `thickness` (`float`): Its size along Z.
     * `hole_diameter` (`float`): The diameter of the grid's holes.
     * `corner_radius` (`float`): Optional.  The radius of its corners.
-    * `chamfer_depth` (`float`):
-      Optional.  How deep the 45 degree chamfer on each grid hole's top
-      edge is; 0 for none.  Slow to model the first time (above).
-    * `tooling_columns` (`int`):
-      Optional.  The number of columns of tooling holes, an even number;
-      0 for none.
-    * `tooling_rows` (`int`):
-      Optional.  The number of rows of tooling holes, an even number; 0
-      for none.
+    * `chamfer_width` (`float`):
+      Optional.  How wide (and so how deep) the 45 degree chamfer on
+      each grid hole's top edge is; 0 for none.  Slow to model the
+      first time (above).
+    * `edge_chamfer` (`float`):
+      Optional.  How wide (and deep) the 45 degree chamfer on the
+      plate's top outer edge is; 0 for none.  Square corners, or
+      corners rounded at least that much.
     * `tooling_pitch` (`float`):
-      Optional.  The distance between tooling holes, along X and Y.
-    * `tap_diameter` (`float`):
+      Optional.  The distance between tooling holes, along X and Y; 0
+      for none.
+    * `tooling_tap_diameter` (`float`):
       Optional.  The diameter of the tooling holes to be threaded (the
       tap drill).
-    * `close_diameter` (`float`):
+    * `tooling_close_diameter` (`float`):
       Optional.  The diameter of the close fit tooling holes.
+    * `length` (`float`): Its size along X, from the grid.
+    * `width` (`float`): Its size along Y, from the grid.
 
     Constructor:
-    * `GridPlate(name, length, width, height, pitch, edge,
-      hole_diameter, corner_radius, chamfer_depth, tooling_columns,
-      tooling_rows, tooling_pitch, tap_diameter, close_diameter)`
+    * `GridPlate(name, rows, columns, pitch, edge, thickness,
+      hole_diameter, corner_radius, chamfer_width, edge_chamfer,
+      tooling_pitch, tooling_tap_diameter, tooling_close_diameter)`
     """
 
     # The grid plates by key (`registry.key()` of `name`), set below.
@@ -3267,19 +3272,22 @@ class GridPlate:
 
     # Constructor arguments:
     name: str = field(init=True)
-    length: float = field(init=True)
-    width: float = field(init=True)
-    height: float = field(init=True)
+    rows: int = field(init=True)
+    columns: int = field(init=True)
     pitch: float = field(init=True)
     edge: float = field(init=True)
+    thickness: float = field(init=True)
     hole_diameter: float = field(init=True)
     corner_radius: float = field(init=True, default=0.0)
-    chamfer_depth: float = field(init=True, default=0.0)
-    tooling_columns: int = field(init=True, default=0)
-    tooling_rows: int = field(init=True, default=0)
+    chamfer_width: float = field(init=True, default=0.0)
+    edge_chamfer: float = field(init=True, default=0.0)
     tooling_pitch: float = field(init=True, default=0.0)
-    tap_diameter: float = field(init=True, default=0.0)
-    close_diameter: float = field(init=True, default=0.0)
+    tooling_tap_diameter: float = field(init=True, default=0.0)
+    tooling_close_diameter: float = field(init=True, default=0.0)
+
+    # The plate's size, from the grid (alphabetized):
+    length: float = field(init=False, default=0.0)
+    width: float = field(init=False, default=0.0)
 
     # Method `GridPlate.named()`:
     @classmethod
@@ -3304,7 +3312,11 @@ class GridPlate:
         * `KeyError`: If there is none, listing the known keys.
         """
         plate: GridPlate = cls.REGISTRY.named(name)
-        return plate if chamfer else replace(plate, chamfer_depth=0.0)
+        return (
+            plate
+            if chamfer
+            else replace(plate, chamfer_width=0.0, edge_chamfer=0.0)
+        )
 
     # Method `GridPlate.key()`:
     @property
@@ -3314,31 +3326,50 @@ class GridPlate:
 
     # Method `GridPlate.__post_init__()`:
     def __post_init__(self) -> None:
-        """Check that the grid and the tooling holes fit the plate.
+        """Work out the plate's size; check that the holes fit it.
 
         Raises:
-        * `ValueError`: If the grid does not reach `edge` from every
-          side, the holes run into one another or a side, the chamfers
-          do not fit, or the tooling holes are not as described.
+        * `ValueError`: If the grid is empty, the holes run into one
+          another or a side, the chamfers do not fit, or the tooling
+          holes do not fit.
         """
-        if self.height <= 0.0 or self.pitch <= 0.0:
-            raise ValueError(f"{self.height=} and {self.pitch=}")
-        for size in (self.length, self.width):
-            steps: float = (size - 2.0 * self.edge) / self.pitch
-            if steps < 0.0 or abs(steps - round(steps)) > 1.0e-9:
-                raise ValueError(
-                    f"{self.pitch=} does not divide {size=} less "
-                    f"{self.edge=} on both sides"
-                )
+        if (
+            self.thickness <= 0.0
+            or self.pitch <= 0.0
+            or self.edge <= 0.0
+            or min(self.rows, self.columns) < 1
+        ):
+            raise ValueError(
+                f"{self.thickness=}, {self.pitch=}, {self.edge=}, "
+                f"{self.rows=} and {self.columns=}"
+            )
+        object.__setattr__(
+            self, "length", 2.0 * self.edge + (self.columns - 1) * self.pitch
+        )
+        object.__setattr__(
+            self, "width", 2.0 * self.edge + (self.rows - 1) * self.pitch
+        )
         top: float = self.chamfered_diameter()
         if not (
             0.0 < self.hole_diameter
             and top < min(self.pitch, 2.0 * self.edge)
-            and 0.0 <= self.chamfer_depth < self.height
+            and 0.0 <= self.chamfer_width < self.thickness
         ):
             raise ValueError(
-                f"{self.hole_diameter=} with {self.chamfer_depth=} does "
+                f"{self.hole_diameter=} with {self.chamfer_width=} does "
                 f"not fit {self.pitch=} and {self.edge=}"
+            )
+
+        # The edge's chamfer: clear of the holes' chamfers, and of a
+        # rounded corner's center.
+        bevel: float = self.edge_chamfer
+        if bevel and not (
+            0.0 < bevel < min(self.thickness, self.edge - top / 2.0)
+            and (self.corner_radius == 0.0 or self.corner_radius >= bevel)
+        ):
+            raise ValueError(
+                f"{self.edge_chamfer=} does not fit {self.thickness=}, "
+                f"{self.edge=} and {self.corner_radius=}"
             )
         self._check_tooling()
 
@@ -3371,85 +3402,92 @@ class GridPlate:
 
         return GridPlate(
             name=str(plate["name"]),
-            length=size("length"),
-            width=size("width"),
-            height=size("height"),
+            rows=count("rows"),
+            columns=count("columns"),
             pitch=size("pitch"),
             edge=size("edge"),
+            thickness=size("thickness"),
             hole_diameter=size("hole_diameter"),
             corner_radius=size("corner_radius"),
-            chamfer_depth=size("chamfer_depth"),
-            tooling_columns=count("tooling_columns"),
-            tooling_rows=count("tooling_rows"),
+            chamfer_width=size("chamfer_width"),
+            edge_chamfer=size("edge_chamfer"),
             tooling_pitch=size("tooling_pitch"),
-            tap_diameter=size("tap_diameter"),
-            close_diameter=size("close_diameter"),
+            tooling_tap_diameter=size("tooling_tap_diameter"),
+            tooling_close_diameter=size("tooling_close_diameter"),
         )
 
     # Method `GridPlate._check_tooling()`:
     def _check_tooling(self) -> None:
-        """Check that the tooling holes are as described.
+        """Check that the tooling holes fit.
 
         Raises:
-        * `ValueError`: If the counts are odd or only one is given, the
-          holes are not between grid holes, or they run into one another
-          or the grid's holes.
+        * `ValueError`: If none fit at `tooling_pitch`, or they run into
+          one another or the grid's holes.
         """
-        counts: tuple[int, int] = (self.tooling_columns, self.tooling_rows)
-        if counts == (0, 0):
+        if self.tooling_pitch == 0.0:
             return
-        if min(counts) <= 0 or any(count % 2 for count in counts):
-            raise ValueError(
-                f"{self.tooling_columns=} and {self.tooling_rows=} must be "
-                "both 0, or both even"
-            )
-
-        # Each tooling hole is at the middle of four grid holes.
-        for places, size in (
-            (self._tooling_places(self.tooling_columns), self.length),
-            (self._tooling_places(self.tooling_rows), self.width),
+        if not (
+            self._tooling_places(self.columns)
+            and self._tooling_places(self.rows)
         ):
-            grid: list[float] = _grid(size, self.edge, self.pitch)
-            for place in places:
-                cells: float = (place - grid[0]) / self.pitch - 0.5
-                if (
-                    abs(cells - round(cells)) > 1.0e-6
-                    or not grid[0] < place < grid[-1]
-                ):
-                    raise ValueError(
-                        f"{place=} is not between the grid's holes "
-                        f"along {size=}"
-                    )
+            raise ValueError(
+                f"no tooling holes fit at {self.tooling_pitch=} between "
+                f"the grid's holes ({self.columns=}, {self.rows=})"
+            )
 
         # Clear of each other, and of the grid's holes, a half diagonal
         # away.
-        largest: float = max(self.tap_diameter, self.close_diameter)
-        clear: float = (
+        tap: float = self.tooling_tap_diameter
+        close: float = self.tooling_close_diameter
+        largest: float = max(tap, close)
+        clear: bool = (
             largest + self.chamfered_diameter()
         ) / 2.0 < self.pitch / math.sqrt(2.0)
         if (
-            min(self.tap_diameter, self.close_diameter) <= 0.0
+            min(tap, close) <= 0.0
             or largest >= self.tooling_pitch
             or not clear
         ):
             raise ValueError(
-                f"{self.tap_diameter=} and {self.close_diameter=} at "
-                f"{self.tooling_pitch=} do not fit the grid"
+                f"{self.tooling_tap_diameter=} and "
+                f"{self.tooling_close_diameter=} at {self.tooling_pitch=} "
+                "do not fit the grid"
             )
 
     # Method `GridPlate._tooling_places()`:
-    def _tooling_places(self, count: int) -> list[float]:
+    def _tooling_places(self, holes: int) -> list[float]:
         """Return the places of tooling holes along one side.
 
+        As many as fit, `tooling_pitch` apart and centered, each midway
+        between two of the side's grid holes and inside its outer ones.
+
         Arguments:
-        * `count` (`int`): How many there are along it.
+        * `holes` (`int`): The number of grid holes along the side.
 
         Returns:
         * (`list[float]`): The places, from the plate's middle, lowest
-          first (millimeters).
+          first (millimeters); none if none fit.
         """
-        first: float = -self.tooling_pitch * (count - 1) / 2.0
-        return [first + index * self.tooling_pitch for index in range(count)]
+        if self.tooling_pitch <= 0.0 or holes < 2:
+            return []
+        outer: float = self.pitch * (holes - 1) / 2.0
+        count: int
+        for count in range(int(2.0 * outer / self.tooling_pitch) + 1, 0, -1):
+            first: float = -self.tooling_pitch * (count - 1) / 2.0
+            places: list[float] = [
+                first + index * self.tooling_pitch for index in range(count)
+            ]
+
+            # Midway between grid holes: half a pitch past one.
+            cells: list[float] = [
+                (place + outer) / self.pitch - 0.5 for place in places
+            ]
+            if all(
+                abs(cell - round(cell)) < 1.0e-6 and -outer < place < outer
+                for cell, place in zip(cells, places, strict=True)
+            ):
+                return places
+        return []
 
     # Method `GridPlate.chamfered_diameter()`:
     def chamfered_diameter(self) -> float:
@@ -3458,7 +3496,7 @@ class GridPlate:
         Returns:
         * (`float`): The diameter, with its chamfer (millimeters).
         """
-        return self.hole_diameter + 2.0 * self.chamfer_depth
+        return self.hole_diameter + 2.0 * self.chamfer_width
 
     # Method `GridPlate.hole_centers()`:
     def hole_centers(self) -> list[tuple[float, float]]:
@@ -3484,16 +3522,12 @@ class GridPlate:
           Each hole's `(x, y, diameter)`, from the plate's center, by
           rows from the most negative up; none if it has none.
         """
-        if not self.tooling_columns:
-            return []
-        columns: list[float] = self._tooling_places(self.tooling_columns)
-        rows: list[float] = self._tooling_places(self.tooling_rows)
+        columns: list[float] = self._tooling_places(self.columns)
+        rows: list[float] = self._tooling_places(self.rows)
+        tap: float = self.tooling_tap_diameter
+        close: float = self.tooling_close_diameter
         return [
-            (
-                x,
-                y,
-                self.close_diameter if (i + j) % 2 else self.tap_diameter,
-            )
+            (x, y, close if (i + j) % 2 else tap)
             for j, y in enumerate(rows)
             for i, x in enumerate(columns)
         ]
@@ -3508,20 +3542,41 @@ class GridPlate:
         # Each chamfer is a cone's frustum less the hole it surrounds.
         hole: float = self.hole_diameter / 2.0
         top: float = self.chamfered_diameter() / 2.0
-        deep: float = self.chamfer_depth
+        deep: float = self.chamfer_width
         chamfer: float = (
             math.pi * deep * ((top**2 + top * hole + hole**2) / 3.0 - hole**2)
         )
         grid: float = len(self.hole_centers()) * (
-            math.pi * hole**2 * self.height + chamfer
+            math.pi * hole**2 * self.thickness + chamfer
         )
         tooling: float = sum(
-            math.pi * (diameter / 2.0) ** 2 * self.height
+            math.pi * (diameter / 2.0) ** 2 * self.thickness
             for _, _, diameter in self.tooling_holes()
         )
         corners: float = (4.0 - math.pi) * self.corner_radius**2
-        whole: float = (self.length * self.width - corners) * self.height
-        return whole - grid - tooling
+        whole: float = (self.length * self.width - corners) * self.thickness
+        return whole - grid - tooling - self._edge_bevel()
+
+    # Method `GridPlate._edge_bevel()`:
+    def _edge_bevel(self) -> float:
+        """Return the volume the edge's chamfer takes off.
+
+        Its cross section is a right triangle, `edge_chamfer` on a side,
+        along the straight sides; around a rounded corner (Pappus), its
+        middle sweeps a quarter circle a third of the way in; at a
+        square corner, the two sides' overlap (a third of a cube) comes
+        off once.
+
+        Returns:
+        * (`float`): The volume (cubic millimeters).
+        """
+        bevel: float = self.edge_chamfer
+        radius: float = self.corner_radius
+        triangle: float = bevel**2 / 2.0
+        straight: float = 2.0 * (self.length + self.width) - 8.0 * radius
+        if radius == 0.0:
+            return triangle * straight - 4.0 * bevel**3 / 3.0
+        return triangle * (straight + 2.0 * math.pi * (radius - bevel / 3.0))
 
     # Method `GridPlate.seat()`:
     def seat(self) -> Point:
@@ -3530,7 +3585,7 @@ class GridPlate:
         Returns:
         * (`Point`): It, from the center of the plate's bottom (mm).
         """
-        return (0.0, 0.0, self.height)
+        return (0.0, 0.0, self.thickness)
 
     # Method `GridPlate.origin()`:
     def origin(self, turns: int = 0) -> Point:
@@ -3548,7 +3603,9 @@ class GridPlate:
         x: float = self.length / 2.0
         y: float = self.width / 2.0
         corners: list[Point] = [
-            (sx * x, sy * y, self.height) for sx in (-1, 1) for sy in (-1, 1)
+            (sx * x, sy * y, self.thickness)
+            for sx in (-1, 1)
+            for sy in (-1, 1)
         ]
         return left_corner(corners, turns)
 
@@ -3580,9 +3637,9 @@ class GridPlate:
                 Corner(x - half_x, y + half_y, radius),
             ],
             0.0,
-            self.height,
+            self.thickness,
             [
-                Hole(x + hole_x, y + hole_y, diameter, self.height, 0.0)
+                Hole(x + hole_x, y + hole_y, diameter, self.thickness, 0.0)
                 for hole_x, hole_y, diameter in holes
             ],
         )
@@ -3605,7 +3662,7 @@ class GridPlate:
         self.outline((x, y)).sketch(solidcraft)
         solidcraft.sketch.finish()
         made: JSON = solidcraft.solid.extrude(
-            distance=self.height, body_name=self.name
+            distance=self.thickness, body_name=self.name
         )
         assert isinstance(made, dict)
         bodies: JSON = made["created_bodies"]
@@ -3615,18 +3672,55 @@ class GridPlate:
         # Chamfer every grid hole's top edge at once, naming each edge by
         # a point on it.  A hole's circle is two half circles that meet
         # along X, so the point is the middle of the +Y one.
-        if self.chamfer_depth > 0.0:
+        if self.chamfer_width > 0.0:
             radius: float = self.hole_diameter / 2.0
             solidcraft.solid.chamfer(
                 edges=[
-                    [x + hole_x, y + hole_y + radius, z + self.height]
+                    [x + hole_x, y + hole_y + radius, z + self.thickness]
                     for hole_x, hole_y in self.hole_centers()
                 ],
-                distance=self.chamfer_depth,
+                distance=self.chamfer_width,
+                body=body,
+            )
+        # Chamfer the top's outer edge, naming each straight side and
+        # rounded corner by its middle.
+        if self.edge_chamfer > 0.0:
+            solidcraft.solid.chamfer(
+                edges=[
+                    [x + edge_x, y + edge_y, z + self.thickness]
+                    for edge_x, edge_y in self._outer_edges()
+                ],
+                distance=self.edge_chamfer,
                 body=body,
             )
         solidcraft.appearance.assign(bodies=[body], color=ALUMINUM_COLOR)
         return [body]
+
+    # Method `GridPlate._outer_edges()`:
+    def _outer_edges(self) -> list[tuple[float, float]]:
+        """Return a point on each edge of the top's outline.
+
+        Returns:
+        * (`list[tuple[float, float]]`): The middle of each side, then
+          of each rounded corner's arc, from the plate's center (mm).
+        """
+        half_x: float = self.length / 2.0
+        half_y: float = self.width / 2.0
+        points: list[tuple[float, float]] = [
+            (0.0, -half_y),
+            (half_x, 0.0),
+            (0.0, half_y),
+            (-half_x, 0.0),
+        ]
+        radius: float = self.corner_radius
+        if radius > 0.0:
+            out: float = radius * (1.0 - math.sqrt(0.5))
+            points += [
+                (sx * (half_x - out), sy * (half_y - out))
+                for sx in (-1.0, 1.0)
+                for sy in (-1.0, 1.0)
+            ]
+        return points
 
     # Method `GridPlate.cacheable()`:
     def cacheable(self) -> tuple[Cacheable, ...]:
@@ -3655,7 +3749,7 @@ class GridPlate:
         * (`Prism`): The prism, named for the plate.
         """
         return box_prism(
-            self.name, (self.length, self.width, self.height), center
+            self.name, (self.length, self.width, self.thickness), center
         )
 
     # Method `GridPlate.keep_out()`:
@@ -3690,27 +3784,28 @@ def _grid(size: float, edge: float, spacing: float) -> list[float]:
     return [first + index * spacing for index in range(count)]
 
 
-# A grid plate as the user described it, whose holes fill it at 1/2 in,
-# reaching 1/2 in from all four sides.  The user gave no thickness; 1/2 in
-# is an estimate.  Its corners are 1/4 in rounds.  Each grid hole is a
-# close fit for a #6 screw, with a 1/32 in chamfer.  Its tooling holes,
-# 2 by 4 on 3 in centers, are for #10-32 screws: #21 (0.159 in), the tap
-# drill, and a close fit; Claude's choice.
+# A grid plate as the user described it, 20 rows by 10 columns of holes
+# at 1/2 in, reaching 1/2 in from all four sides (5-1/2 by 10-1/2 in).
+# The user gave no thickness; 1/2 in is an estimate.  Its corners are
+# 1/4 in rounds.  Each grid hole is a close fit for a #6 screw, with a
+# 1/32 in chamfer, as is the top's outer edge.  Its tooling holes, on
+# 3 in centers (2 by 4 fit), are
+# for #10-32 screws: #21 (0.159 in), the tap drill, and a close fit;
+# Claude's choice.
 GRID_PLATE: GridPlate = GridPlate(
     name="Grid plate",
-    length=_mm("5-1/2 in"),
-    width=_mm("10-1/2 in"),
-    height=_mm("1/2 in"),
+    rows=20,
+    columns=10,
     pitch=_mm("1/2 in"),
     edge=_mm("1/2 in"),
+    thickness=_mm("1/2 in"),
     hole_diameter=SCREW_FITS["#6"].close,
     corner_radius=_mm("1/4 in"),
-    chamfer_depth=_mm("1/32 in"),
-    tooling_columns=2,
-    tooling_rows=4,
+    chamfer_width=_mm("1/32 in"),
+    edge_chamfer=_mm("1/32 in"),
     tooling_pitch=_mm("3 in"),
-    tap_diameter=_mm("0.159 in"),
-    close_diameter=SCREW_FITS["#10"].close,
+    tooling_tap_diameter=_mm("0.159 in"),
+    tooling_close_diameter=SCREW_FITS["#10"].close,
 )
 
 

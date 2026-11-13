@@ -2066,20 +2066,13 @@
           "description": "What it is, in a few words.",
           "type": "string"
         },
-        "length": {
-          "description": "Its size along X.",
-          "type": "string",
-          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        "rows": {
+          "description": "The number of rows of grid holes (along Y).",
+          "type": "integer"
         },
-        "width": {
-          "description": "Its size along Y.",
-          "type": "string",
-          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
-        },
-        "height": {
-          "description": "Its size along Z, its thickness.",
-          "type": "string",
-          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        "columns": {
+          "description": "The number of columns of grid holes (along X).",
+          "type": "integer"
         },
         "pitch": {
           "description": "The distance between grid holes, along X and Y.",
@@ -2087,7 +2080,12 @@
           "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
         },
         "edge": {
-          "description": "The distance from a side to the nearest holes.",
+          "description": "The distance from a side to the nearest holes; the plate's length and width follow from the grid.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "thickness": {
+          "description": "Its size along Z.",
           "type": "string",
           "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
         },
@@ -2101,31 +2099,28 @@
           "type": "string",
           "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
         },
-        "chamfer_depth": {
-          "description": "How deep the 45 degree chamfer on each grid hole's top edge is (none if not given).",
+        "chamfer_width": {
+          "description": "How wide (and deep) the 45 degree chamfer on each grid hole's top edge is (none if not given).",
           "type": "string",
           "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
         },
-        "tooling_columns": {
-          "description": "The number of columns of tooling holes, an even number (none if not given).",
-          "type": "integer"
-        },
-        "tooling_rows": {
-          "description": "The number of rows of tooling holes, an even number (none if not given).",
-          "type": "integer"
+        "edge_chamfer": {
+          "description": "How wide (and deep) the 45 degree chamfer on the plate's top outer edge is (none if not given).",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
         },
         "tooling_pitch": {
-          "description": "The distance between tooling holes, along X and Y.",
+          "description": "The distance between tooling holes, along X and Y, each midway between four grid holes, as many as fit, centered (none if not given).",
           "type": "string",
           "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
         },
-        "tap_diameter": {
-          "description": "The diameter of the tooling holes to be threaded (the tap drill).",
+        "tooling_tap_diameter": {
+          "description": "The diameter of the tooling holes to be threaded (the tap drill); the lower left one is one of these.",
           "type": "string",
           "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
         },
-        "close_diameter": {
-          "description": "The diameter of the close fit tooling holes.",
+        "tooling_close_diameter": {
+          "description": "The diameter of the close fit tooling holes, in a checkerboard with the tapped ones.",
           "type": "string",
           "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
         },
@@ -2148,11 +2143,11 @@
         }
       },
       "required": [
-        "length",
-        "width",
-        "height",
+        "rows",
+        "columns",
         "pitch",
         "edge",
+        "thickness",
         "hole_diameter"
       ],
       "additionalProperties": false

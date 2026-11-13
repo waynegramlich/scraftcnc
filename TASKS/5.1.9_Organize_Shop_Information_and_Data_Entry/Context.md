@@ -227,3 +227,79 @@ From the log before the trim (`hg` rev 695):
   passes with `test_gui_fields`.
 * #27: the mill's name "Mikini mill" was the user's test; reverted to
   "Shop mill"; `tests.test_shops` passes.
+
+## 2026-11-13: #28 the grid plate's top view, broken
+
+* The user: draw the tooling (grid) plate as four corners, each with
+  its rounded corner and a 2 x 3 hole pattern, long break lines on
+  the two inner sides.
+* Done with 3 x 3 (`BREAK_COLUMNS`, `BREAK_ROWS` in
+  `tool_models.py`): a 2 wide corner would cut through the tooling
+  hole (at 1.5 pitches), and T, Td, Cl need one.  `_Broken` maps the
+  plate to the drawing; `_zigzag()` draws a long break line.  The
+  SVG is 127 lines, was 583.  `tests.test_tool_models` passes.
+* Round 2 (the user): 4 x 4 corners (the tooling holes' checkerboard
+  shows across the corners); facing break lines mesh (`_zigzag()`
+  offsets fixed in the drawing, built after mirroring); `Cl`, `Td`
+  letters moved out (`TOOLING_SHIFT`); `E`, `P` up the left side, `W`
+  beyond them.
+* Round 3 (the user): `Cl`, `Td` along the bottom with `E`, `P`
+  (letters shifted right); `W`, `L` extension lines stop at the
+  plate's corner; `C` at the upper right.  The user asked for 4 x 3
+  corners with two tooling holes each: impossible on the sample (3
+  in tooling pitch, 0.5 in grid), so 8 rows x 3 columns; `T` up the
+  right side, between the lower right corner's two tooling holes.
+
+## 2026-11-13: #29-#35, the grid plate's API; step A done
+
+* Decided (the user): R x C grid, H, Cw (45 degrees), Cr, T
+  (thickness), Tp with tooling holes as many as fit (#30), Tt
+  (`tooling_tap_diameter`), Tc (`tooling_close_diameter`); length
+  and width from the grid (#29).  #32: a cross section line showing
+  the plate's edge chamfers and the holes' chamfers (step C; the
+  plate has no edge chamfers yet).  #33: the sketch from a made-up
+  plate (step B).  #35: a small 5 x 7 plate first.
+* Step A done: `tools.GridPlate(name, rows, columns, pitch, edge,
+  thickness, hole_diameter, corner_radius, chamfer_width,
+  tooling_pitch, tooling_tap_diameter, tooling_close_diameter)`,
+  `length`/`width` computed; `_tooling_places()` finds the most that
+  fit.  `GRID_PLATE` is the same plate (same holes).  `KINDS`,
+  samples, `examples/shop/tooling/grid_plate.toml`, `keepout.py`,
+  `Shops.md`, schemas, tests updated; `tests.test_mount`'s
+  `SMALL_PLATE` is 7 x 5 and builds in headless SolidCraft.
+  `tool_models.size_letters()`: a drawn size that is not a field
+  takes a free letter (the sketch still draws L, W until step B).
+  `corner_radius` is C on cutters, Cr on the grid plate (test of one
+  letter per key dropped).
+* 171 tests (mount, setups, assembly, tool_models, shops,
+  shop_schema, gui_fields, keepout) pass, about 1 minute.
+
+## 2026-11-13: step B done, the top view from a made-up plate
+
+* `tool_models.SKETCH_GRID`: `GRID_PLATE` at 16 rows x 12 columns,
+  `tooling_pitch` 2P (1 in); corners 4 x 4 (`BREAK_COLUMNS`,
+  `BREAK_ROWS`), each with 2 x 2 tooling holes in a checkerboard.
+* Marks: E, P along the bottom and up the left; C and R as brackets
+  (#36, `Dimension.bracket`, `TICK`), outside them; H on the lower
+  right corner's last hole; Cr at the upper right; Tp over the upper
+  left corner's top two tooling holes; Tc, Tt over the upper right
+  corner's.  L and W no longer drawn.  `_size_rows()` gives R, C the
+  units "Count" (`COUNTS`).  `TOOLING_SHIFT`, `_hole_y()` gone.
+* Section view (T, Cw, H) unchanged, still from `GRID`; step C next
+  (#32: a cross section line with edge and hole chamfers).
+
+## 2026-11-13: #37 edge chamfer; step C done
+
+* `GridPlate.edge_chamfer` (45 degrees, top outer edge; letter Ec;
+  corners square or rounded at least that much): `_edge_bevel()`
+  (volume, Pappus at rounded corners), `_outer_edges()` (a point on
+  each side and corner arc for SolidCraft's chamfer).  `GRID_PLATE`
+  and the example shop: 1/32 in.  `named(chamfer=False)` drops both
+  chamfers.  `tests.test_mount` (37 tests, 41 s) builds the 7 x 5
+  plate with it in headless SolidCraft; volume within 1 %.
+* Step C: `tool_models._grid_section()` replaces
+  `_grid_hole_section()`: a section along a row of holes, from the
+  side across two holes to a break line, 6 times size (`DETAIL`):
+  T, Ec, Cw, H.  No cutting plane line on the top view yet.
+* The full `GRID_PLATE` model is not rebuilt yet (about 5 minutes,
+  the next `show_demo.py` or setup that uses the chamfered plate).

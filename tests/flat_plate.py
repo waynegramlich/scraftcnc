@@ -13,7 +13,7 @@ from scraftcam.tooling import tools
 
 # `GRID_PLATE` without its chamfers: the same shape for every check.
 FLAT_PLATE: tools.GridPlate = dataclasses.replace(
-    tools.GRID_PLATE, chamfer_depth=0.0
+    tools.GRID_PLATE, chamfer_width=0.0
 )
 
 

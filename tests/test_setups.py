@@ -132,9 +132,9 @@ class TestShopGridPlates(unittest.TestCase):
         plate = tools.GridPlate.from_shop(
             {
                 "name": "Small",
-                "length": "4 in",
-                "width": "4 in",
-                "height": "1/2 in",
+                "rows": 8,
+                "columns": 8,
+                "thickness": "1/2 in",
                 "pitch": "1/2 in",
                 "edge": "1/4 in",
                 "hole_diameter": "0.144 in",
@@ -143,7 +143,7 @@ class TestShopGridPlates(unittest.TestCase):
         self.assertEqual(len(plate.hole_centers()), 8 * 8)
         self.assertEqual(plate.tooling_holes(), [])
         self.assertEqual(
-            (plate.corner_radius, plate.chamfer_depth), (0.0, 0.0)
+            (plate.corner_radius, plate.chamfer_width), (0.0, 0.0)
         )
 
 
@@ -291,7 +291,7 @@ class TestDemoStack(unittest.TestCase):
 
         # The demonstration plate is 1/2 in thick, with its top at Z 0.
         self.assertAlmostEqual(
-            plate.placement.z + tools.GRID_PLATE.height, -0.5 * INCH
+            plate.placement.z + tools.GRID_PLATE.thickness, -0.5 * INCH
         )
 
     def test_centered_under_the_demonstration_plate(self) -> None:

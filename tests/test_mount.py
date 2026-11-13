@@ -24,24 +24,24 @@ VISE = tools.KURT_D688
 INCH = 25.4
 
 
-# A small grid plate, 5 by 5 holes, with chamfers and 2 by 2 tooling
-# holes: all of `GridPlate`, modeled in seconds rather than the
-# minutes that `GRID_PLATE`'s 200 chamfers take.
+# A small grid plate, 7 rows by 5 columns of holes, with chamfers (on
+# the holes and the top's edge) and 2 by 2 tooling holes: all of
+# `GridPlate`, modeled in seconds rather than the minutes that
+# `GRID_PLATE`'s 200 chamfers take.
 SMALL_PLATE = tools.GridPlate(
     name="Small grid plate",
-    length=2.5 * INCH,
-    width=2.5 * INCH,
-    height=0.5 * INCH,
+    rows=7,
+    columns=5,
     pitch=0.5 * INCH,
     edge=0.25 * INCH,
+    thickness=0.5 * INCH,
     hole_diameter=tools.GRID_PLATE.hole_diameter,
     corner_radius=0.125 * INCH,
-    chamfer_depth=tools.GRID_PLATE.chamfer_depth,
-    tooling_columns=2,
-    tooling_rows=2,
+    chamfer_width=tools.GRID_PLATE.chamfer_width,
+    edge_chamfer=tools.GRID_PLATE.edge_chamfer,
     tooling_pitch=1.5 * INCH,
-    tap_diameter=tools.GRID_PLATE.tap_diameter,
-    close_diameter=tools.GRID_PLATE.close_diameter,
+    tooling_tap_diameter=tools.GRID_PLATE.tooling_tap_diameter,
+    tooling_close_diameter=tools.GRID_PLATE.tooling_close_diameter,
 )
 
 
@@ -259,19 +259,20 @@ class TestGridPlate(unittest.TestCase):
         """A grid that does not fit the plate is refused."""
         plate = tools.GRID_PLATE
         for changes in (
-            {"length": 5.3 * INCH},
+            {"rows": 0},
+            {"columns": -1},
             {"hole_diameter": 0.5 * INCH},
             {"hole_diameter": 0.0},
-            {"edge": 6.0 * INCH},
-            {"chamfer_depth": 0.2 * INCH},
-            {"chamfer_depth": -1.0},
-            {"tooling_columns": 0},
-            {"tooling_rows": 3},
-            {"tooling_pitch": 2.5 * INCH},
+            {"edge": 0.0},
+            {"chamfer_width": 0.2 * INCH},
+            {"chamfer_width": -1.0},
+            {"edge_chamfer": 0.3 * INCH},
+            {"corner_radius": 0.01 * INCH},
+            {"columns": 9, "tooling_pitch": 2.75 * INCH},
             {"tooling_pitch": 0.1 * INCH},
-            {"tooling_rows": 6},
-            {"tap_diameter": 0.0},
-            {"close_diameter": 0.6 * INCH},
+            {"columns": 3, "tooling_pitch": 3.0 * INCH},
+            {"tooling_tap_diameter": 0.0},
+            {"tooling_close_diameter": 0.6 * INCH},
         ):
             with self.subTest(changes=changes), self.assertRaises(ValueError):
                 dataclasses.replace(plate, **changes)
@@ -281,7 +282,8 @@ class TestGridPlate(unittest.TestCase):
         plate = tools.GRID_PLATE
         holes = plate.tooling_holes()
         self.assertEqual(len(holes), 2 * 4)
-        tap, close = plate.tap_diameter, plate.close_diameter
+        tap = plate.tooling_tap_diameter
+        close = plate.tooling_close_diameter
         self.assertEqual(
             [diameter for _, _, diameter in holes],
             [tap, close, close, tap, tap, close, close, tap],
@@ -291,20 +293,18 @@ class TestGridPlate(unittest.TestCase):
             nearest = sorted(math.dist((x, y), hole) for hole in grid)[:4]
             for distance in nearest:
                 self.assertAlmostEqual(distance, plate.pitch / math.sqrt(2.0))
-        none = dataclasses.replace(plate, tooling_columns=0, tooling_rows=0)
+        none = dataclasses.replace(plate, tooling_pitch=0.0)
         self.assertEqual(none.tooling_holes(), [])
 
     def test_volume(self) -> None:
         """The volume takes out the holes and the chamfers."""
-        plate = dataclasses.replace(
-            tools.GRID_PLATE, tooling_columns=0, tooling_rows=0
-        )
-        flat = dataclasses.replace(plate, chamfer_depth=0.0)
+        plate = dataclasses.replace(tools.GRID_PLATE, tooling_pitch=0.0)
+        flat = dataclasses.replace(plate, chamfer_width=0.0)
         hole = plate.hole_diameter / 2.0
-        top = hole + plate.chamfer_depth
+        top = hole + plate.chamfer_width
         frustum = (
             math.pi
-            * plate.chamfer_depth
+            * plate.chamfer_width
             * ((top**2 + top * hole + hole**2) / 3.0 - hole**2)
         )
         self.assertAlmostEqual(
@@ -390,14 +390,17 @@ class TestModel(unittest.TestCase):
                 },
                 {(round(x, 3), round(y, 3)) for x, y in plate.hole_centers()},
             )
-            self.assertEqual(len(holes), 2 * 5 * 5)
+            self.assertEqual(len(holes), 2 * 5 * 7)
             for hole in holes:
                 self.assertAlmostEqual(
                     hole["radius"], plate.hole_diameter / 2.0
                 )
 
             # The tooling holes, by their two sizes.
-            for diameter in (plate.tap_diameter, plate.close_diameter):
+            for diameter in (
+                plate.tooling_tap_diameter,
+                plate.tooling_close_diameter,
+            ):
                 found = [
                     face
                     for face in faces["faces"]

@@ -1360,11 +1360,11 @@ version = "0.0.1"
 
 [[grid_plates]]
 name = "Small grid plate"
-length = "4 in"
-width = "4 in"
-height = "1/2 in"
+rows = 8
+columns = 8
 pitch = "1/2 in"
 edge = "1/4 in"
+thickness = "1/2 in"
 hole_diameter = "0.144 in"
 """,
         ),
@@ -1380,25 +1380,18 @@ hole_diameter = "0.144 in"
                     "description", "string", "What it is, in a few words."
                 ),
                 TableField(
-                    "length",
-                    "length",
-                    "Its size along X.",
+                    "rows",
+                    "integer",
+                    "The number of rows of grid holes (along Y).",
                     True,
-                    letter="L",
+                    letter="R",
                 ),
                 TableField(
-                    "width",
-                    "length",
-                    "Its size along Y.",
+                    "columns",
+                    "integer",
+                    "The number of columns of grid holes (along X).",
                     True,
-                    letter="W",
-                ),
-                TableField(
-                    "height",
-                    "length",
-                    "Its size along Z, its thickness.",
-                    True,
-                    letter="H",
+                    letter="C",
                 ),
                 TableField(
                     "pitch",
@@ -1410,60 +1403,66 @@ hole_diameter = "0.144 in"
                 TableField(
                     "edge",
                     "length",
-                    "The distance from a side to the nearest holes.",
+                    "The distance from a side to the nearest holes; the "
+                    "plate's length and width follow from the grid.",
                     True,
                     letter="E",
+                ),
+                TableField(
+                    "thickness",
+                    "length",
+                    "Its size along Z.",
+                    True,
+                    letter="T",
                 ),
                 TableField(
                     "hole_diameter",
                     "length",
                     "The diameter of the grid's holes.",
                     True,
-                    letter="Hd",
+                    letter="H",
                 ),
                 TableField(
                     "corner_radius",
                     "length",
                     "The radius of its four corners (square if not given).",
-                    letter="C",
+                    letter="Cr",
                 ),
                 TableField(
-                    "chamfer_depth",
+                    "chamfer_width",
                     "length",
-                    "How deep the 45 degree chamfer on each grid hole's top "
-                    "edge is (none if not given).",
-                    letter="Cd",
+                    "How wide (and deep) the 45 degree chamfer on each grid "
+                    "hole's top edge is (none if not given).",
+                    letter="Cw",
                 ),
                 TableField(
-                    "tooling_columns",
-                    "integer",
-                    "The number of columns of tooling holes, an even "
-                    "number (none if not given).",
-                ),
-                TableField(
-                    "tooling_rows",
-                    "integer",
-                    "The number of rows of tooling holes, an even number "
-                    "(none if not given).",
+                    "edge_chamfer",
+                    "length",
+                    "How wide (and deep) the 45 degree chamfer on the "
+                    "plate's top outer edge is (none if not given).",
+                    letter="Ec",
                 ),
                 TableField(
                     "tooling_pitch",
                     "length",
-                    "The distance between tooling holes, along X and Y.",
-                    letter="T",
+                    "The distance between tooling holes, along X and Y, "
+                    "each midway between four grid holes, as many as fit, "
+                    "centered (none if not given).",
+                    letter="Tp",
                 ),
                 TableField(
-                    "tap_diameter",
+                    "tooling_tap_diameter",
                     "length",
                     "The diameter of the tooling holes to be threaded (the "
-                    "tap drill).",
-                    letter="Td",
+                    "tap drill); the lower left one is one of these.",
+                    letter="Tt",
                 ),
                 TableField(
-                    "close_diameter",
+                    "tooling_close_diameter",
                     "length",
-                    "The diameter of the close fit tooling holes.",
-                    letter="Cl",
+                    "The diameter of the close fit tooling holes, in a "
+                    "checkerboard with the tapped ones.",
+                    letter="Tc",
                 ),
                 TableField("manufacturer", "string", "Who made it."),
                 TableField("vendor", "string", "Who sold it."),
@@ -1474,19 +1473,18 @@ hole_diameter = "0.144 in"
             """\
 name = "Grid plate"
 description = "Aluminum, made in the shop"
-length = "5-1/2 in"
-width = "10-1/2 in"
-height = "1/2 in"
+rows = 20
+columns = 10
 pitch = "1/2 in"
 edge = "1/2 in"
+thickness = "1/2 in"
 hole_diameter = "0.144 in"
 corner_radius = "1/4 in"
-chamfer_depth = "1/32 in"
-tooling_columns = 2
-tooling_rows = 4
+chamfer_width = "1/32 in"
+edge_chamfer = "1/32 in"
 tooling_pitch = "3 in"
-tap_diameter = "0.159 in"
-close_diameter = "0.196 in"
+tooling_tap_diameter = "0.159 in"
+tooling_close_diameter = "0.196 in"
 """,
         ),
         TableKind(

@@ -227,7 +227,7 @@ class TestResolve(unittest.TestCase):
         # The demonstration's grid plate is unchamfered (`chamfer=False`).
         expected: list[Any] = [
             (
-                replace(tool.layer, chamfer_depth=0.0)
+                replace(tool.layer, chamfer_width=0.0, edge_chamfer=0.0)
                 if isinstance(tool.layer, GridPlate)
                 else tool.layer
             )

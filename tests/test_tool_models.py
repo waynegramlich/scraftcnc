@@ -76,9 +76,12 @@ class TestFiles(unittest.TestCase):
         self.assertIn("* `ShopError`:", text)
         self.assertIn("ModeledTool.items() -> list[str]", text)
 
-    def test_letters_mean_one_size(self) -> None:
-        """A key has one letter in every kind; a kind's follow the rule."""
-        seen: dict[str, str] = {}
+    def test_letters_follow_the_rule(self) -> None:
+        """Each kind's letters are what `dimension_letters()` gives.
+
+        A key may differ between kinds: `corner_radius` is `C` on a
+        cutter, `Cr` on a grid plate, whose `columns` is `C`.
+        """
         for kind in shops.KINDS.values():
             letters: dict[str, str] = {
                 schema.key: schema.letter
@@ -86,8 +89,6 @@ class TestFiles(unittest.TestCase):
                 if schema.letter
             }
             self.assertEqual(letters, shops.dimension_letters(list(letters)))
-            for key, letter in letters.items():
-                self.assertEqual(seen.setdefault(key, letter), letter)
 
     def test_dimension_letters(self) -> None:
         """First letters; then initials; parts' letters before sizes'."""

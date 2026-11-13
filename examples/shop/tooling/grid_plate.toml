@@ -8,16 +8,15 @@ notes = """\
   `tools.GRID_PLATE`, so that a setup naming it uses the same cached \
   model."""
 description = "Aluminum, made in the shop, with tooling holes for #10-32"
-length = "5-1/2 in"
-width = "10-1/2 in"
-height = "1/2 in"
+rows = 20
+columns = 10
 pitch = "1/2 in"
 edge = "1/2 in"
+thickness = "1/2 in"
 hole_diameter = "0.144 in"
 corner_radius = "1/4 in"
-chamfer_depth = "1/32 in"
-tooling_columns = 2
-tooling_rows = 4
+chamfer_width = "1/32 in"
+edge_chamfer = "1/32 in"
 tooling_pitch = "3 in"
-tap_diameter = "0.159 in"
-close_diameter = "0.196 in"
+tooling_tap_diameter = "0.159 in"
+tooling_close_diameter = "0.196 in"
