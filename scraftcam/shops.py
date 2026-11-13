@@ -2618,7 +2618,7 @@ class _Reader:  # pylint: disable=too-many-instance-attributes
 
         # Everything else is checked as it is; the tools a
         # `tool_table` names are checked once every file is read.
-        problem: str = _scalar_problem(value, schema)
+        problem: str = scalar_problem(value, schema)
         if problem:
             self.problem(source, path, problem)
         elif form == "choice" and isinstance(value, str):
@@ -2675,8 +2675,8 @@ class _Reader:  # pylint: disable=too-many-instance-attributes
                 first[name] = (source, path)
 
 
-# Function `_scalar_problem()`:
-def _scalar_problem(value: object, schema: TableField) -> str:
+# Function `scalar_problem()`:
+def scalar_problem(value: object, schema: TableField) -> str:
     """Return what is wrong with a value that is not a table or list.
 
     Arguments:

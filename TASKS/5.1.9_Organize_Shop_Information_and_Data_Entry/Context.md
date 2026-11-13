@@ -61,7 +61,7 @@ sticky (code comments cite them); new ones continue after #133.
 
 1. Top line: done.
 2. Tree view: done.
-3. Shop schema and files: S3.1-S3.3 done; S3.4, S3.5 next.
+3. Shop schema and files: S3.1-S3.4 done; S3.5 next.
 4. Tool documentation and SVG (#5, #80).
 5. Machine control: the HMI as a panel (#6).
 
@@ -70,7 +70,8 @@ when the user likes it (#85, #112).
 
 ## Where Things Are
 
-* `scraftcam/gui/`: `app.py` (model, no Qt), `window.py` (windows,
+* `scraftcam/gui/`: `app.py` (model, no Qt), `fields.py` (a shop
+  item's field rows, no Qt, S3.4), `window.py` (windows,
   `NewShopDialog`, `CommandServer`, `delete_windows()`), `views.py`
   (`TreeView`, `Panel`, `TreeWatcher`), `tree.py`, `editor.py`,
   `port.py`, `README.md`.
@@ -90,7 +91,7 @@ when the user likes it (#85, #112).
   `/tmp/claude-1000/-home-wayne-public-html-projects-scraftcam/036c09a7-0d48-4676-8dfd-0ffea8825152/scratchpad/demo/`
   (scratch, may be gone).
 
-## Next: S3.4, the Fields Panel (#72, #132)
+## Done: S3.4, the Fields Panel (#72, #132)
 
 Clicking a shop item shows a row per field, in `KINDS` order: entry
 light red while bad, the value in the shop's units in grey, help as
@@ -101,3 +102,26 @@ in step 4.  Then S3.5: `gui/README.md`, tests.
 
 Open from S3.2: materials now list alphabetically (by file name);
 the example shop's `notes` still mention `materials.toml`.
+
+## 2026-11-12: S3.4 under way
+
+* `shops._scalar_problem` is now public `scalar_problem`.
+* New `scraftcam/gui/fields.py` (no Qt): `Row`, `rows()`,
+  `check()`, `value_of()`, `with_value()`, `rest_text()`,
+  `read_item()`, `write_item()`, `shop_units()`, `SHOP_UNITS`.
+  `kind` and `version` shown, not edited (`FIXED`).  Not yet run
+  or checked.
+* Next: the field rows in `views.Panel` (`QLineEdit`, `notes` as a
+  multi-line entry, write on `editingFinished`, skip rebuilding
+  when the file holds what the panel just wrote), the window passing
+  the shop's units, tests in `tests/test_gui_fields.py`.
+* `views.Panel` has the field rows (`fill_rows()`, `typed()`,
+  `write()`, `written`); `window.py` passes `fields.shop_units()`;
+  `tests/test_gui_fields.py` (4 tests) pass, checkers clean.  #7
+  (choices typed, no drop-down) and #8 (rewrite only on a change)
+  agreed.
+* The user's GUI run: "looks great"; S3.4 done (2026-11-12).
+* Open, for the user: #9 the `notes` entry is 4 lines high and the
+  fields take about 2/3 of the panel (TOML below); change after
+  seeing them?  #10 S3.5 next: `scraftcam/gui/README.md` (the
+  field rows, `fields.py`), and the two S3.2 leftovers below.

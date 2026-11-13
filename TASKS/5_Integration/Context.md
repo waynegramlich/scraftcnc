@@ -68,3 +68,9 @@ decisions for the one GUI are done for now (`T.osiade~5.1.9`, #1-#89):
 the user's shop and designs live in their own version controlled
 directories, `~/.scraftcam/` is always deletable, a tree view drives
 the panels, no tabs, no [Save].  Next: step 1, the top line.
+
+## 2026-11-12: `T.osiade~5.1.9` S3.4 done
+
+A shop item's panel shows its fields, edited in place
+(`scraftcam/gui/fields.py`, `views.Panel`); the user liked it in a
+GUI run.  Next: S3.5 (`gui/README.md`).

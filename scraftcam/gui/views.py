@@ -5,20 +5,31 @@
   read cleanly is red, with the problem as its tooltip (#125).  The
   roots open one level (#128); when the tree is read again, what was
   open stays open.
-* `Panel`: shows one item (#122): a TOML file's text, read only and
-  unwrapped (S3 brings its fields); a Python file's or package's top
-  docstring (#74), or the problem for an item that does not read
-  cleanly, both wrapped.
+* `Panel`: shows one item (#122): a shop file's plain fields, one
+  row each, edited in place (S3.4, `fields.py`), with the rest of it
+  as TOML, read only; another TOML file's text; a Python file's or
+  package's top docstring (#74), or the problem for an item that does
+  not read cleanly, both wrapped.
 * `TreeWatcher`: reads the trees again whenever a file or directory
   in them changes outside the GUI (#11, #123), so there is no
   [Refresh].  The
   current panel (the one last clicked) is outlined.
 """
 
+import functools
 from pathlib import Path
 
 from ..packages import require
 from .app import App
+from .fields import (
+    Row,
+    check,
+    read_item,
+    rest_text,
+    rows,
+    with_value,
+    write_item,
+)
 from .tree import DIRECTORY, ERROR, FILE, PACKAGE, SHOP, Node, docstring
 
 # `PySide6` lives in `~/.scraftcam/packages/`, so it is put on
@@ -36,11 +47,15 @@ from PySide6.QtCore import (  # noqa: E402
 from PySide6.QtGui import QBrush, QColor  # noqa: E402
 from PySide6.QtWidgets import (  # noqa: E402
     QFrame,
+    QGridLayout,
     QLabel,
+    QLineEdit,
     QPlainTextEdit,
+    QScrollArea,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
+    QWidget,
 )
 
 # pylint: enable=wrong-import-position,wrong-import-order
@@ -51,6 +66,11 @@ ERROR_COLOR: str = "#c00000"
 # The outline of the current panel, and of the others.
 CURRENT_STYLE: str = "Panel { border: 2px solid palette(highlight); }"
 OTHER_STYLE: str = "Panel { border: 2px solid transparent; }"
+
+# The look of a field while its value is bad (#15), and of the value
+# in the shop's units.
+BAD_STYLE: str = "background-color: #ffd0d0"
+SHOWN_STYLE: str = "color: grey"
 
 # How long the watcher waits for a burst of changes to end.
 SETTLE_MS: int = 300
@@ -84,14 +104,26 @@ def item_text(node: Node) -> str:
 
 
 # Class `Panel`:
-class Panel(QFrame):
+class Panel(QFrame):  # pylint: disable=too-many-instance-attributes
     """A panel: shows one item, outlined while it is the current one.
 
     Attributes:
     * `title` (`QLabel`): The item's label.
-    * `text` (`QPlainTextEdit`): What the item holds, read only.
+    * `text` (`QPlainTextEdit`): What the item holds, read only (for
+      a shop file, what its fields do not show).
     * `node` (`Node | None`): The item shown, if any.
     * `clicked` (`Signal`): Sent when the panel is clicked.
+    * `entries` (`dict[str, QLineEdit | QPlainTextEdit]`): Each
+      field's entry, by key.
+    * `fields` (`QScrollArea`): The field rows, hidden for an item
+      that has none.
+    * `item` (`dict[str, object]`): The shop file shown, as read.
+    * `rows` (`list[Row]`): Its plain fields.
+    * `shown` (`dict[str, QLabel]`): Each measurement's value in the
+      shop's units, by key.
+    * `units` (`str`): The shop's units.
+    * `written` (`str`): The text last written, so that the file
+      watcher's redraw does not rebuild the rows under the cursor.
     """
 
     clicked: Signal = Signal()
@@ -104,14 +136,24 @@ class Panel(QFrame):
         """
         super().__init__()
         self.node: Node | None = None
+        self.item: dict[str, object] = {}
+        self.rows: list[Row] = []
+        self.entries: dict[str, QLineEdit | QPlainTextEdit] = {}
+        self.shown: dict[str, QLabel] = {}
+        self.units: str = "in"
+        self.written: str = ""
         self.title: QLabel = QLabel(f"Panel {number}: click an item.")
         self.title.setStyleSheet("color: grey")
+        self.fields: QScrollArea = QScrollArea()
+        self.fields.setWidgetResizable(True)
+        self.fields.hide()
         self.text: QPlainTextEdit = QPlainTextEdit()
         self.text.setReadOnly(True)
         self.text.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
         layout: QVBoxLayout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
         layout.addWidget(self.title)
+        layout.addWidget(self.fields, 2)
         layout.addWidget(self.text, 1)
         self.text.viewport().installEventFilter(self)
         self.set_current(False)
@@ -119,18 +161,25 @@ class Panel(QFrame):
     def eventFilter(  # pylint: disable=invalid-name
         self, watched: QObject, event: QEvent
     ) -> bool:
-        """Notice a click on the text (Qt's name for it).
+        """Notice a click on the text, and `notes` losing the focus.
 
         Arguments:
-        * `watched` (`QObject`): The text's viewport.
+        * `watched` (`QObject`): The text's viewport, or an entry.
         * `event` (`QEvent`): Any event; a mouse press makes this the
-          current panel.
+          current panel; a multi-line entry losing the focus is
+          written.
 
         Returns:
         * (`bool`): False, so the text gets the event too.
         """
         if event.type() == QEvent.Type.MouseButtonPress:
             self.clicked.emit()
+        elif event.type() == QEvent.Type.FocusOut:
+            key: str
+            entry: QLineEdit | QPlainTextEdit
+            for key, entry in self.entries.items():
+                if entry is watched:
+                    self.write(key)
         return super().eventFilter(watched, event)
 
     def mousePressEvent(  # pylint: disable=invalid-name
@@ -152,13 +201,27 @@ class Panel(QFrame):
         """
         self.setStyleSheet(CURRENT_STYLE if current else OTHER_STYLE)
 
-    def show_node(self, node: Node) -> None:
+    def show_node(self, node: Node, units: str = "in") -> None:
         """Show an item.
 
         Arguments:
         * `node` (`Node`): The item.
+        * `units` (`str`): The shop's units, `"in"` or `"mm"`.
         """
+        # The file holds what this panel just wrote: keep the rows,
+        # and the cursor in them.
+        same: bool = self.node is not None and self.node.path == node.path
         self.node = node
+        self.units = units
+        if same and self.written and node.kind in (SHOP, FILE):
+            try:
+                if node.path.read_text(encoding="utf-8") == self.written:
+                    return
+            except (OSError, UnicodeDecodeError):
+                pass
+        self.written = ""
+
+        # The title, and the text.
         self.title.setText(node.label())
         self.title.setStyleSheet(
             f"color: {ERROR_COLOR}" if node.kind == ERROR else ""
@@ -168,7 +231,118 @@ class Panel(QFrame):
             if node.kind in (SHOP, FILE)
             else QPlainTextEdit.LineWrapMode.WidgetWidth
         )
-        self.text.setPlainText(item_text(node))
+        self.item = {}
+        self.rows = []
+        if node.kind in (SHOP, FILE) and node.path.suffix == ".toml":
+            self.item = read_item(node.path)[0]
+            self.rows = rows(self.item, units)
+        if not self.rows:
+            self.fields.hide()
+            self.text.show()
+            self.text.setPlainText(item_text(node))
+            return
+        self.fill_rows()
+        rest: str = rest_text(self.item)
+        self.text.setVisible(bool(rest))
+        self.text.setPlainText(rest)
+
+    def fill_rows(self) -> None:
+        """Make a row per field: its key, its entry, its value shown."""
+        grid_widget: QWidget = QWidget()
+        grid: QGridLayout = QGridLayout(grid_widget)
+        grid.setColumnStretch(1, 1)
+        self.entries = {}
+        self.shown = {}
+        number: int
+        row: Row
+        for number, row in enumerate(self.rows):
+            key: str = row.schema.key
+            label: QLabel = QLabel(key)
+            label.setToolTip(row.schema.meaning)
+            entry: QLineEdit | QPlainTextEdit
+            if key == "notes":
+                entry = QPlainTextEdit(row.text)
+                entry.setFixedHeight(4 * entry.fontMetrics().height() + 12)
+                entry.textChanged.connect(
+                    functools.partial(self.notes_typed, key)
+                )
+                entry.installEventFilter(self)
+            else:
+                entry = QLineEdit(row.text)
+                entry.textEdited.connect(functools.partial(self.typed, key))
+                entry.editingFinished.connect(
+                    functools.partial(self.write, key)
+                )
+            entry.setReadOnly(not row.editable)
+            entry.setToolTip(row.schema.meaning)
+            shown: QLabel = QLabel(row.shown)
+            shown.setStyleSheet(SHOWN_STYLE)
+            grid.addWidget(label, number, 0, Qt.AlignmentFlag.AlignTop)
+            grid.addWidget(entry, number, 1)
+            grid.addWidget(shown, number, 2, Qt.AlignmentFlag.AlignTop)
+            self.entries[key] = entry
+            self.shown[key] = shown
+            self.look(row)
+        grid.setRowStretch(len(self.rows), 1)
+        self.fields.setWidget(grid_widget)
+        self.fields.show()
+
+    def row(self, key: str) -> Row:
+        """Return a field's row.
+
+        Arguments:
+        * `key` (`str`): The field's key.
+
+        Returns:
+        * (`Row`): Its row.
+        """
+        return next(row for row in self.rows if row.schema.key == key)
+
+    def look(self, row: Row) -> None:
+        """Show a field's problem (light red), or its converted value.
+
+        Arguments:
+        * `row` (`Row`): The field.
+        """
+        entry: QLineEdit | QPlainTextEdit = self.entries[row.schema.key]
+        entry.setStyleSheet(BAD_STYLE if row.problem else "")
+        entry.setToolTip(row.problem or row.schema.meaning)
+        self.shown[row.schema.key].setText(row.shown)
+
+    def typed(self, key: str, text: str) -> None:
+        """Check a field as it is typed (#15).
+
+        Arguments:
+        * `key` (`str`): The field's key.
+        * `text` (`str`): Its text now.
+        """
+        row: Row = self.row(key)
+        check(row, text, self.units)
+        self.look(row)
+
+    def notes_typed(self, key: str) -> None:
+        """Check a multi-line field as it is typed.
+
+        Arguments:
+        * `key` (`str`): The field's key.
+        """
+        entry: QLineEdit | QPlainTextEdit = self.entries[key]
+        if isinstance(entry, QPlainTextEdit):
+            self.typed(key, entry.toPlainText())
+
+    def write(self, key: str) -> None:
+        """Write the file if a field's value is good and has changed.
+
+        Arguments:
+        * `key` (`str`): The field's key.
+        """
+        changed: dict[str, object] | None = with_value(
+            self.item, self.row(key)
+        )
+        if changed is None or changed == self.item or self.node is None:
+            return
+        self.written = write_item(self.node.path, changed)
+        self.item = changed
 
 
 # Class `TreeView`:

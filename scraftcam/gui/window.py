@@ -45,6 +45,7 @@ from .app import (
     Message,
 )
 from .editor import HINT, editor_command
+from .fields import shop_units
 from .port import Method, PortError, text_param
 from .tree import Node, edit_path
 from .views import Panel, TreeView, TreeWatcher
@@ -382,7 +383,7 @@ class Window(QWidget):
                         str(panel.node.path)
                     )
                     if node is not None:
-                        panel.show_node(node)
+                        panel.show_node(node, shop_units(model.shop))
         self.show_actions()
 
     def toggle_tree(self) -> None:
@@ -429,7 +430,9 @@ class Window(QWidget):
         """
         node: Node | None = self.tree.node_of(item)
         if node is not None:
-            self.panels[self.current].show_node(node)
+            self.panels[self.current].show_node(
+                node, shop_units(self.model.shop)
+            )
         self.show_actions()
 
     def show_actions(self) -> None:
