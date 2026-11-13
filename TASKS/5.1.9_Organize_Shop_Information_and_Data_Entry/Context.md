@@ -213,3 +213,201 @@ window (to Qt, in this GUI).
   `T.cm~5.1.10` #14 (`~/.scraftcam/catalogs/`).
 * First: `catxtract` ported to Qt (`T.cm~5.1.10`), to remove the last
   `tkinter` code.
+
+## 2026-11-12: Revisiting the decisions, by their own numbers
+
+The user: the decisions are revisited under their own numbers (#1,
+#2, ...; not #62.N), five at a time, starting with #1-#5.
+
+## 2026-11-12: Decisions #1-#5 revisited
+
+1. The GUI starts LinuxCNC only when needed.  `show_demo.py` is a
+   test program; eventually it is replaced by `scraftcam DESIGN
+   SHOP`: DESIGN a directory tree of the user's Python files (likely
+   written with an AI's help) that use our classes to make a
+   parametric assembly; SHOP the shop with the machines that make it.
+2. Stop is visible whenever a machine is running.
+3. Replaced (the user's preferences are not everyone's): everything
+   can be done from one window, but pop-up windows are allowed; two
+   or more windows showing the same content are always kept in sync.
+4. Agreed: our writer writes a key order we choose, so diffs in the
+   user's version control stay small.
+5. Agreed: tool sketches are the SVG `Tool_Models.md` uses, shown in
+   a `QSvgWidget` (settles #16).
+Rule for this round: a settled decision leaves the top five, and the
+next open one is added at the bottom.
+
+## 2026-11-12: Decisions #2-#10, #65, #66
+
+2. More than one machine may run at once.  Whenever more than one
+   is running, a [Stop All] button shows in the upper left corner of
+   every open window.  No machine may run with its control window
+   closed.
+3, 4, 5, 8: agreed as proposed (windows in sync through one model per
+   item; key order from the field descriptions; SVG in `QSvgWidget`;
+   #8 replaced by #18).
+6. Agreed (the HMI is a tab), likely to change in implementation.
+7. Probably no [Catalogs] tab: a hierarchical tree widget instead
+   (big change).  Each window has one or more sub-panels; a button
+   always brings up the tree; clicking an item makes the window's
+   other views show content for it.  (Affects #14.)
+9. A metadata file will describe the fields and values of everything
+   in a TOML file.  Open: has the TOML world solved this already?
+10. Agreed; keep-outs guard against the most common crash (a bit into
+    tooling).
+65. Leaning: the user names a Python file with a `main()` function;
+    its directory is the design tree's root, everything else in it or
+    below.  Shops alike, as TOML: a top file, its directory the root.
+66. Agreed: the design runs in its own process, again when its files
+    change.
+
+## 2026-11-12: Decisions #9, #11, #12, #65, #67
+
+9. Field metadata: try JSON Schema, "enhanced" as needed (our own
+   keywords).  JSON and TOML are largely interchangeable, and TOML
+   embeds better in `.nc` files, so the schemas are written in TOML
+   and converted to JSON for the tools; if that fails, JSON vs TOML
+   for schemas is revisited.
+11. The user's files are kept under revision control (git, hg); the
+    GUI may need a pop-up when a file is revised outside it.
+12. Some directories are ours, the rest the user's.  The user never
+    changes our schema, and we never change theirs.
+65. `main()` returns 0 for success, non-zero otherwise; the user puts
+    whatever code they like in it.
+67. Agreed: closing a running machine's control window is refused
+    ("Stop the shop mill first").
+
+## 2026-11-12: Decisions #14, #15, #17, #68, #69
+
+68. More than one command line argument, e.g. `scraft_cam.py
+    --shop=SHOP1.py --design=DESIGN1.py`; maybe it can work out what
+    everything is just by importing the `.py` files.
+69. Agreed as a starting assumption (ours = the directories our
+    schema names; the rest the user's), may change.
+14. Nested tabs dropped: with the tree widget they are a bad idea.
+15. Character by character checking, preferably by a regular
+    expression, with a light red background while bad.  Bad values
+    are NEVER written to the TOML files.
+15.1. No [Save] button: revision control is the better way.  A value
+    is written to the file system as soon as focus moves elsewhere.
+17. No history of our own: users use whatever version control they
+    want.
+
+## 2026-11-12: Decisions #13, #19, #64, #68.1
+
+68.1. The shop is TOML, the design Python: that makes them easy to
+      tell apart.  Follow-up: when an argument is a directory, a
+      directory of Python files with `__init__.py` is clear; for one
+      of TOML files, maybe a rule like `ROOT.toml` (a thought, may
+      not last).
+19. Run with it (directory = branch, `.toml` = one item) until
+    something makes us reconsider.
+57. The user asked what PySide6 is (explained: Qt's own Python
+    binding, the GUI toolkit itself).
+64. Agreed: `~/.scraftcam/` holds only what can be rebuilt, and is
+    always safe to delete.
+13. The first step is a GUI design session: what a panel looks like
+    (remember panels can be replicated).  The non-GUI matters settle
+    some more first.
+
+## 2026-11-12: GUI design: #71-#73
+
+71. Agreed (panel menu: "New panel like this", "Move to new window",
+    pinning).  When a panel is replicated, the tree view opens by
+    itself to show where it is.  The tree also lists the user's
+    Python design files.
+72. Agreed (fields panel: a row per field in schema order, entry
+    light red while bad, preferred units in grey, help as tooltip,
+    the sketch beside it, a letter puts the cursor in its field).
+73. No right click: a selected item gets one or more rows (as
+    appropriate) in the top panel, for its actions.  No icons: a
+    parenthetical word to the right of the name (e.g. "T01 (tool)").
+(#68.2 and #70 not answered yet.)
+
+## 2026-11-12: GUI design: #70, #74-#76
+
+70. The tree, when shown, sticks to the left edge.  SVG (when
+    present) on the right; for documentation, the text left of the
+    SVG panel.  The catalog part will show a table.  The look gets
+    tried out until it "looks right" to the user.
+74. A Python file shows only its top level docstring; another button
+    sends the file to the user's favorite Python viewer/editor.
+75. Agreed (action rows, only those that apply); some items may need
+    more than one row.
+76. Agreed: [Delete] asks once, says it can be restored from version
+    control, removes the file; no `git rm`.
+68.2: the user asked for a suggestion.
+
+## 2026-11-12: #13 (order), #77-#81
+
+77. Agreed: `$VISUAL`, then `$EDITOR`, then the system's default
+    (`QDesktopServices`).
+78. The user: why not keep the GUI's settings in the shop's TOML
+    data?  Configuring the GUI is like configuring the machine tools,
+    and it puts them under version control.
+79. Same solution as #78.
+80. Agreed in outline (a kind's directory shows its documentation,
+    text left, SVG right, from the source of `Tool_Models.md`);
+    details to come.
+81. No prototype: Qt is just function calls, and layout is largely
+    independent of function.
+13. Order of implementation (expected to change as we go): 1. the
+    top line; 2. the hierarchical tree view; 3. the shop TOML schema
+    and `.toml` file creation; 4. tool documentation and SVG images;
+    last, actual machine control.
+
+## 2026-11-12: #78.1, #82, #84, #85
+
+78.1. Agreed: shared GUI settings in `shop.toml`; each person's
+      layout in `gui/USER@HOST.toml` in the shop (commit or ignore).
+82. A reasonable start (top line: [Tree], [Stop All] while more than
+    one machine runs, shop and design names, a message area,
+    [+ Panel], [x]; action rows under it).
+84. Agreed: in step 3 `examples/shop/` becomes the first shop in the
+    new layout, and the demo, `show_demo.py` and the tests move with
+    it.
+85. Total agreement: offscreen tests per step (`tests/qt_hmi.py` to
+    become `tests/qt_app.py`), the user's GUI run for the look, a step
+    done only when the user likes it, checkers on everything.  The
+    user asked whether testing uses MCP (it does not; see #86).
+(#83 not answered yet.  The `.nc` setup comments are already TOML.)
+
+## 2026-11-12: #83, #86-#89
+
+83. Agreed: with no `--shop`, look for `shop.toml` in the current
+    directory, then its parents (as `git` does).
+86. An MCP port will probably come some day; deferred until needed.
+    Meanwhile the command port (one line in, one out) drives the GUI.
+87. No huge `.pdf` files in git/hg.  Extracted tables and text go
+    under revision control; images are extracted on demand.  Once a
+    tool is "purchased", its captured material should be kept under
+    revision control (small `.png`/`.jpg` files are fine).
+88. Something like a tool's optional `catalog` field could work.
+89. Agreed: installer (#54), launchers (#56) and PySide6 in
+    `pyproject.toml` (#57) deferred until PyPI; #1's second half
+    settled (the GUI starts LinuxCNC).
+
+## 2026-11-12: #87 settled, #90-#92 deferred; where things stand
+
+87. The user's intent all along: images only on demand until a tool
+    is purchased, then written once (fixed resolution, never
+    rewritten; today's re-save of page 210 rewrote every PNG with
+    new bytes, which would be revision control noise).  The user is
+    flexible; the catalog side could even be simplified to extracting
+    the tables, plus a one page `.pdf` saved for each purchased tool.
+    The frustration to fix: a tool is bought, and all its
+    documentation is gone.
+90-92. Deferred until they come up: new shops from a template, a
+    "Show in SolidCraft" button, shop floor screens.
+
+Where things stand: the decisions are done for now (#1-#19 revisited,
+#64-#89).  Next: step 1 of #13, the top line (#82).  Before coding,
+Claude writes down what step 1 covers for the user to check.  The
+order (#13): 1 top line, 2 tree view (shop and design trees: `shop.toml`
+root, design `.py` with `main()` or a package with `__main__.py`,
+#68.2; names with a parenthetical kind, #73), 3 shop TOML schema
+(TOML, converted to JSON Schema, `#:schema` line, #9) and `.toml`
+creation (written on focus-out, never a bad value, #15), with
+`examples/shop/` moved to the new layout (#84), 4 tool documentation
+and SVG (#5, #80), last machine control (the HMI as a panel, #6).
+Tests: offscreen plus a command port (#85, #86).

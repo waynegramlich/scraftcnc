@@ -347,3 +347,9 @@ page's content when the layout differs; the user usually presses
 Clear first.  Worth a rethink with #16-#22 (e.g. carry-over only on
 request).  The `tkinter` replacement is done.  The scratch copies'
 pages were not copied into the real `SharsMD/`.
+
+## 2026-11-12: Suspended again
+
+The scratch pages (207-211, lathe tooling the user does not own) are
+not kept.  Suspended by the user until the Catalogs tab is designed
+(`T.osiade~5.1.9`).

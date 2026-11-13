@@ -60,3 +60,11 @@ The package is `scraftcam`; the HMI is Qt (`scraftcam/hmi/lcnc_hmi.py`,
 with `hmi_machine.py`), headless as offscreen Qt; PySide6 comes from
 `packages.require()` (`scraftcam/pins.toml`); no venv (the
 `~/.scraftcnc/venv/` plan above is replaced).  Next: `T.osiade~5.1.9`.
+
+## 2026-11-12: `catxtract` in Qt; the GUI's design decided
+
+No `tkinter` code is left (`T.cm~5.1.10`, suspended again).  The
+decisions for the one GUI are done for now (`T.osiade~5.1.9`, #1-#89):
+the user's shop and designs live in their own version controlled
+directories, `~/.scraftcam/` is always deletable, a tree view drives
+the panels, no tabs, no [Save].  Next: step 1, the top line.
