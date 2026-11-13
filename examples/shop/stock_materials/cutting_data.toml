@@ -6,11 +6,8 @@ version = "0.0.1"
 notes = """\
   The materials the shop cuts, and how to drill them; the drilling data \
   is from the user's `drill_rules.txt`, the feed factors Claude's \
-  guesses. Surface speeds by tool material, as shares of HSS's: carbide \
-  from the user's `drill_rules.txt`; cobalt is Claude's guess (M42 is \
-  usually run a little faster than HSS)."""
-carbide_speed_factor = "250 %"
-cobalt_speed_factor = "110 %"
+  guesses.  How fast each tool material cuts, as a share of HSS's, is \
+  in `tool_materials/`."""
 
 [end_milling]
 plunge_factor = "50 %"

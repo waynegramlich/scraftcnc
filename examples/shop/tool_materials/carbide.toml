@@ -1,0 +1,7 @@
+#:schema https://raw.githubusercontent.com/waynegramlich/scraftcam/main/scraftcam/schemas/tool_material.json
+name = "carbide"
+kind = "tool_material"
+language = "English"
+version = "0.0.1"
+speed_factor = "250 %"
+description = "Solid carbide; from the user's `drill_rules.txt`."

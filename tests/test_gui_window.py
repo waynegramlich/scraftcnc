@@ -9,8 +9,9 @@ from unittest import mock
 
 from scraftcam import run
 from scraftcam.gui.app import App
+from scraftcam.gui.theme import colors
 from scraftcam.gui.views import TreeWatcher
-from scraftcam.gui.window import PROBLEM_COLOR, NewShopDialog, Window
+from scraftcam.gui.window import NewShopDialog, Window
 from tests import qt_app
 
 
@@ -44,7 +45,7 @@ class WindowTest(unittest.TestCase):
         second: Window = Window(model)
         self.assertEqual(first.windowTitle(), "scraftcam: (none) (plate)")
         self.assertEqual(first.design_label.text(), "Design: plate")
-        self.assertIn(PROBLEM_COLOR, first.message_label.styleSheet())
+        self.assertIn(colors().problem, first.message_label.styleSheet())
 
         # Both windows follow the model.
         model.say("hello")

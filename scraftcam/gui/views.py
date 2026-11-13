@@ -32,6 +32,7 @@ from .fields import (
     with_value,
     write_item,
 )
+from .theme import colors, sketch_text
 from .tree import DIRECTORY, ERROR, FILE, PACKAGE, SHOP, Node, docstring
 
 # `PySide6` lives in `~/.scraftcam/packages/`, so it is put on
@@ -39,6 +40,7 @@ from .tree import DIRECTORY, ERROR, FILE, PACKAGE, SHOP, Node, docstring
 require("PySide6")
 # pylint: disable=wrong-import-position,wrong-import-order
 from PySide6.QtCore import (  # noqa: E402
+    QByteArray,
     QEvent,
     QFileSystemWatcher,
     QObject,
@@ -46,7 +48,12 @@ from PySide6.QtCore import (  # noqa: E402
     QTimer,
     Signal,
 )
-from PySide6.QtGui import QBrush, QColor  # noqa: E402
+from PySide6.QtGui import (  # noqa: E402
+    QBrush,
+    QColor,
+    QPainter,
+    QPaintEvent,
+)
 from PySide6.QtSvgWidgets import QSvgWidget  # noqa: E402
 from PySide6.QtWidgets import (  # noqa: E402
     QFrame,
@@ -57,6 +64,7 @@ from PySide6.QtWidgets import (  # noqa: E402
     QPlainTextEdit,
     QScrollArea,
     QSplitter,
+    QSplitterHandle,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -67,24 +75,28 @@ from PySide6.QtWidgets import (  # noqa: E402
 
 # A splitter's handle: wide enough to see and grab, in the palette's
 # colors, so it shows in light and dark mode alike (#25).
-HANDLE_WIDTH: int = 5
-HANDLE_STYLE: str = "QSplitter::handle { background: palette(mid); }"
+HANDLE_WIDTH: int = 7
+HANDLE_STYLE: str = (
+    "QSplitter::handle { background: palette(mid); } "
+    "QSplitter::handle:hover { background: palette(highlight); }"
+)
+
+# A handle's grip, the sign that it can be dragged: how many dots, how
+# big, and how far apart (pixels).
+GRIP_DOTS: int = 3
+GRIP_DOT: int = 3
+GRIP_GAP: int = 4
 
 # A panel's splitters start 2:1: the field rows wider than the sketch,
 # and taller than the text (Qt scales these to the room there is).
 SHARES: list[int] = [2000, 1000]
 
-# The color of an item, or a panel's text, that does not read cleanly.
-ERROR_COLOR: str = "#c00000"
+# The least width the sketches keep when the rows are fitted (pixels).
+MIN_SKETCH: int = 120
 
 # The outline of the current panel, and of the others.
 CURRENT_STYLE: str = "Panel { border: 2px solid palette(highlight); }"
 OTHER_STYLE: str = "Panel { border: 2px solid transparent; }"
-
-# The look of a field while its value is bad (#15), and of the value
-# in the shop's units.
-BAD_STYLE: str = "background-color: #ffd0d0"
-SHOWN_STYLE: str = "color: grey"
 
 # How long the watcher waits for a burst of changes to end.
 SETTLE_MS: int = 300
@@ -162,7 +174,7 @@ class Panel(QFrame):  # pylint: disable=too-many-instance-attributes
         self.units: str = "in"
         self.written: str = ""
         self.title: QLabel = QLabel(f"Panel {number}: click an item.")
-        self.title.setStyleSheet("color: grey")
+        self.title.setStyleSheet(f"color: {colors().quiet}")
         self.fields: QScrollArea = QScrollArea()
         self.fields.setWidgetResizable(True)
         self.fields.hide()
@@ -261,7 +273,7 @@ class Panel(QFrame):  # pylint: disable=too-many-instance-attributes
         # The title, and the text.
         self.title.setText(node.label())
         self.title.setStyleSheet(
-            f"color: {ERROR_COLOR}" if node.kind == ERROR else ""
+            f"color: {colors().problem}" if node.kind == ERROR else ""
         )
         self.text.setLineWrapMode(
             QPlainTextEdit.LineWrapMode.NoWrap
@@ -284,6 +296,50 @@ class Panel(QFrame):  # pylint: disable=too-many-instance-attributes
         self.text.setVisible(bool(rest))
         self.text.setPlainText(rest)
 
+        # Once laid out, move the lines in until they meet the rows.
+        QTimer.singleShot(0, self.fit)
+
+    def fit(self) -> None:
+        """Move the panel's lines in until they meet what is there (#43).
+
+        The line between the field rows and the sketches moves left to
+        the rows' own width, the sketches taking the rest; the line
+        above the text moves up until the text has room for all of its
+        lines, though never above a third of the panel.  What the user
+        drags stays until the next item is shown.
+        """
+        # Across: the rows' width, with their scroll bar and frame.
+        frame: int = 2 * self.fields.frameWidth()
+        content: QWidget | None = self.fields.widget()
+        across: int = sum(self.top.sizes())
+        if content is not None and not self.sketch.isHidden() and across > 0:
+            wanted: int = (
+                content.sizeHint().width()
+                + self.fields.verticalScrollBar().sizeHint().width()
+                + frame
+            )
+            rows_width: int = min(wanted, across - MIN_SKETCH)
+            self.top.setSizes([rows_width, across - rows_width])
+
+        # Down: the text's lines, at most a third of the height.
+        down: int = sum(self.split.sizes())
+        if not self.text.isHidden() and down > 0:
+            lines: int = self.text.document().lineCount()
+            text_height: int = min(
+                (lines + 1) * self.text.fontMetrics().lineSpacing() + frame,
+                down // 3,
+            )
+            self.split.setSizes([down - text_height, text_height])
+
+    def restyle(self) -> None:
+        """Draw the panel again, in the scheme now in use (#24)."""
+        self.title.setStyleSheet(
+            f"color: {colors().quiet}" if self.node is None else ""
+        )
+        if self.node is not None:
+            self.written = ""
+            self.show_node(self.node, self.units)
+
     def show_sketches(self, paths: list[Path]) -> None:
         """Show sketches one above another, each as tall as it draws.
 
@@ -300,7 +356,12 @@ class Panel(QFrame):  # pylint: disable=too-many-instance-attributes
         self.views = []
         path: Path
         for path in paths:
-            view = QSvgWidget(str(path))
+            view = QSvgWidget()
+            view.load(
+                QByteArray(
+                    sketch_text(path.read_text(encoding="utf-8")).encode()
+                )
+            )
             view.renderer().setAspectRatioMode(
                 Qt.AspectRatioMode.KeepAspectRatio
             )
@@ -342,7 +403,7 @@ class Panel(QFrame):  # pylint: disable=too-many-instance-attributes
             entry.setReadOnly(not row.editable)
             entry.setToolTip(row.schema.meaning)
             shown: QLabel = QLabel(row.shown)
-            shown.setStyleSheet(SHOWN_STYLE)
+            shown.setStyleSheet(f"color: {colors().quiet}")
             grid.addWidget(label, number, 0, Qt.AlignmentFlag.AlignTop)
             grid.addWidget(entry, number, 1)
             grid.addWidget(shown, number, 2, Qt.AlignmentFlag.AlignTop)
@@ -371,7 +432,7 @@ class Panel(QFrame):  # pylint: disable=too-many-instance-attributes
         * `row` (`Row`): The field.
         """
         entry: QLineEdit | QPlainTextEdit = self.entries[row.schema.key]
-        entry.setStyleSheet(BAD_STYLE if row.problem else "")
+        entry.setStyleSheet(bad_style() if row.problem else "")
         entry.setToolTip(row.problem or row.schema.meaning)
         self.shown[row.schema.key].setText(row.shown)
 
@@ -411,6 +472,68 @@ class Panel(QFrame):  # pylint: disable=too-many-instance-attributes
         self.item = changed
 
 
+# Function `bad_style()`:
+def bad_style() -> str:
+    """Return the look of a field while its value is bad (#15, #24).
+
+    Returns:
+    * (`str`): A style sheet: the scheme's light red background.
+    """
+    return f"background-color: {colors().bad}"
+
+
+# Class `GripHandle`:
+class GripHandle(QSplitterHandle):
+    """A splitter's handle with a grip: a few dots at its middle (#44).
+
+    Attributes: none of its own.
+    """
+
+    def paintEvent(  # pylint: disable=invalid-name
+        self, event: QPaintEvent
+    ) -> None:
+        """Draw the handle as the style says, then the grip's dots.
+
+        Arguments:
+        * `event` (`QPaintEvent`): What to paint.
+        """
+        super().paintEvent(event)
+        painter: QPainter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(self.palette().color(self.foregroundRole()))
+        across: bool = self.orientation() == Qt.Orientation.Horizontal
+        step: int = GRIP_DOT + GRIP_GAP
+        length: int = GRIP_DOTS * step - GRIP_GAP
+        middle_x: int = self.width() // 2
+        middle_y: int = self.height() // 2
+        index: int
+        for index in range(GRIP_DOTS):
+            along: int = index * step - length // 2
+            x: int = middle_x - GRIP_DOT // 2 + (0 if across else along)
+            y: int = middle_y - GRIP_DOT // 2 + (along if across else 0)
+            painter.drawEllipse(x, y, GRIP_DOT, GRIP_DOT)
+        painter.end()
+
+
+# Class `GripSplitter`:
+class GripSplitter(QSplitter):
+    """A splitter whose handles show a grip (`GripHandle`).
+
+    Attributes: none of its own.
+    """
+
+    def createHandle(  # pylint: disable=invalid-name
+        self,
+    ) -> QSplitterHandle:
+        """Return a new handle, with a grip.
+
+        Returns:
+        * (`QSplitterHandle`): The handle.
+        """
+        return GripHandle(self.orientation(), self)
+
+
 # Function `splitter()`:
 def splitter(orientation: Qt.Orientation) -> QSplitter:
     """Return an empty splitter whose handles can be seen and dragged.
@@ -422,7 +545,7 @@ def splitter(orientation: Qt.Orientation) -> QSplitter:
     Returns:
     * (`QSplitter`): The splitter.
     """
-    made: QSplitter = QSplitter(orientation)
+    made: QSplitter = GripSplitter(orientation)
     made.setHandleWidth(HANDLE_WIDTH)
     made.setStyleSheet(HANDLE_STYLE)
     made.setChildrenCollapsible(False)
@@ -451,9 +574,10 @@ class TreeView(QTreeWidget):
         Returns:
         * (`int`): The width, in pixels, with no space to spare (#22).
         """
-        self.resizeColumnToContents(0)
+        # The labels' own width: the column itself stretches to fill
+        # the view, so its width says nothing.
         return (
-            self.columnWidth(0)
+            self.sizeHintForColumn(0)
             + 2 * self.frameWidth()
             + self.verticalScrollBar().sizeHint().width()
         )
@@ -505,7 +629,7 @@ class TreeView(QTreeWidget):
         item.setText(0, node.label())
         item.setData(0, PATH_ROLE, key)
         if node.kind == ERROR:
-            item.setForeground(0, QBrush(QColor(ERROR_COLOR)))
+            item.setForeground(0, QBrush(QColor(colors().problem)))
             item.setToolTip(0, node.error)
         self.nodes[key] = node
         child: Node

@@ -1,0 +1,9 @@
+#:schema https://raw.githubusercontent.com/waynegramlich/scraftcam/main/scraftcam/schemas/tool_material.json
+name = "cobalt"
+kind = "tool_material"
+language = "English"
+version = "0.0.1"
+speed_factor = "110 %"
+description = """\
+  M42 cobalt high speed steel; Claude's guess (usually run a little \
+  faster than HSS)."""

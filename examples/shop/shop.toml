@@ -8,8 +8,9 @@ notes = """\
   Example tools, from the Shars Tool 2026 catalog (pages below).  On \
   the mill, end mills go in R8 collets and drills in an ER32 chuck with \
   an R8 shank; the router's spindle takes ER20 collets itself. Every \
-  tool gets its speeds and feeds from `materials/`, unless it gives \
-  its own for a material (`cutting`)."""
+  tool gets its speeds and feeds from `stock_materials/` and \
+  `tool_materials/`, unless it gives its own for a material \
+  (`cutting`)."""
 units = "in"
 machine_kinds = [
   "cnc_mill",

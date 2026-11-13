@@ -354,3 +354,81 @@ From the log before the trim (`hg` rev 695):
 * Not yet run: the full chamfered `GRID_PLATE` rebuild (about 5
   minutes, the next `show_demo.py` with the chamfered plate); the
   full test suite (only the modules touched were run).
+
+## 2026-11-13: Order corrected (the user)
+
+* #10 (`scraftcam/gui/README.md`) comes at the very end of this
+  task, after the LinuxCNC GUI (step 5) and the catalog work
+  (`T.cm~5.1.10`) are merged in; it is not S3.5.
+* Next: #24 (light/dark), then #23 (materials).  #43 (sketch column
+  1:1?) explained to the user, waiting on an answer.
+
+## 2026-11-13: #24 done (light/dark), waiting on the user's GUI run
+
+* New `scraftcam/gui/theme.py`: `dark()` (`QStyleHints.colorScheme()`),
+  `Colors`, `LIGHT`, `DARK`, `colors()`, `palette()` (Fusion's own
+  for light; ours for dark), `apply()`, `follow()` (applies now and
+  on `colorSchemeChanged`, then the windows' redraw),
+  `sketch_text()` (recolors an SVG from `LIGHT`'s sketch colors).
+* `views.py`: `ERROR_COLOR`, `BAD_STYLE`, `SHOWN_STYLE` gone; now
+  `colors()` and `bad_style()`; sketches loaded through
+  `sketch_text()`; `Panel.restyle()`.  `window.py`: `PROBLEM_COLOR`
+  gone; `run()` calls `theme.follow(application, redraw_windows)`.
+* Port `select` also answers `fields` (each field row's entry); its
+  test had failed since S3.4 (the name is a field row now).
+* `tests/test_gui_theme.py` (3 tests); the GUI tests (34) pass.
+* The chamfered `GRID_PLATE` is in the cache
+  (`Grid_plate__8465bd3902f772b5.step`, 5 min 17 s headless).
+
+## 2026-11-13: #23 done, stock and tool materials
+
+* `examples/shop/materials/` is now `stock_materials/` (`git mv`);
+  new `tool_materials/` (`hss.toml`, `cobalt.toml`, `carbide.toml`),
+  kind `tool_material` (`speed_factor`, `description`).
+  `cutting_data.toml` lost `carbide_speed_factor` and
+  `cobalt_speed_factor`.  `SHOP_DIRECTORIES` reads `tool_materials`
+  before `tools`; `shop["tool_materials"]` is their list;
+  `_tool_material()` finds a tool's by name, any capitals;
+  `SPEED_FACTORS` is gone.  Internally the stock side is still
+  `shop["materials"]`.
+* The demo's G-code is byte for byte the same (697 lines, against
+  HEAD in a worktree).  `Shops.md`, schemas (30) regenerated;
+  shops, schema, tree, fields, machine tests pass.
+* #43 explained to the user; 2:1 stays unless they say otherwise.
+
+## 2026-11-13: #43 answered: lines fitted automatically
+
+* The user drags the panel's lines all the time; asked that the line
+  move left until it "bumps into something".  `Panel.fit()` (after
+  each item is shown, by a zero timer): the rows | sketches line to
+  the rows' own width (`MIN_SKETCH` 120 px kept for the sketches);
+  the line above the text up to the text's lines, at most a third
+  of the panel.  Dragging stays until the next item.  Test
+  `test_fit`.  Waiting on the user's GUI run.
+* The tree was not fitted at start: `TreeView.wanted_width()` used
+  the column's width, which stretches to the view; now
+  `sizeHintForColumn(0)`.  The tree refits when a branch opens or
+  closes (`Window.tree_opened()`): 211 px closed, up to half the
+  window with `tools` open.
+* #44 (the user: no hint that the lines can be moved): every
+  splitter is a `views.GripSplitter`, whose `GripHandle` draws three
+  dots at its middle; handles 7 px, `palette(highlight)` on hover.
+* The section A-A is drawn at 2 times size (`DETAIL`), about as wide
+  as the top view (the user).
+
+## 2026-11-13: Where things stand (end of session 2)
+
+* Done since the last commit: #24 (light/dark, `gui/theme.py`), #23
+  (`stock_materials/`, `tool_materials/`), #43 (lines fitted to the
+  rows; the tree fits its labels and refits), #44 (grip dots, hover
+  highlight), port `select` answers `fields`, the chamfered
+  `GRID_PLATE` cached.  The user finds the GUI "very pleasant and
+  natural".
+* Next: the rest of step 4 (#80: a kind's directory shows its
+  documentation, text left, SVG right), then step 5 (the HMI as a
+  panel), the catalog work (`T.cm~5.1.10`), and last #10
+  (`scraftcam/gui/README.md`).
+* Not run: the full test suite (only the modules touched).
+* #45 (the user): the top view shows where the edge chamfer meets
+  the top: `_Broken.bevel()`, a thin line `edge_chamfer` in from the
+  two outer sides and around the corner, break line to break line.

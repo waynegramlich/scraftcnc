@@ -34,7 +34,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from ..packages import require
-from . import port
+from . import port, theme
 from .app import (
     MACHINE_KINDS,
     MANUAL_PREFIX,
@@ -47,6 +47,7 @@ from .app import (
 from .editor import HINT, editor_command
 from .fields import shop_units
 from .port import Method, PortError, text_param
+from .theme import colors
 from .tree import Node, edit_path
 from .views import Panel, TreeView, TreeWatcher, splitter
 
@@ -77,6 +78,7 @@ from PySide6.QtWidgets import (  # noqa: E402
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QPlainTextEdit,
     QPushButton,
     QSizePolicy,
     QSplitter,
@@ -91,8 +93,6 @@ from PySide6.QtWidgets import (  # noqa: E402
 WIDTH: int = 720
 HEIGHT: int = 480
 
-# The color of a problem on the top line.
-PROBLEM_COLOR: str = "#c00000"
 
 # What Qt's offscreen platform says each time a window is shown; it
 # means nothing here, so `use_headless()` drops it.
@@ -155,6 +155,19 @@ def make_application(*, headless: bool) -> QApplication:
     return QApplication(sys.argv[:1])
 
 
+# Function `redraw_windows()`:
+def redraw_windows() -> None:
+    """Draw every window again, in the scheme now in use (#24)."""
+    widget: QWidget
+    for widget in QApplication.topLevelWidgets():
+        if isinstance(widget, Window):
+            widget.tree.version = -1
+            widget.redraw()
+            panel: Panel
+            for panel in widget.panels:
+                panel.restyle()
+
+
 # Function `delete_windows()`:
 def delete_windows() -> None:
     """Close and delete every top level widget, now.
@@ -189,6 +202,7 @@ def run(model: App, *, headless: bool, command_port: int) -> int:
       not be opened.
     """
     application: QApplication = make_application(headless=headless)
+    theme.follow(application, redraw_windows)
     first: Window = Window(model)
     first.show()
     watcher: TreeWatcher = TreeWatcher(model)
@@ -268,9 +282,6 @@ class Window(QWidget):
         self.add_button(top, "x", self.close)
         close: QPushButton = self.buttons["x"]
         close.setFixedWidth(close.sizeHint().height())
-        self.buttons["Stop All"].setStyleSheet(
-            f"color: white; background: {PROBLEM_COLOR}"
-        )
 
         # The action rows, under the top line: [New Shop], while there
         # is no shop.
@@ -291,6 +302,8 @@ class Window(QWidget):
         self.splitter: QSplitter = splitter(Qt.Orientation.Horizontal)
         self.tree: TreeView = TreeView()
         self.tree.itemClicked.connect(self.select_item)
+        self.tree.itemExpanded.connect(self.tree_opened)
+        self.tree.itemCollapsed.connect(self.tree_opened)
         self.splitter.addWidget(self.tree)
         self.panels: list[Panel] = []
         self.current: int = 0
@@ -361,8 +374,12 @@ class Window(QWidget):
         latest: Message = model.latest()
         self.message_label.setText(latest.text)
         self.message_label.setToolTip(latest.text)
+        problem: str = colors().problem
         self.message_label.setStyleSheet(
-            f"color: {PROBLEM_COLOR}" if latest.problem else ""
+            f"color: {problem}" if latest.problem else ""
+        )
+        self.buttons["Stop All"].setStyleSheet(
+            f"color: white; background: {problem}"
         )
         self.buttons["Stop All"].setVisible(model.stop_all_shown())
         self.new_shop_row.setVisible(model.shop is None)
@@ -397,6 +414,10 @@ class Window(QWidget):
             self.tree.hide()
             return
         self.tree.show()
+        self.fit_tree()
+
+    def tree_opened(self, _item: QTreeWidgetItem) -> None:
+        """Fit the tree again when a branch opens or closes (#43)."""
         self.fit_tree()
 
     def fit_tree(self) -> None:
@@ -708,7 +729,8 @@ class CommandServer(QTcpServer):
           directory) and `window` (from 0; 0 if not given).
 
         Returns:
-        * (`object`): What the current panel shows: `label`, `text`.
+        * (`object`): What the current panel shows: `label`, `fields`
+          (each field row's key and what its entry holds) and `text`.
 
         Raises:
         * `PortError`: If no item has that path.
@@ -722,8 +744,17 @@ class CommandServer(QTcpServer):
             raise PortError(f"no item for {path}", port.INVALID_PARAMS)
         top.select_item(item)
         panel: Panel = top.panels[top.current]
+        fields: dict[str, str] = {
+            key: (
+                entry.toPlainText()
+                if isinstance(entry, QPlainTextEdit)
+                else entry.text()
+            )
+            for key, entry in panel.entries.items()
+        }
         return {
             "label": panel.title.text(),
+            "fields": fields,
             "text": panel.text.toPlainText(),
         }
 

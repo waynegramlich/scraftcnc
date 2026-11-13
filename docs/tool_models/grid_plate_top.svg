@@ -4,6 +4,10 @@
   <path d="M -30.0 -255.0 L -230.0 -255.0 A 25.0 25.0 0 0 0 -255.0 -230.0 L -255.0 -30.0 L -154.5 -30.0 L -146.5 -42.0 L -138.5 -18.0 L -130.5 -30.0 L -30.0 -30.0 L -30.0 -30.0 L -30.0 -130.5 L -18.0 -138.5 L -42.0 -146.5 L -30.0 -154.5 L -30.0 -255.0 Z" fill="#dfe4e8" stroke="#222222" stroke-width="2" stroke-linejoin="round" />
   <path d="M 30.0 255.0 L 230.0 255.0 A 25.0 25.0 0 0 0 255.0 230.0 L 255.0 30.0 L 154.5 30.0 L 146.5 42.0 L 138.5 18.0 L 130.5 30.0 L 30.0 30.0 L 30.0 30.0 L 30.0 130.5 L 18.0 138.5 L 42.0 146.5 L 30.0 154.5 L 30.0 255.0 Z" fill="#dfe4e8" stroke="#222222" stroke-width="2" stroke-linejoin="round" />
   <path d="M 30.0 -255.0 L 230.0 -255.0 A 25.0 25.0 0 0 1 255.0 -230.0 L 255.0 -30.0 L 154.5 -30.0 L 146.5 -18.0 L 138.5 -42.0 L 130.5 -30.0 L 30.0 -30.0 L 30.0 -30.0 L 30.0 -130.5 L 42.0 -138.5 L 18.0 -146.5 L 30.0 -154.5 L 30.0 -255.0 Z" fill="#dfe4e8" stroke="#222222" stroke-width="2" stroke-linejoin="round" />
+  <path d="M -30.0 251.9 L -230.0 251.9 A 21.9 21.9 0 0 1 -251.9 230.0 L -251.9 30.0" fill="none" stroke="#222222" stroke-width="1" stroke-linejoin="round" />
+  <path d="M -30.0 -251.9 L -230.0 -251.9 A 21.9 21.9 0 0 0 -251.9 -230.0 L -251.9 -30.0" fill="none" stroke="#222222" stroke-width="1" stroke-linejoin="round" />
+  <path d="M 30.0 251.9 L 230.0 251.9 A 21.9 21.9 0 0 0 251.9 230.0 L 251.9 30.0" fill="none" stroke="#222222" stroke-width="1" stroke-linejoin="round" />
+  <path d="M 30.0 -251.9 L 230.0 -251.9 A 21.9 21.9 0 0 1 251.9 -230.0 L 251.9 -30.0" fill="none" stroke="#222222" stroke-width="1" stroke-linejoin="round" />
   <path d="M -215.3 205.0 A 10.3 10.3 0 0 0 -194.7 205.0 A 10.3 10.3 0 0 0 -215.3 205.0 Z" fill="white" stroke="#222222" stroke-width="2" stroke-linejoin="round" />
   <path d="M -212.2 205.0 A 7.2 7.2 0 0 0 -197.8 205.0 A 7.2 7.2 0 0 0 -212.2 205.0 Z" fill="white" stroke="#222222" stroke-width="2" stroke-linejoin="round" />
   <path d="M -165.3 205.0 A 10.3 10.3 0 0 0 -144.7 205.0 A 10.3 10.3 0 0 0 -165.3 205.0 Z" fill="white" stroke="#222222" stroke-width="2" stroke-linejoin="round" />

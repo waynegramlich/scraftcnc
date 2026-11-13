@@ -108,7 +108,7 @@
           }
         },
         "materials": {
-          "description": "The materials it cuts, and how to drill them: the files in `materials/`.",
+          "description": "The materials it cuts, and how to drill and mill them: the files in `stock_materials/`.",
           "anyOf": [
             {
               "$ref": "#/$defs/materials"
@@ -117,6 +117,20 @@
               "type": "string"
             }
           ]
+        },
+        "tool_materials": {
+          "description": "What its tools are made of, and how fast each cuts: the files in `tool_materials/`.",
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/tool_material"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
         }
       },
       "required": [],
@@ -2177,16 +2191,6 @@
           "description": "Anything worth writing down about it (the GUI shows and edits it; `#` comments are not kept).",
           "type": "string"
         },
-        "carbide_speed_factor": {
-          "description": "A carbide tool's surface speed, as a share of HSS's.",
-          "type": "string",
-          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:%)\\s*$"
-        },
-        "cobalt_speed_factor": {
-          "description": "A cobalt tool's surface speed, as a share of HSS's.",
-          "type": "string",
-          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:%)\\s*$"
-        },
         "end_milling": {
           "description": "How end mills feed.",
           "anyOf": [
@@ -2224,7 +2228,7 @@
           }
         },
         "materials": {
-          "description": "The materials, each in a group: in a shop, the files in `materials/` (other than this one).",
+          "description": "The materials, each in a group: in a shop, the files in `stock_materials/` (other than this one).",
           "type": "array",
           "items": {
             "anyOf": [
@@ -2239,8 +2243,6 @@
         }
       },
       "required": [
-        "carbide_speed_factor",
-        "cobalt_speed_factor",
         "end_milling",
         "drilling",
         "groups"
@@ -2505,6 +2507,46 @@
       },
       "required": [
         "group"
+      ],
+      "additionalProperties": false
+    },
+    "tool_material": {
+      "description": "What a tool is made of (a tool's `material` names one), and how fast it cuts: speeds and feeds are worked out for a tool whose material is one of these.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Unique among the things of its kind.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "What the rest of the file is.",
+          "const": "tool_material"
+        },
+        "language": {
+          "description": "The language of the names and notes.",
+          "type": "string"
+        },
+        "version": {
+          "description": "The format version, `MAJOR.MINOR.PATCH`.",
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "notes": {
+          "description": "Anything worth writing down about it (the GUI shows and edits it; `#` comments are not kept).",
+          "type": "string"
+        },
+        "speed_factor": {
+          "description": "Its surface speed, as a share of HSS's (HSS's own is 100 %).",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:%)\\s*$"
+        },
+        "description": {
+          "description": "What it is, in a few words.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "speed_factor"
       ],
       "additionalProperties": false
     }

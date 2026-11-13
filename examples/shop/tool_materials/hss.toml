@@ -1,0 +1,7 @@
+#:schema https://raw.githubusercontent.com/waynegramlich/scraftcam/main/scraftcam/schemas/tool_material.json
+name = "HSS"
+kind = "tool_material"
+language = "English"
+version = "0.0.1"
+speed_factor = "100 %"
+description = "High speed steel: the speeds and feeds are worked out for it."

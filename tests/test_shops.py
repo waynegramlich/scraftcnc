@@ -197,6 +197,10 @@ class TestReader(CopiedShop):
         )
         self.assertEqual(len(shop["materials"]["materials"]), 19)
         self.assertEqual(shop["materials"]["groups"][0]["name"], "soft")
+        self.assertEqual(
+            sorted(entry["name"] for entry in shop["tool_materials"]),
+            ["HSS", "carbide", "cobalt"],
+        )
         self.assertEqual(shop["units"], "in")
 
     def test_syntax_error(self) -> None:

@@ -8,7 +8,7 @@ from pathlib import Path
 
 from scraftcam.gui import fields
 from scraftcam.gui.tree import FILE, Node
-from scraftcam.gui.views import BAD_STYLE, Panel
+from scraftcam.gui.views import Panel, bad_style
 from tests import qt_app
 
 # An example tool, copied before it is edited.
@@ -121,7 +121,7 @@ class PanelFieldsTest(unittest.TestCase):
             before: str = path.read_text(encoding="utf-8")
             panel.typed("radius", "lots")
             panel.write("radius")
-            self.assertEqual(panel.entries["radius"].styleSheet(), BAD_STYLE)
+            self.assertEqual(panel.entries["radius"].styleSheet(), bad_style())
             self.assertEqual(path.read_text(encoding="utf-8"), before)
 
             # A good one: written, and the rows kept when shown again.
@@ -145,6 +145,23 @@ class PanelFieldsTest(unittest.TestCase):
         shop: Path = TOOL.parent.parent / "shop.toml"
         panel.show_node(Node(shop.name, FILE, shop, ""), "in")
         self.assertTrue(panel.sketch.isHidden())
+        panel.deleteLater()
+
+    def test_fit(self) -> None:
+        """The rows' line moves in to the rows; the sketch gets the rest."""
+        qt_app.process_events()
+        panel: Panel = Panel(1)
+        panel.resize(1200, 600)
+        panel.show()
+        panel.show_node(Node(TOOL.name, FILE, TOOL, ""), "in")
+        qt_app.process_events()
+        panel.fit()
+        rows_width, sketch_width = panel.top.sizes()
+        self.assertLess(rows_width, 2 * (rows_width + sketch_width) // 3)
+        self.assertGreater(sketch_width, rows_width // 2)
+        content = panel.fields.widget()
+        assert content is not None
+        self.assertGreaterEqual(rows_width, content.sizeHint().width())
         panel.deleteLater()
 
 

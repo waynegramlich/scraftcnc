@@ -26,10 +26,11 @@ shop/
   shop.toml                the shop (`shop`)
   controllers/linuxcnc.toml   a controller (`controller`)
   machines/shop_mill.toml     a machine, with its tool table (`machine`)
+  tool_materials/carbide.toml what tools are made of (`tool_material`)
   tools/1_4_in_end_mill.toml  a tool (`end_mill`, `drill`, ...)
   tooling/grid_plate.toml     work holding (`grid_plate`)
-  materials/cutting_data.toml how to cut (`materials`)
-  materials/6061_aluminum.toml   a material (`material`)
+  stock_materials/cutting_data.toml   how to cut (`materials`)
+  stock_materials/6061_aluminum.toml  a material cut (`material`)
 ```
 
 * `scraftcam` names the directories; the files in them are named
@@ -162,38 +163,43 @@ tools, tooling and materials are the files in the directories beside it
 and `materials` from them, so `shop.toml` itself has none of them.  It
 has a `name` even when it is not a file of its own.
 
-| Key             | Value                 | Required | Meaning                |
-| --------------- | --------------------- | -------- | ---------------------- |
-| `location`      | `location`            | no       | Where the shop is.     |
-| `units`         | one of `in`, `mm`     | no       | The units the shop     |
-|                 |                       |          | prefers: `in`          |
-|                 |                       |          | (imperial) or `mm`     |
-|                 |                       |          | (metric).              |
-| `machine_kinds` | list of `cnc_mill`,   | no       | The kinds of machines  |
-|                 | `cnc_router`,         |          | the shop has, computer |
-|                 | `cnc_lathe`,          |          | controlled or manual   |
-|                 | `laser_cutter`,       |          | (for prep work).       |
-|                 | `3d_printer`,         |          |                        |
-|                 | `manual_mill`,        |          |                        |
-|                 | `manual_lathe`,       |          |                        |
-|                 | `manual_drill_press`, |          |                        |
-|                 | `manual_bandsaw`      |          |                        |
-| `machines`      | list of `machine`     | no       | The machines in the    |
-|                 |                       |          | shop: the files in     |
-|                 |                       |          | `machines/`.           |
-| `tools`         | list of `tools`       | no       | The tools on hand,     |
-|                 |                       |          | shared by the          |
-|                 |                       |          | machines: the files in |
-|                 |                       |          | `tools/`.              |
-| `tooling`       | list of `tooling`     | no       | The work holding on    |
-|                 |                       |          | hand (grid plates for  |
-|                 |                       |          | now), shared by the    |
-|                 |                       |          | machines: the files in |
-|                 |                       |          | `tooling/`.            |
-| `materials`     | `materials`           | no       | The materials it cuts, |
-|                 |                       |          | and how to drill them: |
-|                 |                       |          | the files in           |
-|                 |                       |          | `materials/`.          |
+| Key              | Value                 | Required | Meaning               |
+| ---------------- | --------------------- | -------- | --------------------- |
+| `location`       | `location`            | no       | Where the shop is.    |
+| `units`          | one of `in`, `mm`     | no       | The units the shop    |
+|                  |                       |          | prefers: `in`         |
+|                  |                       |          | (imperial) or `mm`    |
+|                  |                       |          | (metric).             |
+| `machine_kinds`  | list of `cnc_mill`,   | no       | The kinds of machines |
+|                  | `cnc_router`,         |          | the shop has,         |
+|                  | `cnc_lathe`,          |          | computer controlled   |
+|                  | `laser_cutter`,       |          | or manual (for prep   |
+|                  | `3d_printer`,         |          | work).                |
+|                  | `manual_mill`,        |          |                       |
+|                  | `manual_lathe`,       |          |                       |
+|                  | `manual_drill_press`, |          |                       |
+|                  | `manual_bandsaw`      |          |                       |
+| `machines`       | list of `machine`     | no       | The machines in the   |
+|                  |                       |          | shop: the files in    |
+|                  |                       |          | `machines/`.          |
+| `tools`          | list of `tools`       | no       | The tools on hand,    |
+|                  |                       |          | shared by the         |
+|                  |                       |          | machines: the files   |
+|                  |                       |          | in `tools/`.          |
+| `tooling`        | list of `tooling`     | no       | The work holding on   |
+|                  |                       |          | hand (grid plates for |
+|                  |                       |          | now), shared by the   |
+|                  |                       |          | machines: the files   |
+|                  |                       |          | in `tooling/`.        |
+| `materials`      | `materials`           | no       | The materials it      |
+|                  |                       |          | cuts, and how to      |
+|                  |                       |          | drill and mill them:  |
+|                  |                       |          | the files in          |
+|                  |                       |          | `stock_materials/`.   |
+| `tool_materials` | list of               | no       | What its tools are    |
+|                  | `tool_material`       |          | made of, and how fast |
+|                  |                       |          | each cuts: the files  |
+|                  |                       |          | in `tool_materials/`. |
 
 ```toml
 name = "Home shop"
@@ -1201,35 +1207,23 @@ feeds worked out from these are only starting points; a tool's own
 `cutting` entries win.  It has a `name` even when it is not a file of
 its own.
 
-| Key                    | Value              | Required | Meaning            |
-| ---------------------- | ------------------ | -------- | ------------------ |
-| `carbide_speed_factor` | fraction           | yes      | A carbide tool's   |
-|                        |                    |          | surface speed, as  |
-|                        |                    |          | a share of HSS's.  |
-| `cobalt_speed_factor`  | fraction           | yes      | A cobalt tool's    |
-|                        |                    |          | surface speed, as  |
-|                        |                    |          | a share of HSS's.  |
-| `end_milling`          | `end_milling`      | yes      | How end mills      |
-|                        |                    |          | feed.              |
-| `drilling`             | `drilling`         | yes      | How drills feed.   |
-| `groups`               | list of            | yes      | The groups of      |
-|                        | `material_group`   |          | materials that cut |
-|                        |                    |          | alike.             |
-| `materials`            | list of `material` | no       | The materials,     |
-|                        |                    |          | each in a group:   |
-|                        |                    |          | in a shop, the     |
-|                        |                    |          | files in           |
-|                        |                    |          | `materials/`       |
-|                        |                    |          | (other than this   |
-|                        |                    |          | one).              |
+| Key           | Value                  | Required | Meaning                 |
+| ------------- | ---------------------- | -------- | ----------------------- |
+| `end_milling` | `end_milling`          | yes      | How end mills feed.     |
+| `drilling`    | `drilling`             | yes      | How drills feed.        |
+| `groups`      | list of                | yes      | The groups of materials |
+|               | `material_group`       |          | that cut alike.         |
+| `materials`   | list of `material`     | no       | The materials, each in  |
+|               |                        |          | a group: in a shop, the |
+|               |                        |          | files in                |
+|               |                        |          | `stock_materials/`      |
+|               |                        |          | (other than this one).  |
 
 ```toml
 name = "Materials"
 kind = "materials"
 language = "English"
 version = "0.0.1"
-carbide_speed_factor = "250 %"
-cobalt_speed_factor = "110 %"
 
 [end_milling]
 plunge_factor = "50 %"
@@ -1353,4 +1347,21 @@ its own.
 ```toml
 name = "6061 aluminum"
 group = "soft"
+```
+
+## `tool_material`
+
+What a tool is made of (a tool's `material` names one), and how fast it
+cuts: speeds and feeds are worked out for a tool whose material is one
+of these.  It has a `name` even when it is not a file of its own.
+
+| Key            | Value    | Required | Meaning                              |
+| -------------- | -------- | -------- | ------------------------------------ |
+| `speed_factor` | fraction | yes      | Its surface speed, as a share of     |
+|                |          |          | HSS's (HSS's own is 100 %).          |
+| `description`  | string   | no       | What it is, in a few words.          |
+
+```toml
+name = "carbide"
+speed_factor = "250 %"
 ```

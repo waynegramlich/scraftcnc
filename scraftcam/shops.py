@@ -390,9 +390,10 @@ TOOL_KINDS: tuple[str, ...] = (
 SHOP_FILE: str = "shop.toml"
 SHOP_DIRECTORIES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("controllers", ("controller",)),
+    ("tool_materials", ("tool_material",)),
     ("tools", TOOL_KINDS),
     ("tooling", ("grid_plate",)),
-    ("materials", ("materials", "material")),
+    ("stock_materials", ("materials", "material")),
     ("machines", ("machine",)),
 )
 
@@ -601,9 +602,16 @@ KINDS: dict[str, TableKind] = {
                 TableField(
                     "materials",
                     "table",
-                    "The materials it cuts, and how to drill them: the "
-                    "files in `materials/`.",
+                    "The materials it cuts, and how to drill and mill "
+                    "them: the files in `stock_materials/`.",
                     of="materials",
+                ),
+                TableField(
+                    "tool_materials",
+                    "list",
+                    "What its tools are made of, and how fast each cuts: "
+                    "the files in `tool_materials/`.",
+                    of="tool_material",
                 ),
             ),
             True,
@@ -1494,18 +1502,6 @@ tooling_close_diameter = "0.196 in"
             "points; a tool's own `cutting` entries win.",
             (
                 TableField(
-                    "carbide_speed_factor",
-                    "fraction",
-                    "A carbide tool's surface speed, as a share of HSS's.",
-                    True,
-                ),
-                TableField(
-                    "cobalt_speed_factor",
-                    "fraction",
-                    "A cobalt tool's surface speed, as a share of HSS's.",
-                    True,
-                ),
-                TableField(
                     "end_milling",
                     "table",
                     "How end mills feed.",
@@ -1530,7 +1526,7 @@ tooling_close_diameter = "0.196 in"
                     "materials",
                     "list",
                     "The materials, each in a group: in a shop, the "
-                    "files in `materials/` (other than this one).",
+                    "files in `stock_materials/` (other than this one).",
                     of="material",
                 ),
             ),
@@ -1540,8 +1536,6 @@ name = "Materials"
 kind = "materials"
 language = "English"
 version = "0.0.1"
-carbide_speed_factor = "250 %"
-cobalt_speed_factor = "110 %"
 
 [end_milling]
 plunge_factor = "50 %"
@@ -1697,6 +1691,29 @@ name = "6061 aluminum"
 group = "soft"
 """,
         ),
+        TableKind(
+            "tool_material",
+            "What a tool is made of (a tool's `material` names one), and "
+            "how fast it cuts: speeds and feeds are worked out for a "
+            "tool whose material is one of these.",
+            (
+                TableField(
+                    "speed_factor",
+                    "fraction",
+                    "Its surface speed, as a share of HSS's (HSS's own is "
+                    "100 %).",
+                    True,
+                ),
+                TableField(
+                    "description", "string", "What it is, in a few words."
+                ),
+            ),
+            True,
+            """\
+name = "carbide"
+speed_factor = "250 %"
+""",
+        ),
     )
 }
 
@@ -1730,10 +1747,11 @@ shop/
   shop.toml                the shop (`shop`)
   controllers/linuxcnc.toml   a controller (`controller`)
   machines/shop_mill.toml     a machine, with its tool table (`machine`)
+  tool_materials/carbide.toml what tools are made of (`tool_material`)
   tools/1_4_in_end_mill.toml  a tool (`end_mill`, `drill`, ...)
   tooling/grid_plate.toml     work holding (`grid_plate`)
-  materials/cutting_data.toml how to cut (`materials`)
-  materials/6061_aluminum.toml   a material (`material`)
+  stock_materials/cutting_data.toml   how to cut (`materials`)
+  stock_materials/6061_aluminum.toml  a material cut (`material`)
 ```
 
 * `scraftcam` names the directories; the files in them are named
@@ -2377,6 +2395,7 @@ class _Reader:  # pylint: disable=too-many-instance-attributes
         shop["machines"] = found.get("machine", [])
         shop["tools"] = [collection("tools", "Tools", found)]
         shop["tooling"] = [collection("tooling", "Tooling", found)]
+        shop["tool_materials"] = found.get("tool_material", [])
         cutting: list[dict[str, object]] = found.get("materials", [])
         if cutting:
             materials: dict[str, object] = dict(cutting[0])
@@ -3417,14 +3436,6 @@ def _id_digits(shop: dict[str, object]) -> int:
     return digits
 
 
-# The tool materials with speeds and feeds worked out from
-# `materials`: their surface speed factor's key (`None` for HSS).
-SPEED_FACTORS: dict[str, str | None] = {
-    "HSS": None,
-    "cobalt": "cobalt_speed_factor",
-    "carbide": "carbide_speed_factor",
-}
-
 # The tool lists whose speeds and feeds come from `materials`.
 CUT_KEYS: tuple[str, ...] = (
     "drills",
@@ -3502,8 +3513,8 @@ def tool_cutting(
     Raises:
     * `ValueError`:
       If the shop has no `materials`, the material is not one of them,
-      the tool has no `cutting` entry for it and is not HSS, cobalt or
-      carbide, or it is larger than every range.
+      the tool has no `cutting` entry for it and is not made of one of
+      the shop's `tool_materials`, or it is larger than every range.
     """
     # Find the material, and the tool's own entry for it.
     materials: dict[str, Any] = _materials(shop)
@@ -3514,10 +3525,14 @@ def tool_cutting(
     )
     if own is not None:
         return own
-    if tool["material"] not in SPEED_FACTORS:
+    made_of: dict[str, Any] | None = _tool_material(
+        shop, str(tool["material"])
+    )
+    if made_of is None:
         raise ValueError(
             f'"{tool["name"]}" needs a `cutting."{found["name"]}"` '
-            "entry (its `rpm` and `feed`)"
+            "entry (its `rpm` and `feed`), or its material in "
+            "`tool_materials/`"
         )
     group: dict[str, Any] = next(
         entry
@@ -3528,9 +3543,7 @@ def tool_cutting(
     # The speed, held to the spindle's range.
     diameter: float = _widest(tool)
     surface_speed: float = measure(group["hss_surface_speed"], SURFACE_SPEED)
-    factor_key: str | None = SPEED_FACTORS[str(tool["material"])]
-    if factor_key is not None:
-        surface_speed *= measure(materials[factor_key], FRACTION)
+    surface_speed *= measure(made_of["speed_factor"], FRACTION)
     spindle: dict[str, Any] = cast(dict[str, Any], machine["spindle"])
     rpm: float = 12.0 * surface_speed / (math.pi * diameter)
     rpm = min(rpm, measure(spindle["max_rpm"], SPEED))
@@ -3645,6 +3658,32 @@ def _materials(shop: dict[str, object]) -> dict[str, Any]:
     if "materials" not in shop:
         raise ValueError("the shop has no `materials`")
     return cast(dict[str, Any], shop["materials"])
+
+
+# Function `_tool_material()`:
+def _tool_material(
+    shop: dict[str, object], material: str
+) -> dict[str, Any] | None:
+    """Return one of a shop's tool materials, whatever its capitals.
+
+    Arguments:
+    * `shop` (`dict[str, object]`): The shop, from `read()`.
+    * `material` (`str`): A tool's `material`.
+
+    Returns:
+    * (`dict[str, Any] | None`): Its `tool_material`, or None if the
+      shop has none of that name.
+    """
+    entries: object = shop.get("tool_materials", [])
+    assert isinstance(entries, list)
+    return next(
+        (
+            cast(dict[str, Any], entry)
+            for entry in entries
+            if str(entry["name"]).lower() == material.lower()
+        ),
+        None,
+    )
 
 
 # Function `_material()`:

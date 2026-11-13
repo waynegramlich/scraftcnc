@@ -2592,7 +2592,7 @@ def parallel_section() -> str:
 # The grid plate that its section is drawn from, and how much larger
 # its hole's section is drawn.
 GRID: GridPlate = GRID_PLATE
-DETAIL: float = 4.0
+DETAIL: float = 2.0
 
 
 # The grid plate the top view draws: made up (#33), so that each
@@ -2722,6 +2722,45 @@ class _Broken:
         path += "".join(f" L {_xy(x, y)}" for x, y in points[2:])
         return ViewShape(path + " Z", points, TOOL_FILL, "")
 
+    def bevel(
+        self, sx: int, sy: int, corner: float, inset: float
+    ) -> ViewShape:
+        """Return where a corner's edge chamfer meets the top (#45).
+
+        A line `inset` in from the two outer sides and around the
+        rounded corner, from one break line to the other.
+
+        Arguments:
+        * `sx` (`int`): 1 for a corner on the right, -1 on the left.
+        * `sy` (`int`): 1 for a corner at the top, -1 at the bottom.
+        * `corner` (`float`): The plate's corner radius (inches).
+        * `inset` (`float`): The chamfer's width (inches).
+
+        Returns:
+        * (`ViewShape`): The line, unfilled.
+        """
+        inner_x: float = sx * BREAK_GAP / 2.0
+        inner_y: float = sy * BREAK_GAP / 2.0
+        hx: float = sx * self.drawn_x
+        hy: float = sy * self.drawn_y
+        reach: float = max(corner, inset)
+        points: Profile = [
+            (inner_x, hy - sy * inset),
+            (hx - sx * reach, hy - sy * inset),
+            (hx - sx * inset, hy - sy * reach),
+            (hx - sx * inset, inner_y),
+        ]
+        path: str = f"M {_xy(*points[0])} L {_xy(*points[1])}"
+        if corner > inset:
+            pixels: float = (corner - inset) * SCALE
+            sweep: int = 1 if sx * sy > 0 else 0
+            path += f" A {pixels:.1f} {pixels:.1f} 0 0 {sweep}"
+            path += f" {_xy(*points[2])}"
+        else:
+            path += f" L {_xy(*points[2])}"
+        path += f" L {_xy(*points[3])}"
+        return ViewShape(path, points, "none", "", "1")
+
 
 # Function `_zigzag()`:
 def _zigzag(start: tuple[float, float], end: tuple[float, float]) -> Profile:
@@ -2785,6 +2824,12 @@ def grid_plate_views() -> list[View]:
     shapes: list[ViewShape] = [
         broken.piece(sx, sy, corner) for sx in (-1, 1) for sy in (-1, 1)
     ]
+    if g.edge_chamfer > 0.0:
+        shapes += [
+            broken.bevel(sx, sy, corner, _in(g.edge_chamfer))
+            for sx in (-1, 1)
+            for sy in (-1, 1)
+        ]
     x: float
     y: float
     for x, y in g.hole_centers():

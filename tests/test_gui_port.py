@@ -179,7 +179,9 @@ class ServerTest(unittest.TestCase):
             )["result"]
             assert isinstance(shown, dict)
             self.assertEqual(shown["label"], "Lab (shop)")
-            self.assertIn('name = "Lab"', str(shown["text"]))
+            fields: object = shown["fields"]
+            assert isinstance(fields, dict)
+            self.assertEqual(fields["name"], "Lab")
             self.assertIn("error", self.ask("select", path="/nowhere"))
 
 

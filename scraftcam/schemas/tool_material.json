@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/waynegramlich/scraftcam/main/scraftcam/schemas/tool_material.json",
+  "title": "scraftcam `tool_material` file",
+  "$ref": "shop.schema.json#/$defs/tool_material"
+}
