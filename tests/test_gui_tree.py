@@ -47,6 +47,31 @@ class ShopTreeTest(unittest.TestCase):
             self.assertIn("syntax error", root.children[2].error)
             self.assertIn("line 1", root.children[2].error)
 
+    def test_tools(self) -> None:
+        """Tools show their function and sizes, sorted by them (#21)."""
+        with tempfile.TemporaryDirectory() as temporary:
+            top: Path = Path(temporary)
+            (top / "shop.toml").write_text('name = "Home"\n')
+            tools: Path = top / "tools"
+            tools.mkdir()
+            for name, text in (
+                ("a.toml", 'diameter = "1/2 in"\nend = "ball"\n'),
+                ("b.toml", 'diameter = "1/8 in"\nend = "ball"\n'),
+                ("c.toml", 'diameter = "1/4 in"\nend = "square"\n'),
+            ):
+                (tools / name).write_text(
+                    f'kind = "end_mill"\n{text}flutes = 2\nmaterial = "HSS"\n'
+                )
+            root: tree.Node = tree.shop_tree(top / "shop.toml")
+            self.assertEqual(
+                labels(root.children[0])[1:],
+                [
+                    ["Ball end mill (1/8in 2-flute HSS)"],
+                    ["Ball end mill (1/2in 2-flute HSS)"],
+                    ["End mill (1/4in 2-flute HSS)"],
+                ],
+            )
+
 
 class DesignTreeTest(unittest.TestCase):
     """Tests of `design_tree()` and `docstring()`."""

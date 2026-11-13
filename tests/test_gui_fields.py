@@ -90,17 +90,18 @@ class FieldsTest(unittest.TestCase):
         fields.check(name, " ", "in")
         self.assertEqual(name.problem, "required")
 
-    def test_sketch(self) -> None:
-        """A kind's sketch, its first view, or none."""
-        sketch: Path | None = fields.sketch(self.item)
-        self.assertIsNotNone(sketch)
-        assert sketch is not None
-        self.assertEqual(sketch.name, "corner_rounding_mill.svg")
-        grid: Path | None = fields.sketch({"kind": "grid_plate"})
-        assert grid is not None
-        self.assertEqual(grid.name, "grid_plate_section.svg")
-        self.assertIsNone(fields.sketch({"kind": "shop"}))
-        self.assertIsNone(fields.sketch({}))
+    def test_sketches(self) -> None:
+        """A kind's sketch, or its views from above first, or none."""
+        self.assertEqual(
+            [path.name for path in fields.sketches(self.item)],
+            ["corner_rounding_mill.svg"],
+        )
+        self.assertEqual(
+            [path.name for path in fields.sketches({"kind": "grid_plate"})],
+            ["grid_plate_top.svg", "grid_plate_section.svg"],
+        )
+        self.assertEqual(fields.sketches({"kind": "shop"}), [])
+        self.assertEqual(fields.sketches({}), [])
 
 
 class PanelFieldsTest(unittest.TestCase):
@@ -139,7 +140,8 @@ class PanelFieldsTest(unittest.TestCase):
         panel: Panel = Panel(1)
         panel.show_node(Node(TOOL.name, FILE, TOOL, ""), "in")
         self.assertFalse(panel.sketch.isHidden())
-        self.assertTrue(panel.sketch.renderer().isValid())
+        self.assertEqual(len(panel.views), 1)
+        self.assertTrue(panel.views[0].renderer().isValid())
         shop: Path = TOOL.parent.parent / "shop.toml"
         panel.show_node(Node(shop.name, FILE, shop, ""), "in")
         self.assertTrue(panel.sketch.isHidden())

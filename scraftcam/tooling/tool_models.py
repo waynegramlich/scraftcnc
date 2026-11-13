@@ -21,6 +21,7 @@ python3 -m scraftcam.tooling.tool_models
 
 import ast
 import inspect
+import itertools
 import json
 import math
 import textwrap
@@ -1251,9 +1252,11 @@ class ViewShape:
       Points that reach as far as it does, as X and Z in inches.
     * `fill` (`str`): Its fill color, or `"none"`.
     * `dashes` (`str`): An SVG `stroke-dasharray`, or `""` for none.
+    * `width` (`str`): Its stroke width (pixels), or `""` for the
+      usual: 1 when dashed, else 2.
 
     Constructor:
-    * `ViewShape(path, points, fill, dashes)`
+    * `ViewShape(path, points, fill, dashes, width)`
     """
 
     # Constructor arguments:
@@ -1261,6 +1264,72 @@ class ViewShape:
     points: Profile = field(init=True)
     fill: str = field(init=True, default=TOOL_FILL)
     dashes: str = field(init=True, default="")
+    width: str = field(init=True, default="")
+
+
+# Class `Cut`:
+@dataclass(frozen=True, slots=True)
+class Cut:
+    """A cutting plane line: where a section is cut, along X.
+
+    A thick long and short dashed line, with a short leg at each end
+    whose arrow points the way the section is seen, and the section's
+    name beside it (`T.osiade~5.1.9` #38).
+
+    Attributes:
+    * `name` (`str`): The section's name (`A` for "Section A-A").
+    * `low` (`float`): Where the line starts, along X (inches).
+    * `high` (`float`): Where it ends.
+    * `at` (`float`): Where it sits along Z.
+    * `sight` (`float`): `1.0` if the arrows point up, `-1.0` down.
+
+    Constructor:
+    * `Cut(name, low, high, at, sight)`
+    """
+
+    # Constructor arguments:
+    name: str = field(init=True)
+    low: float = field(init=True)
+    high: float = field(init=True)
+    at: float = field(init=True)
+    sight: float = field(init=True)
+
+
+# Function `_cut()`:
+def _cut(root: ET.Element, cut: Cut) -> None:
+    """Add a cutting plane line to a sketch.
+
+    Arguments:
+    * `root` (`ET.Element`): The sketch.
+    * `cut` (`Cut`): The line.
+    """
+    ET.SubElement(
+        root,
+        "line",
+        {
+            "x1": f"{cut.low * SCALE:.1f}",
+            "y1": f"{-cut.at * SCALE:.1f}",
+            "x2": f"{cut.high * SCALE:.1f}",
+            "y2": f"{-cut.at * SCALE:.1f}",
+            "stroke": INK,
+            "stroke-width": CUT_WIDTH,
+            "stroke-dasharray": CUT_LINE,
+        },
+    )
+
+    # Each end: a leg, its arrow, and the name outside it.
+    tip: float = cut.at + cut.sight * CUT_LEG
+    end: float
+    out: float
+    for end, out in ((cut.low, -1.0), (cut.high, 1.0)):
+        _line(root, (end, cut.at), (end, tip))
+        arrow: Profile = [
+            (end, tip),
+            (end - ARROW_WIDTH, tip - cut.sight * ARROW_LENGTH),
+            (end + ARROW_WIDTH, tip - cut.sight * ARROW_LENGTH),
+        ]
+        ET.SubElement(root, "polygon", {"points": _points(arrow), "fill": INK})
+        _letter(root, end + out * LETTER_OFF, (cut.at + tip) / 2.0, cut.name)
 
 
 # Class `View`:
@@ -1275,9 +1344,12 @@ class View:
     * `marks` (`list[Mark]`):
       Its dimension lines and radii, whose keys are paths such as
       `base.length`.
+    * `cuts` (`tuple[Cut, ...]`): Where its sections are cut, if any.
+    * `caption` (`str`): What the sketch itself says it is, under it
+      (such as "SECTION A-A"), or `""` (#42).
 
     Constructor:
-    * `View(name, title, shapes, marks)`
+    * `View(name, title, shapes, marks, cuts, caption)`
     """
 
     # Constructor arguments:
@@ -1285,6 +1357,8 @@ class View:
     title: str = field(init=True)
     shapes: list[ViewShape] = field(init=True)
     marks: list[Mark] = field(init=True)
+    cuts: tuple[Cut, ...] = field(init=True, default=())
+    caption: str = field(init=True, default="")
 
 
 # The machine vise that its page is drawn from, and the space between
@@ -1292,6 +1366,21 @@ class View:
 VISE: MachineVise = KURT_D688
 VISE_NAME: str = "KURT_D688"
 ROW: float = 0.4
+
+# How a cutting plane line is drawn: its dashes (pixels), and how far
+# it reaches past the part and its legs are long (inches).
+CUT_LINE: str = "36 8 8 8 8 8"
+CUT_WIDTH: str = "5"
+CUT_PAST: float = 0.3
+CUT_LEG: float = 0.25
+
+# A caption under a view: its size (pixels), and how far below the
+# rest it sits (inches).
+CAPTION_SIZE: int = 28
+CAPTION_DROP: float = 0.45
+
+# How far apart a section's hatching lines are (inches, as drawn).
+HATCH: float = 0.15
 
 # How the floor of a pocket and hidden edges are drawn.
 POCKET_FILL: str = "#aab4bd"
@@ -2018,6 +2107,13 @@ def view_sketch(view: View, letters: dict[str, str]) -> str:
         if isinstance(mark, Radius):
             xs.append(mark.center[0] + mark.letter_at[0])
             zs.append(mark.center[1] + mark.letter_at[1])
+    for cut in view.cuts:
+        xs += [cut.low - 2.0 * LETTER_OFF, cut.high + 2.0 * LETTER_OFF]
+        zs += [cut.at, cut.at + cut.sight * CUT_LEG]
+    middle: float = (min(xs) + max(xs)) / 2.0
+    caption_z: float = min(zs) - CAPTION_DROP
+    if view.caption:
+        zs.append(caption_z - CAPTION_DROP / 2.0)
     root: ET.Element = _root(xs, zs)
 
     # The shapes, then the marks.
@@ -2026,7 +2122,7 @@ def view_sketch(view: View, letters: dict[str, str]) -> str:
             "d": shape.path,
             "fill": shape.fill,
             "stroke": INK,
-            "stroke-width": "1" if shape.dashes else "2",
+            "stroke-width": shape.width or ("1" if shape.dashes else "2"),
             "stroke-linejoin": "round",
         }
         if shape.dashes:
@@ -2037,6 +2133,23 @@ def view_sketch(view: View, letters: dict[str, str]) -> str:
             _dimension(root, mark, letters[mark.key])
         elif isinstance(mark, Radius):
             _radius(root, mark, letters[mark.key])
+    for cut in view.cuts:
+        _cut(root, cut)
+    if view.caption:
+        caption: ET.Element = ET.SubElement(
+            root,
+            "text",
+            {
+                "x": f"{middle * SCALE:.1f}",
+                "y": f"{-caption_z * SCALE:.1f}",
+                "font-family": "sans-serif",
+                "font-size": str(CAPTION_SIZE),
+                "font-weight": "bold",
+                "text-anchor": "middle",
+                "fill": INK,
+            },
+        )
+        caption.text = view.caption
     ET.indent(root)
     return ET.tostring(root, encoding="unicode") + "\n"
 
@@ -2479,7 +2592,7 @@ def parallel_section() -> str:
 # The grid plate that its section is drawn from, and how much larger
 # its hole's section is drawn.
 GRID: GridPlate = GRID_PLATE
-DETAIL: float = 6.0
+DETAIL: float = 4.0
 
 
 # The grid plate the top view draws: made up (#33), so that each
@@ -2798,8 +2911,11 @@ def grid_plate_views() -> list[View]:
                     (y, y),
                 )
             )
+    # Section A-A, along the top row of grid holes across the upper
+    # left corner, to the middle of the gap, seen from the front (#42).
+    cut: Cut = Cut("A", -half_x - CUT_PAST, 0.0, rows[-1], 1.0)
     return [
-        View("top", "Top", shapes, marks),
+        View("top", "Top", shapes, marks, (cut,), "TOP"),
         _grid_section(),
     ]
 
@@ -2808,54 +2924,66 @@ def grid_plate_views() -> list[View]:
 def _grid_section() -> View:
     """Return a section along a row of grid holes, `DETAIL` times size.
 
-    The cut runs through the centers of the row nearest a side, from
-    the plate's side across two holes, to a long break line
-    (`T.osiade~5.1.9` #32, #37): the edge's chamfer, and each hole's.
+    The cut (A-A on the top view) runs through the centers of the top
+    row, across the upper left corner only: from the plate's side,
+    across its `BREAK_COLUMNS` holes, to the corner's long break line
+    (`T.osiade~5.1.9` #32, #37, #42): the edge's chamfer, and each
+    hole's.
 
     Returns:
     * (`View`): The section.
     """
     # Across the cut from the side (X 0), up from the bottom: the solid
-    # between the side and the first hole, between the holes, and past
-    # the second to the break.
+    # between the side and the first hole, between each two holes, and
+    # past the last to the break, as far past it as the top view's
+    # corner reaches.
     g: GridPlate = GRID
     tall: float = _in(g.thickness) * DETAIL
     bevel: float = _in(g.edge_chamfer) * DETAIL
     deep: float = _in(g.chamfer_width) * DETAIL
     hole: float = _in(g.hole_diameter) / 2.0 * DETAIL
     top: float = hole + deep
-    first: float = _in(g.edge) * DETAIL
-    second: float = first + _in(g.pitch) * DETAIL
-    end: float = second + _in(g.pitch) / 2.0 * DETAIL
-    side: Profile = [
-        (0.0, 0.0),
-        (first - hole, 0.0),
-        (first - hole, tall - deep),
-        (first - top, tall),
-        (bevel, tall),
-        (0.0, tall - bevel),
+    pitch: float = _in(g.pitch) * DETAIL
+    centers: list[float] = [
+        _in(g.edge) * DETAIL + index * pitch for index in range(BREAK_COLUMNS)
     ]
-    between: Profile = [
-        (first + hole, 0.0),
-        (second - hole, 0.0),
-        (second - hole, tall - deep),
-        (second - top, tall),
-        (first + top, tall),
-        (first + hole, tall - deep),
+    end: float = centers[-1] + pitch / 2.0
+    pieces: list[Profile] = [
+        [
+            (0.0, 0.0),
+            (centers[0] - hole, 0.0),
+            (centers[0] - hole, tall - deep),
+            (centers[0] - top, tall),
+            (bevel, tall),
+            (0.0, tall - bevel),
+        ]
     ]
-    past: Profile = [
-        (second + hole, 0.0),
-        *_zigzag((end, 0.0), (end, tall)),
-        (second + top, tall),
-        (second + hole, tall - deep),
-    ]
+    for left, right in itertools.pairwise(centers):
+        pieces.append(
+            [
+                (left + hole, 0.0),
+                (right - hole, 0.0),
+                (right - hole, tall - deep),
+                (right - top, tall),
+                (left + top, tall),
+                (left + hole, tall - deep),
+            ]
+        )
+    pieces.append(
+        [
+            (centers[-1] + hole, 0.0),
+            *_zigzag((end, 0.0), (end, tall)),
+            (centers[-1] + top, tall),
+            (centers[-1] + hole, tall - deep),
+        ]
+    )
     shapes: list[ViewShape] = [
-        _polygon(side),
-        _polygon(between),
-        _polygon(past),
-        _center_line(False, first, 0.0, tall),
-        _center_line(False, second, 0.0, tall),
+        *[_polygon(piece) for piece in pieces],
+        *[_hatch(piece) for piece in pieces],
+        *[_center_line(False, center, 0.0, tall) for center in centers],
     ]
+    first: float = centers[0]
+    second: float = centers[1]
 
     # The thickness on the left; the chamfers above; the hole below.
     above: float = tall + STAND_OFF
@@ -2881,8 +3009,50 @@ def _grid_section() -> View:
             (0.0, 0.0),
         ),
     ]
-    title: str = f"Section along a row of grid holes ({DETAIL:.0f} times size)"
-    return View("section", title, shapes, marks)
+    title: str = (
+        f"Section A-A, across the upper left corner ({DETAIL:.0f} times size)"
+    )
+    return View("section", title, shapes, marks, (), "SECTION A-A")
+
+
+# Function `_hatch()`:
+def _hatch(polygon: Profile) -> ViewShape:
+    """Return the hatching that marks a cut face: thin lines at 45 deg.
+
+    Each line is cut where it crosses the outline; the crossings, in
+    order along the line, pair up as inside stretches.
+
+    Arguments:
+    * `polygon` (`Profile`): The face's outline, as X and Z in inches.
+
+    Returns:
+    * (`ViewShape`): The lines, unfilled.
+    """
+    # Lines of constant `x - z`, `HATCH` apart, across the face.
+    offsets: list[float] = [x - z for x, z in polygon]
+    path: str = ""
+    count: int = int((max(offsets) - min(offsets)) / HATCH)
+    index: int
+    for index in range(1, count + 1):
+        line: float = min(offsets) + index * HATCH
+        crossings: list[tuple[float, float]] = []
+        corner: int
+        for corner, start in enumerate(polygon):
+            end: tuple[float, float] = polygon[(corner + 1) % len(polygon)]
+            low: float = start[0] - start[1] - line
+            high: float = end[0] - end[1] - line
+            if (low < 0.0) != (high < 0.0):
+                share: float = low / (low - high)
+                crossings.append(
+                    (
+                        start[0] + share * (end[0] - start[0]),
+                        start[1] + share * (end[1] - start[1]),
+                    )
+                )
+        crossings.sort()
+        for pair in range(0, len(crossings) - 1, 2):
+            path += f"M {_xy(*crossings[pair])} L {_xy(*crossings[pair + 1])} "
+    return ViewShape(path.strip() or "M 0 0", list(polygon), "none", "", "1")
 
 
 # Function `grid_plate_section()`:

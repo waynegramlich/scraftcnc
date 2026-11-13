@@ -2697,6 +2697,77 @@ class _Reader:  # pylint: disable=too-many-instance-attributes
                 first[name] = (source, path)
 
 
+# Function `tool_label()`:
+def tool_label(item: dict[str, object]) -> str:
+    """Return how a tool is listed: its function, then its key sizes.
+
+    `T.osiade~5.1.9` #21: e.g. `End mill (1/2in 2-flute HSS)`, a
+    measurement written without its space (`1/2in`, `90deg`), so that
+    tools sort by what they do, then by size.
+
+    Arguments:
+    * `item` (`dict[str, object]`): A tool's file, as read.
+
+    Returns:
+    * (`str`): Its label, or `""` if it is not a tool.
+    """
+    kind: object = item.get("kind")
+    if not isinstance(kind, str) or kind not in TOOL_KINDS:
+        return ""
+
+    # Its function: the kind, with its end's shape and roughing.
+    words: list[str] = kind.split("_")
+    end: object = item.get("end")
+    if isinstance(end, str) and end != "square":
+        words = end.split("_") + words
+    if item.get("roughing") is True:
+        words = ["roughing", *words]
+    function: str = " ".join(words).capitalize()
+
+    # Its sizes, then its flutes and material.
+    details: list[str] = []
+    key: str
+    for key, after in (
+        ("diameter", ""),
+        ("radius", " R"),
+        ("angle", ""),
+        ("drill_diameter", " drill"),
+    ):
+        value: object = item.get(key)
+        if isinstance(value, str) and value.strip():
+            details.append("".join(value.split()) + after)
+    flutes: object = item.get("flutes")
+    if isinstance(flutes, int):
+        details.append(f"{flutes}-flute")
+    material: object = item.get("material")
+    if isinstance(material, str) and material.strip():
+        details.append(material.strip())
+    return f"{function} ({' '.join(details)})" if details else function
+
+
+# Function `tool_order()`:
+def tool_order(item: dict[str, object]) -> tuple[str, float]:
+    """Return where a tool sorts: by function, then by size (#21).
+
+    Arguments:
+    * `item` (`dict[str, object]`): A tool's file, as read.
+
+    Returns:
+    * (`tuple[str, float]`): Its function in lower case, then its
+      diameter (or radius) in inches; 0 when it has neither, or one
+      that does not read.
+    """
+    function: str = tool_label(item).split(" (", maxsplit=1)[0].lower()
+    key: str
+    for key in ("diameter", "radius"):
+        if key in item:
+            try:
+                return function, measure(item[key], LENGTH)
+            except ValueError:
+                break
+    return function, 0.0
+
+
 # Function `dimension_letters()`:
 def dimension_letters(keys: list[str]) -> dict[str, str]:
     """Return the letters that label sizes on a sketch.

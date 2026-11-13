@@ -5,7 +5,9 @@ One tree with two roots (`T.osiade~5.1.9` #121):
 * The shop: its directory, `shop.toml` being the root itself.  Each
   directory below is a branch, and each `.toml` file one item (#19),
   shown by its `name` (else its file name) and "(file)"; S3 brings
-  the real kinds (#119).
+  the real kinds (#119).  A tool is shown by its function and sizes,
+  e.g. "End mill (1/2in 2-flute HSS)", and its directory's files sort
+  by function, then size (#21).
 * The design: a Python file, with the `.py` files and packages in its
   directory and below; or a package directory, with what is in it.
   A file with a top level `main()` is "(design)", any other
@@ -14,7 +16,8 @@ One tree with two roots (`T.osiade~5.1.9` #121):
 
 A file that does not read cleanly stays in the tree as "(error)",
 with the problem and its line (#125).  Directories come first, then
-files, each alphabetical, ignoring case (#127).  Hidden directories
+files, each alphabetical (files by what they show), ignoring case
+(#127).  Hidden directories
 and `__pycache__` are skipped.
 """
 
@@ -22,6 +25,8 @@ import ast
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from ..shops import tool_label, tool_order
 
 # The most items the design tree shows (#126).
 DESIGN_LIMIT: int = 100
@@ -51,6 +56,11 @@ class Node:
     * `path` (`Path`): Its file or directory.
     * `error` (`str`): Why it does not read cleanly, or "".
     * `children` (`list[Node]`): The items under it.
+    * `order` (`tuple[str, float]`): Where it sorts among its
+      directory's files: by `name`, or a tool's by function, then
+      size (#21).
+    * `shown` (`str`): What the tree shows in place of "NAME (KIND)",
+      or "" (a tool's label already says what it is).
 
     Constructor:
     * `Node(name, kind, path, error)`
@@ -64,14 +74,20 @@ class Node:
 
     # Remaining attributes (alphabetized):
     children: list["Node"] = field(init=False, default_factory=list)
+    order: tuple[str, float] = field(init=False, default=("", 0.0))
+    shown: str = field(init=False, default="")
+
+    def __post_init__(self) -> None:
+        """Sort by name, until told otherwise."""
+        self.order = (self.name.lower(), 0.0)
 
     def label(self) -> str:
         """Return what the tree shows (#73).
 
         Returns:
-        * (`str`): "NAME (KIND)".
+        * (`str`): "NAME (KIND)", or `shown`.
         """
-        return f"{self.name} ({self.kind})"
+        return self.shown or f"{self.name} ({self.kind})"
 
     def count(self) -> int:
         """Return how many items this is, with all under it.
@@ -211,6 +227,9 @@ def entries(directory: Path) -> list[Path]:
 def toml_node(path: Path) -> Node:
     """Make a shop file's item: its `name`, else its file name.
 
+    A tool is shown by its function and sizes (`shops.tool_label()`,
+    #21), and sorts by them.
+
     Arguments:
     * `path` (`Path`): A `.toml` file.
 
@@ -221,10 +240,22 @@ def toml_node(path: Path) -> Node:
     if problem:
         return Node(path.name, ERROR, path, problem)
     with path.open("rb") as file:
-        name: object = tomllib.load(file).get("name", "")
-    if isinstance(name, str) and name.strip():
-        return Node(" ".join(name.split()), FILE, path)
-    return Node(path.stem, FILE, path)
+        item: dict[str, object] = tomllib.load(file)
+    name: object = item.get("name", "")
+    node: Node = Node(
+        (
+            " ".join(name.split())
+            if isinstance(name, str) and name.strip()
+            else path.stem
+        ),
+        FILE,
+        path,
+    )
+    label: str = tool_label(item)
+    if label:
+        node.shown = label
+        node.order = tool_order(item)
+    return node
 
 
 # Function `edit_path()`:
@@ -287,7 +318,22 @@ def shop_children(directory: Path, skip: Path | None = None) -> list[Node]:
             children.append(branch)
         elif path.suffix == ".toml" and path != skip:
             children.append(toml_node(path))
-    return children
+
+    # Directories first (as `entries()` gives them), then the files by
+    # what they show.
+    directories: list[Node] = [
+        child for child in children if child.kind == DIRECTORY
+    ]
+    files: list[Node] = [
+        child for child in children if child.kind != DIRECTORY
+    ]
+    return directories + sorted(files, key=node_order)
+
+
+# Function `node_order()`:
+def node_order(node: Node) -> tuple[str, float]:
+    """Return where a file's item sorts (`Node.order`)."""
+    return node.order
 
 
 # Function `python_node()`:

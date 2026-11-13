@@ -1488,7 +1488,7 @@ Top:
 
 ![Grid plate, top](docs/tool_models/grid_plate_top.svg)
 
-Section along a row of grid holes (6 times size):
+Section A-A, across the upper left corner (4 times size):
 
 ![Grid plate, section](docs/tool_models/grid_plate_section.svg)
 

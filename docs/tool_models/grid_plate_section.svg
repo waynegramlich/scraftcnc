@@ -1,32 +1,42 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-76.0 -376.0 863.0 452.0" width="432" height="226">
-  <rect x="-76.0" y="-376.0" width="863.0" height="452.0" fill="white" />
-  <path d="M 0.0 -0.0 L 256.8 -0.0 L 256.8 -281.2 L 238.1 -300.0 L 18.8 -300.0 L 0.0 -281.2 Z" fill="#dfe4e8" stroke="#222222" stroke-width="2" stroke-linejoin="round" />
-  <path d="M 343.2 -0.0 L 556.8 -0.0 L 556.8 -281.2 L 538.0 -300.0 L 361.9 -300.0 L 343.2 -281.2 Z" fill="#dfe4e8" stroke="#222222" stroke-width="2" stroke-linejoin="round" />
-  <path d="M 643.2 -0.0 L 750.0 -0.0 L 750.0 -138.0 L 762.0 -146.0 L 738.0 -154.0 L 750.0 -162.0 L 750.0 -300.0 L 662.0 -300.0 L 643.2 -281.2 Z" fill="#dfe4e8" stroke="#222222" stroke-width="2" stroke-linejoin="round" />
-  <path d="M 300.0 12.0 L 300.0 -312.0" fill="none" stroke="#222222" stroke-width="1" stroke-linejoin="round" stroke-dasharray="12 4 3 4" />
-  <path d="M 600.0 12.0 L 600.0 -312.0" fill="none" stroke="#222222" stroke-width="1" stroke-linejoin="round" stroke-dasharray="12 4 3 4" />
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-76.0 -276.0 1013.0 419.5" width="506" height="210">
+  <rect x="-76.0" y="-276.0" width="1013.0" height="419.5" fill="white" />
+  <path d="M 0.0 -0.0 L 171.2 -0.0 L 171.2 -187.5 L 158.7 -200.0 L 12.5 -200.0 L 0.0 -187.5 Z" fill="#dfe4e8" stroke="#222222" stroke-width="2" stroke-linejoin="round" />
+  <path d="M 228.8 -0.0 L 371.2 -0.0 L 371.2 -187.5 L 358.7 -200.0 L 241.3 -200.0 L 228.8 -187.5 Z" fill="#dfe4e8" stroke="#222222" stroke-width="2" stroke-linejoin="round" />
+  <path d="M 428.8 -0.0 L 571.2 -0.0 L 571.2 -187.5 L 558.7 -200.0 L 441.3 -200.0 L 428.8 -187.5 Z" fill="#dfe4e8" stroke="#222222" stroke-width="2" stroke-linejoin="round" />
+  <path d="M 628.8 -0.0 L 771.2 -0.0 L 771.2 -187.5 L 758.7 -200.0 L 641.3 -200.0 L 628.8 -187.5 Z" fill="#dfe4e8" stroke="#222222" stroke-width="2" stroke-linejoin="round" />
+  <path d="M 828.8 -0.0 L 900.0 -0.0 L 900.0 -88.0 L 912.0 -96.0 L 888.0 -104.0 L 900.0 -112.0 L 900.0 -200.0 L 841.3 -200.0 L 828.8 -187.5 Z" fill="#dfe4e8" stroke="#222222" stroke-width="2" stroke-linejoin="round" />
+  <path d="M 0.0 -172.5 L 27.5 -200.0 M 0.0 -157.5 L 42.5 -200.0 M 0.0 -142.5 L 57.5 -200.0 M 0.0 -127.5 L 72.5 -200.0 M 0.0 -112.5 L 87.5 -200.0 M 0.0 -97.5 L 102.5 -200.0 M 0.0 -82.5 L 117.5 -200.0 M 0.0 -67.5 L 132.5 -200.0 M 0.0 -52.5 L 147.5 -200.0 M 0.0 -37.5 L 160.6 -198.1 M 0.0 -22.5 L 168.1 -190.6 M 0.0 -7.5 L 171.2 -178.7 M 7.5 -0.0 L 171.2 -163.7 M 22.5 -0.0 L 171.2 -148.7 M 37.5 -0.0 L 171.2 -133.7 M 52.5 -0.0 L 171.2 -118.7 M 67.5 -0.0 L 171.2 -103.7 M 82.5 -0.0 L 171.2 -88.7 M 97.5 -0.0 L 171.2 -73.7 M 112.5 -0.0 L 171.2 -58.7 M 127.5 -0.0 L 171.2 -43.7 M 142.5 -0.0 L 171.2 -28.7 M 157.5 -0.0 L 171.2 -13.7" fill="none" stroke="#222222" stroke-width="1" stroke-linejoin="round" />
+  <path d="M 228.8 -172.5 L 256.3 -200.0 M 228.8 -157.5 L 271.3 -200.0 M 228.8 -142.5 L 286.3 -200.0 M 228.8 -127.5 L 301.3 -200.0 M 228.8 -112.5 L 316.3 -200.0 M 228.8 -97.5 L 331.3 -200.0 M 228.8 -82.5 L 346.3 -200.0 M 228.8 -67.5 L 360.0 -198.7 M 228.8 -52.5 L 367.5 -191.2 M 228.8 -37.5 L 371.2 -179.9 M 228.8 -22.5 L 371.2 -164.9 M 228.8 -7.5 L 371.2 -149.9 M 236.3 -0.0 L 371.2 -134.9 M 251.3 -0.0 L 371.2 -119.9 M 266.3 -0.0 L 371.2 -104.9 M 281.3 -0.0 L 371.2 -89.9 M 296.3 -0.0 L 371.2 -74.9 M 311.3 -0.0 L 371.2 -59.9 M 326.3 -0.0 L 371.2 -44.9 M 341.3 -0.0 L 371.2 -29.9 M 356.3 -0.0 L 371.2 -14.9" fill="none" stroke="#222222" stroke-width="1" stroke-linejoin="round" />
+  <path d="M 428.8 -172.5 L 456.3 -200.0 M 428.8 -157.5 L 471.3 -200.0 M 428.8 -142.5 L 486.3 -200.0 M 428.8 -127.5 L 501.3 -200.0 M 428.8 -112.5 L 516.3 -200.0 M 428.8 -97.5 L 531.3 -200.0 M 428.8 -82.5 L 546.3 -200.0 M 428.8 -67.5 L 560.0 -198.7 M 428.8 -52.5 L 567.5 -191.2 M 428.8 -37.5 L 571.2 -179.9 M 428.8 -22.5 L 571.2 -164.9 M 428.8 -7.5 L 571.2 -149.9 M 436.3 -0.0 L 571.2 -134.9 M 451.3 -0.0 L 571.2 -119.9 M 466.3 -0.0 L 571.2 -104.9 M 481.3 -0.0 L 571.2 -89.9 M 496.3 -0.0 L 571.2 -74.9 M 511.3 -0.0 L 571.2 -59.9 M 526.3 -0.0 L 571.2 -44.9 M 541.3 -0.0 L 571.2 -29.9 M 556.3 -0.0 L 571.2 -14.9" fill="none" stroke="#222222" stroke-width="1" stroke-linejoin="round" />
+  <path d="M 628.8 -172.5 L 656.3 -200.0 M 628.8 -157.5 L 671.3 -200.0 M 628.8 -142.5 L 686.3 -200.0 M 628.8 -127.5 L 701.3 -200.0 M 628.8 -112.5 L 716.3 -200.0 M 628.8 -97.5 L 731.3 -200.0 M 628.8 -82.5 L 746.3 -200.0 M 628.8 -67.5 L 760.0 -198.7 M 628.8 -52.5 L 767.5 -191.2 M 628.8 -37.5 L 771.2 -179.9 M 628.8 -22.5 L 771.2 -164.9 M 628.8 -7.5 L 771.2 -149.9 M 636.3 -0.0 L 771.2 -134.9 M 651.3 -0.0 L 771.2 -119.9 M 666.3 -0.0 L 771.2 -104.9 M 681.3 -0.0 L 771.2 -89.9 M 696.3 -0.0 L 771.2 -74.9 M 711.3 -0.0 L 771.2 -59.9 M 726.3 -0.0 L 771.2 -44.9 M 741.3 -0.0 L 771.2 -29.9 M 756.3 -0.0 L 771.2 -14.9" fill="none" stroke="#222222" stroke-width="1" stroke-linejoin="round" />
+  <path d="M 828.8 -172.5 L 856.3 -200.0 M 828.8 -157.5 L 871.3 -200.0 M 828.8 -142.5 L 886.3 -200.0 M 828.8 -127.5 L 900.0 -198.7 M 828.8 -112.5 L 900.0 -183.7 M 828.8 -97.5 L 900.0 -168.7 M 828.8 -82.5 L 900.0 -153.7 M 828.8 -67.5 L 900.0 -138.7 M 828.8 -52.5 L 900.0 -123.7 M 828.8 -37.5 L 893.5 -102.2 M 828.8 -22.5 L 904.7 -98.4 M 828.8 -7.5 L 900.0 -78.7 M 836.3 -0.0 L 900.0 -63.7 M 851.3 -0.0 L 900.0 -48.7 M 866.3 -0.0 L 900.0 -33.7 M 881.3 -0.0 L 900.0 -18.7 M 896.3 -0.0 L 900.0 -3.7" fill="none" stroke="#222222" stroke-width="1" stroke-linejoin="round" />
+  <path d="M 200.0 12.0 L 200.0 -212.0" fill="none" stroke="#222222" stroke-width="1" stroke-linejoin="round" stroke-dasharray="12 4 3 4" />
+  <path d="M 400.0 12.0 L 400.0 -212.0" fill="none" stroke="#222222" stroke-width="1" stroke-linejoin="round" stroke-dasharray="12 4 3 4" />
+  <path d="M 600.0 12.0 L 600.0 -212.0" fill="none" stroke="#222222" stroke-width="1" stroke-linejoin="round" stroke-dasharray="12 4 3 4" />
+  <path d="M 800.0 12.0 L 800.0 -212.0" fill="none" stroke="#222222" stroke-width="1" stroke-linejoin="round" stroke-dasharray="12 4 3 4" />
   <line x1="0.0" y1="-0.0" x2="-34.5" y2="-0.0" stroke="#222222" stroke-width="1" />
-  <line x1="0.0" y1="-300.0" x2="-34.5" y2="-300.0" stroke="#222222" stroke-width="1" />
-  <line x1="-30.0" y1="-0.0" x2="-30.0" y2="-300.0" stroke="#222222" stroke-width="1" />
+  <line x1="0.0" y1="-200.0" x2="-34.5" y2="-200.0" stroke="#222222" stroke-width="1" />
+  <line x1="-30.0" y1="-0.0" x2="-30.0" y2="-200.0" stroke="#222222" stroke-width="1" />
   <polygon points="-30.0,-0.0 -27.0,-9.0 -33.0,-9.0" fill="#222222" />
-  <polygon points="-30.0,-300.0 -27.0,-291.0 -33.0,-291.0" fill="#222222" />
-  <text x="-44.0" y="-143.7" font-family="sans-serif" font-size="18" font-weight="bold" text-anchor="middle" fill="#222222">T</text>
-  <line x1="0.0" y1="-281.2" x2="0.0" y2="-334.5" stroke="#222222" stroke-width="1" />
-  <line x1="18.8" y1="-300.0" x2="18.8" y2="-334.5" stroke="#222222" stroke-width="1" />
-  <line x1="0.0" y1="-330.0" x2="18.8" y2="-330.0" stroke="#222222" stroke-width="1" />
-  <polygon points="0.0,-330.0 9.0,-333.0 9.0,-327.0" fill="#222222" />
-  <polygon points="18.8,-330.0 9.8,-333.0 9.8,-327.0" fill="#222222" />
-  <text x="9.4" y="-337.7" font-family="sans-serif" font-size="18" font-weight="bold" text-anchor="middle" fill="#222222">Ec</text>
-  <line x1="238.1" y1="-300.0" x2="238.1" y2="-334.5" stroke="#222222" stroke-width="1" />
-  <line x1="256.8" y1="-281.2" x2="256.8" y2="-334.5" stroke="#222222" stroke-width="1" />
-  <line x1="238.1" y1="-330.0" x2="256.8" y2="-330.0" stroke="#222222" stroke-width="1" />
-  <polygon points="238.1,-330.0 247.0,-333.0 247.0,-327.0" fill="#222222" />
-  <polygon points="256.8,-330.0 247.8,-333.0 247.8,-327.0" fill="#222222" />
-  <text x="247.4" y="-337.7" font-family="sans-serif" font-size="18" font-weight="bold" text-anchor="middle" fill="#222222">Cw</text>
-  <line x1="556.8" y1="-0.0" x2="556.8" y2="34.5" stroke="#222222" stroke-width="1" />
-  <line x1="643.2" y1="-0.0" x2="643.2" y2="34.5" stroke="#222222" stroke-width="1" />
-  <line x1="556.8" y1="30.0" x2="643.2" y2="30.0" stroke="#222222" stroke-width="1" />
-  <polygon points="556.8,30.0 565.8,27.0 565.8,33.0" fill="#222222" />
-  <polygon points="643.2,30.0 634.2,27.0 634.2,33.0" fill="#222222" />
-  <text x="600.0" y="50.3" font-family="sans-serif" font-size="18" font-weight="bold" text-anchor="middle" fill="#222222">H</text>
+  <polygon points="-30.0,-200.0 -27.0,-191.0 -33.0,-191.0" fill="#222222" />
+  <text x="-44.0" y="-93.7" font-family="sans-serif" font-size="18" font-weight="bold" text-anchor="middle" fill="#222222">T</text>
+  <line x1="0.0" y1="-187.5" x2="0.0" y2="-234.5" stroke="#222222" stroke-width="1" />
+  <line x1="12.5" y1="-200.0" x2="12.5" y2="-234.5" stroke="#222222" stroke-width="1" />
+  <line x1="0.0" y1="-230.0" x2="12.5" y2="-230.0" stroke="#222222" stroke-width="1" />
+  <polygon points="0.0,-230.0 9.0,-233.0 9.0,-227.0" fill="#222222" />
+  <polygon points="12.5,-230.0 3.5,-233.0 3.5,-227.0" fill="#222222" />
+  <text x="6.2" y="-237.7" font-family="sans-serif" font-size="18" font-weight="bold" text-anchor="middle" fill="#222222">Ec</text>
+  <line x1="158.7" y1="-200.0" x2="158.7" y2="-234.5" stroke="#222222" stroke-width="1" />
+  <line x1="171.2" y1="-187.5" x2="171.2" y2="-234.5" stroke="#222222" stroke-width="1" />
+  <line x1="158.7" y1="-230.0" x2="171.2" y2="-230.0" stroke="#222222" stroke-width="1" />
+  <polygon points="158.7,-230.0 167.7,-233.0 167.7,-227.0" fill="#222222" />
+  <polygon points="171.2,-230.0 162.2,-233.0 162.2,-227.0" fill="#222222" />
+  <text x="164.9" y="-237.7" font-family="sans-serif" font-size="18" font-weight="bold" text-anchor="middle" fill="#222222">Cw</text>
+  <line x1="371.2" y1="-0.0" x2="371.2" y2="34.5" stroke="#222222" stroke-width="1" />
+  <line x1="428.8" y1="-0.0" x2="428.8" y2="34.5" stroke="#222222" stroke-width="1" />
+  <line x1="371.2" y1="30.0" x2="428.8" y2="30.0" stroke="#222222" stroke-width="1" />
+  <polygon points="371.2,30.0 380.2,27.0 380.2,33.0" fill="#222222" />
+  <polygon points="428.8,30.0 419.8,27.0 419.8,33.0" fill="#222222" />
+  <text x="400.0" y="50.3" font-family="sans-serif" font-size="18" font-weight="bold" text-anchor="middle" fill="#222222">H</text>
+  <text x="430.5" y="96.0" font-family="sans-serif" font-size="28" font-weight="bold" text-anchor="middle" fill="#222222">SECTION A-A</text>
 </svg>

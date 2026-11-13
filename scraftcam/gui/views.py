@@ -28,7 +28,7 @@ from .fields import (
     read_item,
     rest_text,
     rows,
-    sketch,
+    sketches,
     with_value,
     write_item,
 )
@@ -52,6 +52,7 @@ from PySide6.QtWidgets import (  # noqa: E402
     QFrame,
     QGridLayout,
     QLabel,
+    QLayout,
     QLineEdit,
     QPlainTextEdit,
     QScrollArea,
@@ -134,8 +135,9 @@ class Panel(QFrame):  # pylint: disable=too-many-instance-attributes
     * `rows` (`list[Row]`): Its plain fields.
     * `shown` (`dict[str, QLabel]`): Each measurement's value in the
       shop's units, by key.
-    * `sketch` (`QSvgWidget`): The item's kind's sketch, hidden when
-      it has none.
+    * `sketch` (`QWidget`): The item's kind's sketches, one above
+      another, hidden when it has none.
+    * `views` (`list[QSvgWidget]`): Those sketches, top first.
     * `split` (`QSplitter`): The field rows above the text.
     * `top` (`QSplitter`): The field rows left of the sketch.
     * `units` (`str`): The shop's units.
@@ -164,10 +166,9 @@ class Panel(QFrame):  # pylint: disable=too-many-instance-attributes
         self.fields: QScrollArea = QScrollArea()
         self.fields.setWidgetResizable(True)
         self.fields.hide()
-        self.sketch: QSvgWidget = QSvgWidget()
-        self.sketch.renderer().setAspectRatioMode(
-            Qt.AspectRatioMode.KeepAspectRatio
-        )
+        self.sketch: QWidget = QWidget()
+        self.views: list[QSvgWidget] = []
+        QVBoxLayout(self.sketch).setContentsMargins(0, 0, 0, 0)
         self.sketch.hide()
         self.text: QPlainTextEdit = QPlainTextEdit()
         self.text.setReadOnly(True)
@@ -272,10 +273,7 @@ class Panel(QFrame):  # pylint: disable=too-many-instance-attributes
         if node.kind in (SHOP, FILE) and node.path.suffix == ".toml":
             self.item = read_item(node.path)[0]
             self.rows = rows(self.item, units)
-        svg: Path | None = sketch(self.item) if self.rows else None
-        self.sketch.setVisible(svg is not None)
-        if svg is not None:
-            self.sketch.load(str(svg))
+        self.show_sketches(sketches(self.item) if self.rows else [])
         if not self.rows:
             self.fields.hide()
             self.text.show()
@@ -285,6 +283,33 @@ class Panel(QFrame):  # pylint: disable=too-many-instance-attributes
         rest: str = rest_text(self.item)
         self.text.setVisible(bool(rest))
         self.text.setPlainText(rest)
+
+    def show_sketches(self, paths: list[Path]) -> None:
+        """Show sketches one above another, each as tall as it draws.
+
+        Arguments:
+        * `paths` (`list[Path]`): The SVG files, top first; none hides
+          the sketches.
+        """
+        layout: QLayout | None = self.sketch.layout()
+        assert layout is not None
+        view: QSvgWidget
+        for view in self.views:
+            layout.removeWidget(view)
+            view.deleteLater()
+        self.views = []
+        path: Path
+        for path in paths:
+            view = QSvgWidget(str(path))
+            view.renderer().setAspectRatioMode(
+                Qt.AspectRatioMode.KeepAspectRatio
+            )
+            assert isinstance(layout, QVBoxLayout)
+            layout.addWidget(
+                view, max(1, view.renderer().defaultSize().height())
+            )
+            self.views.append(view)
+        self.sketch.setVisible(bool(paths))
 
     def fill_rows(self) -> None:
         """Make a row per field: its key, its entry, its value shown."""

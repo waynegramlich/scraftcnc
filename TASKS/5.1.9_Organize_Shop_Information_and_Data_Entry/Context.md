@@ -303,3 +303,54 @@ From the log before the trim (`hg` rev 695):
   T, Ec, Cw, H.  No cutting plane line on the top view yet.
 * The full `GRID_PLATE` model is not rebuilt yet (about 5 minutes,
   the next `show_demo.py` or setup that uses the chamfered plate).
+* #38 done: `tool_models.Cut` and `_cut()` (thick dash-dot line,
+  legs with arrows, the name outside), `View.cuts`; the grid plate's
+  top view cuts A-A along the top row of holes (the bottom row's
+  line would sit on the E/P extension line); the section is titled
+  "Section A-A".
+
+## 2026-11-13: #21 done, tool labels in the tree
+
+* `shops.tool_label(item)`: function (kind, with `end` other than
+  square and `roughing` in front) and sizes: diameter, radius ("R"),
+  angle, drill diameter ("drill"), "N-flute", material; values with
+  no space ("1/2in").  `shops.tool_order(item)`: function, then
+  diameter (or radius) in inches.
+* `tree.Node.shown` (replaces "NAME (KIND)") and `Node.order`;
+  `shop_children()` puts directories first, then files by `order`
+  (by name for non-tools).  `tests/test_gui_tree.py` `test_tools`.
+
+## 2026-11-13: #40-#42
+
+* #40: the corner rounding mill's `radius = "1/16 in"` (was
+  "0.0625 in").  #41: countersink labels stay.
+* #42: the user's GUI run showed only the grid plate's section (the
+  panel showed one sketch, the first alphabetically).  Now
+  `fields.sketches(item)` gives all of a kind's views, `_top` first;
+  `views.Panel.sketch` is a column of `QSvgWidget`s (`Panel.views`,
+  `show_sketches()`), each stretched by its drawn height.
+* The user could not see A-A in the panel (drawn at about 1/4 size)
+  nor tell what the section was.  Now: `View.caption` ("TOP",
+  "SECTION A-A", drawn under the view in the SVG), `_hatch()` (45
+  degree hatching on the section's cut faces), the cut line 5 px
+  (`CUT_WIDTH`, `CUT_LINE`), `ViewShape.width`.  The user prefers to
+  look in a GUI run over Claude's PNGs.
+* The user: the section must match the top view.  Now A-A runs
+  across the upper left corner only (from past the side to the
+  middle of the gap), and `_grid_section()` draws that corner: the
+  side, `BREAK_COLUMNS` (4) holes, the break line; `DETAIL` 4.
+
+## 2026-11-13: Where things stand (end of session)
+
+* The grid plate's sketches are done; the user: "Perfect".
+* Done this session: #11, #14, #18-#22, #25-#30, #31-#42 (see
+  above).  Decided, not done: #23 (`stock_materials/` and
+  `tool_materials/`), #24 (light/dark from the desktop, no hard-coded
+  colors, sketches recolored).
+* Open: #10 (S3.5, `scraftcam/gui/README.md`, last; the user may edit
+  it), #43 (sketch column 1:1 instead of 1:2?), #9 (left as is).
+  Then step 4's rest (#80: a kind's directory shows its
+  documentation) and step 5 (the HMI as a panel).
+* Not yet run: the full chamfered `GRID_PLATE` rebuild (about 5
+  minutes, the next `show_demo.py` with the chamfered plate); the
+  full test suite (only the modules touched were run).

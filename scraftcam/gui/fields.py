@@ -330,25 +330,27 @@ def shop_units(shop: Path | None) -> str:
     return units if isinstance(units, str) and units in SHOP_UNITS else "in"
 
 
-# Function `sketch()`:
-def sketch(item: dict[str, object]) -> Path | None:
-    """Return the sketch of an item's kind, from `Tool_Models.md`.
+# Function `sketches()`:
+def sketches(item: dict[str, object]) -> list[Path]:
+    """Return the sketches of an item's kind, from `Tool_Models.md`.
 
     A kind with one sketch has `KIND.svg`; one with several views
-    (e.g. `grid_plate_section.svg`, `grid_plate_top.svg`) shows the
-    first, alphabetically (`T.osiade~5.1.9` #5, #14).
+    (e.g. `grid_plate_top.svg`, `grid_plate_section.svg`) has them
+    all, the view from above first, then the rest alphabetically
+    (`T.osiade~5.1.9` #5, #14, #42).
 
     Arguments:
     * `item` (`dict[str, object]`): The shop item, as read.
 
     Returns:
-    * (`Path | None`): Its SVG file, or `None` when its kind has none.
+    * (`list[Path]`): Its SVG files; none when its kind has none.
     """
     kind: object = item.get("kind")
     if not isinstance(kind, str) or not kind:
-        return None
+        return []
     one: Path = SKETCHES / f"{kind}.svg"
     if one.is_file():
-        return one
+        return [one]
     views: list[Path] = sorted(SKETCHES.glob(f"{kind}_*.svg"))
-    return views[0] if views else None
+    top: list[Path] = [view for view in views if view.stem == f"{kind}_top"]
+    return top + [view for view in views if view not in top]
