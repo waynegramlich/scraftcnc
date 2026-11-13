@@ -483,3 +483,90 @@ refused while a machine runs (#67); `tests/qt_hmi.py` becomes
 112. Agreed: done when offscreen tests and checkers pass and the user
      likes two GUI runs (empty directory -> questionnaire; then
      `--shop` on the shop it made).
+
+## 2026-11-12: S1.1, S1.2 done; waiting on the user's first look
+
+* S1.1: `scraftcam/gui/app.py` (`App`, `Message`, `find_shop()`,
+  `shop_name()`, `design_name()`, `in_repository()`,
+  `version_control_hint()`); `tests/test_gui_app.py`.
+* S1.2: `scraftcam/gui/window.py` (`Window`, `run()`,
+  `make_application()`, `use_headless()`); a bare `scraftcam/run.py`
+  (`--shop`, `--design`, `--headless`; no port yet), executable, works
+  as `./scraftcam/run.py` (#103); `tests/qt_app.py` (the GUI's;
+  `qt_hmi.py` merges in at S1.5), `tests/test_gui_window.py`.  11
+  tests pass; checkers clean.
+* Next: S1.3 (command port, JSON-RPC shaped lines, `--port`).
+
+## 2026-11-12: S1.3 done
+
+The user's first look: fine ("didn't see a tree" was the empty
+placeholder; it now says "Tree: empty until step 2", and [Tree] gives
+it 30% of the width).  `scraftcam/gui/port.py` (no Qt: `reply()`,
+`parse()`, `PortError`, JSON-RPC codes); `window.CommandServer`
+(`QTcpServer`, 127.0.0.1 only; `status`, `press`, `quit`, which waits
+`QUIT_DELAY_MS` so its answer gets out); `window.WINDOWS`;
+`run.py --port`.  Checked end to end with `nc`.  13 tests pass.
+Next: S1.4 (questionnaire, version control hint).
+
+## 2026-11-12: S1.4 done
+
+`app.py`: `UNITS`, `MACHINE_KINDS` (key, label, supported; only
+`cnc_mill` supported), `new_shop_text()` (the tiny writer, #105:
+`name`, `units`, `machines`; JSON strings as TOML basic strings),
+`create_shop()` (never over an existing `shop.toml`), `App.use_shop()`,
+`App.new_shop()` ("Created ..." plus the version control hint).
+`window.py`: an action row "No shop yet: [New Shop]" while there is
+no shop; `NewShopDialog` (directory, default `./shop`, [Browse...],
+name, units, a check box per kind, [Create] grey until named); it
+opens by itself at start with no shop (not headless); the port's
+`new_shop`.  `tests/qt_app.py` imports `QApplication` only for type
+checking (it failed when imported first).  17 tests pass.
+Next: S1.5 (`gui/README.md`, `qt_hmi.py` into `qt_app.py`).
+
+## 2026-11-12: S1.5 done; S1 waiting on the user's GUI runs
+
+`scraftcam/gui/README.md` (starting, the window, a new shop, the
+command port, the code), linked from the top `README.md`.
+`tests/qt_hmi.py` merged into `tests/qt_app.py` (`make_hmi()`); seven
+HMI/catalog tests import it.  122 tests (GUI, HMI, catalog) pass.
+Found, not caused by S1 (same at HEAD `02cfb98`, in a scratch
+worktree): running the HMI and catalog tests together, Python aborts
+or segfaults at exit, after "OK" (likely Qt's teardown order).
+Raised as #113.
+
+## 2026-11-12: #113 fixed
+
+Cause: the HMIs the tests make are kept alive by their own signal
+connections (bound methods, `functools.partial`), so they lived until
+exit, and PySide's `destroyQCoreApplication()` then deleted the many
+left in no safe order (gdb: `QObject::~QObject()`; glibc
+`malloc_consolidate(): unaligned fastbin chunk`).  `tests.test_lcnc_hmi`
+alone crashed 2/6 (`TestMainSolidCraft` 8/8).  Fix:
+`window.delete_windows()` (close, `deleteLater()`, send the deferred
+deletes), registered with `atexit` in `tests/qt_app.py`, which runs
+before PySide's clean up.  The GUI/HMI/catalog set: 0/10 crashed
+(was 3/3).  The real HMI and GUI exit 0 on quit (one window each).
+
+## 2026-11-12: The user's S1 runs; small fixes
+
+The user ran both (#112).  Fixed: units shown as "Imperial (in)" and
+"Metric (mm)" (`UNIT_LABELS`; `shop.toml` keeps `in`/`mm`); kinds
+added: manual drill press, manual bandsaw (the CNC router was there);
+[Browse...] did nothing (KDE's native dialog from a modal dialog), now
+Qt's own (`DontUseNativeDialog`), starting at the nearest existing
+directory, checked on the real display; [Create]'s tooltip says why it
+is grey.  Raised: #115 several machines of a kind; #116 [Create] grey
+(by design until named); #117 Browse (fixed); #118 more kinds.
+
+## 2026-11-12: #114-#118 settled
+
+114. [x] narrow (square), for room later.
+115. Agreed: checkboxes now; S3 lets a shop have any number of
+     machines of a kind, each named.
+116. [Create] beside the Name field (default button, Enter presses
+     it), grey with a tooltip until named; [Cancel] alone at the
+     bottom.
+117. Fixed (Qt's own directory dialog).
+118. Focus on computer controlled machines; manual ones only for prep
+     work for CNC (mill, lathe, drill press, bandsaw), listed under
+     "Manual, for prep work:" (`MANUAL_PREFIX`).

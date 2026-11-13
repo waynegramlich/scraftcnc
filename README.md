@@ -184,6 +184,9 @@ The code is the package `scraftcam/`:
 * `lcnc/`: LinuxCNC's simulator (`install_linuxcnc.py`), the bridge
   and server that drive it, and the simulations that show it in
   SolidCraft.
+* `run.py` and `gui/`: the one GUI for the shop, the designs and the
+  machines, being built (`python3 -m scraftcam.run`); see
+  `scraftcam/gui/README.md`.
 * `hmi/`: the operator's HMI (`lcnc_hmi.py`, in Qt), and its link
   to LinuxCNC with everything else it does but draw
   (`hmi_machine.py`).

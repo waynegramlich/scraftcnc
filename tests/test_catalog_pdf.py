@@ -240,10 +240,10 @@ class AppTest(unittest.TestCase):
     def setUp(self) -> None:
         """Write the PDF, and open it in a window."""
         from scraftcam.catalog import catxtract
-        from tests import qt_hmi
+        from tests import qt_app
 
         self.catxtract = catxtract
-        self.qt_hmi = qt_hmi
+        self.qt_app = qt_app
         # pylint: disable-next=consider-using-with
         directory: str = self.enterContext(tempfile.TemporaryDirectory())
         path: Path = Path(directory) / "test.pdf"

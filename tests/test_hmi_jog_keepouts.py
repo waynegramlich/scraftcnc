@@ -4,7 +4,7 @@ import unittest
 
 from scraftcam.geometry import Corner, RoundedPolygon
 from scraftcam.hmi import hmi_machine
-from tests.qt_hmi import make_hmi
+from tests.qt_app import make_hmi
 
 
 def clamp(x0: float, x1: float, top: float) -> RoundedPolygon:

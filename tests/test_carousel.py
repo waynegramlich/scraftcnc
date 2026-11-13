@@ -11,7 +11,7 @@ from scraftcam.hmi import hmi_machine
 from scraftcam.machine import Machine
 from scraftcam.setups import SHOP as EXAMPLE_SHOP
 from scraftcam.tooling.shop_registries import use_shop
-from tests.qt_hmi import make_hmi
+from tests.qt_app import make_hmi
 
 
 class TestPlan(unittest.TestCase):

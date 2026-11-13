@@ -21,7 +21,7 @@ from scraftcam.hmi import hmi_machine, lcnc_hmi
 from scraftcam.lcnc.lcnc_client import BridgeError
 from scraftcam.setups import SHOP as EXAMPLE_SHOP
 from scraftcam.tooling.shop_registries import use_shop
-from tests.qt_hmi import make_hmi
+from tests.qt_app import make_hmi
 
 # The constants that `FakeClient` answers with.
 IDLE = 1

@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from scraftcam.hmi import hmi_machine
-from tests.qt_hmi import make_hmi
+from tests.qt_app import make_hmi
 
 
 class TestOriginAxes(unittest.TestCase):
