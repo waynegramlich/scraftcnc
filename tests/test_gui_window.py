@@ -2,13 +2,36 @@
 
 import os
 import tempfile
+import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from scraftcam import run
 from scraftcam.gui.app import App
+from scraftcam.gui.views import TreeWatcher
 from scraftcam.gui.window import PROBLEM_COLOR, NewShopDialog, Window
-from tests import qt_app  # noqa: F401  # pylint: disable=unused-import
+from tests import qt_app
+
+
+# Function `settle()`:
+def settle(window: Window, expected: list[object]) -> bool:
+    """Run Qt's events until the first tree root shows `expected`.
+
+    Arguments:
+    * `window` (`Window`): The window.
+    * `expected` (`list[object]`): The root's labels, nested.
+
+    Returns:
+    * (`bool`): True when it did, within about 3 seconds.
+    """
+    _try: int
+    for _try in range(300):
+        qt_app.process_events()
+        if window.tree.labels()[:1] == [expected]:
+            return True
+        time.sleep(0.01)
+    return False
 
 
 class WindowTest(unittest.TestCase):
@@ -36,11 +59,11 @@ class WindowTest(unittest.TestCase):
     def test_tree_and_panels(self) -> None:
         """[Tree] toggles the tree; [+ Panel] adds a panel."""
         top: Window = Window(App(None, None))
-        self.assertTrue(top.tree.isHidden())
-        top.buttons["Tree"].click()
         self.assertFalse(top.tree.isHidden())
         top.buttons["Tree"].click()
         self.assertTrue(top.tree.isHidden())
+        top.buttons["Tree"].click()
+        self.assertFalse(top.tree.isHidden())
         top.buttons["+ Panel"].click()
         self.assertEqual(len(top.panels), 2)
         self.assertEqual(top.splitter.count(), 3)
@@ -89,6 +112,113 @@ class WindowTest(unittest.TestCase):
             again.make_button.click()
             self.assertTrue(model.latest().problem)
             self.assertIn("already exists", model.latest().text)
+
+    def test_select(self) -> None:
+        """A clicked item shows in the current panel; red for errors."""
+        with tempfile.TemporaryDirectory() as temporary:
+            top: Path = Path(temporary)
+            (top / "shop").mkdir()
+            shop: Path = top / "shop" / "shop.toml"
+            shop.write_text('name = "Home"\n')
+            (top / "shop" / "bad.toml").write_text("x = \n")
+            design: Path = top / "plate.py"
+            design.write_text(
+                '"""A plate."""\n\ndef main() -> int:\n    return 0\n'
+            )
+            window: Window = Window(App(shop, design))
+            self.assertEqual(
+                window.tree.labels(),
+                [
+                    ["Home (shop)", ["bad.toml (error)"]],
+                    ["plate (design)"],
+                ],
+            )
+
+            # The design, in the first panel.
+            item = window.tree.item_at_path(design)
+            assert item is not None
+            window.select_item(item)
+            self.assertEqual(window.panels[0].text.toPlainText(), "A plate.")
+
+            # A new panel is current; the bad file shows there, in red.
+            window.buttons["+ Panel"].click()
+            self.assertEqual(window.current, 1)
+            item = window.tree.item_at_path(top / "shop" / "bad.toml")
+            assert item is not None
+            window.select_item(item)
+            self.assertIn("syntax error", window.panels[1].text.toPlainText())
+            self.assertIn("#c00000", window.panels[1].title.styleSheet())
+            self.assertEqual(window.panels[0].text.toPlainText(), "A plate.")
+
+            # Clicking the first panel makes it current again.
+            window.panels[0].clicked.emit()
+            self.assertEqual(window.current, 0)
+
+    def test_edit(self) -> None:
+        """[Edit] for Python; `VISUAL` run; else the default, hinted once."""
+        with tempfile.TemporaryDirectory() as temporary:
+            top: Path = Path(temporary)
+            design: Path = top / "plate.py"
+            design.write_text("def main() -> int:\n    return 0\n")
+            (top / "notes").mkdir()
+            (top / "notes" / "a.py").write_text("")
+            model: App = App(None, design)
+            window: Window = Window(model)
+            self.assertTrue(window.edit_row.isHidden())
+
+            # A directory: no [Edit].
+            item = window.tree.item_at_path(top / "notes")
+            assert item is not None
+            window.select_item(item)
+            self.assertTrue(window.edit_row.isHidden())
+
+            # The design: [Edit] runs `VISUAL`.
+            item = window.tree.item_at_path(design)
+            assert item is not None
+            window.select_item(item)
+            self.assertFalse(window.edit_row.isHidden())
+            self.assertEqual(window.edit_label.text(), "plate (design):")
+            with (
+                mock.patch.dict(os.environ, {"VISUAL": "kate"}),
+                mock.patch("subprocess.Popen") as popen,
+            ):
+                window.buttons["Edit"].click()
+            self.assertEqual(popen.call_args.args[0], ["kate", str(design)])
+
+            # Neither set: the desktop's default, the hint only once.
+            with (
+                mock.patch.dict(os.environ, {"VISUAL": "", "EDITOR": ""}),
+                mock.patch(
+                    "PySide6.QtGui.QDesktopServices.openUrl",
+                    return_value=True,
+                ),
+            ):
+                window.buttons["Edit"].click()
+                self.assertIn("environment variable", model.latest().text)
+                model.say("later")
+                window.buttons["Edit"].click()
+                self.assertEqual(model.latest().text, "later")
+
+    def test_watcher(self) -> None:
+        """A file added, broken or removed outside shows in the tree."""
+        with tempfile.TemporaryDirectory() as temporary:
+            top: Path = Path(temporary)
+            shop: Path = top / "shop.toml"
+            shop.write_text('name = "Home"\n')
+            model: App = App(shop, None)
+            window: Window = Window(model)
+            watcher: TreeWatcher = TreeWatcher(model)
+            self.addCleanup(model.forget, watcher.follow)
+
+            # Added, then broken, then removed.
+            (top / "mill.toml").write_text('name = "Mill"\n')
+            self.assertTrue(settle(window, ["Home (shop)", ["Mill (file)"]]))
+            (top / "mill.toml").write_text("name = \n")
+            self.assertTrue(
+                settle(window, ["Home (shop)", ["mill.toml (error)"]])
+            )
+            (top / "mill.toml").unlink()
+            self.assertTrue(settle(window, ["Home (shop)"]))
 
 
 class RunTest(unittest.TestCase):

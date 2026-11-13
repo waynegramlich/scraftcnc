@@ -111,7 +111,7 @@ class ServerTest(unittest.TestCase):
             [
                 {
                     "buttons": ["Tree", "+ Panel", "x", "New Shop"],
-                    "tree": False,
+                    "tree": True,
                     "panels": 1,
                 }
             ],
@@ -119,7 +119,7 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(
             self.ask("press", button="Tree")["result"], "pressed Tree"
         )
-        self.assertFalse(self.top.tree.isHidden())
+        self.assertTrue(self.top.tree.isHidden())
         self.assertIn("error", self.ask("press", button="Stop All"))
         self.assertIn("error", self.ask("press", button="Tree", window=3))
 
@@ -161,6 +161,26 @@ class ServerTest(unittest.TestCase):
                     machines=[3],
                 ),
             )
+
+    def test_tree_and_select(self) -> None:
+        """`tree` lists the items; `select` clicks one."""
+        with tempfile.TemporaryDirectory() as temporary:
+            directory: Path = Path(temporary) / "shop"
+            self.ask(
+                "new_shop",
+                directory=str(directory),
+                name="Lab",
+                units="in",
+                machines=[],
+            )
+            self.assertEqual(self.ask("tree")["result"], [["Lab (shop)"]])
+            shown: object = self.ask(
+                "select", path=str(directory / "shop.toml")
+            )["result"]
+            assert isinstance(shown, dict)
+            self.assertEqual(shown["label"], "Lab (shop)")
+            self.assertIn('name = "Lab"', str(shown["text"]))
+            self.assertIn("error", self.ask("select", path="/nowhere"))
 
 
 if __name__ == "__main__":

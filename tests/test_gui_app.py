@@ -73,6 +73,7 @@ class AppTest(unittest.TestCase):
             (top / ".git").mkdir()
             shop: Path = top / "shop.toml"
             shop.write_text('name = "Home"\n')
+            (top / "plate.py").write_text("def main() -> int:\n    return 0\n")
             model: app.App = app.App(shop, top / "plate.py")
             self.assertEqual(model.title(), "scraftcam: Home (plate)")
             self.assertEqual(model.messages, [])

@@ -12,6 +12,8 @@ no display.  It holds:
 * The machines running, which decide when [Stop All] shows (#2) and
   when a window may not close (#67).
 * The messages, the latest one shown on the top line (#95).
+* The tree of the shop's and the design's files (`tree.py`), read
+  again by `reload_tree()` whenever they change.
 
 With no shop, a new one can be made from a few answers (#97, #98,
 #104): its name, its units, and the kinds of machines it has.
@@ -24,6 +26,8 @@ import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from .tree import DESIGN_LIMIT, Node, design_tree, shop_tree
 
 # The file at the top of every shop.
 SHOP_FILE: str = "shop.toml"
@@ -254,8 +258,9 @@ def create_shop(
 
 
 # Class `App`:
+# The model holds everything every window shows.
 @dataclass(slots=True)
-class App:
+class App:  # pylint: disable=too-many-instance-attributes
     """Everything the GUI's windows show, shared by all of them.
 
     Each window calls `listen()` once, and redraws from the `App`
@@ -269,6 +274,12 @@ class App:
     * `messages` (`list[Message]`): Every message, oldest first.
     * `running` (`set[str]`): The names of the machines running.
     * `shop_title` (`str`): The shop's name, or `NONE_NAME`.
+    * `editor_hinted` (`bool`): True once the hint about `VISUAL` and
+      `EDITOR` has been given (once a session, #124).
+    * `design_root` (`Node | None`): The design's tree, if any.
+    * `shop_root` (`Node | None`): The shop's tree, if any.
+    * `tree_version` (`int`): Counts the times the trees were read,
+      so windows rebuild their trees only when it changes.
 
     Constructor:
     * `App(shop, design)`
@@ -279,6 +290,7 @@ class App:
     design: Path | None = field(init=True)
 
     # Remaining attributes (alphabetized):
+    editor_hinted: bool = field(init=False, default=False)
     listeners: list[Callable[[], None]] = field(
         init=False, default_factory=list
     )
@@ -286,9 +298,18 @@ class App:
     running: set[str] = field(init=False, default_factory=set)
     shop_title: str = field(init=False, default=NONE_NAME)
 
+    # The trees (alphabetized):
+    design_root: Node | None = field(init=False, default=None)
+    shop_root: Node | None = field(init=False, default=None)
+    tree_version: int = field(init=False, default=0)
+
     def __post_init__(self) -> None:
-        """Read the shop's name, and say what is missing."""
+        """Read the shop's name and the trees; say what is missing."""
+        # Absolute paths, so the tree's items are found by them.
+        if self.design is not None:
+            self.design = self.design.resolve()
         if self.shop is None:
+            self.reload_tree()
             self.say(f"No {SHOP_FILE} found here or above.", problem=True)
         else:
             self.use_shop(self.shop)
@@ -301,7 +322,8 @@ class App:
         * `done` (`str`): What was done, to say before the version
           control hint (e.g. "Created ...").
         """
-        self.shop = shop
+        self.shop = shop.resolve()
+        self.reload_tree()
         try:
             self.shop_title = shop_name(shop)
         except (OSError, tomllib.TOMLDecodeError) as error:
@@ -315,6 +337,27 @@ class App:
             self.say(text)
         else:
             self.changed()
+
+    def reload_tree(self) -> None:
+        """Read the shop's and the design's trees again."""
+        # The shop's.
+        self.shop_root = None if self.shop is None else shop_tree(self.shop)
+
+        # The design's, or why there is none.
+        self.design_root = None
+        if self.design is not None and not self.design.exists():
+            self.say(f"No design at {self.design}.", problem=True)
+        elif self.design is not None:
+            clipped: bool
+            self.design_root, clipped = design_tree(self.design)
+            if clipped:
+                self.say(
+                    f"The design's directory has more than {DESIGN_LIMIT} "
+                    "Python files; only the first are shown.  Give the "
+                    "design a directory of its own."
+                )
+        self.tree_version += 1
+        self.changed()
 
     def new_shop(
         self, directory: Path, name: str, units: str, machines: list[str]

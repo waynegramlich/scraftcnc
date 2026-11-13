@@ -570,3 +570,64 @@ is grey.  Raised: #115 several machines of a kind; #116 [Create] grey
 118. Focus on computer controlled machines; manual ones only for prep
      work for CNC (mill, lathe, drill press, bandsaw), listed under
      "Manual, for prep work:" (`MANUAL_PREFIX`).
+
+## 2026-11-12: S2 (tree view) planned; #119-#123
+
+S2 parts: S2.1 `gui/tree.py` (model, no Qt; `main()` found by `ast`,
+never importing); S2.2 the tree widget; S2.3 selecting shows the item
+in the current panel (outlined); S2.4 [Edit] (#77); S2.5 file
+watching, port `tree`/`select`, README, tests.  GUI looks after S2.3
+and at the end.
+
+119. Agreed: shop items as they are, "NAME (file)"/"(directory)";
+     S3 brings the kinds.
+120. Agreed, to be tried in practice: design root `--design`; `.py`
+     files and packages below, no `__pycache__`/hidden; "(design)" if
+     `main()`, else "(python)".
+121. One tree, two roots (Shop, Design).
+122. Agreed (current panel outlined; TOML text read only; `.py` top
+     docstring; [Edit]).  Also: tell the user that `$VISUAL` and
+     `$EDITOR` exist when neither is set.
+123. Agreed: `QFileSystemWatcher`, no [Refresh].
+
+## 2026-11-12: #124-#128; S2 started
+
+124. Agreed (`$VISUAL` as is; `$EDITOR` in a terminal window; else
+     the desktop's default, with a hint once per session).  The hint
+     says "environment variables" so users can look them up.
+125. Agreed: a bad file stays in the tree, red, "(error)"; the panel
+     says "syntax error" at least, with the line when `tomllib` (or
+     `ast`) gives it.
+126. The design tree stops at 100 items, with a message.
+127. Directories first, then files, alphabetical ignoring case.
+128. Roots open one level; the rest collapsed; no memory until #78.1.
+
+## 2026-11-12: S2.1-S2.3 done; waiting on the user's look
+
+* S2.1 `gui/tree.py`: `Node`, `shop_tree()`, `design_tree()` (with
+  `DesignReader`, `DESIGN_LIMIT` 100), `docstring()`, `toml_problem()`,
+  `python_module()` (`ast`, never imports).  `tests/test_gui_tree.py`.
+* S2.2 `App` holds `shop_root`, `design_root`, `tree_version`;
+  `reload_tree()` ("No design at ..." when missing; a message when
+  clipped).
+* S2.3 `gui/views.py`: `TreeView` (keeps open items open when filled
+  again; `labels()`), `Panel` (outlined when current; TOML unwrapped,
+  docstrings and problems wrapped).  The tree now shows from the
+  start (30% of the width).  21 GUI tests pass.
+* A sample shop and design for looking:
+  `/tmp/claude-1000/-home-wayne-public-html-projects-scraftcam/036c09a7-0d48-4676-8dfd-0ffea8825152/scratchpad/demo/`.
+* Next: S2.4 [Edit] (#77, #124), S2.5 watching, port `tree`/`select`.
+
+## 2026-11-12: S2.4, S2.5 done; S2 waiting on the user's look
+
+* S2.4: `gui/editor.py` (`editor_command()`: `VISUAL`; `EDITOR` in
+  `TERMINALS`; else the desktop's default, `HINT` once a session via
+  `App.editor_hinted`); `tree.edit_path()` (Python, a package's
+  `__init__.py`, any file with a problem); the [Edit] action row
+  (`Window.action_row()`, `show_actions()`, `edit()`).
+* S2.5: `views.TreeWatcher` (`QFileSystemWatcher`, 300 ms settle,
+  re-watches whenever `tree_version` changes), made in `run()`; port
+  `tree` and `select`; `App` resolves the shop's and design's paths
+  (a relative `--design` broke `select`).  README sections: the tree
+  and panels, [Edit], the port.  25 GUI tests pass; checked end to
+  end with `nc` (an outside `router.toml` appeared).

@@ -27,6 +27,8 @@ window, unless one refuses).
 
 import functools
 import os
+import shutil
+import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -42,7 +44,10 @@ from .app import (
     App,
     Message,
 )
+from .editor import HINT, editor_command
 from .port import Method, PortError, text_param
+from .tree import Node, edit_path
+from .views import Panel, TreeView, TreeWatcher
 
 # `PySide6` lives in `~/.scraftcam/packages/`, so it is put on
 # `sys.path` (and fetched, the first time) before it is imported.
@@ -55,9 +60,10 @@ from PySide6.QtCore import (  # noqa: E402
     Qt,
     QTimer,
     QtMsgType,
+    QUrl,
     qInstallMessageHandler,
 )
-from PySide6.QtGui import QCloseEvent  # noqa: E402
+from PySide6.QtGui import QCloseEvent, QDesktopServices  # noqa: E402
 from PySide6.QtNetwork import QHostAddress, QTcpServer, QTcpSocket  # noqa: E402
 from PySide6.QtWidgets import (  # noqa: E402
     QApplication,
@@ -67,13 +73,13 @@ from PySide6.QtWidgets import (  # noqa: E402
     QDialogButtonBox,
     QFileDialog,
     QFormLayout,
-    QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
     QSizePolicy,
     QSplitter,
+    QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -183,6 +189,7 @@ def run(model: App, *, headless: bool, command_port: int) -> int:
     application: QApplication = make_application(headless=headless)
     first: Window = Window(model)
     first.show()
+    watcher: TreeWatcher = TreeWatcher(model)
 
     # No shop: offer to make one (#97), when someone can answer.
     if model.shop is None and not headless:
@@ -197,7 +204,11 @@ def run(model: App, *, headless: bool, command_port: int) -> int:
                 file=sys.stderr,
             )
             return 1
-    return int(application.exec())
+
+    # Until the last window closes, with the trees watched.
+    status: int = int(application.exec())
+    model.forget(watcher.follow)
+    return status
 
 
 # Class `Window`:
@@ -214,11 +225,14 @@ class Window(QWidget):
     * `design_label` (`QLabel`): The design's name.
     * `message_label` (`QLabel`): The latest message.
     * `action_rows` (`QWidget`): The action rows.
+    * `edit_label` (`QLabel`): The selected item, before [Edit].
+    * `edit_row` (`QWidget`): The action row with [Edit].
     * `new_shop_row` (`QWidget`): The action row with [New Shop].
-    * `panels` (`list[QFrame]`): The panels, left to right.
+    * `panels` (`list[Panel]`): The panels, left to right.
     * `shop_label` (`QLabel`): The shop's name.
     * `splitter` (`QSplitter`): The tree, then the panels.
-    * `tree` (`QFrame`): The tree (empty until S2).
+    * `tree` (`TreeView`): The shop's and the design's files.
+    * `current` (`int`): The current panel's index (#122).
     """
 
     def __init__(self, model: App, controls: set[str] | None = None) -> None:
@@ -261,21 +275,26 @@ class Window(QWidget):
         self.action_rows: QWidget = QWidget()
         rows: QVBoxLayout = QVBoxLayout(self.action_rows)
         rows.setContentsMargins(0, 0, 0, 0)
-        self.new_shop_row: QWidget = QWidget()
-        new_shop_line: QHBoxLayout = QHBoxLayout(self.new_shop_row)
-        new_shop_line.setContentsMargins(0, 0, 0, 0)
-        new_shop_line.addWidget(QLabel("No shop yet:"))
-        self.add_button(new_shop_line, "New Shop", self.new_shop)
-        new_shop_line.addStretch(1)
-        rows.addWidget(self.new_shop_row)
+        self.new_shop_row: QWidget = self.action_row(
+            rows, QLabel("No shop yet:"), "New Shop", self.new_shop
+        )
 
-        # The tree on the left, hidden at first, then the panels.
+        # The selected item's row: [Edit], for a file to edit by hand.
+        self.edit_label: QLabel = QLabel()
+        self.edit_row: QWidget = self.action_row(
+            rows, self.edit_label, "Edit", self.edit
+        )
+
+        # The tree on the left, then the panels; the first is current.
         self.splitter: QSplitter = QSplitter(Qt.Orientation.Horizontal)
-        self.tree: QFrame = self.make_frame("Tree: empty until step 2.")
-        self.tree.hide()
+        self.tree: TreeView = TreeView()
+        self.tree.itemClicked.connect(self.select_item)
         self.splitter.addWidget(self.tree)
-        self.panels: list[QFrame] = []
+        self.panels: list[Panel] = []
+        self.current: int = 0
         self.add_panel()
+        tree_width: int = int(WIDTH * TREE_SHARE)
+        self.splitter.setSizes([tree_width, WIDTH - tree_width])
 
         # The bands, top to bottom.
         layout: QVBoxLayout = QVBoxLayout(self)
@@ -304,24 +323,32 @@ class Window(QWidget):
         line.addWidget(button)
         self.buttons[label] = button
 
-    @staticmethod
-    def make_frame(text: str) -> QFrame:
-        """Make an empty panel, with a line saying what it will be.
+    def action_row(
+        self,
+        rows: QVBoxLayout,
+        label: QLabel,
+        button: str,
+        action: Callable[[], object],
+    ) -> QWidget:
+        """Add an action row: a label, then a button.
 
         Arguments:
-        * `text` (`str`): What it says.
+        * `rows` (`QVBoxLayout`): The action rows.
+        * `label` (`QLabel`): What the row is about.
+        * `button` (`str`): The button's label.
+        * `action` (`Callable[[], object]`): What a press calls.
 
         Returns:
-        * (`QFrame`): The panel.
+        * (`QWidget`): The row.
         """
-        frame: QFrame = QFrame()
-        frame.setFrameShape(QFrame.Shape.StyledPanel)
-        layout: QVBoxLayout = QVBoxLayout(frame)
-        label: QLabel = QLabel(text)
-        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        label.setStyleSheet("color: grey")
-        layout.addWidget(label)
-        return frame
+        row: QWidget = QWidget()
+        line: QHBoxLayout = QHBoxLayout(row)
+        line.setContentsMargins(0, 0, 0, 0)
+        line.addWidget(label)
+        self.add_button(line, button, action)
+        line.addStretch(1)
+        rows.addWidget(row)
+        return row
 
     def redraw(self) -> None:
         """Show what the model holds now."""
@@ -338,6 +365,25 @@ class Window(QWidget):
         self.buttons["Stop All"].setVisible(model.stop_all_shown())
         self.new_shop_row.setVisible(model.shop is None)
         self.buttons["New Shop"].setVisible(model.shop is None)
+
+        # The tree, when it was read again, and the panels' items;
+        # then the selected item's action row.
+        if self.tree.version != model.tree_version:
+            roots: list[Node] = [
+                root
+                for root in (model.shop_root, model.design_root)
+                if root is not None
+            ]
+            self.tree.fill(roots, model.tree_version)
+            panel: Panel
+            for panel in self.panels:
+                if panel.node is not None:
+                    node: Node | None = self.tree.nodes.get(
+                        str(panel.node.path)
+                    )
+                    if node is not None:
+                        panel.show_node(node)
+        self.show_actions()
 
     def toggle_tree(self) -> None:
         """Show the tree if it is hidden, or hide it ([Tree])."""
@@ -356,10 +402,77 @@ class Window(QWidget):
         )
 
     def add_panel(self) -> None:
-        """Add an empty panel on the right ([+ Panel])."""
-        panel: QFrame = self.make_frame(f"Panel {len(self.panels) + 1}.")
+        """Add an empty panel on the right ([+ Panel]); it is current."""
+        panel: Panel = Panel(len(self.panels) + 1)
+        panel.clicked.connect(functools.partial(self.make_current, panel))
         self.panels.append(panel)
         self.splitter.addWidget(panel)
+        self.make_current(panel)
+
+    def make_current(self, panel: Panel) -> None:
+        """Make a panel the current one: the next item shows there.
+
+        Arguments:
+        * `panel` (`Panel`): The panel.
+        """
+        self.current = self.panels.index(panel)
+        other: Panel
+        for other in self.panels:
+            other.set_current(other is panel)
+        self.show_actions()
+
+    def select_item(self, item: QTreeWidgetItem) -> None:
+        """Show a tree item in the current panel (#122).
+
+        Arguments:
+        * `item` (`QTreeWidgetItem`): The item clicked.
+        """
+        node: Node | None = self.tree.node_of(item)
+        if node is not None:
+            self.panels[self.current].show_node(node)
+        self.show_actions()
+
+    def show_actions(self) -> None:
+        """Show the action rows of the current panel's item (#73)."""
+        node: Node | None = (
+            self.panels[self.current].node if self.panels else None
+        )
+        editable: bool = node is not None and edit_path(node) is not None
+        self.edit_row.setVisible(editable)
+        self.buttons["Edit"].setVisible(editable)
+        if node is not None:
+            self.edit_label.setText(f"{node.label()}:")
+
+    def edit(self) -> None:
+        """Open the current panel's file in an editor ([Edit], #124)."""
+        # The file.
+        node: Node | None = self.panels[self.current].node
+        path: Path | None = None if node is None else edit_path(node)
+        if path is None:
+            return
+
+        # `VISUAL`, `EDITOR` in a terminal, or why not.
+        command: list[str]
+        problem: str
+        command, problem = editor_command(path, os.environ, shutil.which)
+        if problem:
+            self.model.say(problem, problem=True)
+            return
+        if command:
+            try:
+                subprocess.Popen(  # pylint: disable=consider-using-with
+                    command, start_new_session=True
+                )
+            except OSError as error:
+                self.model.say(f"{command[0]}: {error}", problem=True)
+            return
+
+        # Neither: the desktop's default, with the hint once a session.
+        if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(path))):
+            self.model.say(f"No editor opened {path}.", problem=True)
+        elif not self.model.editor_hinted:
+            self.model.editor_hinted = True
+            self.model.say(HINT)
 
     def stop_all(self) -> None:
         """Stop every machine ([Stop All])."""
@@ -413,7 +526,9 @@ class CommandServer(QTcpServer):
             "new_shop": self.new_shop,
             "press": self.press,
             "quit": self.quit,
+            "select": self.select,
             "status": self.status,
+            "tree": self.tree,
         }
         self.newConnection.connect(self.accept)
 
@@ -559,6 +674,45 @@ class CommandServer(QTcpServer):
         except (ValueError, OSError) as error:
             raise PortError(str(error)) from error
         return str(shop)
+
+    def tree(self, params: dict[str, object]) -> object:
+        """Return what a window's tree shows (`tree`).
+
+        Arguments:
+        * `params` (`dict[str, object]`): `window` (from 0; 0 if not
+          given).
+
+        Returns:
+        * (`object`): Per root, its label, then a list per child.
+        """
+        return self.window(params).tree.labels()
+
+    def select(self, params: dict[str, object]) -> object:
+        """Click a tree item, as a person would (`select`).
+
+        Arguments:
+        * `params` (`dict[str, object]`): `path` (the item's file or
+          directory) and `window` (from 0; 0 if not given).
+
+        Returns:
+        * (`object`): What the current panel shows: `label`, `text`.
+
+        Raises:
+        * `PortError`: If no item has that path.
+        """
+        top: Window = self.window(params)
+        path: str = text_param(params, "path")
+        item: QTreeWidgetItem | None = top.tree.item_at_path(
+            Path(path).resolve()
+        )
+        if item is None:
+            raise PortError(f"no item for {path}", port.INVALID_PARAMS)
+        top.select_item(item)
+        panel: Panel = top.panels[top.current]
+        return {
+            "label": panel.title.text(),
+            "text": panel.text.toPlainText(),
+        }
 
     def quit(self, _params: dict[str, object]) -> object:
         """Close every window, unless one refuses (`quit`).
