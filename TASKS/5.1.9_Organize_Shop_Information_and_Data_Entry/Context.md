@@ -432,3 +432,25 @@ From the log before the trim (`hg` rev 695):
 * #45 (the user): the top view shows where the edge chamfer meets
   the top: `_Broken.bevel()`, a thin line `edge_chamfer` in from the
   two outer sides and around the corner, break line to break line.
+
+## 2026-11-13: #80 tried (step 4's rest), waiting on the user's look
+
+* The user did not remember asking for #80; "Let's do it and see".
+  #46-#49 taken as Claude recommended: a directory lists its kinds;
+  a page is the description and letter table (no JSON/Python/TOML
+  examples); Markdown in a `QTextBrowser`; no [Docs] on items yet.
+* New `scraftcam/gui/docs.py` (no Qt): `pages()` cuts
+  `Tool_Models.md` into `KindPage`s by the kind their sketches name,
+  up to the first example, less sketch links and a lead-in
+  paragraph; `directory_pages(name)` by `SHOP_DIRECTORIES`.
+* `views.Panel`: `guide` (`kinds` list over `page`) between the rows
+  and the sketches in `top`; `show_page()`.  `fit()` sets three
+  sizes now.  Test `test_directory_pages`.
+* The user: #80's guide was sticky (no way back to the rows) and not
+  that useful; taken out (`views.py`, `tests/test_gui_fields.py`
+  back to rev 732; `gui/docs.py` deleted).  Instead, tooltips on
+  the tree (#80, the user's idea): `tree.Node.about`,
+  `about_item()` (the kind's first sentence, then the item's
+  `description`), `about_directory()` (the shop key whose meaning
+  names "files in `DIR/`", else the first kind's summary), wrapped
+  at `ABOUT_WIDTH` (60), no back quotes.  Test `test_about`.

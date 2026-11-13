@@ -631,6 +631,8 @@ class TreeView(QTreeWidget):
         if node.kind == ERROR:
             item.setForeground(0, QBrush(QColor(colors().problem)))
             item.setToolTip(0, node.error)
+        elif node.about:
+            item.setToolTip(0, node.about)
         self.nodes[key] = node
         child: Node
         for child in node.children:

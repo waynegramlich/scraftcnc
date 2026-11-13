@@ -72,6 +72,22 @@ class ShopTreeTest(unittest.TestCase):
                 ],
             )
 
+    def test_about(self) -> None:
+        """Directories and items say what they are, for tooltips (#80)."""
+        shop: Path = Path(__file__).parent.parent / "examples" / "shop"
+        root: tree.Node = tree.shop_tree(shop / "shop.toml")
+        about: dict[str, str] = {
+            child.name: child.about for child in root.children
+        }
+        self.assertIn("The tools on hand", about["tools"])
+        self.assertIn("controller", about["controllers"])
+        self.assertNotIn("`", about["tools"])
+        grid: tree.Node = next(
+            child for child in root.children if child.name == "tooling"
+        ).children[0]
+        self.assertIn("A grid plate", grid.about)
+        self.assertIn("Aluminum", grid.about)
+
 
 class DesignTreeTest(unittest.TestCase):
     """Tests of `design_tree()` and `docstring()`."""

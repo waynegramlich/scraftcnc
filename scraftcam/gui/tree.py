@@ -22,11 +22,15 @@ and `__pycache__` are skipped.
 """
 
 import ast
+import textwrap
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from ..shops import tool_label, tool_order
+from ..shops import KINDS, SHOP_DIRECTORIES, tool_label, tool_order
+
+# How wide a tooltip's lines are (characters).
+ABOUT_WIDTH: int = 60
 
 # The most items the design tree shows (#126).
 DESIGN_LIMIT: int = 100
@@ -46,7 +50,7 @@ SKIPPED: tuple[str, ...] = ("__pycache__",)
 
 # Class `Node`:
 @dataclass(slots=True)
-class Node:
+class Node:  # pylint: disable=too-many-instance-attributes
     """One item of the tree.
 
     Attributes:
@@ -56,6 +60,7 @@ class Node:
     * `path` (`Path`): Its file or directory.
     * `error` (`str`): Why it does not read cleanly, or "".
     * `children` (`list[Node]`): The items under it.
+    * `about` (`str`): What it is, for its tooltip (#80), or "".
     * `order` (`tuple[str, float]`): Where it sorts among its
       directory's files: by `name`, or a tool's by function, then
       size (#21).
@@ -73,6 +78,7 @@ class Node:
     error: str = field(init=True, default="")
 
     # Remaining attributes (alphabetized):
+    about: str = field(init=False, default="")
     children: list["Node"] = field(init=False, default_factory=list)
     order: tuple[str, float] = field(init=False, default=("", 0.0))
     shown: str = field(init=False, default="")
@@ -255,7 +261,85 @@ def toml_node(path: Path) -> Node:
     if label:
         node.shown = label
         node.order = tool_order(item)
+    node.about = about_item(item)
     return node
+
+
+# Function `about_item()`:
+def about_item(item: dict[str, object]) -> str:
+    """Return what a shop item is, for its tooltip (#80).
+
+    Arguments:
+    * `item` (`dict[str, object]`): Its file, as read.
+
+    Returns:
+    * (`str`): Its kind's first sentence, then its own `description`
+      (if any), wrapped; "" for an item of no known kind.
+    """
+    kind: object = item.get("kind")
+    if not isinstance(kind, str) or kind not in KINDS:
+        return ""
+    lines: list[str] = [_first_sentence(KINDS[kind].summary)]
+    description: object = item.get("description")
+    if isinstance(description, str) and description.strip():
+        lines.append(description.strip())
+    return _wrapped(lines)
+
+
+# Function `about_directory()`:
+def about_directory(name: str) -> str:
+    """Return what a shop directory holds, for its tooltip (#80).
+
+    From the shop's own key that names it (`tools`: "The tools on
+    hand, ..."), else the first kind it holds.
+
+    Arguments:
+    * `name` (`str`): The directory's name.
+
+    Returns:
+    * (`str`): What it holds, wrapped; "" for one the shop does not
+      name.
+    """
+    for schema in KINDS["shop"].fields:
+        if f"files in `{name}/`" in schema.meaning:
+            return _wrapped([schema.meaning])
+    kinds: tuple[str, ...] = next(
+        (held for directory, held in SHOP_DIRECTORIES if directory == name),
+        (),
+    )
+    return (
+        _wrapped([_first_sentence(KINDS[kinds[0]].summary)]) if kinds else ""
+    )
+
+
+# Function `_first_sentence()`:
+def _first_sentence(text: str) -> str:
+    """Return a text's first sentence.
+
+    Arguments:
+    * `text` (`str`): The text.
+
+    Returns:
+    * (`str`): Up to and including its first `.` that ends a
+      sentence (or all of it).
+    """
+    end: int = text.find(".  ")
+    return text if end < 0 else text[: end + 1]
+
+
+# Function `_wrapped()`:
+def _wrapped(lines: list[str]) -> str:
+    """Return lines for a tooltip: no Markdown back quotes, wrapped.
+
+    Arguments:
+    * `lines` (`list[str]`): The paragraphs.
+
+    Returns:
+    * (`str`): Each one wrapped at `ABOUT_WIDTH`, a line apart.
+    """
+    return "\n".join(
+        textwrap.fill(line.replace("`", ""), ABOUT_WIDTH) for line in lines
+    )
 
 
 # Function `edit_path()`:
@@ -314,6 +398,7 @@ def shop_children(directory: Path, skip: Path | None = None) -> list[Node]:
     for path in entries(directory):
         if path.is_dir():
             branch: Node = Node(path.name, DIRECTORY, path)
+            branch.about = about_directory(path.name)
             branch.children = shop_children(path)
             children.append(branch)
         elif path.suffix == ".toml" and path != skip:
