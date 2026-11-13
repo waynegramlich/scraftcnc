@@ -42,6 +42,7 @@ from ..shops import (
     LENGTH,
     TableField,
     check_tool,
+    dimension_letters,
     markdown_table,
     measure,
 )
@@ -1937,27 +1938,37 @@ def vise_views() -> list[View]:
     return [_vise_top(sizes), _vise_back(sizes), _vise_side(sizes)]
 
 
-# Function `vise_numbers()`:
-def vise_numbers(views: list[View]) -> dict[str, str]:
-    """Return the number of each size drawn, in the order drawn.
+# Function `size_letters()`:
+def size_letters(views: list[View], kind: str = "") -> dict[str, str]:
+    """Return the letters of each size drawn, in the order drawn.
+
+    The letters follow the names (`shops.dimension_letters()`,
+    `T.osiade~5.1.9` #18, #20, #26); a kind in `KINDS` uses its
+    fields' letters, so its sketches and its panel agree.
 
     Arguments:
     * `views` (`list[View]`): The views.
+    * `kind` (`str`): Its kind in the shop's files, or `""`.
 
     Returns:
-    * (`dict[str, str]`): Each size's path and number.
+    * (`dict[str, str]`): Each size's path and letters.
     """
     keys: list[str] = [mark.key for view in views for mark in view.marks]
-    return {key: str(number) for number, key in enumerate(keys, 1)}
+    if kind in KINDS:
+        fields: dict[str, str] = {
+            schema.key: schema.letter for schema in KINDS[kind].fields
+        }
+        return {key: fields[key] for key in dict.fromkeys(keys)}
+    return dimension_letters(list(dict.fromkeys(keys)))
 
 
 # Function `view_sketch()`:
-def view_sketch(view: View, numbers: dict[str, str]) -> str:
+def view_sketch(view: View, letters: dict[str, str]) -> str:
     """Return one view, as an SVG file.
 
     Arguments:
     * `view` (`View`): The view.
-    * `numbers` (`dict[str, str]`): What each mark is labeled with.
+    * `letters` (`dict[str, str]`): What each mark is labeled with.
 
     Returns:
     * (`str`): The SVG file's text.
@@ -1989,9 +2000,9 @@ def view_sketch(view: View, numbers: dict[str, str]) -> str:
         ET.SubElement(root, "path", attributes)
     for mark in view.marks:
         if isinstance(mark, Dimension):
-            _dimension(root, mark, numbers[mark.key])
+            _dimension(root, mark, letters[mark.key])
         elif isinstance(mark, Radius):
-            _radius(root, mark, numbers[mark.key])
+            _radius(root, mark, letters[mark.key])
     ET.indent(root)
     return ET.tostring(root, encoding="unicode") + "\n"
 
@@ -2062,7 +2073,7 @@ def vise_section() -> str:
         textwrap.fill(paragraph, 72) for paragraph in about.split("\n\n")
     )
     views: list[View] = vise_views()
-    numbers: dict[str, str] = vise_numbers(views)
+    letters: dict[str, str] = size_letters(views)
     images: str = "\n\n".join(
         f"{view.title}:\n\n"
         f"![Machine vise, {view.name}]"
@@ -2070,11 +2081,11 @@ def vise_section() -> str:
         for view in views
     )
 
-    # The sizes, by number; then those not drawn.
+    # The sizes, by letter; then those not drawn.
     meanings: dict[str, str] = vise_sizes()
-    rows: list[list[str]] = _size_rows(numbers, meanings)
+    rows: list[list[str]] = _size_rows(letters, meanings)
     hidden: str = ", ".join(
-        f"`{key}`" for key in meanings if key not in numbers
+        f"`{key}`" for key in meanings if key not in letters
     )
 
     # How to make one, and where a setup names one.
@@ -2119,21 +2130,21 @@ def vise_section() -> str:
 
 # Function `_size_rows()`:
 def _size_rows(
-    numbers: dict[str, str], meanings: dict[str, str]
+    letters: dict[str, str], meanings: dict[str, str]
 ) -> list[list[str]]:
-    """Return the rows of a table of sizes, by number.
+    """Return the rows of a table of sizes, by letter.
 
     Arguments:
-    * `numbers` (`dict[str, str]`): Each size's number.
+    * `letters` (`dict[str, str]`): Each size's letters.
     * `meanings` (`dict[str, str]`): Each size's meaning.
 
     Returns:
     * (`list[list[str]]`): The heading row, then one row a size.
     """
-    rows: list[list[str]] = [["Number", "Units", "Description"]]
-    for key, number in numbers.items():
+    rows: list[list[str]] = [["Letter", "Units", "Description"]]
+    for key, letter in letters.items():
         units: str = "Lengths" if key.endswith(".centers") else "Length"
-        rows.append([number, units, f"`{key}`: {meanings[key]}"])
+        rows.append([letter, units, f"`{key}`: {meanings[key]}"])
     return rows
 
 
@@ -2239,20 +2250,20 @@ def jaw_plate_section() -> str:
         textwrap.fill(paragraph, 72) for paragraph in about.split("\n\n")
     )
     views: list[View] = jaw_plate_views()
-    numbers: dict[str, str] = vise_numbers(views)
+    letters: dict[str, str] = size_letters(views)
     images: str = "\n\n".join(
         f"{view.title}:\n\n"
         f"![Jaw plate, {view.name}]({SKETCHES}/jaw_plate_{view.name}.svg)"
         for view in views
     )
 
-    # The sizes, by number; then the rest, and how to make one.
+    # The sizes, by letter; then the rest, and how to make one.
     meanings: dict[str, str] = _attributes(JawPlate)
-    rows: list[list[str]] = _size_rows(numbers, meanings)
+    rows: list[list[str]] = _size_rows(letters, meanings)
     others: str = "\n".join(
         textwrap.fill(f"* `{key}`: {meaning}", 72, subsequent_indent="  ")
         for key, meaning in meanings.items()
-        if key not in numbers
+        if key not in letters
     )
     python: str = (
         "from scraftcam.pybind.scraftpybind import PyBind, connect\n"
@@ -2358,16 +2369,16 @@ def parallel_section() -> str:
         textwrap.fill(paragraph, 72) for paragraph in about.split("\n\n")
     )
     views: list[View] = parallel_views()
-    numbers: dict[str, str] = vise_numbers(views)
+    letters: dict[str, str] = size_letters(views)
     images: str = "\n\n".join(
         f"{view.title}:\n\n"
         f"![Parallel, {view.name}]({SKETCHES}/parallel_{view.name}.svg)"
         for view in views
     )
 
-    # The sizes, by number, and the set on hand.
+    # The sizes, by letter, and the set on hand.
     meanings: dict[str, str] = _attributes(Parallel)
-    rows: list[list[str]] = _size_rows(numbers, meanings)
+    rows: list[list[str]] = _size_rows(letters, meanings)
     heights: str = textwrap.fill(
         "`tools.PARALLELS` is a set of two of each of the standard "
         "imperial heights, in inches: "
@@ -2592,20 +2603,20 @@ def grid_plate_section() -> str:
         textwrap.fill(paragraph, 72) for paragraph in about.split("\n\n")
     )
     views: list[View] = grid_plate_views()
-    numbers: dict[str, str] = vise_numbers(views)
+    letters: dict[str, str] = size_letters(views, "grid_plate")
     images: str = "\n\n".join(
         f"{view.title}:\n\n"
         f"![Grid plate, {view.name}]({SKETCHES}/grid_plate_{view.name}.svg)"
         for view in views
     )
 
-    # The sizes, by number; then the rest, and how to make one.
+    # The sizes, by letter; then the rest, and how to make one.
     meanings: dict[str, str] = _attributes(GridPlate)
-    rows: list[list[str]] = _size_rows(numbers, meanings)
+    rows: list[list[str]] = _size_rows(letters, meanings)
     others: str = "\n".join(
         textwrap.fill(f"* `{key}`: {meaning}", 72, subsequent_indent="  ")
         for key, meaning in meanings.items()
-        if key not in numbers
+        if key not in letters
     )
     python: str = (
         "from scraftcam.model_cache import ModelCache\n"
@@ -2722,20 +2733,20 @@ def main() -> None:
             sketch(page), encoding="utf-8"
         )
     views: list[View] = vise_views()
-    numbers: dict[str, str] = vise_numbers(views)
+    letters: dict[str, str] = size_letters(views)
     for view in views:
         (directory / f"machine_vise_{view.name}.svg").write_text(
-            view_sketch(view, numbers), encoding="utf-8"
+            view_sketch(view, letters), encoding="utf-8"
         )
     for prefix, views in (
         ("jaw_plate", jaw_plate_views()),
         ("parallel", parallel_views()),
         ("grid_plate", grid_plate_views()),
     ):
-        numbers = vise_numbers(views)
+        letters = size_letters(views, prefix)
         for view in views:
             (directory / f"{prefix}_{view.name}.svg").write_text(
-                view_sketch(view, numbers), encoding="utf-8"
+                view_sketch(view, letters), encoding="utf-8"
             )
 
 

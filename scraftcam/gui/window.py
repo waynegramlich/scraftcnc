@@ -48,7 +48,7 @@ from .editor import HINT, editor_command
 from .fields import shop_units
 from .port import Method, PortError, text_param
 from .tree import Node, edit_path
-from .views import Panel, TreeView, TreeWatcher
+from .views import Panel, TreeView, TreeWatcher, splitter
 
 # `PySide6` lives in `~/.scraftcam/packages/`, so it is put on
 # `sys.path` (and fetched, the first time) before it is imported.
@@ -101,8 +101,9 @@ OFFSCREEN_NOISE: str = "This plugin does not support propagateSizeHints()"
 # The least width of `NewShopDialog`'s directory, in pixels.
 DIRECTORY_WIDTH: int = 360
 
-# The tree's share of the window's width when [Tree] shows it.
-TREE_SHARE: float = 0.3
+# The most of the window's width the tree takes when it is fitted to
+# its labels (#22); the user can drag it wider.
+TREE_MOST: float = 0.5
 
 # How long `quit` waits, so its answer is sent before the GUI closes.
 QUIT_DELAY_MS: int = 200
@@ -287,14 +288,14 @@ class Window(QWidget):
         )
 
         # The tree on the left, then the panels; the first is current.
-        self.splitter: QSplitter = QSplitter(Qt.Orientation.Horizontal)
+        self.splitter: QSplitter = splitter(Qt.Orientation.Horizontal)
         self.tree: TreeView = TreeView()
         self.tree.itemClicked.connect(self.select_item)
         self.splitter.addWidget(self.tree)
         self.panels: list[Panel] = []
         self.current: int = 0
         self.add_panel()
-        tree_width: int = int(WIDTH * TREE_SHARE)
+        tree_width: int = int(WIDTH * TREE_MOST)
         self.splitter.setSizes([tree_width, WIDTH - tree_width])
 
         # The bands, top to bottom.
@@ -375,7 +376,10 @@ class Window(QWidget):
                 for root in (model.shop_root, model.design_root)
                 if root is not None
             ]
+            first: bool = self.tree.version < 0
             self.tree.fill(roots, model.tree_version)
+            if first:
+                self.fit_tree()
             panel: Panel
             for panel in self.panels:
                 if panel.node is not None:
@@ -388,15 +392,21 @@ class Window(QWidget):
 
     def toggle_tree(self) -> None:
         """Show the tree if it is hidden, or hide it ([Tree])."""
-        # Hide it; or show it, `TREE_SHARE` of the width, never squeezed
-        # to nothing by the splitter.
+        # Hide it; or show it, fitted to its labels.
         if not self.tree.isHidden():
             self.tree.hide()
             return
         self.tree.show()
+        self.fit_tree()
+
+    def fit_tree(self) -> None:
+        """Make the tree as wide as its labels; the panels share the rest.
+
+        No more than `TREE_MOST` of the width (#22).
+        """
         sizes: list[int] = self.splitter.sizes()
-        total: int = sum(sizes)
-        tree_width: int = int(total * TREE_SHARE)
+        total: int = sum(sizes) or WIDTH
+        tree_width: int = min(self.tree.wanted_width(), int(total * TREE_MOST))
         rest: int = max(1, len(sizes) - 1)
         self.splitter.setSizes(
             [tree_width] + [(total - tree_width) // rest] * (len(sizes) - 1)

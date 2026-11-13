@@ -19,7 +19,7 @@
   <line x1="97.5" y1="-0.0" x2="97.5" y2="-250.0" stroke="#222222" stroke-width="1" />
   <polygon points="97.5,-0.0 100.5,-9.0 94.5,-9.0" fill="#222222" />
   <polygon points="97.5,-250.0 100.5,-241.0 94.5,-241.0" fill="#222222" />
-  <text x="111.5" y="-118.7" font-family="sans-serif" font-size="18" font-weight="bold" text-anchor="middle" fill="#222222">L</text>
+  <text x="111.5" y="-118.7" font-family="sans-serif" font-size="18" font-weight="bold" text-anchor="middle" fill="#222222">O</text>
   <line x1="37.5" y1="-0.0" x2="19.8" y2="-17.7" stroke="#222222" stroke-width="1" />
   <polygon points="19.8,-17.7 24.1,-9.2 28.3,-13.4" fill="#222222" />
   <text x="47.5" y="-4.7" font-family="sans-serif" font-size="18" font-weight="bold" text-anchor="middle" fill="#222222">R</text>

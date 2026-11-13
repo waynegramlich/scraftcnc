@@ -11,23 +11,23 @@
   <line x1="-300.0" y1="70.0" x2="300.0" y2="70.0" stroke="#222222" stroke-width="1" />
   <polygon points="-300.0,70.0 -291.0,67.0 -291.0,73.0" fill="#222222" />
   <polygon points="300.0,70.0 291.0,67.0 291.0,73.0" fill="#222222" />
-  <text x="0.0" y="90.3" font-family="sans-serif" font-size="18" font-weight="bold" text-anchor="middle" fill="#222222">1</text>
+  <text x="0.0" y="90.3" font-family="sans-serif" font-size="18" font-weight="bold" text-anchor="middle" fill="#222222">L</text>
   <line x1="-150.0" y1="-37.5" x2="-150.0" y2="34.5" stroke="#222222" stroke-width="1" />
   <line x1="150.0" y1="-37.5" x2="150.0" y2="34.5" stroke="#222222" stroke-width="1" />
   <line x1="-150.0" y1="30.0" x2="150.0" y2="30.0" stroke="#222222" stroke-width="1" />
   <polygon points="-150.0,30.0 -141.0,27.0 -141.0,33.0" fill="#222222" />
   <polygon points="150.0,30.0 141.0,27.0 141.0,33.0" fill="#222222" />
-  <text x="0.0" y="50.3" font-family="sans-serif" font-size="18" font-weight="bold" text-anchor="middle" fill="#222222">2</text>
+  <text x="0.0" y="50.3" font-family="sans-serif" font-size="18" font-weight="bold" text-anchor="middle" fill="#222222">Hs</text>
   <line x1="-300.0" y1="-0.0" x2="-334.5" y2="-0.0" stroke="#222222" stroke-width="1" />
   <line x1="-300.0" y1="-75.0" x2="-334.5" y2="-75.0" stroke="#222222" stroke-width="1" />
   <line x1="-330.0" y1="-0.0" x2="-330.0" y2="-75.0" stroke="#222222" stroke-width="1" />
   <polygon points="-330.0,-0.0 -327.0,-9.0 -333.0,-9.0" fill="#222222" />
   <polygon points="-330.0,-75.0 -327.0,-66.0 -333.0,-66.0" fill="#222222" />
-  <text x="-344.0" y="-31.2" font-family="sans-serif" font-size="18" font-weight="bold" text-anchor="middle" fill="#222222">3</text>
+  <text x="-344.0" y="-31.2" font-family="sans-serif" font-size="18" font-weight="bold" text-anchor="middle" fill="#222222">H</text>
   <line x1="131.2" y1="-37.5" x2="131.2" y2="-109.5" stroke="#222222" stroke-width="1" />
   <line x1="168.7" y1="-37.5" x2="168.7" y2="-109.5" stroke="#222222" stroke-width="1" />
   <line x1="131.2" y1="-105.0" x2="168.7" y2="-105.0" stroke="#222222" stroke-width="1" />
   <polygon points="131.2,-105.0 140.2,-108.0 140.2,-102.0" fill="#222222" />
   <polygon points="168.7,-105.0 159.7,-108.0 159.7,-102.0" fill="#222222" />
-  <text x="150.0" y="-112.7" font-family="sans-serif" font-size="18" font-weight="bold" text-anchor="middle" fill="#222222">4</text>
+  <text x="150.0" y="-112.7" font-family="sans-serif" font-size="18" font-weight="bold" text-anchor="middle" fill="#222222">Hd</text>
 </svg>

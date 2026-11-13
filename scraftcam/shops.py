@@ -174,7 +174,8 @@ class TableField:  # pylint: disable=too-many-instance-attributes
       True if `choices` are only the common ones, so that a string
       ending in `!` is taken without a check (`"HSK63!"`).
     * `letter` (`str`):
-      The letter (`A` to `Z`) of a size on the sketches in
+      The letter (a capital, perhaps with lower case letters after
+      it, from `dimension_letters()`) of a size on the sketches in
       `Tool_Models.md`, or `""`; a letter means the same size on every
       sketch.
 
@@ -208,8 +209,10 @@ class TableField:  # pylint: disable=too-many-instance-attributes
             raise ValueError(f"{self.key}: `choices` is only for choices")
         if self.form == "choice_list" and self.open:
             raise ValueError(f"{self.key}: a `choice_list` is never open")
-        if self.letter and not re.fullmatch("[A-Z]", self.letter):
-            raise ValueError(f"{self.key}: `letter` is one of `A` to `Z`")
+        if self.letter and not re.fullmatch("[A-Z][a-z]{0,3}", self.letter):
+            raise ValueError(
+                f"{self.key}: `letter` is a capital and at most 3 lower case"
+            )
 
     # Method `TableField.shown()`:
     def shown(self) -> str:
@@ -428,7 +431,7 @@ def _tool_fields(*special: TableField) -> tuple[TableField, ...]:
             "length",
             "Its whole length (OAL).",
             True,
-            letter="L",
+            letter="O",
         ),
         TableField(
             "holder",
@@ -483,7 +486,7 @@ def _size_fields(*, length_of_cut: bool = True) -> tuple[TableField, ...]:
             "length",
             "How deep it can cut (LOC).",
             True,
-            letter="C",
+            letter="L",
         ),
     )
 
@@ -502,14 +505,14 @@ def _countersink_fields() -> tuple[TableField, ...]:
             "length",
             "The diameter of the small drill at its tip.",
             True,
-            letter="E",
+            letter="Dd",
         ),
         TableField(
             "drill_length",
             "length",
             "How far the small drill reaches from its tip (its diameter "
             "if not given).",
-            letter="G",
+            letter="Dl",
         ),
         TableField(
             "angle",
@@ -1071,7 +1074,7 @@ material = "HSS"
                     "corner_radius",
                     "length",
                     "A bull nose's corners.",
-                    letter="B",
+                    letter="C",
                 ),
                 TableField(
                     "center_cutting",
@@ -1123,7 +1126,7 @@ acquired = 2026-10-27
                     "length",
                     "How far its shank comes down from its top; if not "
                     "given, a `shank` starts where its flutes stop.",
-                    letter="K",
+                    letter="Sl",
                 ),
                 TableField(
                     "split_point", "boolean", "True if it has a split point."
@@ -1278,7 +1281,7 @@ vendor_pn = "417-1112"
                     "neck_length",
                     "length",
                     "The neck's length (L3), from the shank to the cutter.",
-                    letter="M",
+                    letter="Nl",
                 ),
                 TableField("flutes", "integer", "How many flutes."),
             ),
@@ -1376,42 +1379,60 @@ hole_diameter = "0.144 in"
                 TableField(
                     "description", "string", "What it is, in a few words."
                 ),
-                TableField("length", "length", "Its size along X.", True),
-                TableField("width", "length", "Its size along Y.", True),
+                TableField(
+                    "length",
+                    "length",
+                    "Its size along X.",
+                    True,
+                    letter="L",
+                ),
+                TableField(
+                    "width",
+                    "length",
+                    "Its size along Y.",
+                    True,
+                    letter="W",
+                ),
                 TableField(
                     "height",
                     "length",
                     "Its size along Z, its thickness.",
                     True,
+                    letter="H",
                 ),
                 TableField(
                     "pitch",
                     "length",
                     "The distance between grid holes, along X and Y.",
                     True,
+                    letter="P",
                 ),
                 TableField(
                     "edge",
                     "length",
                     "The distance from a side to the nearest holes.",
                     True,
+                    letter="E",
                 ),
                 TableField(
                     "hole_diameter",
                     "length",
                     "The diameter of the grid's holes.",
                     True,
+                    letter="Hd",
                 ),
                 TableField(
                     "corner_radius",
                     "length",
                     "The radius of its four corners (square if not given).",
+                    letter="C",
                 ),
                 TableField(
                     "chamfer_depth",
                     "length",
                     "How deep the 45 degree chamfer on each grid hole's top "
                     "edge is (none if not given).",
+                    letter="Cd",
                 ),
                 TableField(
                     "tooling_columns",
@@ -1429,17 +1450,20 @@ hole_diameter = "0.144 in"
                     "tooling_pitch",
                     "length",
                     "The distance between tooling holes, along X and Y.",
+                    letter="T",
                 ),
                 TableField(
                     "tap_diameter",
                     "length",
                     "The diameter of the tooling holes to be threaded (the "
                     "tap drill).",
+                    letter="Td",
                 ),
                 TableField(
                     "close_diameter",
                     "length",
                     "The diameter of the close fit tooling holes.",
+                    letter="Cl",
                 ),
                 TableField("manufacturer", "string", "Who made it."),
                 TableField("vendor", "string", "Who sold it."),
@@ -2673,6 +2697,121 @@ class _Reader:  # pylint: disable=too-many-instance-attributes
                 )
             else:
                 first[name] = (source, path)
+
+
+# Function `dimension_letters()`:
+def dimension_letters(keys: list[str]) -> dict[str, str]:
+    """Return the letters that label sizes on a sketch.
+
+    `T.osiade~5.1.9` #20: a size's letter is the first letter of its
+    name, in capitals (`free_letters()`).  A size of a part
+    (`part.size`, #26) is the part's letters and then the size's,
+    lower case (`base.width` is `Bw`); a part named after another
+    part and more words takes that part's letters and the other
+    words' initials (`body_notches` is `Bon` when `body` is `Bo`).
+
+    Arguments:
+    * `keys` (`list[str]`): The sizes' names (`snake_case`, a part's
+      size `part.size`).
+
+    Returns:
+    * (`dict[str, str]`): Each name's letter (or letters).
+    """
+    # The parts, and their letters: the plain parts first, then those
+    # named after another.
+    parts: list[str] = list(
+        dict.fromkeys(key.split(".")[0] for key in keys if "." in key)
+    )
+    plain_parts: list[str] = [
+        part
+        for part in parts
+        if not any(part.startswith(f"{other}_") for other in parts)
+    ]
+    letters: dict[str, str] = free_letters(plain_parts, set())
+    part: str
+    for part in parts:
+        if part not in letters:
+            parent: str = next(
+                other for other in plain_parts if part.startswith(f"{other}_")
+            )
+            rest: list[str] = part[len(parent) + 1 :].split("_")
+            letters[part] = letters[parent] + "".join(
+                word[0] for word in rest if word
+            )
+
+    # The plain sizes, avoiding the parts' letters; then each part's.
+    plain: list[str] = [key for key in keys if "." not in key]
+    letters.update(free_letters(plain, set(letters.values())))
+    for part in parts:
+        sizes: list[str] = [
+            key.split(".", 1)[1]
+            for key in keys
+            if key.split(".", 1)[0] == part and "." in key
+        ]
+        size: str
+        letter: str
+        for size, letter in free_letters(sizes, set()).items():
+            letters[f"{part}.{size}"] = letters[part] + letter.lower()
+    return {key: letters[key] for key in keys}
+
+
+# Function `free_letters()`:
+def free_letters(keys: list[str], taken: set[str]) -> dict[str, str]:
+    """Return the letters of names, none of them already taken.
+
+    A name's letter is its first letter, in capitals.  When it is
+    taken, a second letter, lower case, is added: the first letters of
+    the name's other words (`drill_length` is `Dl`), then its other
+    letters, in order, until one is free; three letters if two will
+    not do.  A name of fewer words chooses first (`shank` is `S`, so
+    `shank_length` is `Sl`); among equals, the earlier one.
+
+    Arguments:
+    * `keys` (`list[str]`): The names (`snake_case`).
+    * `taken` (`set[str]`): Letters that must not be used.
+
+    Returns:
+    * (`dict[str, str]`): Each name's letter (or letters).
+    """
+    letters: dict[str, str] = {}
+    used: set[str] = set(taken)
+    split: dict[str, list[str]] = {
+        key: [word for word in key.lower().split("_") if word] for key in keys
+    }
+
+    # Function `word_count()`:
+    def word_count(name: str) -> int:
+        """Return how many words a name has (fewer choose first)."""
+        return len(split[name])
+
+    key: str
+    for key in sorted(keys, key=word_count):
+        # The name's words, its other letters, then the candidates.
+        words: list[str] = split[key]
+        first: str = words[0][0].upper()
+        initials: list[str] = [word[0] for word in words[1:]]
+        others: list[str] = [
+            char for char in "".join(words)[1:] if char.isalpha()
+        ]
+        seconds: list[str] = list(dict.fromkeys(initials + others))
+        candidates: list[str] = [first] + [
+            first + second for second in seconds
+        ]
+        candidates += [
+            first + second + third
+            for second in seconds
+            for third in seconds
+            if third != second
+        ]
+
+        # The first free one.
+        letter: str = next(
+            (candidate for candidate in candidates if candidate not in used),
+            key,
+        )
+        letters[key] = letter
+        used.add(letter)
+    return {key: letters[key] for key in keys}
 
 
 # Function `scalar_problem()`:

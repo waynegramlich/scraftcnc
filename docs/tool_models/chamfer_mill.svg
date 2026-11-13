@@ -25,7 +25,7 @@
   <line x1="55.0" y1="-0.0" x2="55.0" y2="-200.0" stroke="#222222" stroke-width="1" />
   <polygon points="55.0,-0.0 58.0,-9.0 52.0,-9.0" fill="#222222" />
   <polygon points="55.0,-200.0 58.0,-191.0 52.0,-191.0" fill="#222222" />
-  <text x="69.0" y="-93.7" font-family="sans-serif" font-size="18" font-weight="bold" text-anchor="middle" fill="#222222">L</text>
+  <text x="69.0" y="-93.7" font-family="sans-serif" font-size="18" font-weight="bold" text-anchor="middle" fill="#222222">O</text>
   <path d="M 18.4 -5.9 A 26.0 26.0 0 0 0 -18.4 -5.9" fill="none" stroke="#222222" stroke-width="1" />
   <polygon points="18.4,-5.9 12.3,-13.7 9.8,-8.3" fill="#222222" />
   <polygon points="-18.4,-5.9 -12.3,-13.7 -9.8,-8.3" fill="#222222" />

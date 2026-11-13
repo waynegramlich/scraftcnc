@@ -12,11 +12,11 @@
   <line x1="330.0" y1="-0.0" x2="330.0" y2="-72.5" stroke="#222222" stroke-width="1" />
   <polygon points="330.0,-0.0 333.0,-9.0 327.0,-9.0" fill="#222222" />
   <polygon points="330.0,-72.5 333.0,-63.5 327.0,-63.5" fill="#222222" />
-  <text x="344.0" y="-29.9" font-family="sans-serif" font-size="18" font-weight="bold" text-anchor="middle" fill="#222222">1</text>
+  <text x="344.0" y="-29.9" font-family="sans-serif" font-size="18" font-weight="bold" text-anchor="middle" fill="#222222">L</text>
   <line x1="-300.0" y1="-0.0" x2="-334.5" y2="-0.0" stroke="#222222" stroke-width="1" />
   <line x1="-233.1" y1="-53.1" x2="-334.5" y2="-53.1" stroke="#222222" stroke-width="1" />
   <line x1="-330.0" y1="-0.0" x2="-330.0" y2="-53.1" stroke="#222222" stroke-width="1" />
   <polygon points="-330.0,-0.0 -327.0,-9.0 -333.0,-9.0" fill="#222222" />
   <polygon points="-330.0,-53.1 -327.0,-44.1 -333.0,-44.1" fill="#222222" />
-  <text x="-344.0" y="-20.3" font-family="sans-serif" font-size="18" font-weight="bold" text-anchor="middle" fill="#222222">2</text>
+  <text x="-344.0" y="-20.3" font-family="sans-serif" font-size="18" font-weight="bold" text-anchor="middle" fill="#222222">C</text>
 </svg>

@@ -154,3 +154,76 @@ From the log before the trim (`hg` rev 695):
   `Tool_Models.md`; details to come.
 * Next (#14): a tool item shows its existing SVG beside its field
   rows, with no new drawing code.
+
+## 2026-11-13: #14 done, waiting on the user's GUI run
+
+* `fields.sketch(item)` returns `docs/tool_models/KIND.svg`, or the
+  first `KIND_*.svg` (grid plate: its section), or `None`;
+  `fields.SKETCHES` is that directory, outside the package (to move
+  inside before PyPI, #54).
+* `views.Panel.sketch` (`QSvgWidget`, aspect kept) sits right of the
+  field rows (2:1), hidden for kinds with no sketch.
+* `tests/test_gui_fields.py`: 6 tests pass; checkers clean.
+
+## 2026-11-13: The user's look at #14; #18-#25 decided
+
+* #18: grid plate (and every sketch) labels are letters, not numbers.
+* #19: a field row reads `length (L)`, from `TableField.letter`.
+* #20: letters follow the names' first letters; when two fields
+  share one, the next is the next letter, lower case (e.g. `Ch`?).
+* #21: a tool's tree label is its function and key sizes, e.g.
+  `End mill (1/2in 2-flute HSS)` (no space in `1/2in`), from its
+  fields; the tree sorts by label.
+* #22: fixed by #25.
+* #23: `stock_materials/` (what is machined) and `tool_materials/`
+  (carbide, cobalt, HSS: speed factors); tools name theirs.
+* #24: follow the desktop's light/dark (`QStyleHints.colorScheme()`),
+  no hard-coded colors, sketches recolored; the user reports what
+  does not work.
+* #25: `QSplitter` between the tree and the panels and between
+  panels.
+* Order: #25, #19, #18+#20, #21, #24, #23.
+
+## 2026-11-13: #25 and #22 done (offscreen look)
+
+* `views.splitter()`: 5 px handles in `palette(mid)`, not
+  collapsible; used by the window (tree | panels) and inside each
+  `Panel` (`top`: fields | sketch; `split`: those above the text),
+  starting 2:1 (`SHARES`).
+* `Window.fit_tree()` (first fill and [Tree]): the tree as wide as
+  its open labels (`TreeView.wanted_width()`), at most `TREE_MOST`
+  (half) of the width; `TREE_SHARE` is gone.
+* Next: #19 (`length (L)`).
+
+## 2026-11-13: #19 done; #20's rule coded, not yet used
+
+* #19: `views.Panel.fill_rows()` labels a lettered row `key (L)`.
+* #20: `shops.dimension_letters(keys)`: first letter, capital; taken
+  -> plus a lower case letter: the other words' initials, then the
+  other letters; three if needed; fewer-word names choose first.
+  Cutters and grid plate come out well (`shank` S, `shank_length`
+  Sl, `drill_diameter` Dd); the vise's 35 sizes are a jumble of B's
+  (asked the user).  Not yet wired into `KINDS` letters or
+  `tool_models.vise_numbers()`; the SVGs not regenerated.
+
+## 2026-11-13: #18, #20, #26 done (option 2 for the vise)
+
+* `shops.dimension_letters(keys)`: plain names by `free_letters()`
+  (first letter; taken -> plus the other words' initials, then the
+  other letters, lower case; fewer words choose first, then the
+  earlier); `part.size` -> the part's letters plus the size's, lower
+  case; a part named after a part takes its letters plus the other
+  words' initials (`body_notches` `Bon`).
+* `KINDS` letters follow it (`overall_length` O, `length_of_cut` L,
+  `corner_radius` C, `shank_length` Sl, `drill_diameter` Dd,
+  `drill_length` Dl, `neck_length` Nl); `grid_plate` fields now
+  lettered (chamfer_depth Cd, close_diameter Cl, ...);
+  `TableField.letter` allows a capital and up to 3 lower case.
+* `tool_models.size_letters(views, kind)` replaces `vise_numbers()`;
+  a kind in `KINDS` uses its fields' letters.  SVGs and
+  `Tool_Models.md` regenerated.
+* `tests/test_tool_models.py`: letters test rewritten (a key has one
+  letter in every kind; a kind's follow the rule), rule test added;
+  passes with `test_gui_fields`.
+* #27: the mill's name "Mikini mill" was the user's test; reverted to
+  "Shop mill"; `tests.test_shops` passes.

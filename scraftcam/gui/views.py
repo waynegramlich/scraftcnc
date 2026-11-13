@@ -6,8 +6,9 @@
   roots open one level (#128); when the tree is read again, what was
   open stays open.
 * `Panel`: shows one item (#122): a shop file's plain fields, one
-  row each, edited in place (S3.4, `fields.py`), with the rest of it
-  as TOML, read only; another TOML file's text; a Python file's or
+  row each, edited in place (S3.4, `fields.py`), with its kind's
+  sketch from `Tool_Models.md` to the right (#5, #14), and the rest
+  of it as TOML, read only; another TOML file's text; a Python file's or
   package's top docstring (#74), or the problem for an item that does
   not read cleanly, both wrapped.
 * `TreeWatcher`: reads the trees again whenever a file or directory
@@ -27,6 +28,7 @@ from .fields import (
     read_item,
     rest_text,
     rows,
+    sketch,
     with_value,
     write_item,
 )
@@ -45,6 +47,7 @@ from PySide6.QtCore import (  # noqa: E402
     Signal,
 )
 from PySide6.QtGui import QBrush, QColor  # noqa: E402
+from PySide6.QtSvgWidgets import QSvgWidget  # noqa: E402
 from PySide6.QtWidgets import (  # noqa: E402
     QFrame,
     QGridLayout,
@@ -52,6 +55,7 @@ from PySide6.QtWidgets import (  # noqa: E402
     QLineEdit,
     QPlainTextEdit,
     QScrollArea,
+    QSplitter,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -59,6 +63,15 @@ from PySide6.QtWidgets import (  # noqa: E402
 )
 
 # pylint: enable=wrong-import-position,wrong-import-order
+
+# A splitter's handle: wide enough to see and grab, in the palette's
+# colors, so it shows in light and dark mode alike (#25).
+HANDLE_WIDTH: int = 5
+HANDLE_STYLE: str = "QSplitter::handle { background: palette(mid); }"
+
+# A panel's splitters start 2:1: the field rows wider than the sketch,
+# and taller than the text (Qt scales these to the room there is).
+SHARES: list[int] = [2000, 1000]
 
 # The color of an item, or a panel's text, that does not read cleanly.
 ERROR_COLOR: str = "#c00000"
@@ -121,6 +134,10 @@ class Panel(QFrame):  # pylint: disable=too-many-instance-attributes
     * `rows` (`list[Row]`): Its plain fields.
     * `shown` (`dict[str, QLabel]`): Each measurement's value in the
       shop's units, by key.
+    * `sketch` (`QSvgWidget`): The item's kind's sketch, hidden when
+      it has none.
+    * `split` (`QSplitter`): The field rows above the text.
+    * `top` (`QSplitter`): The field rows left of the sketch.
     * `units` (`str`): The shop's units.
     * `written` (`str`): The text last written, so that the file
       watcher's redraw does not rebuild the rows under the cursor.
@@ -147,14 +164,33 @@ class Panel(QFrame):  # pylint: disable=too-many-instance-attributes
         self.fields: QScrollArea = QScrollArea()
         self.fields.setWidgetResizable(True)
         self.fields.hide()
+        self.sketch: QSvgWidget = QSvgWidget()
+        self.sketch.renderer().setAspectRatioMode(
+            Qt.AspectRatioMode.KeepAspectRatio
+        )
+        self.sketch.hide()
         self.text: QPlainTextEdit = QPlainTextEdit()
         self.text.setReadOnly(True)
         self.text.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
         layout: QVBoxLayout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
         layout.addWidget(self.title)
-        layout.addWidget(self.fields, 2)
-        layout.addWidget(self.text, 1)
+
+        # The field rows, with the sketch to their right, above the
+        # text; the user drags the lines between them (#25).
+        self.top: QSplitter = splitter(Qt.Orientation.Horizontal)
+        self.top.addWidget(self.fields)
+        self.top.addWidget(self.sketch)
+        self.top.setStretchFactor(0, 2)
+        self.top.setStretchFactor(1, 1)
+        self.top.setSizes(SHARES)
+        self.split: QSplitter = splitter(Qt.Orientation.Vertical)
+        self.split.addWidget(self.top)
+        self.split.addWidget(self.text)
+        self.split.setStretchFactor(0, 2)
+        self.split.setStretchFactor(1, 1)
+        self.split.setSizes(SHARES)
+        layout.addWidget(self.split, 1)
         self.text.viewport().installEventFilter(self)
         self.set_current(False)
 
@@ -236,6 +272,10 @@ class Panel(QFrame):  # pylint: disable=too-many-instance-attributes
         if node.kind in (SHOP, FILE) and node.path.suffix == ".toml":
             self.item = read_item(node.path)[0]
             self.rows = rows(self.item, units)
+        svg: Path | None = sketch(self.item) if self.rows else None
+        self.sketch.setVisible(svg is not None)
+        if svg is not None:
+            self.sketch.load(str(svg))
         if not self.rows:
             self.fields.hide()
             self.text.show()
@@ -257,7 +297,8 @@ class Panel(QFrame):  # pylint: disable=too-many-instance-attributes
         row: Row
         for number, row in enumerate(self.rows):
             key: str = row.schema.key
-            label: QLabel = QLabel(key)
+            letter: str = row.schema.letter
+            label: QLabel = QLabel(f"{key} ({letter})" if letter else key)
             label.setToolTip(row.schema.meaning)
             entry: QLineEdit | QPlainTextEdit
             if key == "notes":
@@ -345,6 +386,24 @@ class Panel(QFrame):  # pylint: disable=too-many-instance-attributes
         self.item = changed
 
 
+# Function `splitter()`:
+def splitter(orientation: Qt.Orientation) -> QSplitter:
+    """Return an empty splitter whose handles can be seen and dragged.
+
+    Arguments:
+    * `orientation` (`Qt.Orientation`): `Horizontal` puts its parts
+      side by side; `Vertical`, one above another.
+
+    Returns:
+    * (`QSplitter`): The splitter.
+    """
+    made: QSplitter = QSplitter(orientation)
+    made.setHandleWidth(HANDLE_WIDTH)
+    made.setStyleSheet(HANDLE_STYLE)
+    made.setChildrenCollapsible(False)
+    return made
+
+
 # Class `TreeView`:
 class TreeView(QTreeWidget):
     """The one tree: the shop's and the design's files.
@@ -360,6 +419,19 @@ class TreeView(QTreeWidget):
         self.setHeaderHidden(True)
         self.nodes: dict[str, Node] = {}
         self.version: int = -1
+
+    def wanted_width(self) -> int:
+        """Return the width that shows the open items' labels whole.
+
+        Returns:
+        * (`int`): The width, in pixels, with no space to spare (#22).
+        """
+        self.resizeColumnToContents(0)
+        return (
+            self.columnWidth(0)
+            + 2 * self.frameWidth()
+            + self.verticalScrollBar().sizeHint().width()
+        )
 
     def fill(self, roots: list[Node], version: int) -> None:
         """Show the trees, keeping open what was open.

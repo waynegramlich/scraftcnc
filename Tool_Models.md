@@ -192,10 +192,10 @@ corners), and perhaps a rougher.
 
 | Letter | Units  | Description                                               |
 | ------ | ------ | --------------------------------------------------------- |
-| `B`    | Length | `corner_radius`: Optional. A bull nose's corners.         |
-| `C`    | Length | `length_of_cut`: How deep it can cut (LOC).               |
+| `C`    | Length | `corner_radius`: Optional. A bull nose's corners.         |
 | `D`    | Length | `diameter`: The cutting diameter.                         |
-| `L`    | Length | `overall_length`: Its whole length (OAL).                 |
+| `L`    | Length | `length_of_cut`: How deep it can cut (LOC).               |
+| `O`    | Length | `overall_length`: Its whole length (OAL).                 |
 | `S`    | Length | `shank`: Optional. The shank diameter, if not `diameter`. |
 
 Other keys:
@@ -274,14 +274,14 @@ A twist drill.
 
 | Letter | Units  | Description                                               |
 | ------ | ------ | --------------------------------------------------------- |
-| `C`    | Length | `length_of_cut`: How deep it can cut (LOC).               |
 | `D`    | Length | `diameter`: The cutting diameter.                         |
-| `K`    | Length | `shank_length`: Optional. How far its shank comes down    |
-|        |        | from its top; if not given, a `shank` starts where its    |
-|        |        | flutes stop.                                              |
-| `L`    | Length | `overall_length`: Its whole length (OAL).                 |
+| `L`    | Length | `length_of_cut`: How deep it can cut (LOC).               |
+| `O`    | Length | `overall_length`: Its whole length (OAL).                 |
 | `P`    | Angle  | `point_angle`: The included angle.                        |
 | `S`    | Length | `shank`: Optional. The shank diameter, if not `diameter`. |
+| `Sl`   | Length | `shank_length`: Optional. How far its shank comes down    |
+|        |        | from its top; if not given, a `shank` starts where its    |
+|        |        | flutes stop.                                              |
 
 Other keys:
 
@@ -357,7 +357,7 @@ A chamfer mill (a V-bit), which bevels top edges.
 | ------ | ------ | --------------------------------------------------------- |
 | `A`    | Angle  | `angle`: The included angle (90 deg makes 45 deg bevels). |
 | `D`    | Length | `diameter`: The cutting diameter.                         |
-| `L`    | Length | `overall_length`: Its whole length (OAL).                 |
+| `O`    | Length | `overall_length`: Its whole length (OAL).                 |
 | `S`    | Length | `shank`: Optional. The shank diameter, if not `diameter`. |
 | `T`    | Length | `tip_diameter`: The diameter at its tip.                  |
 
@@ -431,7 +431,7 @@ tip (a pilot) rides along the wall below.
 
 | Letter | Units  | Description                                               |
 | ------ | ------ | --------------------------------------------------------- |
-| `L`    | Length | `overall_length`: Its whole length (OAL).                 |
+| `O`    | Length | `overall_length`: Its whole length (OAL).                 |
 | `R`    | Length | `radius`: The radius it rounds edges to.                  |
 | `S`    | Length | `shank`: Optional. The shank diameter, if not `diameter`. |
 | `T`    | Length | `tip_diameter`: The diameter at its tip.                  |
@@ -506,10 +506,10 @@ chamfering) as well as top ones.
 | ------ | ------ | --------------------------------------------------------- |
 | `A`    | Angle  | `angle`: The included angle of the two cones together.    |
 | `D`    | Length | `diameter`: The cutting diameter.                         |
-| `L`    | Length | `overall_length`: Its whole length (OAL).                 |
-| `M`    | Length | `neck_length`: Optional. The neck's length (L3), from the |
-|        |        | shank to the cutter.                                      |
 | `N`    | Length | `neck_diameter`: Optional. The neck's diameter.           |
+| `Nl`   | Length | `neck_length`: Optional. The neck's length (L3), from the |
+|        |        | shank to the cutter.                                      |
+| `O`    | Length | `overall_length`: Its whole length (OAL).                 |
 | `S`    | Length | `shank`: Optional. The shank diameter, if not `diameter`. |
 | `W`    | Length | `width`: The height of the cutter (L2), point to point.   |
 
@@ -591,11 +591,11 @@ joined to its body by a cone.  It can not go in a `tool_table` yet.
 | ------ | ------ | --------------------------------------------------------- |
 | `A`    | Angle  | `angle`: The countersink's included angle.                |
 | `D`    | Length | `diameter`: The cutting diameter.                         |
-| `E`    | Length | `drill_diameter`: The diameter of the small drill at its  |
+| `Dd`   | Length | `drill_diameter`: The diameter of the small drill at its  |
 |        |        | tip.                                                      |
-| `G`    | Length | `drill_length`: Optional. How far the small drill reaches |
+| `Dl`   | Length | `drill_length`: Optional. How far the small drill reaches |
 |        |        | from its tip (its diameter if not given).                 |
-| `L`    | Length | `overall_length`: Its whole length (OAL).                 |
+| `O`    | Length | `overall_length`: Its whole length (OAL).                 |
 | `P`    | Angle  | `point_angle`: Optional. The included angle of the small  |
 |        |        | drill's point (90 deg if not given).                      |
 | `S`    | Length | `shank`: Optional. The shank diameter, if not `diameter`. |
@@ -679,11 +679,11 @@ in a `tool_table` yet.
 | ------ | ------ | --------------------------------------------------------- |
 | `A`    | Angle  | `angle`: The countersink's included angle.                |
 | `D`    | Length | `diameter`: The cutting diameter.                         |
-| `E`    | Length | `drill_diameter`: The diameter of the small drill at its  |
+| `Dd`   | Length | `drill_diameter`: The diameter of the small drill at its  |
 |        |        | tip.                                                      |
-| `G`    | Length | `drill_length`: Optional. How far the small drill reaches |
+| `Dl`   | Length | `drill_length`: Optional. How far the small drill reaches |
 |        |        | from its tip (its diameter if not given).                 |
-| `L`    | Length | `overall_length`: Its whole length (OAL).                 |
+| `O`    | Length | `overall_length`: Its whole length (OAL).                 |
 | `P`    | Angle  | `point_angle`: Optional. The included angle of the small  |
 |        |        | drill's point (90 deg if not given).                      |
 
@@ -797,74 +797,74 @@ Side (from -Y):
 
 ![Machine vise, side](docs/tool_models/machine_vise_side.svg)
 
-| Number | Units   | Description                                              |
+| Letter | Units   | Description                                              |
 | ------ | ------- | -------------------------------------------------------- |
-| 1      | Length  | `fixed_jaw.length`: The jaw that stays put: its size     |
+| Fl     | Length  | `fixed_jaw.length`: The jaw that stays put: its size     |
 |        |         | along X, the lead screw's direction.                     |
-| 2      | Length  | `max_opening`: The largest gap between the jaw plates.   |
-| 3      | Length  | `movable_jaw.length`: The jaw that the lead screw moves: |
+| Mo     | Length  | `max_opening`: The largest gap between the jaw plates.   |
+| Ml     | Length  | `movable_jaw.length`: The jaw that the lead screw moves: |
 |        |         | its size along X, the lead screw's direction.            |
-| 4      | Length  | `lead_screw_stick_out`: How far the lead screw's         |
+| Lo     | Length  | `lead_screw_stick_out`: How far the lead screw's         |
 |        |         | cylinder reaches past the body's +X end.                 |
-| 5      | Length  | `hex_length`: The hexagon's size along X.                |
-| 6      | Length  | `base.length`: The bottom layer: its size along X, the   |
+| H      | Length  | `hex_length`: The hexagon's size along X.                |
+| Bl     | Length  | `base.length`: The bottom layer: its size along X, the   |
 |        |         | lead screw's direction.                                  |
-| 7      | Length  | `body_notches.width`: The notches in the body, at the    |
+| Bonw   | Length  | `body_notches.width`: The notches in the body, at the    |
 |        |         | same places but bigger: a notch's size along X.          |
-| 8      | Length  | `base_notches.width`: The notches in the base: a notch's |
+| Bnw    | Length  | `base_notches.width`: The notches in the base: a notch's |
 |        |         | size along X.                                            |
-| 9      | Length  | `end_block_length`: An end block's size along X.         |
-| 10     | Lengths | `body_notches.centers`: The notches in the body, at the  |
+| E      | Length  | `end_block_length`: An end block's size along X.         |
+| Bonc   | Lengths | `body_notches.centers`: The notches in the body, at the  |
 |        |         | same places but bigger: the X of each notch's center     |
 |        |         | (X1, X2, ...), from the block's center, from most        |
 |        |         | negative up. Empty, the sides are plain.                 |
-| 11     | Lengths | `base_notches.centers`: The notches in the base: the X   |
+| Bnc    | Lengths | `base_notches.centers`: The notches in the base: the X   |
 |        |         | of each notch's center (X1, X2, ...), from the block's   |
 |        |         | center, from most negative up. Empty, the sides are      |
 |        |         | plain.                                                   |
-| 12     | Length  | `body.length`: The layer on the base: its size along X,  |
+| Bol    | Length  | `body.length`: The layer on the base: its size along X,  |
 |        |         | the lead screw's direction.                              |
-| 13     | Length  | `base_notches.depth`: The notches in the base: how far a |
+| Bnd    | Length  | `base_notches.depth`: The notches in the base: how far a |
 |        |         | notch reaches in from the side.                          |
-| 14     | Length  | `body_notches.depth`: The notches in the body, at the    |
+| Bond   | Length  | `body_notches.depth`: The notches in the body, at the    |
 |        |         | same places but bigger: how far a notch reaches in from  |
 |        |         | the side.                                                |
-| 15     | Length  | `rail_width`: A bed rail's size along Y.                 |
-| 16     | Length  | `rail_gap`: The distance between the rails.              |
-| 17     | Length  | `fixed_jaw.width`: The jaw that stays put: its size      |
+| R      | Length  | `rail_width`: A bed rail's size along Y.                 |
+| Rg     | Length  | `rail_gap`: The distance between the rails.              |
+| Fw     | Length  | `fixed_jaw.width`: The jaw that stays put: its size      |
 |        |         | along Y.                                                 |
-| 18     | Length  | `base_notches.inner_radius`: The notches in the base:    |
+| Bni    | Length  | `base_notches.inner_radius`: The notches in the base:    |
 |        |         | the radius of its two corners farthest in.               |
-| 19     | Length  | `base_notches.outer_radius`: The notches in the base:    |
+| Bno    | Length  | `base_notches.outer_radius`: The notches in the base:    |
 |        |         | the radius of its two corners where it meets the side.   |
-| 20     | Length  | `base.corner_radius`: The bottom layer: the radius of    |
+| Bc     | Length  | `base.corner_radius`: The bottom layer: the radius of    |
 |        |         | its four corners.                                        |
-| 21     | Length  | `body_notches.inner_radius`: The notches in the body, at |
+| Boni   | Length  | `body_notches.inner_radius`: The notches in the body, at |
 |        |         | the same places but bigger: the radius of its two        |
 |        |         | corners farthest in.                                     |
-| 22     | Length  | `body_notches.outer_radius`: The notches in the body, at |
+| Bono   | Length  | `body_notches.outer_radius`: The notches in the body, at |
 |        |         | the same places but bigger: the radius of its two        |
 |        |         | corners where it meets the side.                         |
-| 23     | Length  | `body.corner_radius`: The layer on the base: the radius  |
+| Boc    | Length  | `body.corner_radius`: The layer on the base: the radius  |
 |        |         | of its four corners.                                     |
-| 24     | Length  | `movable_jaw.width`: The jaw that the lead screw moves:  |
+| Mw     | Length  | `movable_jaw.width`: The jaw that the lead screw moves:  |
 |        |         | its size along Y.                                        |
-| 25     | Length  | `base.width`: The bottom layer: its size along Y.        |
-| 26     | Length  | `body.width`: The layer on the base: its size along Y.   |
-| 27     | Length  | `lead_screw_height`: The height of the lead screw's axis |
+| Bw     | Length  | `base.width`: The bottom layer: its size along Y.        |
+| Bow    | Length  | `body.width`: The layer on the base: its size along Y.   |
+| L      | Length  | `lead_screw_height`: The height of the lead screw's axis |
 |        |         | above the base's bottom.                                 |
-| 28     | Length  | `hex_size`: The size across the flats of the hexagon on  |
+| Hs     | Length  | `hex_size`: The size across the flats of the hexagon on  |
 |        |         | the lead screw's end.                                    |
-| 29     | Length  | `lead_screw_diameter`: The lead screw's diameter.        |
-| 30     | Length  | `lead_screw_hole_diameter`: The diameter of the hole for |
+| Ls     | Length  | `lead_screw_diameter`: The lead screw's diameter.        |
+| Lh     | Length  | `lead_screw_hole_diameter`: The diameter of the hole for |
 |        |         | the lead screw in the body's end.                        |
-| 31     | Length  | `base.height`: The bottom layer: its size along Z.       |
-| 32     | Length  | `body.height`: The layer on the base: its size along Z.  |
-| 33     | Length  | `rail_height`: The height of the bed: its rails and end  |
+| Bh     | Length  | `base.height`: The bottom layer: its size along Z.       |
+| Boh    | Length  | `body.height`: The layer on the base: its size along Z.  |
+| Rh     | Length  | `rail_height`: The height of the bed: its rails and end  |
 |        |         | blocks.                                                  |
-| 34     | Length  | `fixed_jaw.height`: The jaw that stays put: its size     |
+| Fh     | Length  | `fixed_jaw.height`: The jaw that stays put: its size     |
 |        |         | along Z.                                                 |
-| 35     | Length  | `movable_jaw.height`: The jaw that the lead screw moves: |
+| Mh     | Length  | `movable_jaw.height`: The jaw that the lead screw moves: |
 |        |         | its size along Z.                                        |
 
 Not drawn (square on the sample): `fixed_jaw.corner_radius`,
@@ -1197,19 +1197,19 @@ Clamping face:
 
 ![Jaw plate, face](docs/tool_models/jaw_plate_face.svg)
 
-| Number | Units  | Description                                               |
+| Letter | Units  | Description                                               |
 | ------ | ------ | --------------------------------------------------------- |
-| 1      | Length | `length`: Its thickness, from its clamping face back.     |
-| 2      | Length | `counterbore_depth`: How deep the counterbores reach in   |
+| L      | Length | `length`: Its thickness, from its clamping face back.     |
+| C      | Length | `counterbore_depth`: How deep the counterbores reach in   |
 |        |        | from the clamping face.                                   |
-| 3      | Length | `width`: Its size across the vise.                        |
-| 4      | Length | `hole_spacing`: The distance between its two holes.       |
-| 5      | Length | `height`: Its size up.                                    |
-| 6      | Length | `hole_height`: The height of its holes' centers above its |
+| W      | Length | `width`: Its size across the vise.                        |
+| Hs     | Length | `hole_spacing`: The distance between its two holes.       |
+| H      | Length | `height`: Its size up.                                    |
+| Hh     | Length | `hole_height`: The height of its holes' centers above its |
 |        |        | bottom.                                                   |
-| 7      | Length | `counterbore_diameter`: The diameter of the counterbores, |
+| Cd     | Length | `counterbore_diameter`: The diameter of the counterbores, |
 |        |        | for the screws' heads.                                    |
-| 8      | Length | `hole_diameter`: The diameter of its holes.               |
+| Hd     | Length | `hole_diameter`: The diameter of its holes.               |
 
 Not a size:
 
@@ -1315,15 +1315,15 @@ End:
 
 ![Parallel, end](docs/tool_models/parallel_end.svg)
 
-| Number | Units  | Description                                               |
+| Letter | Units  | Description                                               |
 | ------ | ------ | --------------------------------------------------------- |
-| 1      | Length | `length`: Its size along Y.                               |
-| 2      | Length | `hole_spacing`: Optional. The distance between its two    |
+| L      | Length | `length`: Its size along Y.                               |
+| Hs     | Length | `hole_spacing`: Optional. The distance between its two    |
 |        |        | holes' centers; 0 for no holes.                           |
-| 3      | Length | `height`: Its size along Z.                               |
-| 4      | Length | `hole_diameter`: Optional. The diameter of its holes; 0   |
+| H      | Length | `height`: Its size along Z.                               |
+| Hd     | Length | `hole_diameter`: Optional. The diameter of its holes; 0   |
 |        |        | for no holes.                                             |
-| 5      | Length | `thickness`: Its size along X.                            |
+| T      | Length | `thickness`: Its size along X.                            |
 
 `tools.PARALLELS` is a set of two of each of the standard imperial
 heights, in inches: 1/2, 5/8, 3/4, 7/8, 1, 1-1/8, 1-1/4, 1-3/8, 1-1/2,
@@ -1490,22 +1490,22 @@ Section through a grid hole (8 times size):
 
 ![Grid plate, section](docs/tool_models/grid_plate_section.svg)
 
-| Number | Units  | Description                                               |
+| Letter | Units  | Description                                               |
 | ------ | ------ | --------------------------------------------------------- |
-| 1      | Length | `edge`: The distance from a side to the nearest holes.    |
-| 2      | Length | `pitch`: The distance between grid holes, along X and Y.  |
-| 3      | Length | `length`: Its size along X.                               |
-| 4      | Length | `width`: Its size along Y.                                |
-| 5      | Length | `corner_radius`: Optional. The radius of its corners.     |
-| 6      | Length | `tooling_pitch`: Optional. The distance between tooling   |
+| E      | Length | `edge`: The distance from a side to the nearest holes.    |
+| P      | Length | `pitch`: The distance between grid holes, along X and Y.  |
+| L      | Length | `length`: Its size along X.                               |
+| W      | Length | `width`: Its size along Y.                                |
+| C      | Length | `corner_radius`: Optional. The radius of its corners.     |
+| T      | Length | `tooling_pitch`: Optional. The distance between tooling   |
 |        |        | holes, along X and Y.                                     |
-| 7      | Length | `tap_diameter`: Optional. The diameter of the tooling     |
+| Td     | Length | `tap_diameter`: Optional. The diameter of the tooling     |
 |        |        | holes to be threaded (the tap drill).                     |
-| 8      | Length | `close_diameter`: Optional. The diameter of the close fit |
+| Cl     | Length | `close_diameter`: Optional. The diameter of the close fit |
 |        |        | tooling holes.                                            |
-| 9      | Length | `height`: Its size along Z, its thickness.                |
-| 10     | Length | `hole_diameter`: The diameter of the grid's holes.        |
-| 11     | Length | `chamfer_depth`: Optional. How deep the 45 degree chamfer |
+| H      | Length | `height`: Its size along Z, its thickness.                |
+| Hd     | Length | `hole_diameter`: The diameter of the grid's holes.        |
+| Cd     | Length | `chamfer_depth`: Optional. How deep the 45 degree chamfer |
 |        |        | on each grid hole's top edge is; 0 for none. Slow to      |
 |        |        | model the first time (above).                             |
 

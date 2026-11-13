@@ -24,6 +24,10 @@ from ..shops import (
     scalar_problem,
 )
 
+# The sketches that `Tool_Models.md` shows, one per kind (or view),
+# from the top of the tree.
+SKETCHES: Path = Path(__file__).resolve().parents[2] / "docs" / "tool_models"
+
 # The forms edited as one line of text.
 PLAIN: tuple[str, ...] = (
     *UNITS,
@@ -324,3 +328,27 @@ def shop_units(shop: Path | None) -> str:
     item: dict[str, object] = read_item(shop)[0]
     units: object = item.get("units")
     return units if isinstance(units, str) and units in SHOP_UNITS else "in"
+
+
+# Function `sketch()`:
+def sketch(item: dict[str, object]) -> Path | None:
+    """Return the sketch of an item's kind, from `Tool_Models.md`.
+
+    A kind with one sketch has `KIND.svg`; one with several views
+    (e.g. `grid_plate_section.svg`, `grid_plate_top.svg`) shows the
+    first, alphabetically (`T.osiade~5.1.9` #5, #14).
+
+    Arguments:
+    * `item` (`dict[str, object]`): The shop item, as read.
+
+    Returns:
+    * (`Path | None`): Its SVG file, or `None` when its kind has none.
+    """
+    kind: object = item.get("kind")
+    if not isinstance(kind, str) or not kind:
+        return None
+    one: Path = SKETCHES / f"{kind}.svg"
+    if one.is_file():
+        return one
+    views: list[Path] = sorted(SKETCHES.glob(f"{kind}_*.svg"))
+    return views[0] if views else None

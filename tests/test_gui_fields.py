@@ -90,6 +90,18 @@ class FieldsTest(unittest.TestCase):
         fields.check(name, " ", "in")
         self.assertEqual(name.problem, "required")
 
+    def test_sketch(self) -> None:
+        """A kind's sketch, its first view, or none."""
+        sketch: Path | None = fields.sketch(self.item)
+        self.assertIsNotNone(sketch)
+        assert sketch is not None
+        self.assertEqual(sketch.name, "corner_rounding_mill.svg")
+        grid: Path | None = fields.sketch({"kind": "grid_plate"})
+        assert grid is not None
+        self.assertEqual(grid.name, "grid_plate_section.svg")
+        self.assertIsNone(fields.sketch({"kind": "shop"}))
+        self.assertIsNone(fields.sketch({}))
+
 
 class PanelFieldsTest(unittest.TestCase):
     """Tests of the panel's rows, offscreen."""
@@ -120,6 +132,18 @@ class PanelFieldsTest(unittest.TestCase):
             panel.show_node(Node(path.name, FILE, path, ""), "mm")
             self.assertIs(panel.entries["radius"], entry)
             panel.deleteLater()
+
+    def test_sketch_shown(self) -> None:
+        """A tool shows its sketch; the shop, with none, does not."""
+        qt_app.process_events()
+        panel: Panel = Panel(1)
+        panel.show_node(Node(TOOL.name, FILE, TOOL, ""), "in")
+        self.assertFalse(panel.sketch.isHidden())
+        self.assertTrue(panel.sketch.renderer().isValid())
+        shop: Path = TOOL.parent.parent / "shop.toml"
+        panel.show_node(Node(shop.name, FILE, shop, ""), "in")
+        self.assertTrue(panel.sketch.isHidden())
+        panel.deleteLater()
 
 
 if __name__ == "__main__":

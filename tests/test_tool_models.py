@@ -41,11 +41,11 @@ class TestFiles(unittest.TestCase):
             ("parallel", tool_models.parallel_views()),
             ("grid_plate", tool_models.grid_plate_views()),
         ):
-            numbers = tool_models.vise_numbers(views)
+            letters = tool_models.size_letters(views, prefix)
             for view in views:
                 name = f"{prefix}_{view.name}.svg"
                 text = (path / name).read_text(encoding="utf-8")
-                self.assertEqual(text, tool_models.view_sketch(view, numbers))
+                self.assertEqual(text, tool_models.view_sketch(view, letters))
                 ET.fromstring(text)
 
     def test_vise_sizes_all_listed(self) -> None:
@@ -77,15 +77,41 @@ class TestFiles(unittest.TestCase):
         self.assertIn("ModeledTool.items() -> list[str]", text)
 
     def test_letters_mean_one_size(self) -> None:
-        """A letter means one key, in every kind."""
+        """A key has one letter in every kind; a kind's follow the rule."""
         seen: dict[str, str] = {}
         for kind in shops.KINDS.values():
-            for schema in kind.fields:
-                if schema.letter:
-                    self.assertEqual(
-                        seen.setdefault(schema.letter, schema.key),
-                        schema.key,
-                    )
+            letters: dict[str, str] = {
+                schema.key: schema.letter
+                for schema in kind.fields
+                if schema.letter
+            }
+            self.assertEqual(letters, shops.dimension_letters(list(letters)))
+            for key, letter in letters.items():
+                self.assertEqual(seen.setdefault(key, letter), letter)
+
+    def test_dimension_letters(self) -> None:
+        """First letters; then initials; parts' letters before sizes'."""
+        self.assertEqual(
+            shops.dimension_letters(
+                ["shank_length", "shank", "drill_diameter", "diameter"]
+            ),
+            {
+                "shank_length": "Sl",
+                "shank": "S",
+                "drill_diameter": "Dd",
+                "diameter": "D",
+            },
+        )
+        self.assertEqual(
+            shops.dimension_letters(
+                ["base.width", "body_notches.depth", "body.width"]
+            ),
+            {
+                "body.width": "Bow",
+                "body_notches.depth": "Bond",
+                "base.width": "Bw",
+            },
+        )
 
     def test_every_letter_is_drawn(self) -> None:
         """Each sketch draws exactly the letters in its table."""
