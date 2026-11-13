@@ -501,3 +501,13 @@ From the log before the trim (`hg` rev 695):
   demo open, and exits 0 on SIGTERM.  107 tests (show_demo,
   lcnc_hmi, hmi_tool_changes, gui_*) pass.  Not run: the real
   `./show_demo.py` (the user's), the LinuxCNC end-to-end suite.
+* The user's `./show_demo.py` GUI run: "It worked fine"; the machine
+  panel is to be redone completely (#63).
+* #62: `./show_demo.py --headless` ran the demo in full (1 min 49 s,
+  101 s driven); first its Quit timed out (the hidden Quit closed
+  only the HMI widget).  Fixed: `HMI.quit()` and `HMI.on_quit` (the
+  GUI sets `window.close_all`); the port's `quit` and the button use
+  it.  Second run: clean, nothing left running.
+* #63 question round 1 asked: #67 tabs or panels, #68 what goes,
+  #69 speeds and feeds to the tool's panel, #70 the View toggles,
+  #71 open a program from the tree.  #64-#66 later.

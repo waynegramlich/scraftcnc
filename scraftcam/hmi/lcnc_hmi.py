@@ -87,6 +87,7 @@ import math
 import os
 import signal
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from types import FrameType
 from typing import Any
@@ -447,6 +448,9 @@ class HMI(QWidget):
     * `tools_table` (`QPlainTextEdit`): The tools' speeds and feeds.
     * `quit_button` (`QPushButton`): Quit, hidden when the HMI is a
       panel of the GUI (`T.osiade~5.1.9` #56).
+    * `on_quit` (`Callable[[], None] | None`): What Quit (or the
+      port's `quit`) does in the GUI: close its windows; `None` closes
+      this window.
     * `spindle` (`bool`): True while the spindle is on, at the last
       poll; True until the first poll says otherwise.
     """
@@ -696,7 +700,8 @@ class HMI(QWidget):
         open_button: QPushButton = QPushButton("Open")
         open_button.clicked.connect(self.on_open)
         self.quit_button: QPushButton = QPushButton("Quit")
-        self.quit_button.clicked.connect(self.close)
+        self.quit_button.clicked.connect(self.quit)
+        self.on_quit: Callable[[], None] | None = None
         self.spindle: bool = True
         bottom: QHBoxLayout = QHBoxLayout()
         bottom.addStretch(1)
@@ -1237,6 +1242,14 @@ class HMI(QWidget):
                 return f"MDI refused: it would enter {hit}"
         return ""
 
+    # Method `HMI.quit()`:
+    def quit(self) -> None:
+        """Quit: this window, or the GUI it is a panel of (`on_quit`)."""
+        if self.on_quit is None:
+            self.close()
+        else:
+            self.on_quit()
+
     # Method `HMI.busy()`:
     def busy(self) -> str:
         """Say why nothing may close yet, if anything (#56).
@@ -1530,7 +1543,7 @@ class HMI(QWidget):
             "reset": self.on_stop,
             "tool+": functools.partial(self.on_tool, +1),
             "tool-": functools.partial(self.on_tool, -1),
-            "quit": self.close,
+            "quit": self.quit,
         }
         try:
             if word in actions:

@@ -163,6 +163,7 @@ def machine_maker(
             model.say(f"The machine did not start: {error}", problem=True)
             return None
         hmi.quit_button.hide()
+        hmi.on_quit = window.close_all
         try:
             hmi.open(options.program)
         except (ValueError, OSError) as error:
