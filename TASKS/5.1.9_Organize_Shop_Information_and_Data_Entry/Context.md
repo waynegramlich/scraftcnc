@@ -411,3 +411,75 @@ creation (written on focus-out, never a bad value, #15), with
 `examples/shop/` moved to the new layout (#84), 4 tool documentation
 and SVG (#5, #80), last machine control (the HMI as a panel, #6).
 Tests: offscreen plus a command port (#85, #86).
+
+## 2026-11-12: S1 (the top line) expanded; #93-#97
+
+S1 draft: `python3 -m ... [--shop=SHOP] [--design=DESIGN]`; window =
+top line, action rows, panel area; top line [Stop All] (more than one
+machine running), [Tree], shop and design names, message area,
+[+ Panel], [x]; a model with no Qt shared by all windows; closing
+refused while a machine runs (#67); `tests/qt_hmi.py` becomes
+`tests/qt_app.py`.  Not in S1: tree contents, schema, panel menu
+(#71), layout files (#78.1), machine control.
+
+93. `scraftcam/gui/` with `app.py` (model, no Qt) and `window.py`.
+    No `__main__.py` (ugly); the user suggested `scraftcam/gui.py` or
+    `scraftcam/run.py`.  Open: `gui.py` clashes with `gui/`.
+94. Try it ([+ Panel] adds a panel beside the others, [x] closes the
+    window) and see how it looks.
+95. Agreed: one line, latest message, problems in red; history later.
+96. Agreed: a small command port in S1 (`status`, `press BUTTON`,
+    `quit`).
+97. Mostly agreed: with no shop found the GUI still starts, and also
+    offers to create a `shop/` directory and initialize it.
+
+## 2026-11-12: #93, #98-#102
+
+(The user answered #98-#101 as "#94-#97", and the README as "#0".)
+
+93. `scraftcam/run.py`, run as `python3 -m scraftcam.run`; with
+    `#!/usr/bin/env python3` and the execute bit (not on Windows).
+98. A new shop starts with a quick questionnaire: which machines the
+    shop has (CNC mill, CNC lathe, laser cutter, 3D printer, ...).
+99. The GUI does not run `git init`/`hg init`, but recommends that a
+    version control system be installed, suggesting `git` or `hg`.
+100. Agreed: shop name from `shop.toml`'s `name` (else the directory
+     name), design name from the file or package, "(none)" if absent.
+101. Agreed: `--port=N`, off by default.
+102. (New, the user's "#0") Start a `README.md` for the GUI's
+     documentation.
+
+## 2026-11-12: #103-#107 agreed
+
+103. `run.py` run as a script puts the directory above `scraftcam/`
+     on `sys.path`; absolute imports only.
+104. Questionnaire: shop name, units (in/mm), a checkbox per machine
+     kind (CNC mill, CNC router, CNC lathe, laser cutter, 3D printer,
+     manual mill, manual lathe); written as a `machines` list in
+     `shop.toml`; all but the mill "(not supported yet)".
+105. (a): the dialog in S1 with a tiny writer for its keys; S3
+     replaces the writer.
+106. `scraftcam/gui/README.md`, linked from the top `README.md`,
+     growing per step.
+107. Each start: `shutil.which` for `git`/`hg`, and whether the shop
+     is in a repository; if not, one line in the message area.
+
+## 2026-11-12: #108-#112; S1 ready to start
+
+108. Agreed: S1.1 `gui/app.py` (model) and tests; S1.2 `gui/window.py`
+     (top line, bands, [+ Panel]), first GUI look by the user; S1.3
+     `run.py`, `shop.toml` lookup, `--port`, command port; S1.4
+     questionnaire and version control hint; S1.5 `gui/README.md`,
+     `tests/qt_hmi.py` -> `tests/qt_app.py`.  Inline, hg after each.
+109. Smaller, so SolidCraft's window fits beside it: 720 x 480 to
+     start; the user resizes.  (Wayland: the compositor places it.)
+110. Claude's call: one JSON line in, one JSON line out, shaped like
+     JSON-RPC 2.0 (`id`, `method`, `params` / `result` or `error`),
+     so a later MCP server (#86) can wrap it.  A new
+     `scraftcam/gui/port.py`; the HMI may move to it later.
+111. Claude's call: no env var; the default `./shop/` keys off the
+     current directory, and tests and trial runs start in a scratch
+     directory.
+112. Agreed: done when offscreen tests and checkers pass and the user
+     likes two GUI runs (empty directory -> questionnaire; then
+     `--shop` on the shop it made).
