@@ -1,0 +1,20 @@
+#:schema https://raw.githubusercontent.com/waynegramlich/scraftcam/main/scraftcam/schemas/corner_rounding_mill.json
+name = "1/16 in radius carbide corner rounding mill"
+kind = "corner_rounding_mill"
+language = "English"
+version = "0.0.1"
+notes = "Page 60: 2 flute solid carbide corner rounding mill, unflared."
+unique_id = 8
+description = "Rounds top edges over"
+radius = "0.0625 in"
+tip_diameter = "0.0469 in"
+flutes = 2
+shank = "3/16 in"
+overall_length = "2 in"
+holder = ["r8", "3/16 in"]
+material = "carbide"
+finish = "uncoated"
+manufacturer = "USA Made"
+vendor = "Shars Tool"
+vendor_pn = "417-1112"
+cost = "49.05 USD"

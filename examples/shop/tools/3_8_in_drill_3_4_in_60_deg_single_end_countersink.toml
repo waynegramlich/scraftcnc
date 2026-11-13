@@ -1,0 +1,23 @@
+#:schema https://raw.githubusercontent.com/waynegramlich/scraftcam/main/scraftcam/schemas/single_countersink.json
+name = "3/8 in drill, 3/4 in 60 deg single end countersink"
+kind = "single_countersink"
+language = "English"
+version = "0.0.1"
+notes = """\
+  One of each kind of countersink, so that every kind of tool in the \
+  tools files is in the example (sizes from `Tool_Models.md`'s \
+  samples). Each is held in a 3/4 in R8 collet: the single end by its \
+  shank, the double end by its body.  Neither can be in a `tool_table` \
+  yet."""
+unique_id = 13
+description = "Drills and countersinks in one pass"
+diameter = "3/4 in"
+drill_diameter = "3/8 in"
+drill_length = "1/2 in"
+angle = "60 deg"
+point_angle = "90 deg"
+shank = "3/4 in"
+overall_length = "2-1/2 in"
+holder = ["r8", "3/4 in"]
+material = "HSS"
+finish = "uncoated"

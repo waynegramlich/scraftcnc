@@ -1,0 +1,26 @@
+#:schema https://raw.githubusercontent.com/waynegramlich/scraftcam/main/scraftcam/schemas/double_angle_cutter.json
+name = "1/4 in 90 deg double angle shank cutter"
+kind = "double_angle_cutter"
+language = "English"
+version = "0.0.1"
+notes = """\
+  Page 114 (the table starts on page 112): pointed double angle shank \
+  cutter, which reaches under an edge to chamfer it from below."""
+unique_id = 9
+description = "Bottom (back) chamfers at 45 deg"
+diameter = "1/4 in"
+angle = "90 deg"
+width = "0.125 in"
+neck_diameter = "1/8 in"
+neck_length = "0.625 in"
+flutes = 4
+shank = "1/4 in"
+overall_length = "2-1/2 in"
+holder = ["r8", "1/4 in"]
+material = "carbide"
+finish = "uncoated"
+manufacturer = "USA Made"
+manufacturer_pn = "72603"
+vendor = "Shars Tool"
+vendor_pn = "436-4296"
+cost = "107.30 USD"

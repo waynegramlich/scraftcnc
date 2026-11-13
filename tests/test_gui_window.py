@@ -102,7 +102,7 @@ class WindowTest(unittest.TestCase):
             self.assertTrue(top.buttons["New Shop"].isHidden())
             self.assertTrue(top.new_shop_row.isHidden())
             text: str = (Path(temporary) / "shop" / "shop.toml").read_text()
-            self.assertIn('machines = ["cnc_mill", "3d_printer"]', text)
+            self.assertIn('machine_kinds = ["cnc_mill", "3d_printer"]', text)
             self.assertIn('units = "mm"', text)
 
             # Again, over the shop just made: refused, said in red.

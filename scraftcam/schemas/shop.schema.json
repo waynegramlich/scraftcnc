@@ -1,0 +1,2517 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/waynegramlich/scraftcam/main/scraftcam/schemas/shop.schema.json",
+  "title": "scraftcam shop files",
+  "$defs": {
+    "shop": {
+      "description": "A shop: `shop.toml`, at the top of the shop's directory.  Its machines, tools, tooling and materials are the files in the directories beside it (`SHOP_DIRECTORIES`); the reader fills in `machines`, `tools`, `tooling` and `materials` from them, so `shop.toml` itself has none of them.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Unique among the things of its kind.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "What the rest of the file is.",
+          "const": "shop"
+        },
+        "language": {
+          "description": "The language of the names and notes.",
+          "type": "string"
+        },
+        "version": {
+          "description": "The format version, `MAJOR.MINOR.PATCH`.",
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "notes": {
+          "description": "Anything worth writing down about it (the GUI shows and edits it; `#` comments are not kept).",
+          "type": "string"
+        },
+        "location": {
+          "description": "Where the shop is.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/location"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "units": {
+          "description": "The units the shop prefers: `in` (imperial) or `mm` (metric).  One of: in, mm.",
+          "type": "string",
+          "examples": [
+            "in",
+            "mm"
+          ]
+        },
+        "machine_kinds": {
+          "description": "The kinds of machines the shop has, computer controlled or manual (for prep work).  One of: cnc_mill, cnc_router, cnc_lathe, laser_cutter, 3d_printer, manual_mill, manual_lathe, manual_drill_press, manual_bandsaw.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "examples": [
+              "cnc_mill",
+              "cnc_router",
+              "cnc_lathe",
+              "laser_cutter",
+              "3d_printer",
+              "manual_mill",
+              "manual_lathe",
+              "manual_drill_press",
+              "manual_bandsaw"
+            ]
+          }
+        },
+        "machines": {
+          "description": "The machines in the shop: the files in `machines/`.",
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/machine"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "tools": {
+          "description": "The tools on hand, shared by the machines: the files in `tools/`.",
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/tools"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "tooling": {
+          "description": "The work holding on hand (grid plates for now), shared by the machines: the files in `tooling/`.",
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/tooling"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "materials": {
+          "description": "The materials it cuts, and how to drill them: the files in `materials/`.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/materials"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "location": {
+      "description": "Where a shop is.  Every key is optional, since a shop on a boat may have none.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Unique among the things of its kind.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "What the rest of the file is.",
+          "const": "location"
+        },
+        "language": {
+          "description": "The language of the names and notes.",
+          "type": "string"
+        },
+        "version": {
+          "description": "The format version, `MAJOR.MINOR.PATCH`.",
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "notes": {
+          "description": "Anything worth writing down about it (the GUI shows and edits it; `#` comments are not kept).",
+          "type": "string"
+        },
+        "latitude": {
+          "description": "North is positive.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:deg)\\s*$"
+        },
+        "longitude": {
+          "description": "East is positive.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:deg)\\s*$"
+        },
+        "address": {
+          "description": "The street address.",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "machine": {
+      "description": "A CNC mill or router (lathes, lasers and 3D printers later): its axes, table, spindle, controller and tool table.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Unique among the things of its kind.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "What the rest of the file is.",
+          "const": "machine"
+        },
+        "language": {
+          "description": "The language of the names and notes.",
+          "type": "string"
+        },
+        "version": {
+          "description": "The format version, `MAJOR.MINOR.PATCH`.",
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "notes": {
+          "description": "Anything worth writing down about it (the GUI shows and edits it; `#` comments are not kept).",
+          "type": "string"
+        },
+        "machine": {
+          "description": "What sort of machine it is.  One of: mill, router.",
+          "type": "string",
+          "examples": [
+            "mill",
+            "router"
+          ]
+        },
+        "axes": {
+          "description": "One per axis.",
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/axis"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "table": {
+          "description": "The table that the work is held on.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/machine_table"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "spindle": {
+          "description": "The spindle.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/spindle"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "controller": {
+          "description": "The controller, by its name (a file in `controllers/`).",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/controller"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "tool_table": {
+          "description": "The tools loaded.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/tool_table"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "preferences": {
+          "description": "How it is run.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/preferences"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "carousel": {
+          "description": "Its tool changer's carousel, if it has one.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/carousel"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "required": [
+        "machine",
+        "axes",
+        "spindle",
+        "controller"
+      ],
+      "additionalProperties": false
+    },
+    "carousel": {
+      "description": "A machine's tool carousel: its slots, on spokes from a hub.  A tool is put in or taken out at the +X spoke.  A program with more tools than slots stops to swap them (`carousel.py`).",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Unique among the things of its kind.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "What the rest of the file is.",
+          "const": "carousel"
+        },
+        "language": {
+          "description": "The language of the names and notes.",
+          "type": "string"
+        },
+        "version": {
+          "description": "The format version, `MAJOR.MINOR.PATCH`.",
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "notes": {
+          "description": "Anything worth writing down about it (the GUI shows and edits it; `#` comments are not kept).",
+          "type": "string"
+        },
+        "slots": {
+          "description": "How many tools it holds (0: every change by hand).",
+          "type": "integer"
+        },
+        "x": {
+          "description": "The hub's machine X.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "y": {
+          "description": "The hub's machine Y.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "z": {
+          "description": "The hub's machine Z.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "spoke_length": {
+          "description": "From the hub to a slot.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        }
+      },
+      "required": [
+        "slots"
+      ],
+      "additionalProperties": false
+    },
+    "axis": {
+      "description": "One linear axis of a machine (rotary axes later).",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Unique among the things of its kind.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "What the rest of the file is.",
+          "const": "axis"
+        },
+        "language": {
+          "description": "The language of the names and notes.",
+          "type": "string"
+        },
+        "version": {
+          "description": "The format version, `MAJOR.MINOR.PATCH`.",
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "notes": {
+          "description": "Anything worth writing down about it (the GUI shows and edits it; `#` comments are not kept).",
+          "type": "string"
+        },
+        "letter": {
+          "description": "Its letter in G-code.  One of: X, Y, Z.",
+          "type": "string",
+          "examples": [
+            "X",
+            "Y",
+            "Z"
+          ]
+        },
+        "travel": {
+          "description": "How far it moves.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "max_feed": {
+          "description": "Its fastest feed.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:in/min|mm/min|in/s|mm/s|ipm)\\s*$"
+        },
+        "max_acceleration": {
+          "description": "Its greatest acceleration.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:in/s\\^2|mm/s\\^2)\\s*$"
+        },
+        "limit_switches": {
+          "description": "True if it has end of travel switches.",
+          "type": "boolean"
+        },
+        "brake": {
+          "description": "True if it has a brake.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "letter",
+        "travel",
+        "max_feed"
+      ],
+      "additionalProperties": false
+    },
+    "machine_table": {
+      "description": "The table of a machine, and its T-slots.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Unique among the things of its kind.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "What the rest of the file is.",
+          "const": "machine_table"
+        },
+        "language": {
+          "description": "The language of the names and notes.",
+          "type": "string"
+        },
+        "version": {
+          "description": "The format version, `MAJOR.MINOR.PATCH`.",
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "notes": {
+          "description": "Anything worth writing down about it (the GUI shows and edits it; `#` comments are not kept).",
+          "type": "string"
+        },
+        "length": {
+          "description": "Along X.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "width": {
+          "description": "Along Y.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "t_slots": {
+          "description": "How many T-slots.",
+          "type": "integer"
+        },
+        "t_slot_pitch": {
+          "description": "Between T-slots.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "t_slot_width": {
+          "description": "At the top.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "t_slot_depth": {
+          "description": "From the table top.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "x": {
+          "description": "Where the table sits in the machine: the machine X of the point a setup places the table by (its location in the setup's `(SCC: ...)` comments).  With `y` and `z`, it gives the work origin (G54).",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "y": {
+          "description": "The same, along Y.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "z": {
+          "description": "The same, along Z.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        }
+      },
+      "required": [
+        "length",
+        "width"
+      ],
+      "additionalProperties": false
+    },
+    "spindle": {
+      "description": "The spindle of a machine.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Unique among the things of its kind.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "What the rest of the file is.",
+          "const": "spindle"
+        },
+        "language": {
+          "description": "The language of the names and notes.",
+          "type": "string"
+        },
+        "version": {
+          "description": "The format version, `MAJOR.MINOR.PATCH`.",
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "notes": {
+          "description": "Anything worth writing down about it (the GUI shows and edits it; `#` comments are not kept).",
+          "type": "string"
+        },
+        "interface": {
+          "description": "What its tool holders fit.  One of: R8, BT30, BT40, BT50, CAT30, CAT40, CAT50, NMTB30, NMTB40, HSK63A, ER11, ER16, ER20, ER25, ER32, ER40.",
+          "type": "string",
+          "examples": [
+            "R8",
+            "BT30",
+            "BT40",
+            "BT50",
+            "CAT30",
+            "CAT40",
+            "CAT50",
+            "NMTB30",
+            "NMTB40",
+            "HSK63A",
+            "ER11",
+            "ER16",
+            "ER20",
+            "ER25",
+            "ER32",
+            "ER40"
+          ]
+        },
+        "min_rpm": {
+          "description": "Its slowest speed.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:rpm)\\s*$"
+        },
+        "max_rpm": {
+          "description": "Its fastest speed.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:rpm)\\s*$"
+        },
+        "reversible": {
+          "description": "True if it runs backwards.",
+          "type": "boolean"
+        },
+        "flood": {
+          "description": "True if it has flood coolant.",
+          "type": "boolean"
+        },
+        "mist": {
+          "description": "True if it has mist coolant.",
+          "type": "boolean"
+        },
+        "air": {
+          "description": "True if it has an air blast.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "interface",
+        "max_rpm"
+      ],
+      "additionalProperties": false
+    },
+    "controller": {
+      "description": "The controller of a machine (e.g. LinuxCNC), and how its G-code is written.  LinuxCNC is the baseline.  (To come: every code it accepts, its canned cycles, and tool length offsets.)  `tool_change` is a Python `str.format()` template, filled in with the tool's `number` and `description`; it may hold several lines, each words or a whole-line comment, such as a `(MSG, ...)` line and `M0`, so the operator is told which tool to put in.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Unique among the things of its kind.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "What the rest of the file is.",
+          "const": "controller"
+        },
+        "language": {
+          "description": "The language of the names and notes.",
+          "type": "string"
+        },
+        "version": {
+          "description": "The format version, `MAJOR.MINOR.PATCH`.",
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "notes": {
+          "description": "Anything worth writing down about it (the GUI shows and edits it; `#` comments are not kept).",
+          "type": "string"
+        },
+        "post_processor": {
+          "description": "Which dialect of G-code it reads.  One of: linuxcnc.",
+          "type": "string",
+          "examples": [
+            "linuxcnc"
+          ]
+        },
+        "tool_change": {
+          "description": "The lines that change the tool.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "post_processor"
+      ],
+      "additionalProperties": false
+    },
+    "preferences": {
+      "description": "How a machine is run: heights, speeds and how pockets and holes are cut.  (These are kept with the machine for now; some may belong to the shop or to the job.)",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Unique among the things of its kind.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "What the rest of the file is.",
+          "const": "preferences"
+        },
+        "language": {
+          "description": "The language of the names and notes.",
+          "type": "string"
+        },
+        "version": {
+          "description": "The format version, `MAJOR.MINOR.PATCH`.",
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "notes": {
+          "description": "Anything worth writing down about it (the GUI shows and edits it; `#` comments are not kept).",
+          "type": "string"
+        },
+        "z_safe": {
+          "description": "Above all of the hold down tooling.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "clearance": {
+          "description": "Rapids down stop this far above the work.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "tool_change_z": {
+          "description": "Rise here before every tool change.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "rapid_speed": {
+          "description": "The rapid speed, for estimating run times.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:in/min|mm/min|in/s|mm/s|ipm)\\s*$"
+        },
+        "drill_cycle": {
+          "description": "How holes are drilled (`moves`: no canned cycle).  One of: G81, G73, G83, moves.",
+          "type": "string",
+          "examples": [
+            "G81",
+            "G73",
+            "G83",
+            "moves"
+          ]
+        },
+        "through_overcut": {
+          "description": "How much deeper a cut through the part goes, of its thickness.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:%)\\s*$"
+        },
+        "stepover": {
+          "description": "How far apart pocket rings are, of the tool's diameter.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:%)\\s*$"
+        },
+        "ramp_angle": {
+          "description": "The steepest ramp into a pocket that is not drilled.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:deg)\\s*$"
+        },
+        "finish_allowance": {
+          "description": "What a roughing end mill leaves on walls and floors for the end mill that finishes them.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        }
+      },
+      "required": [
+        "z_safe",
+        "clearance",
+        "tool_change_z",
+        "rapid_speed",
+        "drill_cycle",
+        "through_overcut",
+        "stepover",
+        "ramp_angle",
+        "finish_allowance"
+      ],
+      "additionalProperties": false
+    },
+    "tool_table": {
+      "description": "The tools loaded in one machine: T numbers (1 to 99) and the names of the tools in them.  Each is unique: no T number twice, and no tool twice, here or in any other machine's tool table (a tool is in one machine at a time).  It is in its machine's file, as `[tool_table.tools]`.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Unique among the things of its kind.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "What the rest of the file is.",
+          "const": "tool_table"
+        },
+        "language": {
+          "description": "The language of the names and notes.",
+          "type": "string"
+        },
+        "version": {
+          "description": "The format version, `MAJOR.MINOR.PATCH`.",
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "notes": {
+          "description": "Anything worth writing down about it (the GUI shows and edits it; `#` comments are not kept).",
+          "type": "string"
+        },
+        "tools": {
+          "description": "The tools, by T number.",
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^\\d{1,2}$"
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "tools"
+      ],
+      "additionalProperties": false
+    },
+    "tools": {
+      "description": "Tools: the bits that go in a holder in the spindle.  How to cut with each (`rpm`, `feed`, `plunge`) is given with the tool for now, until it can be worked out from the material being cut.  Only the bits are described; `holder` only says what holds each one.  Tools are shared by machines, so they are not listed by machine: a machine's `tool_table` names the ones it has loaded, and every tool's `name` and `unique_id` are unique among all the tools (T numbers are only unique within one machine).",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Unique among the things of its kind.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "What the rest of the file is.",
+          "const": "tools"
+        },
+        "language": {
+          "description": "The language of the names and notes.",
+          "type": "string"
+        },
+        "version": {
+          "description": "The format version, `MAJOR.MINOR.PATCH`.",
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "notes": {
+          "description": "Anything worth writing down about it (the GUI shows and edits it; `#` comments are not kept).",
+          "type": "string"
+        },
+        "end_mills": {
+          "description": "The end mills.",
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/end_mill"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "drills": {
+          "description": "The drills.",
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/drill"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "chamfer_mills": {
+          "description": "The chamfer mills.",
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/chamfer_mill"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "corner_rounding_mills": {
+          "description": "The corner rounding mills.",
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/corner_rounding_mill"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "double_angle_cutters": {
+          "description": "The double angle shank cutters.",
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/double_angle_cutter"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "single_countersinks": {
+          "description": "The single end countersinks.",
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/single_countersink"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "double_countersinks": {
+          "description": "The double end countersinks.",
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/double_countersink"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "end_mill": {
+      "description": "An end mill: square, ball or bull nose (a square end with rounded corners), and perhaps a rougher.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Unique among the things of its kind.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "What the rest of the file is.",
+          "const": "end_mill"
+        },
+        "language": {
+          "description": "The language of the names and notes.",
+          "type": "string"
+        },
+        "version": {
+          "description": "The format version, `MAJOR.MINOR.PATCH`.",
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "notes": {
+          "description": "Anything worth writing down about it (the GUI shows and edits it; `#` comments are not kept).",
+          "type": "string"
+        },
+        "unique_id": {
+          "description": "Its unique id, a number from 1, unique among all the tools of the shop (this is not a T number).",
+          "type": "integer",
+          "minimum": 1
+        },
+        "description": {
+          "description": "What it is, in a few words.",
+          "type": "string"
+        },
+        "diameter": {
+          "description": "The cutting diameter.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "length_of_cut": {
+          "description": "How deep it can cut (LOC).",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "flutes": {
+          "description": "How many flutes.",
+          "type": "integer"
+        },
+        "end": {
+          "description": "The shape of its end.  One of: square, ball, bull_nose.",
+          "type": "string",
+          "examples": [
+            "square",
+            "ball",
+            "bull_nose"
+          ]
+        },
+        "corner_radius": {
+          "description": "A bull nose's corners.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "center_cutting": {
+          "description": "True if it can plunge straight down.",
+          "type": "boolean"
+        },
+        "roughing": {
+          "description": "True for a rougher (serrated flutes).",
+          "type": "boolean"
+        },
+        "cutting": {
+          "description": "Its own speed and feed for a material, which win over those worked out from `materials` (and are needed for a tool that is not HSS, cobalt or carbide).",
+          "type": "object",
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/cutting"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "shank": {
+          "description": "The shank diameter, if not `diameter`.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "overall_length": {
+          "description": "Its whole length (OAL).",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "holder": {
+          "description": "What holds it, from the spindle to its bore (see Tool Holders).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 2
+        },
+        "material": {
+          "description": "What it is made of.  One of: HSS, cobalt, carbide, cermet, ceramic, CBN, PCD.",
+          "type": "string",
+          "examples": [
+            "HSS",
+            "cobalt",
+            "carbide",
+            "cermet",
+            "ceramic",
+            "CBN",
+            "PCD"
+          ]
+        },
+        "grade": {
+          "description": "The grade (`M2`, `M42`, ...).",
+          "type": "string"
+        },
+        "finish": {
+          "description": "Its finish or coating (`uncoated`, `AlTiN`, ...).",
+          "type": "string"
+        },
+        "manufacturer": {
+          "description": "Who made it.",
+          "type": "string"
+        },
+        "manufacturer_pn": {
+          "description": "The maker's part number.",
+          "type": "string"
+        },
+        "vendor": {
+          "description": "Who sold it.",
+          "type": "string"
+        },
+        "vendor_pn": {
+          "description": "The vendor's part number.",
+          "type": "string"
+        },
+        "cost": {
+          "description": "What it cost.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:USD|CAD|EUR|GBP)\\s*$"
+        },
+        "acquired": {
+          "description": "When it was bought (`2026-10-27`).",
+          "format": "date"
+        },
+        "rpm": {
+          "description": "The spindle speed to cut at.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:rpm)\\s*$"
+        },
+        "feed": {
+          "description": "The feed to cut at.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:in/min|mm/min|in/s|mm/s|ipm)\\s*$"
+        },
+        "plunge": {
+          "description": "The feed going straight down.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:in/min|mm/min|in/s|mm/s|ipm)\\s*$"
+        }
+      },
+      "required": [
+        "unique_id",
+        "diameter",
+        "length_of_cut",
+        "flutes",
+        "end",
+        "overall_length",
+        "material"
+      ],
+      "additionalProperties": false
+    },
+    "drill": {
+      "description": "A twist drill.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Unique among the things of its kind.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "What the rest of the file is.",
+          "const": "drill"
+        },
+        "language": {
+          "description": "The language of the names and notes.",
+          "type": "string"
+        },
+        "version": {
+          "description": "The format version, `MAJOR.MINOR.PATCH`.",
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "notes": {
+          "description": "Anything worth writing down about it (the GUI shows and edits it; `#` comments are not kept).",
+          "type": "string"
+        },
+        "unique_id": {
+          "description": "Its unique id, a number from 1, unique among all the tools of the shop (this is not a T number).",
+          "type": "integer",
+          "minimum": 1
+        },
+        "description": {
+          "description": "What it is, in a few words.",
+          "type": "string"
+        },
+        "diameter": {
+          "description": "The cutting diameter.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "length_of_cut": {
+          "description": "How deep it can cut (LOC).",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "flutes": {
+          "description": "How many flutes (2 if not given).",
+          "type": "integer"
+        },
+        "point_angle": {
+          "description": "The included angle.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:deg)\\s*$"
+        },
+        "shank_length": {
+          "description": "How far its shank comes down from its top; if not given, a `shank` starts where its flutes stop.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "split_point": {
+          "description": "True if it has a split point.",
+          "type": "boolean"
+        },
+        "peck_depth": {
+          "description": "How deep each peck goes (0 for none).",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "cutting": {
+          "description": "Its own speed and feed for a material, which win over those worked out from `materials` (and are needed for a tool that is not HSS, cobalt or carbide).",
+          "type": "object",
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/cutting"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "shank": {
+          "description": "The shank diameter, if not `diameter`.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "overall_length": {
+          "description": "Its whole length (OAL).",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "holder": {
+          "description": "What holds it, from the spindle to its bore (see Tool Holders).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 2
+        },
+        "material": {
+          "description": "What it is made of.  One of: HSS, cobalt, carbide, cermet, ceramic, CBN, PCD.",
+          "type": "string",
+          "examples": [
+            "HSS",
+            "cobalt",
+            "carbide",
+            "cermet",
+            "ceramic",
+            "CBN",
+            "PCD"
+          ]
+        },
+        "grade": {
+          "description": "The grade (`M2`, `M42`, ...).",
+          "type": "string"
+        },
+        "finish": {
+          "description": "Its finish or coating (`uncoated`, `AlTiN`, ...).",
+          "type": "string"
+        },
+        "manufacturer": {
+          "description": "Who made it.",
+          "type": "string"
+        },
+        "manufacturer_pn": {
+          "description": "The maker's part number.",
+          "type": "string"
+        },
+        "vendor": {
+          "description": "Who sold it.",
+          "type": "string"
+        },
+        "vendor_pn": {
+          "description": "The vendor's part number.",
+          "type": "string"
+        },
+        "cost": {
+          "description": "What it cost.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:USD|CAD|EUR|GBP)\\s*$"
+        },
+        "acquired": {
+          "description": "When it was bought (`2026-10-27`).",
+          "format": "date"
+        },
+        "rpm": {
+          "description": "The spindle speed to cut at.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:rpm)\\s*$"
+        },
+        "feed": {
+          "description": "The feed to cut at.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:in/min|mm/min|in/s|mm/s|ipm)\\s*$"
+        },
+        "plunge": {
+          "description": "The feed going straight down.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:in/min|mm/min|in/s|mm/s|ipm)\\s*$"
+        }
+      },
+      "required": [
+        "unique_id",
+        "diameter",
+        "length_of_cut",
+        "point_angle",
+        "overall_length",
+        "material"
+      ],
+      "additionalProperties": false
+    },
+    "cutting": {
+      "description": "A tool's own speed and feed for one material.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Unique among the things of its kind.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "What the rest of the file is.",
+          "const": "cutting"
+        },
+        "language": {
+          "description": "The language of the names and notes.",
+          "type": "string"
+        },
+        "version": {
+          "description": "The format version, `MAJOR.MINOR.PATCH`.",
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "notes": {
+          "description": "Anything worth writing down about it (the GUI shows and edits it; `#` comments are not kept).",
+          "type": "string"
+        },
+        "rpm": {
+          "description": "The spindle speed.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:rpm)\\s*$"
+        },
+        "feed": {
+          "description": "The feed.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:in/min|mm/min|in/s|mm/s|ipm)\\s*$"
+        },
+        "plunge": {
+          "description": "The feed going straight down (a drill's `feed`, or an end mill's `feed` times `plunge_factor`, if not given).",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:in/min|mm/min|in/s|mm/s|ipm)\\s*$"
+        }
+      },
+      "required": [
+        "rpm",
+        "feed"
+      ],
+      "additionalProperties": false
+    },
+    "chamfer_mill": {
+      "description": "A chamfer mill (a V-bit), which bevels top edges.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Unique among the things of its kind.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "What the rest of the file is.",
+          "const": "chamfer_mill"
+        },
+        "language": {
+          "description": "The language of the names and notes.",
+          "type": "string"
+        },
+        "version": {
+          "description": "The format version, `MAJOR.MINOR.PATCH`.",
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "notes": {
+          "description": "Anything worth writing down about it (the GUI shows and edits it; `#` comments are not kept).",
+          "type": "string"
+        },
+        "unique_id": {
+          "description": "Its unique id, a number from 1, unique among all the tools of the shop (this is not a T number).",
+          "type": "integer",
+          "minimum": 1
+        },
+        "description": {
+          "description": "What it is, in a few words.",
+          "type": "string"
+        },
+        "diameter": {
+          "description": "The cutting diameter.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "tip_diameter": {
+          "description": "The diameter at its tip.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "angle": {
+          "description": "The included angle (90 deg makes 45 deg bevels).",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:deg)\\s*$"
+        },
+        "flutes": {
+          "description": "How many flutes.",
+          "type": "integer"
+        },
+        "shank": {
+          "description": "The shank diameter, if not `diameter`.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "overall_length": {
+          "description": "Its whole length (OAL).",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "holder": {
+          "description": "What holds it, from the spindle to its bore (see Tool Holders).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 2
+        },
+        "material": {
+          "description": "What it is made of.  One of: HSS, cobalt, carbide, cermet, ceramic, CBN, PCD.",
+          "type": "string",
+          "examples": [
+            "HSS",
+            "cobalt",
+            "carbide",
+            "cermet",
+            "ceramic",
+            "CBN",
+            "PCD"
+          ]
+        },
+        "grade": {
+          "description": "The grade (`M2`, `M42`, ...).",
+          "type": "string"
+        },
+        "finish": {
+          "description": "Its finish or coating (`uncoated`, `AlTiN`, ...).",
+          "type": "string"
+        },
+        "manufacturer": {
+          "description": "Who made it.",
+          "type": "string"
+        },
+        "manufacturer_pn": {
+          "description": "The maker's part number.",
+          "type": "string"
+        },
+        "vendor": {
+          "description": "Who sold it.",
+          "type": "string"
+        },
+        "vendor_pn": {
+          "description": "The vendor's part number.",
+          "type": "string"
+        },
+        "cost": {
+          "description": "What it cost.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:USD|CAD|EUR|GBP)\\s*$"
+        },
+        "acquired": {
+          "description": "When it was bought (`2026-10-27`).",
+          "format": "date"
+        },
+        "rpm": {
+          "description": "The spindle speed to cut at.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:rpm)\\s*$"
+        },
+        "feed": {
+          "description": "The feed to cut at.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:in/min|mm/min|in/s|mm/s|ipm)\\s*$"
+        },
+        "plunge": {
+          "description": "The feed going straight down.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:in/min|mm/min|in/s|mm/s|ipm)\\s*$"
+        }
+      },
+      "required": [
+        "unique_id",
+        "diameter",
+        "tip_diameter",
+        "angle",
+        "overall_length",
+        "material"
+      ],
+      "additionalProperties": false
+    },
+    "corner_rounding_mill": {
+      "description": "A corner rounding mill, which rounds top edges over to its radius.  Its tip (a pilot) rides along the wall below.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Unique among the things of its kind.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "What the rest of the file is.",
+          "const": "corner_rounding_mill"
+        },
+        "language": {
+          "description": "The language of the names and notes.",
+          "type": "string"
+        },
+        "version": {
+          "description": "The format version, `MAJOR.MINOR.PATCH`.",
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "notes": {
+          "description": "Anything worth writing down about it (the GUI shows and edits it; `#` comments are not kept).",
+          "type": "string"
+        },
+        "unique_id": {
+          "description": "Its unique id, a number from 1, unique among all the tools of the shop (this is not a T number).",
+          "type": "integer",
+          "minimum": 1
+        },
+        "description": {
+          "description": "What it is, in a few words.",
+          "type": "string"
+        },
+        "radius": {
+          "description": "The radius it rounds edges to.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "tip_diameter": {
+          "description": "The diameter at its tip.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "flutes": {
+          "description": "How many flutes.",
+          "type": "integer"
+        },
+        "shank": {
+          "description": "The shank diameter, if not `diameter`.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "overall_length": {
+          "description": "Its whole length (OAL).",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "holder": {
+          "description": "What holds it, from the spindle to its bore (see Tool Holders).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 2
+        },
+        "material": {
+          "description": "What it is made of.  One of: HSS, cobalt, carbide, cermet, ceramic, CBN, PCD.",
+          "type": "string",
+          "examples": [
+            "HSS",
+            "cobalt",
+            "carbide",
+            "cermet",
+            "ceramic",
+            "CBN",
+            "PCD"
+          ]
+        },
+        "grade": {
+          "description": "The grade (`M2`, `M42`, ...).",
+          "type": "string"
+        },
+        "finish": {
+          "description": "Its finish or coating (`uncoated`, `AlTiN`, ...).",
+          "type": "string"
+        },
+        "manufacturer": {
+          "description": "Who made it.",
+          "type": "string"
+        },
+        "manufacturer_pn": {
+          "description": "The maker's part number.",
+          "type": "string"
+        },
+        "vendor": {
+          "description": "Who sold it.",
+          "type": "string"
+        },
+        "vendor_pn": {
+          "description": "The vendor's part number.",
+          "type": "string"
+        },
+        "cost": {
+          "description": "What it cost.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:USD|CAD|EUR|GBP)\\s*$"
+        },
+        "acquired": {
+          "description": "When it was bought (`2026-10-27`).",
+          "format": "date"
+        },
+        "rpm": {
+          "description": "The spindle speed to cut at.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:rpm)\\s*$"
+        },
+        "feed": {
+          "description": "The feed to cut at.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:in/min|mm/min|in/s|mm/s|ipm)\\s*$"
+        },
+        "plunge": {
+          "description": "The feed going straight down.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:in/min|mm/min|in/s|mm/s|ipm)\\s*$"
+        }
+      },
+      "required": [
+        "unique_id",
+        "radius",
+        "tip_diameter",
+        "overall_length",
+        "material"
+      ],
+      "additionalProperties": false
+    },
+    "double_angle_cutter": {
+      "description": "A pointed double angle shank cutter: a cone above and a cone below its widest point, on a thin neck, so it can chamfer bottom edges (back chamfering) as well as top ones.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Unique among the things of its kind.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "What the rest of the file is.",
+          "const": "double_angle_cutter"
+        },
+        "language": {
+          "description": "The language of the names and notes.",
+          "type": "string"
+        },
+        "version": {
+          "description": "The format version, `MAJOR.MINOR.PATCH`.",
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "notes": {
+          "description": "Anything worth writing down about it (the GUI shows and edits it; `#` comments are not kept).",
+          "type": "string"
+        },
+        "unique_id": {
+          "description": "Its unique id, a number from 1, unique among all the tools of the shop (this is not a T number).",
+          "type": "integer",
+          "minimum": 1
+        },
+        "description": {
+          "description": "What it is, in a few words.",
+          "type": "string"
+        },
+        "diameter": {
+          "description": "The cutting diameter.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "angle": {
+          "description": "The included angle of the two cones together.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:deg)\\s*$"
+        },
+        "width": {
+          "description": "The height of the cutter (L2), point to point.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "neck_diameter": {
+          "description": "The neck's diameter.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "neck_length": {
+          "description": "The neck's length (L3), from the shank to the cutter.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "flutes": {
+          "description": "How many flutes.",
+          "type": "integer"
+        },
+        "shank": {
+          "description": "The shank diameter, if not `diameter`.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "overall_length": {
+          "description": "Its whole length (OAL).",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "holder": {
+          "description": "What holds it, from the spindle to its bore (see Tool Holders).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 2
+        },
+        "material": {
+          "description": "What it is made of.  One of: HSS, cobalt, carbide, cermet, ceramic, CBN, PCD.",
+          "type": "string",
+          "examples": [
+            "HSS",
+            "cobalt",
+            "carbide",
+            "cermet",
+            "ceramic",
+            "CBN",
+            "PCD"
+          ]
+        },
+        "grade": {
+          "description": "The grade (`M2`, `M42`, ...).",
+          "type": "string"
+        },
+        "finish": {
+          "description": "Its finish or coating (`uncoated`, `AlTiN`, ...).",
+          "type": "string"
+        },
+        "manufacturer": {
+          "description": "Who made it.",
+          "type": "string"
+        },
+        "manufacturer_pn": {
+          "description": "The maker's part number.",
+          "type": "string"
+        },
+        "vendor": {
+          "description": "Who sold it.",
+          "type": "string"
+        },
+        "vendor_pn": {
+          "description": "The vendor's part number.",
+          "type": "string"
+        },
+        "cost": {
+          "description": "What it cost.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:USD|CAD|EUR|GBP)\\s*$"
+        },
+        "acquired": {
+          "description": "When it was bought (`2026-10-27`).",
+          "format": "date"
+        },
+        "rpm": {
+          "description": "The spindle speed to cut at.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:rpm)\\s*$"
+        },
+        "feed": {
+          "description": "The feed to cut at.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:in/min|mm/min|in/s|mm/s|ipm)\\s*$"
+        },
+        "plunge": {
+          "description": "The feed going straight down.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:in/min|mm/min|in/s|mm/s|ipm)\\s*$"
+        }
+      },
+      "required": [
+        "unique_id",
+        "diameter",
+        "angle",
+        "width",
+        "overall_length",
+        "material"
+      ],
+      "additionalProperties": false
+    },
+    "single_countersink": {
+      "description": "A combined drill and countersink on a shank: a small drill at its tip, joined to its body by a cone.  It can not go in a `tool_table` yet.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Unique among the things of its kind.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "What the rest of the file is.",
+          "const": "single_countersink"
+        },
+        "language": {
+          "description": "The language of the names and notes.",
+          "type": "string"
+        },
+        "version": {
+          "description": "The format version, `MAJOR.MINOR.PATCH`.",
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "notes": {
+          "description": "Anything worth writing down about it (the GUI shows and edits it; `#` comments are not kept).",
+          "type": "string"
+        },
+        "unique_id": {
+          "description": "Its unique id, a number from 1, unique among all the tools of the shop (this is not a T number).",
+          "type": "integer",
+          "minimum": 1
+        },
+        "description": {
+          "description": "What it is, in a few words.",
+          "type": "string"
+        },
+        "diameter": {
+          "description": "The cutting diameter.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "drill_diameter": {
+          "description": "The diameter of the small drill at its tip.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "drill_length": {
+          "description": "How far the small drill reaches from its tip (its diameter if not given).",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "angle": {
+          "description": "The countersink's included angle.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:deg)\\s*$"
+        },
+        "point_angle": {
+          "description": "The included angle of the small drill's point (90 deg if not given).",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:deg)\\s*$"
+        },
+        "flutes": {
+          "description": "How many flutes (2 if not given).",
+          "type": "integer"
+        },
+        "shank": {
+          "description": "The shank diameter, if not `diameter`.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "overall_length": {
+          "description": "Its whole length (OAL).",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "holder": {
+          "description": "What holds it, from the spindle to its bore (see Tool Holders).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 2
+        },
+        "material": {
+          "description": "What it is made of.  One of: HSS, cobalt, carbide, cermet, ceramic, CBN, PCD.",
+          "type": "string",
+          "examples": [
+            "HSS",
+            "cobalt",
+            "carbide",
+            "cermet",
+            "ceramic",
+            "CBN",
+            "PCD"
+          ]
+        },
+        "grade": {
+          "description": "The grade (`M2`, `M42`, ...).",
+          "type": "string"
+        },
+        "finish": {
+          "description": "Its finish or coating (`uncoated`, `AlTiN`, ...).",
+          "type": "string"
+        },
+        "manufacturer": {
+          "description": "Who made it.",
+          "type": "string"
+        },
+        "manufacturer_pn": {
+          "description": "The maker's part number.",
+          "type": "string"
+        },
+        "vendor": {
+          "description": "Who sold it.",
+          "type": "string"
+        },
+        "vendor_pn": {
+          "description": "The vendor's part number.",
+          "type": "string"
+        },
+        "cost": {
+          "description": "What it cost.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:USD|CAD|EUR|GBP)\\s*$"
+        },
+        "acquired": {
+          "description": "When it was bought (`2026-10-27`).",
+          "format": "date"
+        },
+        "rpm": {
+          "description": "The spindle speed to cut at.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:rpm)\\s*$"
+        },
+        "feed": {
+          "description": "The feed to cut at.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:in/min|mm/min|in/s|mm/s|ipm)\\s*$"
+        },
+        "plunge": {
+          "description": "The feed going straight down.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:in/min|mm/min|in/s|mm/s|ipm)\\s*$"
+        }
+      },
+      "required": [
+        "unique_id",
+        "diameter",
+        "drill_diameter",
+        "angle",
+        "overall_length",
+        "material"
+      ],
+      "additionalProperties": false
+    },
+    "double_countersink": {
+      "description": "A combined drill and countersink, cut at both ends (a center drill).  Its `shank` means nothing, since it is cut at both ends.  It can not go in a `tool_table` yet.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Unique among the things of its kind.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "What the rest of the file is.",
+          "const": "double_countersink"
+        },
+        "language": {
+          "description": "The language of the names and notes.",
+          "type": "string"
+        },
+        "version": {
+          "description": "The format version, `MAJOR.MINOR.PATCH`.",
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "notes": {
+          "description": "Anything worth writing down about it (the GUI shows and edits it; `#` comments are not kept).",
+          "type": "string"
+        },
+        "unique_id": {
+          "description": "Its unique id, a number from 1, unique among all the tools of the shop (this is not a T number).",
+          "type": "integer",
+          "minimum": 1
+        },
+        "description": {
+          "description": "What it is, in a few words.",
+          "type": "string"
+        },
+        "diameter": {
+          "description": "The cutting diameter.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "drill_diameter": {
+          "description": "The diameter of the small drill at its tip.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "drill_length": {
+          "description": "How far the small drill reaches from its tip (its diameter if not given).",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "angle": {
+          "description": "The countersink's included angle.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:deg)\\s*$"
+        },
+        "point_angle": {
+          "description": "The included angle of the small drill's point (90 deg if not given).",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:deg)\\s*$"
+        },
+        "flutes": {
+          "description": "How many flutes (2 if not given).",
+          "type": "integer"
+        },
+        "shank": {
+          "description": "The shank diameter, if not `diameter`.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "overall_length": {
+          "description": "Its whole length (OAL).",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "holder": {
+          "description": "What holds it, from the spindle to its bore (see Tool Holders).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 2
+        },
+        "material": {
+          "description": "What it is made of.  One of: HSS, cobalt, carbide, cermet, ceramic, CBN, PCD.",
+          "type": "string",
+          "examples": [
+            "HSS",
+            "cobalt",
+            "carbide",
+            "cermet",
+            "ceramic",
+            "CBN",
+            "PCD"
+          ]
+        },
+        "grade": {
+          "description": "The grade (`M2`, `M42`, ...).",
+          "type": "string"
+        },
+        "finish": {
+          "description": "Its finish or coating (`uncoated`, `AlTiN`, ...).",
+          "type": "string"
+        },
+        "manufacturer": {
+          "description": "Who made it.",
+          "type": "string"
+        },
+        "manufacturer_pn": {
+          "description": "The maker's part number.",
+          "type": "string"
+        },
+        "vendor": {
+          "description": "Who sold it.",
+          "type": "string"
+        },
+        "vendor_pn": {
+          "description": "The vendor's part number.",
+          "type": "string"
+        },
+        "cost": {
+          "description": "What it cost.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:USD|CAD|EUR|GBP)\\s*$"
+        },
+        "acquired": {
+          "description": "When it was bought (`2026-10-27`).",
+          "format": "date"
+        },
+        "rpm": {
+          "description": "The spindle speed to cut at.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:rpm)\\s*$"
+        },
+        "feed": {
+          "description": "The feed to cut at.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:in/min|mm/min|in/s|mm/s|ipm)\\s*$"
+        },
+        "plunge": {
+          "description": "The feed going straight down.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:in/min|mm/min|in/s|mm/s|ipm)\\s*$"
+        }
+      },
+      "required": [
+        "unique_id",
+        "diameter",
+        "drill_diameter",
+        "angle",
+        "overall_length",
+        "material"
+      ],
+      "additionalProperties": false
+    },
+    "tooling": {
+      "description": "Tooling: what holds work on a machine, rather than cutting it.  Only grid plates are described so far; vises, parallels and mill tables are still in `tools.py`.  Every piece's `name` is unique among the shop's tooling, so that a setup can name it.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Unique among the things of its kind.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "What the rest of the file is.",
+          "const": "tooling"
+        },
+        "language": {
+          "description": "The language of the names and notes.",
+          "type": "string"
+        },
+        "version": {
+          "description": "The format version, `MAJOR.MINOR.PATCH`.",
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "notes": {
+          "description": "Anything worth writing down about it (the GUI shows and edits it; `#` comments are not kept).",
+          "type": "string"
+        },
+        "grid_plates": {
+          "description": "The grid plates.",
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/grid_plate"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "grid_plate": {
+      "description": "A grid plate: a plate with a grid of holes, for holding work down, perhaps with chamfered holes and tooling holes.  `Tool_Models.md` draws one, with each size.  Chamfers take SolidCraft minutes to model, once; the model cache keeps the result.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Unique among the things of its kind.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "What the rest of the file is.",
+          "const": "grid_plate"
+        },
+        "language": {
+          "description": "The language of the names and notes.",
+          "type": "string"
+        },
+        "version": {
+          "description": "The format version, `MAJOR.MINOR.PATCH`.",
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "notes": {
+          "description": "Anything worth writing down about it (the GUI shows and edits it; `#` comments are not kept).",
+          "type": "string"
+        },
+        "description": {
+          "description": "What it is, in a few words.",
+          "type": "string"
+        },
+        "length": {
+          "description": "Its size along X.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "width": {
+          "description": "Its size along Y.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "height": {
+          "description": "Its size along Z, its thickness.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "pitch": {
+          "description": "The distance between grid holes, along X and Y.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "edge": {
+          "description": "The distance from a side to the nearest holes.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "hole_diameter": {
+          "description": "The diameter of the grid's holes.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "corner_radius": {
+          "description": "The radius of its four corners (square if not given).",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "chamfer_depth": {
+          "description": "How deep the 45 degree chamfer on each grid hole's top edge is (none if not given).",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "tooling_columns": {
+          "description": "The number of columns of tooling holes, an even number (none if not given).",
+          "type": "integer"
+        },
+        "tooling_rows": {
+          "description": "The number of rows of tooling holes, an even number (none if not given).",
+          "type": "integer"
+        },
+        "tooling_pitch": {
+          "description": "The distance between tooling holes, along X and Y.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "tap_diameter": {
+          "description": "The diameter of the tooling holes to be threaded (the tap drill).",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "close_diameter": {
+          "description": "The diameter of the close fit tooling holes.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "manufacturer": {
+          "description": "Who made it.",
+          "type": "string"
+        },
+        "vendor": {
+          "description": "Who sold it.",
+          "type": "string"
+        },
+        "cost": {
+          "description": "What it cost.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:USD|CAD|EUR|GBP)\\s*$"
+        },
+        "acquired": {
+          "description": "When it was bought or made.",
+          "format": "date"
+        }
+      },
+      "required": [
+        "length",
+        "width",
+        "height",
+        "pitch",
+        "edge",
+        "hole_diameter"
+      ],
+      "additionalProperties": false
+    },
+    "materials": {
+      "description": "The materials a shop cuts, and how to drill and mill them.  Speeds and feeds worked out from these are only starting points; a tool's own `cutting` entries win.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Unique among the things of its kind.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "What the rest of the file is.",
+          "const": "materials"
+        },
+        "language": {
+          "description": "The language of the names and notes.",
+          "type": "string"
+        },
+        "version": {
+          "description": "The format version, `MAJOR.MINOR.PATCH`.",
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "notes": {
+          "description": "Anything worth writing down about it (the GUI shows and edits it; `#` comments are not kept).",
+          "type": "string"
+        },
+        "carbide_speed_factor": {
+          "description": "A carbide tool's surface speed, as a share of HSS's.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:%)\\s*$"
+        },
+        "cobalt_speed_factor": {
+          "description": "A cobalt tool's surface speed, as a share of HSS's.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:%)\\s*$"
+        },
+        "end_milling": {
+          "description": "How end mills feed.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/end_milling"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "drilling": {
+          "description": "How drills feed.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/drilling"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "groups": {
+          "description": "The groups of materials that cut alike.",
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/material_group"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "materials": {
+          "description": "The materials, each in a group: in a shop, the files in `materials/` (other than this one).",
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/material"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        }
+      },
+      "required": [
+        "carbide_speed_factor",
+        "cobalt_speed_factor",
+        "end_milling",
+        "drilling",
+        "groups"
+      ],
+      "additionalProperties": false
+    },
+    "drilling": {
+      "description": "How drills feed: the feed per revolution by drill diameter (the middle of the catalog ranges), times the group's `feed_factor`.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Unique among the things of its kind.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "What the rest of the file is.",
+          "const": "drilling"
+        },
+        "language": {
+          "description": "The language of the names and notes.",
+          "type": "string"
+        },
+        "version": {
+          "description": "The format version, `MAJOR.MINOR.PATCH`.",
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "notes": {
+          "description": "Anything worth writing down about it (the GUI shows and edits it; `#` comments are not kept).",
+          "type": "string"
+        },
+        "feed_ranges": {
+          "description": "The feeds per revolution, smallest drills first.",
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/feed_range"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        }
+      },
+      "required": [
+        "feed_ranges"
+      ],
+      "additionalProperties": false
+    },
+    "end_milling": {
+      "description": "How end mills feed: the chip load by diameter, times the group's `feed_factor`, times the flutes and the RPM.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Unique among the things of its kind.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "What the rest of the file is.",
+          "const": "end_milling"
+        },
+        "language": {
+          "description": "The language of the names and notes.",
+          "type": "string"
+        },
+        "version": {
+          "description": "The format version, `MAJOR.MINOR.PATCH`.",
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "notes": {
+          "description": "Anything worth writing down about it (the GUI shows and edits it; `#` comments are not kept).",
+          "type": "string"
+        },
+        "plunge_factor": {
+          "description": "The plunge feed, as a share of the feed.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:%)\\s*$"
+        },
+        "chip_loads": {
+          "description": "The chip loads, smallest end mills first.",
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/chip_load"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        }
+      },
+      "required": [
+        "plunge_factor",
+        "chip_loads"
+      ],
+      "additionalProperties": false
+    },
+    "chip_load": {
+      "description": "The chip load of end mills below a diameter.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Unique among the things of its kind.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "What the rest of the file is.",
+          "const": "chip_load"
+        },
+        "language": {
+          "description": "The language of the names and notes.",
+          "type": "string"
+        },
+        "version": {
+          "description": "The format version, `MAJOR.MINOR.PATCH`.",
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "notes": {
+          "description": "Anything worth writing down about it (the GUI shows and edits it; `#` comments are not kept).",
+          "type": "string"
+        },
+        "below": {
+          "description": "The end mills it is for are smaller than this.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "chip_load": {
+          "description": "Their feed per tooth.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:in/tooth|mm/tooth|ipt)\\s*$"
+        }
+      },
+      "required": [
+        "below",
+        "chip_load"
+      ],
+      "additionalProperties": false
+    },
+    "feed_range": {
+      "description": "The feed per revolution of drills below a diameter.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Unique among the things of its kind.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "What the rest of the file is.",
+          "const": "feed_range"
+        },
+        "language": {
+          "description": "The language of the names and notes.",
+          "type": "string"
+        },
+        "version": {
+          "description": "The format version, `MAJOR.MINOR.PATCH`.",
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "notes": {
+          "description": "Anything worth writing down about it (the GUI shows and edits it; `#` comments are not kept).",
+          "type": "string"
+        },
+        "below": {
+          "description": "The drills it is for are smaller than this.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:inches|inch|in|ft|mm|cm)\\s*$"
+        },
+        "feed": {
+          "description": "Their feed per revolution.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:in/rev|mm/rev|ipr)\\s*$"
+        }
+      },
+      "required": [
+        "below",
+        "feed"
+      ],
+      "additionalProperties": false
+    },
+    "material_group": {
+      "description": "A group of materials that cut alike.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Unique among the things of its kind.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "What the rest of the file is.",
+          "const": "material_group"
+        },
+        "language": {
+          "description": "The language of the names and notes.",
+          "type": "string"
+        },
+        "version": {
+          "description": "The format version, `MAJOR.MINOR.PATCH`.",
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "notes": {
+          "description": "Anything worth writing down about it (the GUI shows and edits it; `#` comments are not kept).",
+          "type": "string"
+        },
+        "description": {
+          "description": "What is in it.",
+          "type": "string"
+        },
+        "hss_surface_speed": {
+          "description": "The surface speed of an HSS tool.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:ft/min|m/min|sfm)\\s*$"
+        },
+        "feed_factor": {
+          "description": "The feed, as a share of `feed_ranges` and `chip_loads`.",
+          "type": "string",
+          "pattern": "^\\s*[-+]?(?:(?:\\d+-)?\\d+/\\d+|(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?)\\s*(?:%)\\s*$"
+        }
+      },
+      "required": [
+        "hss_surface_speed",
+        "feed_factor"
+      ],
+      "additionalProperties": false
+    },
+    "material": {
+      "description": "A material the shop cuts.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Unique among the things of its kind.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "What the rest of the file is.",
+          "const": "material"
+        },
+        "language": {
+          "description": "The language of the names and notes.",
+          "type": "string"
+        },
+        "version": {
+          "description": "The format version, `MAJOR.MINOR.PATCH`.",
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "notes": {
+          "description": "Anything worth writing down about it (the GUI shows and edits it; `#` comments are not kept).",
+          "type": "string"
+        },
+        "group": {
+          "description": "The group it cuts with.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "group"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

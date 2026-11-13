@@ -4,11 +4,14 @@ This document is written by `scraftcam/shops.py` (`python3 -m
 scraftcam.shops markdown > Shops.md`) from the schema that its reader
 checks files against; a change is made there, never here.
 
-A shop is described in Nested TOML files: what machines it has (and,
-to come, the tools that cut, the tooling that holds the material, and
-the materials it cuts).  This document describes every kind of file a
-shop can refer to, not only the shop file itself, since a file can
-stand alone and be shared by several machines or shops.
+A shop is a directory: its `shop.toml`, and one
+[TOML](https://toml.io/en/v1.0.0) file per item (a machine, a tool, a
+grid plate, a material) in the directories beside it.  The reader
+reads them all into one data structure (JSON style dictionaries,
+lists, strings, numbers and booleans), which the CNC side uses
+without knowing how the files were split.  The GUI
+(`python3 -m scraftcam.run`) writes these files; they may be edited
+by hand as well, and are best kept under version control.
 
 This document describes format version `0.0.1`, the version every
 file carries in its `version` key.
@@ -16,24 +19,60 @@ file carries in its `version` key.
 In the tables, a row whose first cell is empty continues the row
 above it, so that no line is too wide to read in a text editor.
 
-## Nested TOML
+## The Shop's Directory
 
-A Nested TOML description is kept in one or more
-[TOML](https://toml.io/en/v1.0.0) files.  The reader reads them all
-and splices them together into one data structure (JSON style
-dictionaries, lists, strings, numbers and booleans), which the CNC
-side uses without knowing how the files were split.
+```
+shop/
+  shop.toml                the shop (`shop`)
+  controllers/linuxcnc.toml   a controller (`controller`)
+  machines/shop_mill.toml     a machine, with its tool table (`machine`)
+  tools/1_4_in_end_mill.toml  a tool (`end_mill`, `drill`, ...)
+  tooling/grid_plate.toml     work holding (`grid_plate`)
+  materials/cutting_data.toml how to cut (`materials`)
+  materials/6061_aluminum.toml   a material (`material`)
+```
+
+* `scraftcam` names the directories; the files in them are named
+  as the user likes (the GUI names them after the item).
+* Each file is one item, of a kind its directory holds; a file of
+  another kind there is refused.
+* No two items of a kind may share a name (no two tools at all).
+* A machine names its controller by name (`controller = "LinuxCNC"`),
+  and holds its tool table (`[tool_table.tools]`), which names tools
+  by name.  Any other table is written in place.
+* The reader fills in the shop's `machines`, `tools`, `tooling` and
+  `materials` from the directories.
+* The example shop is `examples/shop/`.
+
+### The First Line
+
+A file the GUI writes starts with a comment naming its kind's JSON
+Schema, which editors such as VS Code (with Even Better TOML) use to
+check it as it is typed:
+
+```toml
+#:schema https://raw.githubusercontent.com/.../schemas/machine.json
+```
+
+(`SCHEMA_URL` in `shop_schema.py` is the whole address.)
+
+The schemas are written from the same descriptions as this document
+(`python3 -m scraftcam.shop_schema`).  They check less than the
+reader does.
 
 ### The Header Keys
 
-Every file starts with the same four keys:
+Every file starts with the same keys:
 
-| Key        | Value   | Required | Meaning                                  |
-| ---------- | ------- | -------- | ---------------------------------------- |
-| `name`     | string  | yes      | Unique among the things of its kind.     |
-| `kind`     | string  | yes      | What the rest of the file is.            |
-| `language` | string  | yes      | The language of the names and notes.     |
-| `version`  | version | yes      | The format version, `MAJOR.MINOR.PATCH`. |
+| Key        | Value   | Required | Meaning                                   |
+| ---------- | ------- | -------- | ----------------------------------------- |
+| `name`     | string  | yes      | Unique among the things of its kind.      |
+| `kind`     | string  | yes      | What the rest of the file is.             |
+| `language` | string  | yes      | The language of the names and notes.      |
+| `version`  | version | yes      | The format version, `MAJOR.MINOR.PATCH`.  |
+| `notes`    | string  | no       | Anything worth writing down about it (the |
+|            |         |          | GUI shows and edits it; `#` comments are  |
+|            |         |          | not kept).                                |
 
 * `name`: things refer to each other by name, so no two things of
   the same kind may share one.
@@ -41,27 +80,11 @@ Every file starts with the same four keys:
   the file has.
 * `version`: a major version other than this document's is refused,
   and so is a newer minor version.
+* `notes`: `#` comments are not kept when the GUI writes a file, so
+  what is worth keeping goes here.  Any table may have `notes`.
 
 A table written in place (not in a file of its own) needs none of
 them, though it may have them; a `kind` there must fit where it is.
-
-### Joining Files with `@`
-
-A string `"@FILE_NAME"` stands for the contents of that file, in any
-place that takes a table (or a list of them):
-
-```toml
-machines = ["@shop_mill.toml", "@router.toml"]
-```
-
-* The file must be in the same directory as the file that names it (a
-  bare file name ending in `.toml`, with no `/`).
-* Its `kind` must fit where it is named (a `controller` file can not
-  go in `machines`).
-* A file is read once, however often it is named; its contents are
-  spliced in at every place that names it.
-* A missing file, and a loop (a file that names itself, directly or
-  not), are refused.
 
 ### Units
 
@@ -128,51 +151,57 @@ whether a holder fits the spindle, nor a bore the collet or the tool.
   in `!`", the list is only the common ones, and a value ending in
   `!` is taken without a check (`interface = "HSK100A!"`).
 * Every problem is reported with its file, line and key, e.g.
-  `shop_mill.toml:12: spindle.max_rpm: "5000" needs a unit`.  Every
-  problem found is reported, not only the first.
-
-## `shops`
-
-Every shop: the top of a description.  Each shop may be written in
-place, or kept in its own file.  It has a `name` even when it is not a
-file of its own.
-
-| Key     | Value          | Required | Meaning    |
-| ------- | -------------- | -------- | ---------- |
-| `shops` | list of `shop` | yes      | The shops. |
-
-```toml
-name = "Example shops"
-kind = "shops"
-language = "English"
-version = "0.0.1"
-shops = ["@home_shop.toml"]
-```
+  `machines/shop_mill.toml:12: spindle.max_rpm: "5000" needs a
+  unit`.  Every problem found is reported, not only the first.
 
 ## `shop`
 
-A shop: its name, where it is, its machines and its tools.  It has a
-`name` even when it is not a file of its own.
+A shop: `shop.toml`, at the top of the shop's directory.  Its machines,
+tools, tooling and materials are the files in the directories beside it
+(`SHOP_DIRECTORIES`); the reader fills in `machines`, `tools`, `tooling`
+and `materials` from them, so `shop.toml` itself has none of them.  It
+has a `name` even when it is not a file of its own.
 
-| Key         | Value             | Required | Meaning                        |
-| ----------- | ----------------- | -------- | ------------------------------ |
-| `location`  | `location`        | no       | Where the shop is.             |
-| `machines`  | list of `machine` | yes      | The machines in the shop.      |
-| `tools`     | list of `tools`   | no       | The tools on hand, shared by   |
-|             |                   |          | the machines.                  |
-| `tooling`   | list of `tooling` | no       | The work holding on hand (grid |
-|             |                   |          | plates for now), shared by the |
-|             |                   |          | machines.                      |
-| `materials` | `materials`       | no       | The materials it cuts, and how |
-|             |                   |          | to drill them.                 |
+| Key             | Value                 | Required | Meaning                |
+| --------------- | --------------------- | -------- | ---------------------- |
+| `location`      | `location`            | no       | Where the shop is.     |
+| `units`         | one of `in`, `mm`     | no       | The units the shop     |
+|                 |                       |          | prefers: `in`          |
+|                 |                       |          | (imperial) or `mm`     |
+|                 |                       |          | (metric).              |
+| `machine_kinds` | list of `cnc_mill`,   | no       | The kinds of machines  |
+|                 | `cnc_router`,         |          | the shop has, computer |
+|                 | `cnc_lathe`,          |          | controlled or manual   |
+|                 | `laser_cutter`,       |          | (for prep work).       |
+|                 | `3d_printer`,         |          |                        |
+|                 | `manual_mill`,        |          |                        |
+|                 | `manual_lathe`,       |          |                        |
+|                 | `manual_drill_press`, |          |                        |
+|                 | `manual_bandsaw`      |          |                        |
+| `machines`      | list of `machine`     | no       | The machines in the    |
+|                 |                       |          | shop: the files in     |
+|                 |                       |          | `machines/`.           |
+| `tools`         | list of `tools`       | no       | The tools on hand,     |
+|                 |                       |          | shared by the          |
+|                 |                       |          | machines: the files in |
+|                 |                       |          | `tools/`.              |
+| `tooling`       | list of `tooling`     | no       | The work holding on    |
+|                 |                       |          | hand (grid plates for  |
+|                 |                       |          | now), shared by the    |
+|                 |                       |          | machines: the files in |
+|                 |                       |          | `tooling/`.            |
+| `materials`     | `materials`           | no       | The materials it cuts, |
+|                 |                       |          | and how to drill them: |
+|                 |                       |          | the files in           |
+|                 |                       |          | `materials/`.          |
 
 ```toml
 name = "Home shop"
 kind = "shop"
 language = "English"
 version = "0.0.1"
-machines = ["@shop_mill.toml"]
-tools = ["@tools.toml"]
+units = "in"
+machine_kinds = ["cnc_mill", "cnc_router"]
 
 [location]
 latitude = "37.37066 deg"
@@ -211,7 +240,9 @@ is not a file of its own.
 | `table`       | `machine_table`        | no       | The table that the work |
 |               |                        |          | is held on.             |
 | `spindle`     | `spindle`              | yes      | The spindle.            |
-| `controller`  | `controller`           | yes      | The controller.         |
+| `controller`  | `controller`           | yes      | The controller, by its  |
+|               |                        |          | name (a file in         |
+|               |                        |          | `controllers/`).        |
 | `tool_table`  | `tool_table`           | no       | The tools loaded.       |
 | `preferences` | `preferences`          | no       | How it is run.          |
 | `carousel`    | `carousel`             | no       | Its tool changer's      |
@@ -224,8 +255,10 @@ kind = "machine"
 language = "English"
 version = "0.0.1"
 machine = "mill"
-controller = "@linuxcnc.toml"
-tool_table = "@shop_mill_tools.toml"
+controller = "LinuxCNC"
+
+[tool_table.tools]
+1 = "1/4 in 2 flute carbide end mill"
 
 [spindle]
 interface = "R8"
@@ -433,20 +466,14 @@ finish_allowance = "0.05 in"
 The tools loaded in one machine: T numbers (1 to 99) and the names of
 the tools in them.  Each is unique: no T number twice, and no tool
 twice, here or in any other machine's tool table (a tool is in one
-machine at a time).  Tools are loaded and unloaded far more often than a
-machine changes, so the tool table is usually a file of its own.  It has
-a `name` even when it is not a file of its own.
+machine at a time).  It is in its machine's file, as
+`[tool_table.tools]`.
 
 | Key     | Value                 | Required | Meaning                 |
 | ------- | --------------------- | -------- | ----------------------- |
 | `tools` | T number to tool name | yes      | The tools, by T number. |
 
 ```toml
-name = "Shop mill tools"
-kind = "tool_table"
-language = "English"
-version = "0.0.1"
-
 [tools]
 1 = "1/4 in 2 flute carbide end mill"
 4 = "15/64 in HSS jobber drill"
@@ -1176,8 +1203,13 @@ its own.
 | `groups`               | list of            | yes      | The groups of      |
 |                        | `material_group`   |          | materials that cut |
 |                        |                    |          | alike.             |
-| `materials`            | list of `material` | yes      | The materials,     |
-|                        |                    |          | each in a group.   |
+| `materials`            | list of `material` | no       | The materials,     |
+|                        |                    |          | each in a group:   |
+|                        |                    |          | in a shop, the     |
+|                        |                    |          | files in           |
+|                        |                    |          | `materials/`       |
+|                        |                    |          | (other than this   |
+|                        |                    |          | one).              |
 
 ```toml
 name = "Materials"

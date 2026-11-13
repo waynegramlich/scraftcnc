@@ -328,7 +328,7 @@ class TestEndToEnd(unittest.TestCase):
             table = lcnc.stat("tool_table")["tool_table"]
             g5x = lcnc.stat("g5x_offset")["g5x_offset"][:3]
         tools = {tool["id"] for tool in table if tool["id"] > 0}
-        shop = shops.read(HERE / "examples/shop/home_shop.toml")
+        shop = shops.read(HERE / "examples/shop/shop.toml")
         self.assertEqual(tools, set(shops.loaded_tools(shop, "Shop mill")))
         self.assertEqual([round(value, 4) for value in g5x], [4.0, 3.0, -6.0])
         self.assertEqual(self.shown()["speed"], "10x")

@@ -1,0 +1,9 @@
+#:schema https://raw.githubusercontent.com/waynegramlich/scraftcam/main/scraftcam/schemas/material.json
+name = "aluminum"
+kind = "material"
+language = "English"
+version = "0.0.1"
+notes = """\
+  The materials this shop cuts, each naming its group: generic ones \
+  first, then particular alloys."""
+group = "soft"

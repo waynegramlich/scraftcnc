@@ -81,7 +81,7 @@ MATERIAL: str = "6061 aluminum"
 
 # The shop and machine whose tools are loaded, by default.
 SHOP_FILE: Path = (
-    Path(__file__).resolve().parents[2] / "examples/shop/home_shop.toml"
+    Path(__file__).resolve().parents[2] / "examples/shop/shop.toml"
 )
 MACHINE: str = "Shop mill"
 

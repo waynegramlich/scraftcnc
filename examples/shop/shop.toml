@@ -1,0 +1,24 @@
+#:schema https://raw.githubusercontent.com/waynegramlich/scraftcam/main/scraftcam/schemas/shop.json
+name = "Home shop"
+kind = "shop"
+language = "English"
+version = "0.0.1"
+notes = """\
+  An example shop, at a public address (the Sunnyvale police station). \
+  Example tools, from the Shars Tool 2026 catalog (pages below).  On \
+  the mill, end mills go in R8 collets and drills in an ER32 chuck with \
+  an R8 shank; the router's spindle takes ER20 collets itself. Every \
+  tool gets its speeds and feeds from `materials.toml`, unless it gives \
+  its own for a material (`cutting`)."""
+units = "in"
+machine_kinds = [
+  "cnc_mill",
+  "cnc_router",
+  "manual_drill_press",
+  "manual_bandsaw",
+]
+
+[location]
+latitude = "37.37066 deg"
+longitude = "-122.04002 deg"
+address = "700 All American Way, Sunnyvale, CA 94086"

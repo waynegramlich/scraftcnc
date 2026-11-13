@@ -1,12 +1,12 @@
-# The example shop's work holding.  The grid plate is `tools.GRID_PLATE`,
-# so that a setup naming it uses the same cached model.
-name = "Shop tooling"
-kind = "tooling"
+#:schema https://raw.githubusercontent.com/waynegramlich/scraftcam/main/scraftcam/schemas/grid_plate.json
+name = "Grid plate"
+kind = "grid_plate"
 language = "English"
 version = "0.0.1"
-
-[[grid_plates]]
-name = "Grid plate"
+notes = """\
+  The example shop's work holding.  The grid plate is \
+  `tools.GRID_PLATE`, so that a setup naming it uses the same cached \
+  model."""
 description = "Aluminum, made in the shop, with tooling holes for #10-32"
 length = "5-1/2 in"
 width = "10-1/2 in"

@@ -78,7 +78,7 @@ TOLERANCE: float = 1.0e-6
 # The shop whose tooling the JSON can name, chosen by `main()`
 # (`use_shop()`).
 SHOP: Path = (
-    Path(__file__).resolve().parents[1] / "examples/shop/home_shop.toml"
+    Path(__file__).resolve().parents[1] / "examples/shop/shop.toml"
 )
 
 

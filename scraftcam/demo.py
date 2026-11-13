@@ -63,7 +63,7 @@ MM_PER_INCH: float = 25.4
 
 # The shop, the machine in it that cuts the plate, and the end mill.
 SHOP_FILE: Path = (
-    Path(__file__).resolve().parents[1] / "examples/shop/home_shop.toml"
+    Path(__file__).resolve().parents[1] / "examples/shop/shop.toml"
 )
 MACHINE: str = "Shop mill"
 

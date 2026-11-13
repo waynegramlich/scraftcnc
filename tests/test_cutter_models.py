@@ -17,7 +17,7 @@ from scraftcam.tooling.shop_registries import use_shop
 # The example shop, and an extracted `solidcraft-cli` (as the demo
 # uses) for the live test.
 HERE: Path = Path(__file__).resolve().parent.parent
-SHOP: Path = HERE / "examples/shop/home_shop.toml"
+SHOP: Path = HERE / "examples/shop/shop.toml"
 CLI: Path = HERE / "solidcraft/squashfs-root/usr/bin/solidcraft-cli"
 
 

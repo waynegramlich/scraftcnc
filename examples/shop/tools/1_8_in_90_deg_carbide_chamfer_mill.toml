@@ -1,0 +1,20 @@
+#:schema https://raw.githubusercontent.com/waynegramlich/scraftcam/main/scraftcam/schemas/chamfer_mill.json
+name = "1/8 in 90 deg carbide chamfer mill"
+kind = "chamfer_mill"
+language = "English"
+version = "0.0.1"
+notes = "Page 137: 2 flute single end carbide chamfer mill."
+unique_id = 7
+description = "Bevels top edges at 45 deg"
+diameter = "1/8 in"
+tip_diameter = "0.020 in"
+angle = "90 deg"
+flutes = 2
+shank = "1/8 in"
+overall_length = "1-1/2 in"
+holder = ["r8", "1/8 in"]
+material = "carbide"
+finish = "uncoated"
+vendor = "Shars Tool"
+vendor_pn = "416-3509"
+cost = "14.93 USD"

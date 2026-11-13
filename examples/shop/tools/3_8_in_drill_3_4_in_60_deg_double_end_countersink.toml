@@ -1,0 +1,16 @@
+#:schema https://raw.githubusercontent.com/waynegramlich/scraftcam/main/scraftcam/schemas/double_countersink.json
+name = "3/8 in drill, 3/4 in 60 deg double end countersink"
+kind = "double_countersink"
+language = "English"
+version = "0.0.1"
+unique_id = 14
+description = "A center drill: one end, then the other"
+diameter = "3/4 in"
+drill_diameter = "3/8 in"
+drill_length = "1/2 in"
+angle = "60 deg"
+point_angle = "90 deg"
+overall_length = "3 in"
+holder = ["r8", "3/4 in"]
+material = "HSS"
+finish = "uncoated"

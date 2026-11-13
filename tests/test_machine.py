@@ -9,7 +9,7 @@ from tests.test_gcode import machine
 
 # The example shop.
 SHOP_FILE: Path = (
-    Path(__file__).resolve().parent.parent / "examples/shop/home_shop.toml"
+    Path(__file__).resolve().parent.parent / "examples/shop/shop.toml"
 )
 
 

@@ -1,0 +1,23 @@
+#:schema https://raw.githubusercontent.com/waynegramlich/scraftcam/main/scraftcam/schemas/end_mill.json
+name = "1/4 in 4 flute cobalt roughing end mill"
+kind = "end_mill"
+language = "English"
+version = "0.0.1"
+notes = "Page 65: M42 cobalt coarse tooth roughing end mill, Weldon shank."
+unique_id = 4
+description = "Coarse tooth rougher, for clearing pockets fast"
+diameter = "1/4 in"
+length_of_cut = "3/4 in"
+flutes = 4
+end = "square"
+center_cutting = true
+roughing = true
+shank = "3/8 in"
+overall_length = "2-1/2 in"
+holder = ["r8", "3/8 in"]
+material = "cobalt"
+grade = "M42"
+manufacturer = "Import"
+vendor = "Shars Tool"
+vendor_pn = "404-9051"
+cost = "18.30 USD"

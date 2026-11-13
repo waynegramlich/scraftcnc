@@ -34,8 +34,10 @@ from typing import TypeAlias
 from .. import shops
 from ..geometry import ArcSegment, RoundedPolygon, XYSegment
 from ..pybind import scraftpybind
+from ..shop_writer import item_text
 from ..shops import (
     ANGLE,
+    FORMAT_VERSION,
     KINDS,
     LENGTH,
     TableField,
@@ -996,22 +998,25 @@ def _letters(page: ModelPage) -> dict[str, str]:
 
 # Function `_toml()`:
 def _toml(page: ModelPage) -> str:
-    """Return a model's sample as an entry in a tools file.
+    """Return a model's sample as a tool's file in a shop's `tools/`.
 
     Arguments:
     * `page` (`ModelPage`): The model.
 
     Returns:
-    * (`str`): The TOML, with what a tools file also requires.
+    * (`str`): The TOML, with what a tool's file also requires.
     """
     entries: dict[str, object] = {
         "name": f"Sample {page.title.lower()}",
+        "kind": page.kind,
+        "language": "English",
+        "version": FORMAT_VERSION,
         "unique_id": 1,
         **{k: v for k, v in page.sample.items() if k != "kind"},
     }
-    lines: list[str] = [f"[[{page.kind}s]]"]
-    lines += [f"{key} = {json.dumps(val)}" for key, val in entries.items()]
-    return "\n".join(lines) + "\n"
+    # The `#:schema` line is too wide for the document (`Shops.md`
+    # describes it).
+    return item_text(entries).split("\n", 1)[1]
 
 
 # Function `_python()`:
@@ -1205,7 +1210,7 @@ def section(page: ModelPage) -> str:
         "JSON:\n\n```\npython3 -m scraftcam.tooling.cutter_models 8080 "
         f"'{described}'\n```\n\n"
         f"Python:\n\n```python\n{_python(page)}```\n\n"
-        f"A tools file:\n\n```toml\n{_toml(page)}```\n"
+        f"A tool's file, in a shop's `tools/`:\n\n```toml\n{_toml(page)}```\n"
     )
 
 
@@ -2612,10 +2617,11 @@ def grid_plate_section() -> str:
         "    (plate,) = GRID_PLATE.cacheable()\n"
         "    ModelCache().insert(PyBind(transport), plate)\n"
     )
-    toml: str = (HERE / "examples/shop/tooling.toml").read_text(
-        encoding="utf-8"
+    toml: str = (
+        (HERE / "examples/shop/tooling/grid_plate.toml")
+        .read_text(encoding="utf-8")
+        .split("\n", 1)[1]
     )
-    toml = toml[toml.index("[[grid_plates]]") :]
     setup: object = next(
         item
         for item in json.loads(
@@ -2639,8 +2645,9 @@ def grid_plate_section() -> str:
         f"{images}\n\n"
         f"{markdown_table(rows)}\n\n"
         f"Not a size:\n\n{others}\n\n"
-        "A shop describes its grid plates in a tooling file (`Shops.md`),\n"
-        "as `examples/shop/tooling.toml` describes `tools.GRID_PLATE`:\n\n"
+        "A shop describes each grid plate in a file in its `tooling/`\n"
+        "(`Shops.md`), as `examples/shop/tooling/grid_plate.toml`\n"
+        "describes `tools.GRID_PLATE`:\n\n"
         f"```toml\n{toml}```\n\n"
         "Or it is made in Python, in millimeters:\n\n"
         f"```python\n{python}```\n\n"

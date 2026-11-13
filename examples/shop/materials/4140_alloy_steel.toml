@@ -1,0 +1,6 @@
+#:schema https://raw.githubusercontent.com/waynegramlich/scraftcam/main/scraftcam/schemas/material.json
+name = "4140 alloy steel"
+kind = "material"
+language = "English"
+version = "0.0.1"
+group = "alloy"

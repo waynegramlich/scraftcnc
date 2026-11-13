@@ -1,0 +1,92 @@
+#:schema https://raw.githubusercontent.com/waynegramlich/scraftcam/main/scraftcam/schemas/materials.json
+name = "Cutting data"
+kind = "materials"
+language = "en"
+version = "0.0.1"
+notes = """\
+  The materials the shop cuts, and how to drill them; the drilling data \
+  is from the user's `drill_rules.txt`, the feed factors Claude's \
+  guesses. Surface speeds by tool material, as shares of HSS's: carbide \
+  from the user's `drill_rules.txt`; cobalt is Claude's guess (M42 is \
+  usually run a little faster than HSS)."""
+carbide_speed_factor = "250 %"
+cobalt_speed_factor = "110 %"
+
+[end_milling]
+plunge_factor = "50 %"
+notes = """\
+  End mill feed per tooth (chip load) by diameter, times the group's \
+  `feed_factor`: Claude's starting points, from the usual .001-.002 \
+  in/tooth at 1/4-1/2 in.  Plunging at half the feed."""
+
+[[end_milling.chip_loads]]
+below = "1/8 in"
+chip_load = "0.0005 in/tooth"
+
+[[end_milling.chip_loads]]
+below = "1/4 in"
+chip_load = "0.001 in/tooth"
+
+[[end_milling.chip_loads]]
+below = "1/2 in"
+chip_load = "0.0015 in/tooth"
+
+[[end_milling.chip_loads]]
+below = "1 in"
+chip_load = "0.002 in/tooth"
+
+[drilling]
+notes = """\
+  Drill feed per revolution: the middle of the catalog range for the \
+  drill's diameter, times the group's `feed_factor`."""
+
+[[drilling.feed_ranges]]
+below = "1/8 in"
+feed = "0.002 in/rev"
+notes = "feed: 0.001 to 0.003"
+
+[[drilling.feed_ranges]]
+below = "1/4 in"
+feed = "0.004 in/rev"
+notes = "feed: 0.002 to 0.006"
+
+[[drilling.feed_ranges]]
+below = "1/2 in"
+feed = "0.007 in/rev"
+notes = "feed: 0.004 to 0.010"
+
+[[drilling.feed_ranges]]
+below = "1 in"
+feed = "0.011 in/rev"
+notes = "feed: 0.007 to 0.015"
+
+[[groups]]
+description = "Aluminum, brass, acetal"
+hss_surface_speed = "250 sfm"
+feed_factor = "150 %"
+name = "soft"
+notes = "Groups of materials being cut (HSS surface speed)."
+
+[[groups]]
+description = "Mild steel, soft cast iron"
+hss_surface_speed = "100 sfm"
+feed_factor = "100 %"
+name = "mild"
+
+[[groups]]
+description = "Medium and hard cast iron"
+hss_surface_speed = "80 sfm"
+feed_factor = "80 %"
+name = "cast"
+
+[[groups]]
+description = "Tool and alloy steel"
+hss_surface_speed = "40 sfm"
+feed_factor = "70 %"
+name = "alloy"
+
+[[groups]]
+description = "Stainless, titanium, hardened steel"
+hss_surface_speed = "20 sfm"
+feed_factor = "50 %"
+name = "hard"

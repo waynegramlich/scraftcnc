@@ -120,17 +120,23 @@ class TestExamples(unittest.TestCase):
             )
 
     def test_tools_file_reads(self) -> None:
-        """Each tools file example passes the reader."""
-        header = (
-            'name = "Tools"\nkind = "tools"\n'
-            'language = "English"\nversion = "0.0.1"\n\n'
+        """Each tool's file example passes the reader, in a shop."""
+        shop = (
+            'name = "Shop"\nkind = "shop"\n'
+            'language = "English"\nversion = "0.0.1"\n'
         )
         for page in tool_models.PAGES:
             entry = tool_models._toml(page)  # pylint: disable=W0212
             with tempfile.TemporaryDirectory() as directory:
-                file = Path(directory) / "tools.toml"
-                file.write_text(header + entry, encoding="utf-8")
-                self.assertTrue(shops.read(file)[f"{page.kind}s"])
+                top = Path(directory)
+                (top / "shop.toml").write_text(shop, encoding="utf-8")
+                (top / "tools").mkdir()
+                (top / "tools" / "sample.toml").write_text(
+                    entry, encoding="utf-8"
+                )
+                tools = shops.read(top)["tools"]
+                assert isinstance(tools, list)
+                self.assertTrue(tools[0][f"{page.kind}s"])
 
 
 class TestCheckTool(unittest.TestCase):

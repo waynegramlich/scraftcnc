@@ -247,21 +247,23 @@ with connect("8080") as transport:
     )
 ```
 
-A tools file:
+A tool's file, in a shop's `tools/`:
 
 ```toml
-[[end_mills]]
 name = "Sample end mill"
+kind = "end_mill"
+language = "English"
+version = "0.0.1"
 unique_id = 1
-material = "carbide"
-finish = "uncoated"
 diameter = "1/2 in"
-shank = "3/8 in"
 length_of_cut = "1 in"
-overall_length = "3 in"
 flutes = 4
 end = "bull_nose"
 corner_radius = "1/8 in"
+shank = "3/8 in"
+overall_length = "3 in"
+material = "carbide"
+finish = "uncoated"
 ```
 
 ## Drill
@@ -327,20 +329,22 @@ with connect("8080") as transport:
     )
 ```
 
-A tools file:
+A tool's file, in a shop's `tools/`:
 
 ```toml
-[[drills]]
 name = "Sample drill"
+kind = "drill"
+language = "English"
+version = "0.0.1"
 unique_id = 1
+diameter = "5/8 in"
+length_of_cut = "2-1/2 in"
+point_angle = "118 deg"
+shank_length = "1-1/2 in"
+shank = "1/2 in"
+overall_length = "4-1/2 in"
 material = "HSS"
 finish = "black oxide"
-diameter = "5/8 in"
-shank = "1/2 in"
-shank_length = "1-1/2 in"
-length_of_cut = "2-1/2 in"
-overall_length = "4-1/2 in"
-point_angle = "118 deg"
 ```
 
 ## Chamfer Mill
@@ -401,19 +405,21 @@ with connect("8080") as transport:
     )
 ```
 
-A tools file:
+A tool's file, in a shop's `tools/`:
 
 ```toml
-[[chamfer_mills]]
 name = "Sample chamfer mill"
+kind = "chamfer_mill"
+language = "English"
+version = "0.0.1"
 unique_id = 1
+diameter = "1/2 in"
+tip_diameter = "1/4 in"
+angle = "90 deg"
+shank = "1/2 in"
+overall_length = "2 in"
 material = "carbide"
 finish = "uncoated"
-diameter = "1/2 in"
-shank = "1/2 in"
-tip_diameter = "1/4 in"
-overall_length = "2 in"
-angle = "90 deg"
 ```
 
 ## Corner Rounding Mill
@@ -472,18 +478,20 @@ with connect("8080") as transport:
     )
 ```
 
-A tools file:
+A tool's file, in a shop's `tools/`:
 
 ```toml
-[[corner_rounding_mills]]
 name = "Sample corner rounding mill"
+kind = "corner_rounding_mill"
+language = "English"
+version = "0.0.1"
 unique_id = 1
-material = "carbide"
-finish = "uncoated"
 radius = "1/4 in"
 tip_diameter = "1/4 in"
 shank = "3/4 in"
 overall_length = "2-1/2 in"
+material = "carbide"
+finish = "uncoated"
 ```
 
 ## Double Angle Cutter
@@ -553,21 +561,23 @@ with connect("8080") as transport:
     )
 ```
 
-A tools file:
+A tool's file, in a shop's `tools/`:
 
 ```toml
-[[double_angle_cutters]]
 name = "Sample double angle cutter"
+kind = "double_angle_cutter"
+language = "English"
+version = "0.0.1"
 unique_id = 1
-material = "carbide"
-finish = "uncoated"
 diameter = "3/4 in"
-shank = "1/2 in"
+angle = "90 deg"
 width = "3/8 in"
 neck_diameter = "1/4 in"
 neck_length = "1/2 in"
+shank = "1/2 in"
 overall_length = "2-1/2 in"
-angle = "90 deg"
+material = "carbide"
+finish = "uncoated"
 ```
 
 ## Single End Countersink
@@ -638,21 +648,23 @@ with connect("8080") as transport:
     )
 ```
 
-A tools file:
+A tool's file, in a shop's `tools/`:
 
 ```toml
-[[single_countersinks]]
 name = "Sample single end countersink"
+kind = "single_countersink"
+language = "English"
+version = "0.0.1"
 unique_id = 1
-material = "HSS"
-finish = "uncoated"
 diameter = "3/4 in"
-shank = "3/4 in"
 drill_diameter = "3/8 in"
 drill_length = "1/2 in"
-overall_length = "2-1/2 in"
 angle = "60 deg"
 point_angle = "90 deg"
+shank = "3/4 in"
+overall_length = "2-1/2 in"
+material = "HSS"
+finish = "uncoated"
 ```
 
 ## Double End Countersink
@@ -721,20 +733,22 @@ with connect("8080") as transport:
     )
 ```
 
-A tools file:
+A tool's file, in a shop's `tools/`:
 
 ```toml
-[[double_countersinks]]
 name = "Sample double end countersink"
+kind = "double_countersink"
+language = "English"
+version = "0.0.1"
 unique_id = 1
-material = "HSS"
-finish = "uncoated"
 diameter = "3/4 in"
 drill_diameter = "3/8 in"
 drill_length = "1/2 in"
-overall_length = "3 in"
 angle = "60 deg"
 point_angle = "90 deg"
+overall_length = "3 in"
+material = "HSS"
+finish = "uncoated"
 ```
 
 ## Machine Vise
@@ -1503,12 +1517,19 @@ Not a size:
 * `tooling_rows`: Optional.  The number of rows of tooling holes, an
   even number; 0 for none.
 
-A shop describes its grid plates in a tooling file (`Shops.md`),
-as `examples/shop/tooling.toml` describes `tools.GRID_PLATE`:
+A shop describes each grid plate in a file in its `tooling/`
+(`Shops.md`), as `examples/shop/tooling/grid_plate.toml`
+describes `tools.GRID_PLATE`:
 
 ```toml
-[[grid_plates]]
 name = "Grid plate"
+kind = "grid_plate"
+language = "English"
+version = "0.0.1"
+notes = """\
+  The example shop's work holding.  The grid plate is \
+  `tools.GRID_PLATE`, so that a setup naming it uses the same cached \
+  model."""
 description = "Aluminum, made in the shop, with tooling holes for #10-32"
 length = "5-1/2 in"
 width = "10-1/2 in"

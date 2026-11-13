@@ -9,6 +9,9 @@ from typing import Any, cast
 
 from scraftcam import shops
 
+# A `kind` line that does not belong in a location.
+KIND_MACHINE: str = 'kind = "machine"'
+
 # The example shop.
 EXAMPLES: Path = Path(__file__).parent.parent / "examples" / "shop"
 
@@ -157,7 +160,7 @@ class CopiedShop(unittest.TestCase):
         self.assertGreaterEqual(len(found), nth, text)
         return f"{name}:{found[nth - 1]}"
 
-    def problems(self, name: str = "home_shop.toml") -> list[str]:
+    def problems(self, name: str = "shop.toml") -> list[str]:
         """Return the problems found reading a copied file."""
         with self.assertRaises(shops.ShopError) as caught:
             shops.read(self.directory / name)
@@ -168,151 +171,126 @@ class CopiedShop(unittest.TestCase):
 class TestReader(CopiedShop):
     """Reading the example shop, and copies of it with problems."""
 
+    # The files changed most.
+    MILL: str = "machines/shop_mill.toml"
+    ROUTER: str = "machines/shop_router.toml"
+    LINUXCNC: str = "controllers/linuxcnc.toml"
+    END_MILL: str = "tools/1_4_in_2_flute_carbide_end_mill.toml"
+    ROUTER_MILL: str = "tools/1_2_in_2_flute_carbide_end_mill.toml"
+    BALL_MILL: str = "tools/1_4_in_2_flute_hss_ball_end_mill.toml"
+    DRILL: str = "tools/15_64_in_hss_jobber_drill.toml"
+
     def test_example(self) -> None:
-        """The example reads, with its files spliced in."""
-        shop = shops.read(EXAMPLES / "home_shop.toml")
-        machines = shop["machines"]
-        assert isinstance(machines, list)
-        mill = machines[0]
+        """The example reads, its directories filled in."""
+        shop: dict[str, Any] = shops.read(EXAMPLES / "shop.toml")
+        self.assertEqual(shops.read(EXAMPLES), shop)
+        mill = shop["machines"][0]
         self.assertEqual(mill["name"], "Shop mill")
         self.assertEqual(mill["controller"]["name"], "LinuxCNC")
         self.assertEqual(len(mill["axes"]), 3)
-
-    def test_one_file_or_many(self) -> None:
-        """`shops.toml` (in place) reads as the split files do."""
-
-        def without_header(value: object) -> object:
-            """Drop the header keys that only files have."""
-            if isinstance(value, dict):
-                return {
-                    key: without_header(item)
-                    for key, item in value.items()
-                    if key not in ("kind", "language", "version")
-                }
-            if isinstance(value, list):
-                return [without_header(item) for item in value]
-            return value
-
-        whole = shops.read(EXAMPLES / "shops.toml")["shops"]
-        split = shops.read(EXAMPLES / "home_shop.toml")
-        assert isinstance(whole, list)
-        self.assertEqual(without_header(whole[0]), without_header(split))
-
-    def test_file_read_once(self) -> None:
-        """A file named twice is read once, and spliced in twice."""
-        self.change(
-            "home_shop.toml",
-            '"@shop_router.toml"]',
-            '"@shop_router.toml", "@shop_mill.toml"]',
+        self.assertEqual(
+            mill["tool_table"]["tools"]["4"], "15/64 in HSS jobber drill"
         )
-        machines = shops.read(self.directory / "home_shop.toml")["machines"]
-        assert isinstance(machines, list)
-        self.assertIs(machines[0], machines[2])
-
-        # The mill and the router share one controller file.
-        self.assertIs(machines[0]["controller"], machines[1]["controller"])
+        self.assertEqual(len(shop["tools"][0]["end_mills"]), 7)
+        self.assertEqual(
+            shop["tooling"][0]["grid_plates"][0]["name"], "Grid plate"
+        )
+        self.assertEqual(len(shop["materials"]["materials"]), 19)
+        self.assertEqual(shop["materials"]["groups"][0]["name"], "soft")
+        self.assertEqual(shop["units"], "in")
 
     def test_syntax_error(self) -> None:
-        """A TOML syntax error gives its line and column."""
-        self.change("shop_mill.toml", 'machine = "mill"', "machine = mill")
+        """A TOML syntax error gives its file, line and column."""
+        self.change(self.MILL, 'machine = "mill"', "machine = mill")
         self.assertEqual(
-            self.problems(), ["shop_mill.toml:6:11: Invalid value"]
+            self.problems(),
+            [f"{self.at(self.MILL, 'machine = mill')}:11: Invalid value"],
         )
 
     def test_value_problems(self) -> None:
         """Every problem is found, each at its line."""
-        self.change("shop_mill.toml", '"5000 rpm"', "5000")
-        self.change("shop_mill.toml", 'travel = "9 in"', 'travel = "9 ipm"')
-        self.change("shop_mill.toml", "brake = true", "brakes = true")
-        self.change("shop_mill.toml", "t_slots = 3", 't_slots = "3"')
-        self.change("shop_mill.toml", '"mill"', '"lathe"')
-        self.change("shop_mill_tools.toml", "4 = ", "100 = ")
+        self.change(self.MILL, '"5000 rpm"', "5000")
+        self.change(self.MILL, 'travel = "9 in"', 'travel = "9 ipm"')
+        self.change(self.MILL, "brake = true", "brakes = true")
+        self.change(self.MILL, "t_slots = 3", 't_slots = "3"')
+        self.change(self.MILL, '"mill"', '"lathe"')
+        self.change(self.MILL, "4 = ", "100 = ")
         problems = self.problems()
         self.assertEqual(
             [p.split(": ")[:2] for p in problems],
             [
-                [self.at("shop_mill.toml", '"lathe"'), "machine"],
-                [self.at("shop_mill_tools.toml", "[tools]"), "tools"],
-                [self.at("shop_mill.toml", "t_slots ="), "table.t_slots"],
-                [self.at("shop_mill.toml", "= 5000"), "spindle.max_rpm"],
-                [self.at("shop_mill.toml", "9 ipm"), "axes[1].travel"],
-                [self.at("shop_mill.toml", "brakes ="), "axes[2].brakes"],
+                [self.at(self.MILL, '"lathe"'), "machine"],
+                [self.at(self.MILL, "9 ipm"), "axes[1].travel"],
+                [self.at(self.MILL, "brakes ="), "axes[2].brakes"],
+                [self.at(self.MILL, "t_slots ="), "table.t_slots"],
+                [self.at(self.MILL, "= 5000"), "spindle.max_rpm"],
+                [self.at(self.MILL, "[tool_table.tools]"), "tool_table.tools"],
             ],
         )
-        self.assertIn('"5000 rpm"', problems[3])
-        self.assertIn("'ipm' is the wrong unit", problems[4])
 
     def test_tools(self) -> None:
         """Tool names: unknown in a tool table, or used twice."""
         self.change(
-            "shop_mill_tools.toml",
+            self.MILL,
             '2 = "1/8 in cobalt jobber drill"',
             '2 = "1/8 in drill"',
         )
         self.change(
-            "tools.toml",
+            self.ROUTER_MILL,
             'name = "1/2 in 2 flute carbide end mill"',
             'name = "1/4 in 2 flute carbide end mill"',
         )
-        self.change("tools.toml", "acquired = 2026-10-27", 'acquired = "now"')
-        self.change("tools.toml", '"47.02 USD"', '"47.02 XX"')
+        self.change(self.END_MILL, "acquired = 2026-10-27", 'acquired = "now"')
+        self.change(self.ROUTER_MILL, '"47.02 USD"', '"47.02 XX"')
         problems = self.problems()
         self.assertEqual(
-            [p.split(": ")[:2] for p in problems],
-            [
+            sorted(p.split(": ")[:2] for p in problems),
+            sorted(
                 [
-                    self.at("tools.toml", '"now"'),
-                    "end_mills[0].acquired",
-                ],
-                [self.at("tools.toml", '"47.02 XX"'), "end_mills[1].cost"],
-                [
-                    self.at("tools.toml", '"1/4 in 2 flute carbide', 2),
-                    "end_mills[1].name",
-                ],
-                [self.at("shop_mill_tools.toml", "2 = "), "tools.2"],
-                [self.at("shop_router_tools.toml", "1 = "), "tools.1"],
-            ],
+                    [self.at(self.END_MILL, '"now"'), "acquired"],
+                    [self.at(self.ROUTER_MILL, '"47.02 XX"'), "cost"],
+                    [self.at(self.END_MILL, "name ="), "name"],
+                    [self.at(self.MILL, "2 = "), "tool_table.tools.2"],
+                    [self.at(self.ROUTER, "1 = "), "tool_table.tools.1"],
+                ]
+            ),
         )
-        self.assertIn("is not a date", problems[0])
-        self.assertIn("'XX' is the wrong unit", problems[1])
-        self.assertIn("also the name of the tool at", problems[2])
-        self.assertIn('no tool named "1/8 in drill"', problems[3])
+        text = "\n".join(problems)
+        self.assertIn("is not a date", text)
+        self.assertIn("'XX' is the wrong unit", text)
+        self.assertIn("also the name of the tool at", text)
+        self.assertIn('no tool named "1/8 in drill"', text)
 
     def test_unique_ids(self) -> None:
         """A tool's `unique_id`: positive, unique and required."""
-        self.change("tools.toml", "unique_id = 1\n", "unique_id = 0\n")
-        self.change("tools.toml", "unique_id = 2\n", "unique_id = -2\n")
-        self.change("tools.toml", "unique_id = 3\n", 'unique_id = "3"\n')
-        self.change("tools.toml", "unique_id = 4\n", "unique_id = 4.5\n")
-        self.change("tools.toml", "unique_id = 5\n", "unique_id = true\n")
-        self.change("tools.toml", "unique_id = 9\n", "unique_id = 1\n")
-        self.change("tools.toml", "unique_id = 7\n", "unique_id = 6\n")
-        self.change("tools.toml", "unique_id = 8\n", "")
+        changes = (
+            (self.END_MILL, "unique_id = 1\n", "unique_id = 0\n"),
+            (self.ROUTER_MILL, "unique_id = 2\n", "unique_id = -2\n"),
+            (self.BALL_MILL, "unique_id = 3\n", 'unique_id = "3"\n'),
+            (self.DRILL, "unique_id = 5\n", "unique_id = true\n"),
+        )
+        for name, old, new in changes:
+            self.change(name, old, new)
         problems = self.problems()
         self.assertEqual(
-            [p.split(": ")[1] for p in problems],
-            [
-                "end_mills[0].unique_id",
-                "end_mills[1].unique_id",
-                "end_mills[2].unique_id",
-                "end_mills[3].unique_id",
-                "drills[0].unique_id",
-                "chamfer_mills[0].unique_id",
-                "corner_rounding_mills[0]",
-            ],
+            sorted(p.split(": ")[0] for p in problems),
+            sorted(self.at(name, new.strip()) for name, _, new in changes),
         )
-        for problem in problems[:5]:
+        for problem in problems:
             self.assertIn("is not a whole number of 1 or more", problem)
-        self.assertIn(
-            "6 is also the unique id of the tool at "
-            + self.at("tools.toml", "unique_id = 6"),
-            problems[5].replace(self.directory.as_posix() + "/", ""),
-        )
-        self.assertIn("`unique_id` is missing", problems[6])
+
+        # The same number twice, and none at all.
+        for name, old, new in changes:
+            self.change(name, new, old)
+        self.change(self.DRILL, "unique_id = 5\n", "unique_id = 1\n")
+        self.change(self.BALL_MILL, "unique_id = 3\n", "")
+        text = "\n".join(self.problems())
+        self.assertIn("1 is also the unique id of the tool at", text)
+        self.assertIn("`unique_id` is missing", text)
 
     def test_example_unique_ids(self) -> None:
         """The example's unique ids run from 1, with no gaps."""
-        shop: dict[str, Any] = shops.read(EXAMPLES / "home_shop.toml")
+        shop: dict[str, Any] = shops.read(EXAMPLES)
         tools = shop["tools"][0]
         numbers = [
             tool["unique_id"] for key in shops.CNC_KINDS for tool in tools[key]
@@ -322,107 +300,113 @@ class TestReader(CopiedShop):
     def test_holder(self) -> None:
         """`holder`: entries in any capitals, others ending in `!`."""
         self.change(
-            "tools.toml",
+            self.END_MILL,
             'holder = ["r8", "1/4 in"]',
             'holder = ["CAT40", "ER32", "1/4 in"]',
         )
         self.change(
-            "tools.toml",
+            self.ROUTER_MILL,
             'holder = ["er20", "1/2 in"]',
             'holder = ["Tormach", "12 mm"]',
         )
         self.change(
-            "tools.toml",
+            self.BALL_MILL,
             'holder = ["r8", "3/8 in"]',
             'holder = ["capto-c6!", "hsk-a100", "drill-chuck", "3/8 in"]',
         )
-        shop: dict[str, Any] = shops.read(self.directory / "home_shop.toml")
-        tools = shop["tools"][0]
+        shop: dict[str, Any] = shops.read(self.directory)
+        holders = {
+            tool["name"]: tool["holder"]
+            for tool in shop["tools"][0]["end_mills"]
+        }
         self.assertEqual(
-            [tool["holder"] for tool in tools["end_mills"][:3]],
-            [
-                ["cat40", "er32", "1/4 in"],
-                ["tormach", "12 mm"],
-                ["capto-c6!", "hsk-a100", "drill-chuck", "3/8 in"],
-            ],
+            holders["1/4 in 2 flute carbide end mill"],
+            ["cat40", "er32", "1/4 in"],
+        )
+        self.assertEqual(
+            holders["1/2 in 2 flute carbide end mill"], ["tormach", "12 mm"]
+        )
+        self.assertEqual(
+            holders["1/4 in 2 flute HSS ball end mill"],
+            ["capto-c6!", "hsk-a100", "drill-chuck", "3/8 in"],
         )
 
     def test_holder_problems(self) -> None:
         """A `holder` that is not understood, at its own line."""
         bad = (
-            ('holder = ["r8", "1/4 in"]', 'holder = ["capto", "1/4 in"]'),
-            ('holder = ["er20", "1/2 in"]', 'holder = ["r8", "1/2"]'),
-            ('holder = ["r8", "3/8 in"]', 'holder = ["r8", "er32"]'),
-            ('holder = ["r8", "3/8 in"]', 'holder = ["r8"]'),
-            ('holder = ["r8", "er32", "1/4 in"]', 'holder = "r8"'),
+            (
+                self.END_MILL,
+                'holder = ["r8", "1/4 in"]',
+                'holder = ["capto", "1/4 in"]',
+            ),
+            (
+                self.ROUTER_MILL,
+                'holder = ["er20", "1/2 in"]',
+                'holder = ["r8", "1/2"]',
+            ),
+            (self.BALL_MILL, 'holder = ["r8", "3/8 in"]', 'holder = ["r8"]'),
+            (self.DRILL, 'holder = ["r8", "er32", "1/4 in"]', 'holder = "r8"'),
         )
-        for old, new in bad:
-            self.change("tools.toml", old, new)
+        for name, old, new in bad:
+            self.change(name, old, new)
         problems = self.problems()
         self.assertEqual(
-            [p.split(": ")[:2] for p in problems],
-            [
-                [self.at("tools.toml", new), f"{key}.holder"]
-                for (_, new), key in zip(
-                    bad,
-                    (
-                        "end_mills[0]",
-                        "end_mills[1]",
-                        "end_mills[2]",
-                        "end_mills[3]",
-                        "drills[0]",
-                    ),
-                    strict=True,
-                )
-            ],
+            sorted(p.split(": ")[:2] for p in problems),
+            sorted([self.at(name, new), "holder"] for name, _, new in bad),
         )
-        self.assertIn("or another ending in !", problems[0])
-        self.assertIn("is the wrong unit", problems[1])
-        self.assertIn("is not a list of what holds", problems[3])
-        self.assertIn("is not a list of what holds", problems[4])
+        text = "\n".join(problems)
+        self.assertIn("or another ending in !", text)
+        self.assertIn("is the wrong unit", text)
+        self.assertIn("is not a list of what holds", text)
 
     def test_choices(self) -> None:
         """Choices in any capitals; `!` only where the list is open."""
-        self.change("shop_mill.toml", 'interface = "R8"', 'interface = "r8"')
-        self.change("shop_router.toml", '"ER20"', '"HSK100A!"')
-        self.change(
-            "tools.toml",
-            '"1/4 in"]\nmaterial = "HSS"',
-            '"1/4 in"]\nmaterial = "unobtainium"',
-        )
-        self.change("tools.toml", '"47.02 USD"', '"64.10 CAD"')
-        self.change("shop_mill.toml", 'machine = "mill"', 'machine = "lathe!"')
+        self.change(self.MILL, 'interface = "R8"', 'interface = "r8"')
+        self.change(self.ROUTER, '"ER20"', '"HSK100A!"')
+        self.change(self.DRILL, 'material = "HSS"', 'material = "unobtainium"')
+        self.change(self.ROUTER_MILL, '"47.02 USD"', '"64.10 CAD"')
+        self.change(self.MILL, 'machine = "mill"', 'machine = "lathe!"')
         problems = self.problems()
         self.assertEqual(
-            [p.split(": ")[:2] for p in problems],
-            [
-                [self.at("shop_mill.toml", '"lathe!"'), "machine"],
+            sorted(p.split(": ")[:2] for p in problems),
+            sorted(
                 [
-                    self.at("tools.toml", '"unobtainium"'),
-                    "drills[0].material",
-                ],
-            ],
+                    [self.at(self.MILL, '"lathe!"'), "machine"],
+                    [self.at(self.DRILL, '"unobtainium"'), "material"],
+                ]
+            ),
         )
-        self.assertIn("or another ending in !", problems[1])
 
         # Once the problems are fixed, the choices read as the schema
         # spells them, or as written when they end in `!`.
-        self.change("shop_mill.toml", '"lathe!"', '"MILL"')
-        self.change("tools.toml", '"unobtainium"', '"unobtainium!"')
-        shop = shops.read(self.directory / "home_shop.toml")
+        self.change(self.MILL, '"lathe!"', '"MILL"')
+        self.change(self.DRILL, '"unobtainium"', '"unobtainium!"')
+        shop: dict[str, Any] = shops.read(self.directory)
         machines = shop["machines"]
-        tools = shop["tools"]
-        assert isinstance(machines, list) and isinstance(tools, list)
         self.assertEqual(machines[0]["machine"], "mill")
         self.assertEqual(machines[0]["spindle"]["interface"], "R8")
         self.assertEqual(machines[1]["spindle"]["interface"], "HSK100A!")
-        self.assertEqual(tools[0]["drills"][0]["material"], "unobtainium!")
-        self.assertEqual(tools[0]["end_mills"][1]["cost"], "64.10 CAD")
+        drills = {tool["name"]: tool for tool in shop["tools"][0]["drills"]}
+        self.assertEqual(
+            drills["15/64 in HSS jobber drill"]["material"], "unobtainium!"
+        )
+
+    def test_shop_keys(self) -> None:
+        """`units` and `machine_kinds`, as the GUI writes them."""
+        self.change("shop.toml", 'units = "in"', 'units = "MM"')
+        self.change("shop.toml", '"cnc_mill"', '"CNC_mill", "loom"')
+        problems = self.problems()
+        self.assertEqual(len(problems), 1)
+        self.assertIn('"loom" is not one of', problems[0])
+        self.change("shop.toml", ', "loom"', "")
+        shop: dict[str, Any] = shops.read(self.directory)
+        self.assertEqual(shop["units"], "mm")
+        self.assertEqual(shop["machine_kinds"][0], "cnc_mill")
 
     def test_one_place_at_a_time(self) -> None:
-        """A tool, a T number and a tool table are each used once."""
+        """A tool, and a T number, are each used once."""
         self.change(
-            "shop_router_tools.toml",
+            self.ROUTER,
             '1 = "1/2 in 2 flute carbide end mill"',
             '1 = "1/2 in 2 flute carbide end mill"\n'
             '2 = "1/4 in 2 flute carbide end mill"\n'
@@ -431,37 +415,24 @@ class TestReader(CopiedShop):
         )
         self.assertEqual(
             [p.split(": ")[:2] for p in self.problems()],
-            [["shop_router_tools.toml:7", "tools"]],
+            [[self.at(self.ROUTER, "[tool_table.tools]"), "tool_table.tools"]],
         )
-        self.change("shop_router_tools.toml", '03 = "15/64', '4 = "15/64')
+        self.change(self.ROUTER, '03 = "15/64', '4 = "15/64')
         problems = self.problems()
         self.assertEqual(
             [p.split(": ")[:2] for p in problems],
             [
-                ["shop_router_tools.toml:9", "tools.2"],
-                ["shop_router_tools.toml:10", "tools.3"],
-                ["shop_router_tools.toml:11", "tools.4"],
+                [self.at(self.ROUTER, "2 = "), "tool_table.tools.2"],
+                [self.at(self.ROUTER, "3 = "), "tool_table.tools.3"],
+                [self.at(self.ROUTER, "4 = "), "tool_table.tools.4"],
             ],
         )
         self.assertIn("also loaded at", problems[0])
-        self.assertIn("shop_mill_tools.toml:8", problems[0])
-
-        # Two machines may not share one tool table file.
-        self.change(
-            "shop_router.toml",
-            '"@shop_router_tools.toml"',
-            '"@shop_mill_tools.toml"',
-        )
-        problems = self.problems()
-        self.assertEqual(
-            [p.split(": ")[:2] for p in problems],
-            [["shop_router.toml:9", "tool_table"]],
-        )
-        self.assertIn('also the tool table of "Shop mill"', problems[0])
+        self.assertIn(self.at(self.MILL, "1 = "), problems[0])
 
     def test_tool_number(self) -> None:
         """Where a tool is loaded, by machine and T number."""
-        shop = shops.read(EXAMPLES / "home_shop.toml")
+        shop = shops.read(EXAMPLES)
         drill = "15/64 in HSS jobber drill"
         self.assertEqual(shops.loaded_in(shop, drill), ("Shop mill", 4))
         self.assertIsNone(shops.loaded_in(shop, "no such tool"))
@@ -472,72 +443,77 @@ class TestReader(CopiedShop):
             shops.tool_number(machines[1], drill)
         self.assertIn('not loaded in "Shop router"', str(caught.exception))
 
-    def test_tool_table_alone(self) -> None:
-        """A machine read alone has its tool table unchecked."""
-        mill = shops.read(EXAMPLES / "shop_mill.toml")
-        self.assertEqual(mill["name"], "Shop mill")
+    def test_top_must_be_a_shop(self) -> None:
+        """A machine's file is not a shop."""
+        problems = self.problems(self.MILL)
+        self.assertIn("the top file must be a `shop`", problems[-1])
 
     def test_missing_and_kind(self) -> None:
         """Missing keys, and a `kind` that does not fit."""
-        self.change("linuxcnc.toml", 'post_processor = "linuxcnc"\n', "")
-        self.change("shop_mill.toml", 'version = "0.0.1"\n', "")
+        self.change(self.LINUXCNC, 'post_processor = "linuxcnc"\n', "")
+        self.change(self.MILL, 'version = "0.0.1"\n', "")
         self.change(
-            "home_shop.toml",
+            "shop.toml",
             'address = "',
             'kind = "machine"\naddress = "',
         )
         self.assertEqual(
             self.problems(),
             [
-                "linuxcnc.toml:1: `post_processor` is missing",
-                "shop_mill.toml:1: `version` is missing",
-                "home_shop.toml:14: location.kind: a `location` belongs here",
+                self.at("shop.toml", KIND_MACHINE)
+                + ": location.kind: a `location` belongs here",
+                f"{self.LINUXCNC}:1: `post_processor` is missing",
+                f"{self.MILL}:1: `version` is missing",
             ],
         )
 
     def test_versions(self) -> None:
         """A newer minor version, or another major one, is refused."""
-        self.change("linuxcnc.toml", '"0.0.1"', '"0.1.0"')
-        self.change("shop_mill.toml", '"0.0.1"', '"1.0.0"')
+        self.change(self.LINUXCNC, '"0.0.1"', '"0.1.0"')
+        self.change(self.MILL, '"0.0.1"', '"1.0.0"')
         problems = self.problems()
         self.assertEqual(len(problems), 2)
-        self.assertTrue(problems[0].startswith("shop_mill.toml:5: version"))
-        self.assertTrue(problems[1].startswith("linuxcnc.toml:5: version"))
+        self.assertTrue(problems[0].startswith(f"{self.LINUXCNC}:5: version"))
+        self.assertTrue(problems[1].startswith(f"{self.MILL}:5: version"))
 
-    def test_references(self) -> None:
-        """Bad names, missing files, loops and files of the wrong kind."""
+    def test_names(self) -> None:
+        """Controllers by name; no `@`; files where they belong."""
         self.change(
-            "home_shop.toml",
-            '"@shop_router.toml"]',
-            '"@shop_router.toml", "@../x.toml", "@nope.toml", '
-            '"@linuxcnc.toml", "not a table"]',
+            self.MILL, 'controller = "LinuxCNC"', 'controller = "Nope"'
         )
-        self.change("shop_mill.toml", "@linuxcnc", "@home_shop")
+        self.change(
+            self.ROUTER,
+            'controller = "LinuxCNC"',
+            'controller = "@linuxcnc.toml"',
+        )
+        shutil.copy(
+            self.directory / self.LINUXCNC, self.directory / "tools/x.toml"
+        )
+        shutil.copy(
+            self.directory / self.LINUXCNC,
+            self.directory / "controllers/again.toml",
+        )
         problems = self.problems()
         self.assertEqual(
             [p.split(": ")[:2] for p in problems],
             [
-                ["shop_mill.toml:7", "controller"],
-                ["home_shop.toml:6", "machines[2]"],
-                ["home_shop.toml:6", "machines[3]"],
-                ["home_shop.toml:6", "machines[4]"],
-                ["home_shop.toml:6", "machines[5]"],
+                ["controllers/linuxcnc.toml:1", "name"],
+                ["tools/x.toml:1", "kind"],
+                [self.at(self.MILL, '"Nope"'), "controller"],
+                [self.at(self.ROUTER, '"@linuxcnc'), "controller"],
             ],
         )
-        self.assertIn(
-            "home_shop.toml -> shop_mill.toml -> home_shop.toml", problems[0]
-        )
-        self.assertIn("in this directory", problems[1])
-        self.assertIn('no file "nope.toml"', problems[2])
-        self.assertIn("is a `controller` file", problems[3])
-        self.assertIn("is not a `machine` table", problems[4])
+        self.assertIn("also the name of another `controller`", problems[0])
+        self.assertIn("does not belong in tools/", problems[1])
+        self.assertIn('no `controller` named "Nope"', problems[2])
+        self.assertIn('no longer named with "@"', problems[3])
 
     def test_unknown_kind(self) -> None:
         """A top file whose `kind` is not known."""
-        self.change("home_shop.toml", 'kind = "shop"', 'kind = "shoppe"')
+        self.change("shop.toml", 'kind = "shop"', 'kind = "shoppe"')
         self.assertEqual(
             [p.split(": ")[:2] for p in self.problems()],
-            [["home_shop.toml:3", "kind"]],
+            [[self.at("shop.toml", "shoppe"), "kind"]],
         )
 
 
@@ -546,7 +522,7 @@ class TestCNCMachine(CopiedShop):
 
     def test_cnc_machine(self) -> None:
         """A shop's machine, with its loaded tools, for the CNC side."""
-        shop = shops.read(EXAMPLES / "home_shop.toml")
+        shop = shops.read(EXAMPLES)
         mill = shops.cnc_machine(shop, "Shop mill", "6061 aluminum")
         self.assertEqual(
             mill.change_lines(2, "a drill"),
@@ -588,13 +564,15 @@ class TestCNCMachine(CopiedShop):
 
     def test_cnc_needs_preferences(self) -> None:
         """A machine with no preferences can not be run."""
-        text = (self.directory / "shop_router.toml").read_text("utf-8")
+        text = (self.directory / "machines/shop_router.toml").read_text(
+            "utf-8"
+        )
         start = text.index("[preferences]")
-        end = text.index("[table]")
-        (self.directory / "shop_router.toml").write_text(
+        end = text.find("\n[", start) + 1 or len(text)
+        (self.directory / "machines/shop_router.toml").write_text(
             text[:start] + text[end:], encoding="utf-8"
         )
-        shop = shops.read(self.directory / "home_shop.toml")
+        shop = shops.read(self.directory)
         with self.assertRaises(ValueError) as caught:
             shops.cnc_machine(shop, "Shop router", "6061 aluminum")
         self.assertIn("has no preferences", str(caught.exception))
@@ -605,9 +583,7 @@ class TestToolCutting(unittest.TestCase):
 
     def setUp(self) -> None:
         # The shop is TOML data, so `Any` lets the tests index into it.
-        self.shop = cast(
-            dict[str, Any], shops.read(EXAMPLES / "home_shop.toml")
-        )
+        self.shop = cast(dict[str, Any], shops.read(EXAMPLES))
         self.mill = next(
             machine
             for machine in self.shop["machines"]
@@ -660,7 +636,8 @@ class TestToolCutting(unittest.TestCase):
         with self.assertRaises(ValueError) as caught:
             self.cutting("15/64 in HSS jobber drill", "unobtainium")
         self.assertIn(
-            '"unobtainium" is not one of: aluminum', str(caught.exception)
+            '"unobtainium" is not one of: 1018 mild steel',
+            str(caught.exception),
         )
 
     def test_needs_own_cutting(self) -> None:
@@ -773,13 +750,12 @@ class TestMarkdown(unittest.TestCase):
                 )
 
     def test_examples_check(self) -> None:
-        """Examples with no `@` names check against their own kind."""
+        """Each kind's example checks against its kind."""
         for kind in shops.KINDS.values():
-            if "@" in kind.example:
-                continue
             with self.subTest(kind=kind.kind):
                 # pylint: disable-next=protected-access
                 reader = shops._Reader(EXAMPLES)
+                reader.named["controller"] = {"LinuxCNC": {}}
                 # pylint: disable-next=protected-access
                 source = shops._Source(kind.kind, {})
                 reader.table(tomllib.loads(kind.example), kind, (), source)

@@ -1,0 +1,28 @@
+#:schema https://raw.githubusercontent.com/waynegramlich/scraftcam/main/scraftcam/schemas/drill.json
+name = "1/8 in cobalt jobber drill"
+kind = "drill"
+language = "English"
+version = "0.0.1"
+unique_id = 6
+description = "Split point, for hard material"
+diameter = "1/8 in"
+length_of_cut = "1-5/8 in"
+point_angle = "135 deg"
+split_point = true
+peck_depth = "0.05 in"
+overall_length = "2-3/4 in"
+holder = ["r8", "er32", "1/8 in"]
+material = "cobalt"
+grade = "M42"
+finish = "straw"
+manufacturer = "USA Made"
+vendor = "Shars Tool"
+vendor_pn = "415-8998"
+cost = "2.67 USD"
+
+[cutting."6061 aluminum"]
+rpm = "1200 rpm"
+feed = "4 in/min"
+notes = """\
+  A tool's own speed and feed for a material, which win over those \
+  worked out from `materials.toml`."""

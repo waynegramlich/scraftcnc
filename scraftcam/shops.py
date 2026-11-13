@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Shop descriptions: their schema, their reader, and `Shops.md`.
 
-A shop (its machines, and later its tools, tooling and materials) is
-described in Nested TOML files: TOML files that name each other with
-`"@FILE_NAME"` strings.  This module holds the schema of every `kind`
-of file (`KINDS`), reads a description into one JSON style data
+A shop is a directory: `shop.toml`, and one TOML file per item (a
+machine, a tool, a grid plate, a material) in the directories beside
+it (`SHOP_DIRECTORIES`).  This module holds the schema of every
+`kind` of file (`KINDS`), reads a shop into one JSON style data
 structure (`read()`), checking it against the schema, and writes the
 `Shops.md` document from the schema (`markdown()`), so the document
 and the reader can not disagree.
@@ -16,8 +16,8 @@ rest, `_Scanner` finds the line of every key, since no TOML library
 keeps line numbers once a file is parsed.
 
 ```
-python3 -m scraftcam.shops check examples/shop/home_shop.toml
-python3 -m scraftcam.shops json examples/shop/home_shop.toml
+python3 -m scraftcam.shops check examples/shop/shop.toml
+python3 -m scraftcam.shops json examples/shop/shop.toml
 python3 -m scraftcam.shops markdown > Shops.md
 ```
 """
@@ -125,6 +125,7 @@ FORMS: tuple[str, ...] = (
     "holder_list",
     "boolean",
     "choice",
+    "choice_list",
     "version",
     "date",
     "table",
@@ -203,8 +204,10 @@ class TableField:  # pylint: disable=too-many-instance-attributes
             raise ValueError(f"{self.key}: unknown form {self.form!r}")
         if (self.form in ("table", "list", "by_material")) != bool(self.of):
             raise ValueError(f"{self.key}: `of` is only for tables")
-        if (self.form == "choice") != bool(self.choices):
+        if (self.form in ("choice", "choice_list")) != bool(self.choices):
             raise ValueError(f"{self.key}: `choices` is only for choices")
+        if self.form == "choice_list" and self.open:
+            raise ValueError(f"{self.key}: a `choice_list` is never open")
         if self.letter and not re.fullmatch("[A-Z]", self.letter):
             raise ValueError(f"{self.key}: `letter` is one of `A` to `Z`")
 
@@ -224,6 +227,8 @@ class TableField:  # pylint: disable=too-many-instance-attributes
             shown = "one of " + ", ".join(f"`{c}`" for c in self.choices)
             if self.open:
                 shown += ", or another ending in `!`"
+        elif self.form == "choice_list":
+            shown = "list of " + ", ".join(f"`{c}`" for c in self.choices)
         elif self.form == "t_numbers":
             shown = "T number to tool name"
         elif self.form == "by_material":
@@ -263,17 +268,28 @@ HEADER: tuple[TableField, ...] = (
         "name",
         "string",
         "Unique among the things of its kind.",
+        True,
     ),
     TableField(
         "kind",
         "string",
         "What the rest of the file is.",
+        True,
     ),
-    TableField("language", "string", "The language of the names and notes."),
+    TableField(
+        "language", "string", "The language of the names and notes.", True
+    ),
     TableField(
         "version",
         "version",
         "The format version, `MAJOR.MINOR.PATCH`.",
+        True,
+    ),
+    TableField(
+        "notes",
+        "string",
+        "Anything worth writing down about it (the GUI shows and edits "
+        "it; `#` comments are not kept).",
     ),
 )
 
@@ -340,6 +356,20 @@ HOLDER_PART: TableField = TableField(
     open=True,
 )
 
+# The kinds of machines a shop may say it has (`machine_kinds`), as
+# the GUI's new shop questions name them (`gui/app.py`).
+SHOP_MACHINE_KINDS: tuple[str, ...] = (
+    "cnc_mill",
+    "cnc_router",
+    "cnc_lathe",
+    "laser_cutter",
+    "3d_printer",
+    "manual_mill",
+    "manual_lathe",
+    "manual_drill_press",
+    "manual_bandsaw",
+)
+
 # The kinds of tools, which a machine's `tool_table` names.
 TOOL_KINDS: tuple[str, ...] = (
     "end_mill",
@@ -349,6 +379,18 @@ TOOL_KINDS: tuple[str, ...] = (
     "double_angle_cutter",
     "single_countersink",
     "double_countersink",
+)
+
+# A shop's top file, and its directories in the order they are read
+# (a machine names its controller, so controllers come first), each
+# with the kinds of file it holds.
+SHOP_FILE: str = "shop.toml"
+SHOP_DIRECTORIES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("controllers", ("controller",)),
+    ("tools", TOOL_KINDS),
+    ("tooling", ("grid_plate",)),
+    ("materials", ("materials", "material")),
+    ("machines", ("machine",)),
 )
 
 
@@ -509,58 +551,55 @@ KINDS: dict[str, TableKind] = {
     kind.kind: kind
     for kind in (
         TableKind(
-            "shops",
-            "Every shop: the top of a description.  Each shop may be "
-            "written in place, or kept in its own file.",
-            (
-                TableField(
-                    "shops",
-                    "list",
-                    "The shops.",
-                    required=True,
-                    of="shop",
-                ),
-            ),
-            True,
-            """\
-name = "Example shops"
-kind = "shops"
-language = "English"
-version = "0.0.1"
-shops = ["@home_shop.toml"]
-""",
-        ),
-        TableKind(
             "shop",
-            "A shop: its name, where it is, its machines and its tools.",
+            "A shop: `shop.toml`, at the top of the shop's directory.  "
+            "Its machines, tools, tooling and materials are the files in "
+            "the directories beside it (`SHOP_DIRECTORIES`); the reader "
+            "fills in `machines`, `tools`, `tooling` and `materials` from "
+            "them, so `shop.toml` itself has none of them.",
             (
                 TableField(
                     "location", "table", "Where the shop is.", of="location"
                 ),
                 TableField(
+                    "units",
+                    "choice",
+                    "The units the shop prefers: `in` (imperial) or `mm` "
+                    "(metric).",
+                    choices=("in", "mm"),
+                ),
+                TableField(
+                    "machine_kinds",
+                    "choice_list",
+                    "The kinds of machines the shop has, computer "
+                    "controlled or manual (for prep work).",
+                    choices=SHOP_MACHINE_KINDS,
+                ),
+                TableField(
                     "machines",
                     "list",
-                    "The machines in the shop.",
-                    required=True,
+                    "The machines in the shop: the files in `machines/`.",
                     of="machine",
                 ),
                 TableField(
                     "tools",
                     "list",
-                    "The tools on hand, shared by the machines.",
+                    "The tools on hand, shared by the machines: the files "
+                    "in `tools/`.",
                     of="tools",
                 ),
                 TableField(
                     "tooling",
                     "list",
                     "The work holding on hand (grid plates for now), "
-                    "shared by the machines.",
+                    "shared by the machines: the files in `tooling/`.",
                     of="tooling",
                 ),
                 TableField(
                     "materials",
                     "table",
-                    "The materials it cuts, and how to drill them.",
+                    "The materials it cuts, and how to drill them: the "
+                    "files in `materials/`.",
                     of="materials",
                 ),
             ),
@@ -570,8 +609,8 @@ name = "Home shop"
 kind = "shop"
 language = "English"
 version = "0.0.1"
-machines = ["@shop_mill.toml"]
-tools = ["@tools.toml"]
+units = "in"
+machine_kinds = ["cnc_mill", "cnc_router"]
 
 [location]
 latitude = "37.37066 deg"
@@ -631,7 +670,7 @@ address = "700 All American Way, Sunnyvale, CA 94086"
                 TableField(
                     "controller",
                     "table",
-                    "The controller.",
+                    "The controller, by its name (a file in `controllers/`).",
                     required=True,
                     of="controller",
                 ),
@@ -661,8 +700,10 @@ kind = "machine"
 language = "English"
 version = "0.0.1"
 machine = "mill"
-controller = "@linuxcnc.toml"
-tool_table = "@shop_mill_tools.toml"
+controller = "LinuxCNC"
+
+[tool_table.tools]
+1 = "1/4 in 2 flute carbide end mill"
 
 [spindle]
 interface = "R8"
@@ -919,10 +960,8 @@ finish_allowance = "0.05 in"
             "The tools loaded in one machine: T numbers (1 to 99) and "
             "the names of the tools in them.  Each is unique: no T "
             "number twice, and no tool twice, here or in any other "
-            "machine's tool table (a tool is in one machine at a time). "
-            " Tools are loaded and unloaded far more often than a "
-            "machine changes, so the tool table is usually a file of "
-            "its own.",
+            "machine's tool table (a tool is in one machine at a time).  "
+            "It is in its machine's file, as `[tool_table.tools]`.",
             (
                 TableField(
                     "tools",
@@ -931,13 +970,8 @@ finish_allowance = "0.05 in"
                     required=True,
                 ),
             ),
-            True,
+            False,
             """\
-name = "Shop mill tools"
-kind = "tool_table"
-language = "English"
-version = "0.0.1"
-
 [tools]
 1 = "1/4 in 2 flute carbide end mill"
 4 = "15/64 in HSS jobber drill"
@@ -1473,8 +1507,8 @@ close_diameter = "0.196 in"
                 TableField(
                     "materials",
                     "list",
-                    "The materials, each in a group.",
-                    True,
+                    "The materials, each in a group: in a shop, the "
+                    "files in `materials/` (other than this one).",
                     of="material",
                 ),
             ),
@@ -1652,11 +1686,14 @@ This document is written by `scraftcam/shops.py` (`python3 -m
 scraftcam.shops markdown > Shops.md`) from the schema that its reader
 checks files against; a change is made there, never here.
 
-A shop is described in Nested TOML files: what machines it has (and,
-to come, the tools that cut, the tooling that holds the material, and
-the materials it cuts).  This document describes every kind of file a
-shop can refer to, not only the shop file itself, since a file can
-stand alone and be shared by several machines or shops.
+A shop is a directory: its `shop.toml`, and one
+[TOML](https://toml.io/en/v1.0.0) file per item (a machine, a tool, a
+grid plate, a material) in the directories beside it.  The reader
+reads them all into one data structure (JSON style dictionaries,
+lists, strings, numbers and booleans), which the CNC side uses
+without knowing how the files were split.  The GUI
+(`python3 -m scraftcam.run`) writes these files; they may be edited
+by hand as well, and are best kept under version control.
 
 This document describes format version `{version}`, the version every
 file carries in its `version` key.
@@ -1664,17 +1701,50 @@ file carries in its `version` key.
 In the tables, a row whose first cell is empty continues the row
 above it, so that no line is too wide to read in a text editor.
 
-## Nested TOML
+## The Shop's Directory
 
-A Nested TOML description is kept in one or more
-[TOML](https://toml.io/en/v1.0.0) files.  The reader reads them all
-and splices them together into one data structure (JSON style
-dictionaries, lists, strings, numbers and booleans), which the CNC
-side uses without knowing how the files were split.
+```
+shop/
+  shop.toml                the shop (`shop`)
+  controllers/linuxcnc.toml   a controller (`controller`)
+  machines/shop_mill.toml     a machine, with its tool table (`machine`)
+  tools/1_4_in_end_mill.toml  a tool (`end_mill`, `drill`, ...)
+  tooling/grid_plate.toml     work holding (`grid_plate`)
+  materials/cutting_data.toml how to cut (`materials`)
+  materials/6061_aluminum.toml   a material (`material`)
+```
+
+* `scraftcam` names the directories; the files in them are named
+  as the user likes (the GUI names them after the item).
+* Each file is one item, of a kind its directory holds; a file of
+  another kind there is refused.
+* No two items of a kind may share a name (no two tools at all).
+* A machine names its controller by name (`controller = "LinuxCNC"`),
+  and holds its tool table (`[tool_table.tools]`), which names tools
+  by name.  Any other table is written in place.
+* The reader fills in the shop's `machines`, `tools`, `tooling` and
+  `materials` from the directories.
+* The example shop is `examples/shop/`.
+
+### The First Line
+
+A file the GUI writes starts with a comment naming its kind's JSON
+Schema, which editors such as VS Code (with Even Better TOML) use to
+check it as it is typed:
+
+```toml
+#:schema https://raw.githubusercontent.com/.../schemas/machine.json
+```
+
+(`SCHEMA_URL` in `shop_schema.py` is the whole address.)
+
+The schemas are written from the same descriptions as this document
+(`python3 -m scraftcam.shop_schema`).  They check less than the
+reader does.
 
 ### The Header Keys
 
-Every file starts with the same four keys:
+Every file starts with the same keys:
 
 {header}
 
@@ -1684,27 +1754,11 @@ Every file starts with the same four keys:
   the file has.
 * `version`: a major version other than this document's is refused,
   and so is a newer minor version.
+* `notes`: `#` comments are not kept when the GUI writes a file, so
+  what is worth keeping goes here.  Any table may have `notes`.
 
 A table written in place (not in a file of its own) needs none of
 them, though it may have them; a `kind` there must fit where it is.
-
-### Joining Files with `@`
-
-A string `"@FILE_NAME"` stands for the contents of that file, in any
-place that takes a table (or a list of them):
-
-```toml
-machines = ["@shop_mill.toml", "@router.toml"]
-```
-
-* The file must be in the same directory as the file that names it (a
-  bare file name ending in `.toml`, with no `/`).
-* Its `kind` must fit where it is named (a `controller` file can not
-  go in `machines`).
-* A file is read once, however often it is named; its contents are
-  spliced in at every place that names it.
-* A missing file, and a loop (a file that names itself, directly or
-  not), are refused.
 
 ### Units
 
@@ -1759,8 +1813,8 @@ whether a holder fits the spindle, nor a bore the collet or the tool.
   in `!`", the list is only the common ones, and a value ending in
   `!` is taken without a check (`interface = "HSK100A!"`).
 * Every problem is reported with its file, line and key, e.g.
-  `shop_mill.toml:12: spindle.max_rpm: "5000" needs a unit`.  Every
-  problem found is reported, not only the first.
+  `machines/shop_mill.toml:12: spindle.max_rpm: "5000" needs a
+  unit`.  Every problem found is reported, not only the first.
 """
 
 
@@ -2169,16 +2223,16 @@ class _Source:
 # It keeps one record per kind of thing checked, so the count is fine.
 @dataclass(slots=True)
 class _Reader:  # pylint: disable=too-many-instance-attributes
-    """Read Nested TOML files, checking them against `KINDS`.
+    """Read a shop's files, checking them against `KINDS`.
 
     Attributes:
-    * `directory` (`Path`): Where the files are.
+    * `directory` (`Path`): The shop's directory.
     * `files` (`dict[Path, dict[str, object]]`):
       Every file read so far, checked, by its path.
     * `problems` (`list[str]`): Every problem found so far.
-    * `reading` (`list[Path]`):
-      The files being read, each named by the one before it, to find
-      loops.
+    * `named` (`dict[str, dict[str, dict[str, object]]]`):
+      The items read so far, by kind and then name, so a table can be
+      given by name (a machine's controller).
     * `machine_tables` (`list[tuple[str, _Source, KeyPath, object]]`):
       Every machine's name, where its `tool_table` is, and the table.
     * `tool_uses` (`list[tuple[_Source, KeyPath, str]]`):
@@ -2203,7 +2257,9 @@ class _Reader:  # pylint: disable=too-many-instance-attributes
     machine_tables: list[tuple[str, _Source, KeyPath, object]] = field(
         init=False, default_factory=list
     )
-    reading: list[Path] = field(init=False, default_factory=list)
+    named: dict[str, dict[str, dict[str, object]]] = field(
+        init=False, default_factory=dict
+    )
     tool_uses: list[tuple[_Source, KeyPath, str]] = field(
         init=False, default_factory=list
     )
@@ -2270,64 +2326,120 @@ class _Reader:  # pylint: disable=too-many-instance-attributes
             known: str = ", ".join(KINDS)
             self.problem(source, ("kind",), f"is not one of {known}")
             return None
-        self.reading.append(file)
         contents: dict[str, object] = self.table(
             data, KINDS[str(kind)], (), source, whole=True
         )
-        self.reading.pop()
         self.files[file] = contents
         return contents
 
-    # Method `_Reader.reference()`:
-    def reference(
-        self, name: str, kind: TableKind, path: KeyPath, source: _Source
-    ) -> dict[str, object]:
-        """Return the contents of a file named by `"@FILE_NAME"`.
+    # Method `_Reader.directories()`:
+    def directories(self, shop: dict[str, object]) -> None:
+        """Read the shop's directories, and fill in the shop from them.
 
         Arguments:
-        * `name` (`str`): The file name (after the `@`).
+        * `shop` (`dict[str, object]`): The checked `shop.toml`; its
+          `machines`, `tools`, `tooling` and `materials` are set.
+        """
+        # Every item, by its kind, in the order the directories go.
+        found: dict[str, list[dict[str, object]]] = {}
+        directory: str
+        kinds: tuple[str, ...]
+        for directory, kinds in SHOP_DIRECTORIES:
+            path: Path
+            for path in sorted((self.directory / directory).glob("*.toml")):
+                item: dict[str, object] | None = self.item(path, kinds)
+                if item is not None:
+                    found.setdefault(str(item["kind"]), []).append(item)
+
+        # The shop, as the CNC side uses it.
+        shop["machines"] = found.get("machine", [])
+        shop["tools"] = [collection("tools", "Tools", found)]
+        shop["tooling"] = [collection("tooling", "Tooling", found)]
+        cutting: list[dict[str, object]] = found.get("materials", [])
+        if cutting:
+            materials: dict[str, object] = dict(cutting[0])
+            materials["materials"] = found.get("material", [])
+            shop["materials"] = materials
+
+    # Method `_Reader.item()`:
+    def item(
+        self, path: Path, kinds: tuple[str, ...]
+    ) -> dict[str, object] | None:
+        """Read one item's file, which must be one of some kinds.
+
+        Arguments:
+        * `path` (`Path`): The file.
+        * `kinds` (`tuple[str, ...]`): The kinds its directory holds.
+
+        Returns:
+        * (`dict[str, object] | None`): The item, or None if it could
+          not be read, or does not belong there, or its name is taken
+          (each noted).
+        """
+        # Read it, and check it belongs in its directory.
+        shown: str = path.as_posix()
+        contents: dict[str, object] | None = self.file(path, shown)
+        if contents is None:
+            return None
+        kind: str = str(contents.get("kind"))
+        if kind not in kinds:
+            self.problems.append(
+                f"{shown}:1: kind: a `{kind}` does not belong in "
+                f"{path.parent.name}/ (it holds "
+                + ", ".join(f"`{one}`" for one in kinds)
+                + ")"
+            )
+            return None
+
+        # Note it by its name, which no other of its kind may have (a
+        # tool's was checked against every tool's already).
+        name: str = str(contents.get("name"))
+        items: dict[str, dict[str, object]] = self.named.setdefault(kind, {})
+        if name in items and kind not in TOOL_KINDS:
+            self.problems.append(
+                f'{shown}:1: name: "{name}" is also the name of another '
+                f"`{kind}`"
+            )
+            return None
+        items[name] = contents
+        return contents
+
+    # Method `_Reader.by_name()`:
+    def by_name(
+        self, name: str, kind: TableKind, path: KeyPath, source: _Source
+    ) -> dict[str, object]:
+        """Return an item given by its name (a machine's controller).
+
+        Arguments:
+        * `name` (`str`): Its name.
         * `kind` (`TableKind`): The kind of table that belongs here.
         * `path` (`KeyPath`): Where it is named.
         * `source` (`_Source`): The file that names it.
 
         Returns:
         * (`dict[str, object]`):
-          The file's contents, or `{}` if there is a problem (noted).
+          The item, or `{}` if there is none (noted).
         """
-        # Find the file, refusing names outside this directory.
-        if "/" in name or "\\" in name or not name.endswith(".toml"):
+        # `"@FILE"` references are gone (`T.osiade~5.1.9` #130).
+        if name.startswith("@"):
             self.problem(
                 source,
                 path,
-                f'"@{name}" must name a `.toml` file in this directory',
+                f'"{name}": files are no longer named with "@"; each '
+                "item is a file in one of the shop's directories, and a "
+                "table is given in place, or by its name",
             )
             return {}
-        file: Path = self.directory / name
-        if file in self.reading:
-            loop: list[str] = [
-                named.name
-                for named in self.reading[self.reading.index(file) :]
-            ]
-            loop.append(name)
-            self.problem(source, path, "a loop: " + " -> ".join(loop))
-            return {}
-
-        # Read it (once), and check that it fits here.
-        if not file.is_file():
-            self.problem(source, path, f'no file "{name}"')
-            return {}
-        contents: dict[str, object] | None = self.file(file, file.as_posix())
-        if contents is None:
-            return {}
-        if contents.get("kind") != kind.kind:
+        items: dict[str, dict[str, object]] = self.named.get(kind.kind, {})
+        if name not in items:
+            known: str = ", ".join(f'"{item}"' for item in items) or "none"
             self.problem(
                 source,
                 path,
-                f'"{name}" is a `{contents.get("kind")}` file; '
-                f"a `{kind.kind}` belongs here",
+                f'no `{kind.kind}` named "{name}" (there are: {known})',
             )
             return {}
-        return contents
+        return items[name]
 
     # Method `_Reader.table()`:
     def table(
@@ -2339,10 +2451,10 @@ class _Reader:  # pylint: disable=too-many-instance-attributes
         *,
         whole: bool = False,
     ) -> dict[str, object]:
-        """Check a table, or follow a `"@FILE_NAME"` to one.
+        """Check a table, or find one given by its name.
 
         Arguments:
-        * `value` (`object`): The table, or a `"@FILE_NAME"` string.
+        * `value` (`object`): The table, or the name of one.
         * `kind` (`TableKind`): What kind of table it must be.
         * `path` (`KeyPath`): Where it is.
         * `source` (`_Source`): The file it is in.
@@ -2350,17 +2462,15 @@ class _Reader:  # pylint: disable=too-many-instance-attributes
 
         Returns:
         * (`dict[str, object]`):
-          The table, with every `"@FILE_NAME"` in it replaced by the
-          file's contents.
+          The table, with every table given by name replaced by it.
         """
-        # Follow a file name, and refuse anything else but a table.
-        if isinstance(value, str) and value.startswith("@"):
-            return self.reference(value[1:], kind, path, source)
+        # Find a table given by name, and refuse anything else but a
+        # table.
+        if isinstance(value, str):
+            return self.by_name(value, kind, path, source)
         if not isinstance(value, dict):
             self.problem(
-                source,
-                path,
-                f'{value!r} is not a `{kind.kind}` table (or "@FILE_NAME")',
+                source, path, f"{value!r} is not a `{kind.kind}` table"
             )
             return {}
 
@@ -2386,7 +2496,7 @@ class _Reader:  # pylint: disable=too-many-instance-attributes
         # fit.
         required: list[str] = [f.key for f in kind.fields if f.required]
         if whole:
-            required = [f.key for f in HEADER] + required
+            required = [f.key for f in HEADER if f.required] + required
         elif kind.named:
             required = ["name"] + required
         for key in required:
@@ -2481,8 +2591,7 @@ class _Reader:  # pylint: disable=too-many-instance-attributes
 
         Returns:
         * (`object`):
-          The value, with every `"@FILE_NAME"` in it replaced by the
-          file's contents.
+          The value, with every table given by name replaced by it.
         """
         # Tables and lists of them are checked a level down.
         form: str = schema.form
@@ -2514,6 +2623,8 @@ class _Reader:  # pylint: disable=too-many-instance-attributes
             self.problem(source, path, problem)
         elif form == "choice" and isinstance(value, str):
             value = _chosen(value, schema)
+        elif form == "choice_list" and isinstance(value, list):
+            value = [_chosen(str(item), schema) for item in value]
         elif form == "holder_list" and isinstance(value, list):
             value = [
                 _chosen(part, HOLDER_PART) for part in value[:-1]
@@ -2581,12 +2692,8 @@ def _scalar_problem(value: object, schema: TableField) -> str:
         problem = measurement_problem(value, UNITS[form])
     elif form in ("string", "choice", "version"):
         problem = _string_problem(value, schema)
-    elif form == "integer":
-        if not isinstance(value, int) or isinstance(value, bool):
-            problem = f"{value!r} is not a whole number"
-    elif form == "positive_integer":
-        if not isinstance(value, int) or isinstance(value, bool) or value < 1:
-            problem = f"{value!r} is not a whole number of 1 or more"
+    elif form in ("integer", "positive_integer"):
+        problem = _integer_problem(value, positive=form == "positive_integer")
     elif form == "holder_list":
         problem = _holder_problem(value)
     elif form == "boolean":
@@ -2599,7 +2706,49 @@ def _scalar_problem(value: object, schema: TableField) -> str:
             problem = f"{value!r} is not a date (such as 2026-10-27)"
     elif form == "t_numbers":
         problem = _t_numbers_problem(value)
+    elif form == "choice_list":
+        problem = _choice_list_problem(value, schema)
     return problem
+
+
+# Function `_integer_problem()`:
+def _integer_problem(value: object, *, positive: bool) -> str:
+    """Return what is wrong with a whole number.
+
+    Arguments:
+    * `value` (`object`): The value.
+    * `positive` (`bool`): True if it must be 1 or more.
+
+    Returns:
+    * (`str`): The problem, or `""` if there is none.
+    """
+    whole: bool = isinstance(value, int) and not isinstance(value, bool)
+    if positive and not (whole and isinstance(value, int) and value >= 1):
+        return f"{value!r} is not a whole number of 1 or more"
+    if not whole:
+        return f"{value!r} is not a whole number"
+    return ""
+
+
+# Function `_choice_list_problem()`:
+def _choice_list_problem(value: object, schema: TableField) -> str:
+    """Return what is wrong with a list of choices.
+
+    Arguments:
+    * `value` (`object`): The value.
+    * `schema` (`TableField`): The `"choice_list"` it must be.
+
+    Returns:
+    * (`str`): The first problem, or `""` if there is none.
+    """
+    if not isinstance(value, list):
+        return f"{value!r} is not a list"
+    item: object
+    for item in value:
+        problem: str = _string_problem(item, schema)
+        if problem:
+            return problem
+    return ""
 
 
 # Function `_chosen()`:
@@ -2637,7 +2786,7 @@ def _string_problem(value: object, schema: TableField) -> str:
 
     # A choice is one of its choices (whatever its capitals), or ends
     # in `!` if the list is open.
-    if schema.form == "choice" and not _chosen(value, schema):
+    if schema.form in ("choice", "choice_list") and not _chosen(value, schema):
         also: str = ", or another ending in !" if schema.open else ""
         return (
             f'"{value}" is not one of '
@@ -2705,37 +2854,64 @@ def _t_numbers_problem(value: object) -> str:
     return ""
 
 
-# Function `read()`:
-def read(file: Path) -> dict[str, object]:
-    """Read and check a Nested TOML description.
-
-    The tools named in tool tables are checked only when the top file
-    is a `shop` or `shops`, which has the tools.
+# Function `collection()`:
+def collection(
+    kind: str, name: str, found: dict[str, list[dict[str, object]]]
+) -> dict[str, object]:
+    """Gather items into a collection, as the CNC side uses them.
 
     Arguments:
-    * `file` (`Path`):
-      Its top file (such as a shop); the files it names are in the
-      same directory.
+    * `kind` (`str`): `tools` or `tooling`.
+    * `name` (`str`): The collection's name.
+    * `found` (`dict[str, list[dict[str, object]]]`): The items read,
+      by kind.
 
     Returns:
-    * (`dict[str, object]`):
-      Its contents, with every `"@FILE_NAME"` replaced by that file's
-      contents.
+    * (`dict[str, object]`): E.g. `{"kind": "tools", "end_mills": [...]}`.
+    """
+    gathered: dict[str, object] = {"name": name, "kind": kind}
+    schema: TableField
+    for schema in KINDS[kind].fields:
+        if found.get(schema.of):
+            gathered[schema.key] = found[schema.of]
+    return gathered
+
+
+# Function `read()`:
+def read(file: Path) -> dict[str, object]:
+    """Read and check a shop: `shop.toml` and its directories.
+
+    Each file in `SHOP_DIRECTORIES` is one item, checked as the kind
+    its `kind` names; the shop's `machines`, `tools`, `tooling` and
+    `materials` are filled in from them, as the CNC side uses them.
+
+    Arguments:
+    * `file` (`Path`): The shop's `shop.toml`, or its directory.
+
+    Returns:
+    * (`dict[str, object]`): The shop, its items filled in.
 
     Raises:
     * `ShopError`: With every problem found.
     """
-    # Read every file.
+    # The top file, which must be a shop.
+    if file.is_dir():
+        file = file / SHOP_FILE
     reader: _Reader = _Reader(file.parent)
-    contents: dict[str, object] | None = reader.file(file, file.as_posix())
+    shop: dict[str, object] | None = reader.file(file, file.as_posix())
+    if shop is not None and shop.get("kind") != "shop":
+        reader.problems.append(
+            f"{file.as_posix()}:1: kind: the top file must be a `shop`"
+        )
+        shop = None
 
-    # A shop (or shops) has its tools, so its machines' tool tables
-    # can be checked; a machine read alone can not be.
-    if contents is not None and contents.get("kind") in ("shop", "shops"):
+    # Its directories, then the tools each tool table names.
+    if shop is not None:
+        reader.directories(shop)
         reader.check_tool_uses()
-    if reader.problems or contents is None:
+    if reader.problems or shop is None:
         raise ShopError(reader.problems)
-    return contents
+    return shop
 
 
 # Function `check_tool()`:
@@ -3490,23 +3666,18 @@ def markdown_table(rows: list[list[str]], width: int = MARKDOWN_WIDTH) -> str:
 
 
 # Function `_fields_table()`:
-def _fields_table(
-    fields: tuple[TableField, ...], *, all_required: bool = False
-) -> str:
+def _fields_table(fields: tuple[TableField, ...]) -> str:
     """Return a Markdown table of some keys.
 
     Arguments:
     * `fields` (`tuple[TableField, ...]`): The keys.
-    * `all_required` (`bool`):
-      True if every one is required (as the header keys are, in a
-      file).
 
     Returns:
     * (`str`): The table.
     """
     rows: list[list[str]] = [["Key", "Value", "Required", "Meaning"]]
     for schema in fields:
-        required: str = "yes" if schema.required or all_required else "no"
+        required: str = "yes" if schema.required else "no"
         rows.append(
             [f"`{schema.key}`", schema.shown(), required, schema.meaning]
         )
@@ -3530,7 +3701,7 @@ def markdown() -> str:
     sections: list[str] = [
         INTRODUCTION.format(
             version=FORMAT_VERSION,
-            header=_fields_table(HEADER, all_required=True),
+            header=_fields_table(HEADER),
             units=markdown_table(units),
         )
     ]

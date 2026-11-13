@@ -1,0 +1,22 @@
+#:schema https://raw.githubusercontent.com/waynegramlich/scraftcam/main/scraftcam/schemas/end_mill.json
+name = "1/4 in 2 flute carbide end mill"
+kind = "end_mill"
+language = "English"
+version = "0.0.1"
+unique_id = 1
+description = "Regular length, square end, uncoated"
+diameter = "1/4 in"
+length_of_cut = "3/4 in"
+flutes = 2
+end = "square"
+center_cutting = true
+shank = "1/4 in"
+overall_length = "2-1/2 in"
+holder = ["r8", "1/4 in"]
+material = "carbide"
+finish = "uncoated"
+manufacturer = "USA Made"
+vendor = "Shars Tool"
+vendor_pn = "415-0982"
+cost = "15.18 USD"
+acquired = 2026-10-27

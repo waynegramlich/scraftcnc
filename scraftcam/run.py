@@ -29,7 +29,8 @@ if __package__ in (None, ""):
 
 # pylint: disable=wrong-import-position
 from scraftcam.gui import window
-from scraftcam.gui.app import SHOP_FILE, App, find_shop
+from scraftcam.gui.app import App, find_shop
+from scraftcam.shops import SHOP_FILE
 
 # pylint: enable=wrong-import-position
 

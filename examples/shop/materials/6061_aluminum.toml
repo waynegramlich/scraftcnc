@@ -1,0 +1,6 @@
+#:schema https://raw.githubusercontent.com/waynegramlich/scraftcam/main/scraftcam/schemas/material.json
+name = "6061 aluminum"
+kind = "material"
+language = "English"
+version = "0.0.1"
+group = "soft"

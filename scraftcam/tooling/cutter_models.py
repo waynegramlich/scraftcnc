@@ -151,7 +151,7 @@ HELIX_POINTS_PER_TURN: int = 12
 
 # The example shop.
 EXAMPLE_SHOP: Path = (
-    Path(__file__).resolve().parents[2] / "examples/shop/home_shop.toml"
+    Path(__file__).resolve().parents[2] / "examples/shop/shop.toml"
 )
 
 

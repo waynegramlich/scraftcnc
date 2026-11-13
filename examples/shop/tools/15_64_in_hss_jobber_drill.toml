@@ -1,0 +1,19 @@
+#:schema https://raw.githubusercontent.com/waynegramlich/scraftcam/main/scraftcam/schemas/drill.json
+name = "15/64 in HSS jobber drill"
+kind = "drill"
+language = "English"
+version = "0.0.1"
+unique_id = 5
+description = "Entry holes for the 1/4 in end mill"
+diameter = "15/64 in"
+length_of_cut = "2-5/8 in"
+point_angle = "118 deg"
+peck_depth = "0.05 in"
+overall_length = "3-7/8 in"
+holder = ["r8", "er32", "1/4 in"]
+material = "HSS"
+finish = "black oxide"
+manufacturer = "USA Made"
+vendor = "Shars Tool"
+vendor_pn = "415-7938"
+cost = "1.92 USD"

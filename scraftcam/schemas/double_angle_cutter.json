@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/waynegramlich/scraftcam/main/scraftcam/schemas/double_angle_cutter.json",
+  "title": "scraftcam `double_angle_cutter` file",
+  "$ref": "shop.schema.json#/$defs/double_angle_cutter"
+}

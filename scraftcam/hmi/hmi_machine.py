@@ -113,7 +113,7 @@ WORDS: re.Pattern[str] = re.compile(
 # The shop and machine whose tools the Tools window lists, and the
 # material it starts with.
 SHOP_FILE: Path = (
-    Path(__file__).resolve().parents[2] / "examples/shop/home_shop.toml"
+    Path(__file__).resolve().parents[2] / "examples/shop/shop.toml"
 )
 SHOP_MACHINE: str = "Shop mill"
 MATERIAL: str = "6061 aluminum"

@@ -1,0 +1,21 @@
+#:schema https://raw.githubusercontent.com/waynegramlich/scraftcam/main/scraftcam/schemas/end_mill.json
+name = "1/2 in 2 flute HSS ball end mill"
+kind = "end_mill"
+language = "English"
+version = "0.0.1"
+unique_id = 12
+description = "Ball nose, for 3D surfaces and rounded slots"
+diameter = "1/2 in"
+length_of_cut = "1 in"
+flutes = 2
+end = "ball"
+center_cutting = true
+shank = "1/2 in"
+overall_length = "3 in"
+holder = ["r8", "1/2 in"]
+material = "HSS"
+grade = "M2"
+manufacturer = "Import"
+vendor = "Shars Tool"
+vendor_pn = "404-5956"
+cost = "16.20 USD"

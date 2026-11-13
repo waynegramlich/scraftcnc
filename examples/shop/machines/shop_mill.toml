@@ -1,0 +1,88 @@
+#:schema https://raw.githubusercontent.com/waynegramlich/scraftcam/main/scraftcam/schemas/machine.json
+name = "Shop mill"
+kind = "machine"
+language = "English"
+version = "0.0.1"
+notes = "An example of a small knee mill converted to CNC."
+machine = "mill"
+controller = "LinuxCNC"
+
+[[axes]]
+letter = "X"
+travel = "18 in"
+max_feed = "110 in/min"
+max_acceleration = "10 in/s^2"
+limit_switches = true
+brake = false
+
+[[axes]]
+letter = "Y"
+travel = "9 in"
+max_feed = "110 in/min"
+max_acceleration = "10 in/s^2"
+limit_switches = true
+brake = false
+
+[[axes]]
+letter = "Z"
+travel = "16 in"
+max_feed = "90 in/min"
+max_acceleration = "10 in/s^2"
+limit_switches = true
+brake = true
+
+[table]
+length = "34 in"
+width = "9.5 in"
+t_slots = 3
+t_slot_pitch = "2.5 in"
+t_slot_width = "0.625 in"
+t_slot_depth = "0.75 in"
+x = "6 in"
+y = "4.5 in"
+z = "-13.64 in"
+notes = "Where the table sits in the machine (machine coordinates)."
+
+[spindle]
+interface = "R8"
+min_rpm = "100 rpm"
+max_rpm = "5000 rpm"
+reversible = true
+flood = true
+mist = false
+air = false
+
+[tool_table]
+notes = "The tools loaded in the shop mill."
+
+[tool_table.tools]
+1 = "1/4 in 2 flute carbide end mill"
+2 = "1/8 in cobalt jobber drill"
+4 = "15/64 in HSS jobber drill"
+5 = "1/8 in 90 deg carbide chamfer mill"
+6 = "1/16 in radius carbide corner rounding mill"
+7 = "1/4 in 2 flute HSS ball end mill"
+8 = "1/4 in 4 flute cobalt roughing end mill"
+9 = "1/4 in 90 deg double angle shank cutter"
+
+[preferences]
+z_safe = "1 in"
+clearance = "0.05 in"
+tool_change_z = "2 in"
+rapid_speed = "60 in/min"
+drill_cycle = "G83"
+through_overcut = "10 %"
+stepover = "90 %"
+ramp_angle = "3 deg"
+finish_allowance = "0.05 in"
+notes = "How the mill is run."
+
+[carousel]
+slots = 4
+x = "-3 in"
+y = "4.5 in"
+z = "-2 in"
+spoke_length = "2.5 in"
+notes = """\
+  A small carousel: fewer slots than the demonstration's tools, so it \
+  stops once to swap a tool."""

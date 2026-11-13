@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/waynegramlich/scraftcam/main/scraftcam/schemas/grid_plate.json",
+  "title": "scraftcam `grid_plate` file",
+  "$ref": "shop.schema.json#/$defs/grid_plate"
+}

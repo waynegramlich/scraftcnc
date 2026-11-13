@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from scraftcam import shops
 from scraftcam.gui import app
 
 
@@ -127,9 +128,21 @@ class NewShopTest(unittest.TestCase):
             tomllib.loads(text),
             {
                 "name": 'My "big" shop',
+                "kind": "shop",
+                "language": "English",
+                "version": shops.FORMAT_VERSION,
                 "units": "mm",
-                "machines": ["cnc_mill", "manual_lathe"],
+                "machine_kinds": ["cnc_mill", "manual_lathe"],
             },
+        )
+
+        # The shop reader takes it, and knows every kind asked about.
+        with tempfile.TemporaryDirectory() as temporary:
+            (Path(temporary) / "shop.toml").write_text(text)
+            self.assertEqual(shops.read(Path(temporary))["units"], "mm")
+        self.assertEqual(
+            [kind for kind, _label, _ready in app.MACHINE_KINDS],
+            list(shops.SHOP_MACHINE_KINDS),
         )
         bad: tuple[tuple[str, str, list[str]], ...] = (
             (" ", "in", []),

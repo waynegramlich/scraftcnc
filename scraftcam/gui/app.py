@@ -16,21 +16,19 @@ no display.  It holds:
   again by `reload_tree()` whenever they change.
 
 With no shop, a new one can be made from a few answers (#97, #98,
-#104): its name, its units, and the kinds of machines it has.
-`new_shop_text()` writes them; S3's writer will replace it (#105).
+#104): its name, its units, and the kinds of machines it has, which
+`new_shop_text()` writes with the shop writer (`shop_writer.py`).
 """
 
-import json
 import shutil
 import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from ..shop_writer import item_text
+from ..shops import FORMAT_VERSION, SHOP_FILE
 from .tree import DESIGN_LIMIT, Node, design_tree, shop_tree
-
-# The file at the top of every shop.
-SHOP_FILE: str = "shop.toml"
 
 # What the top line shows for a shop or a design that is missing.
 NONE_NAME: str = "(none)"
@@ -40,7 +38,8 @@ UNITS: tuple[str, ...] = ("in", "mm")
 UNIT_LABELS: dict[str, str] = {"in": "Imperial (in)", "mm": "Metric (mm)"}
 
 # The kinds of machines a new shop is asked about (#104, #118): each
-# kind's key, its label, and whether `scraftcam` can drive it yet.
+# kind's key (one of `shops.SHOP_MACHINE_KINDS`), its label, and
+# whether `scraftcam` can drive it yet.
 # Computer controlled machines first; then manual ones, for the prep
 # work before a CNC job, their keys starting with `MANUAL_PREFIX`.
 MACHINE_KINDS: tuple[tuple[str, str, bool], ...] = (
@@ -219,12 +218,17 @@ def new_shop_text(name: str, units: str, machines: list[str]) -> str:
     if unknown:
         raise ValueError(f"unknown kinds of machines: {', '.join(unknown)}")
 
-    # A JSON string is a TOML basic string; the kinds in their order.
-    ordered: list[str] = [kind for kind in kinds if kind in machines]
-    return (
-        f"name = {json.dumps(' '.join(name.split()), ensure_ascii=False)}\n"
-        f"units = {json.dumps(units)}\n"
-        f"machines = {json.dumps(ordered)}\n"
+    # The shop file, as the GUI writes every shop file; the kinds in
+    # their order.
+    return item_text(
+        {
+            "name": " ".join(name.split()),
+            "kind": "shop",
+            "language": "English",
+            "version": FORMAT_VERSION,
+            "units": units,
+            "machine_kinds": [kind for kind in kinds if kind in machines],
+        }
     )
 
 
