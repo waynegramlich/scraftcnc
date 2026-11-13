@@ -4,8 +4,9 @@
 On Linux, this starts LinuxCNC's simulator (`serve_linuxcnc`, from
 `scraftcam/lcnc/`, in its `lcnc` box), a SolidCraft window, the
 watcher that moves the tool in SolidCraft (`sim_linuxcnc --watch`, in
-the box), and last the HMI (`lcnc_hmi.py`), stopped, with the
-demonstration's program open.  The HMI draws the program's setup
+the box), and last the GUI (`scraftcam.run`), its first panel the
+HMI, stopped, with the demonstration's program open.  The HMI draws
+the program's setup
 (table, vise, parallels, grid plate, stock and the plate) in
 SolidCraft from its `(SCC: ...)` lines alone:
 
@@ -14,8 +15,9 @@ SolidCraft from its `(SCC: ...)` lines alone:
 ```
 
 Press Start in the HMI; the tool cuts the plate in SolidCraft.  The
-HMI's slider starts at `SPEED`.  The HMI's Quit button (or closing
-the HMI or SolidCraft, or Control-C here) closes everything.
+HMI's slider starts at `SPEED`.  Closing the GUI (or SolidCraft, or
+Control-C here) closes everything; the GUI does not close until the
+machine is stopped with its spindle off (`T.osiade~5.1.9` #56).
 What each program prints goes to
 `~/.cache/scraftcam/show/`, and the end of it is shown after a failure.
 
@@ -65,6 +67,9 @@ SOLIDCRAFT_BESIDE: Path = (
 )
 WORK: Path = Path.home() / ".cache" / "scraftcam" / "show"
 SOLIDCRAFT_DATA: Path = Path.home() / ".local" / "share" / "solidcraft"
+
+# The shop the demonstration is made in.
+SHOP: Path = PROJECT / "examples" / "shop" / "shop.toml"
 
 # The `distrobox` box that LinuxCNC is in.
 BOX: str = "lcnc"
@@ -649,9 +654,11 @@ class DemoShow:  # pylint: disable=too-many-public-methods
 
     # Method `DemoShow.start_hmi()`:
     def start_hmi(self) -> None:
-        """Start the HMI, stopped, with the program open.
+        """Start the GUI, its panel the HMI, stopped, with the program open.
 
-        The HMI draws the program's setup in SolidCraft.
+        The HMI (a panel of the GUI, `scraftcam.run --program`,
+        `T.osiade~5.1.9` step 5) draws the program's setup in
+        SolidCraft, and answers its line commands on `--port`.
 
         Raises:
         * `DemoShowFailed`: If it does not come up.
@@ -660,11 +667,12 @@ class DemoShow:  # pylint: disable=too-many-public-methods
         say("Starting the HMI.")
         self.start(
             "hmi",
-            [sys.executable, "-m", "scraftcam.hmi.lcnc_hmi",
-             "--port", str(port),
+            [sys.executable, "-m", "scraftcam.run",
+             "--shop", str(SHOP),
+             "--program", str(self.program),
+             "--hmi-port", str(port),
              "--solidcraft", str(self.options.solidcraft_port),
-             *(["--headless"] if self.options.headless else []),
-             str(self.program)],
+             *(["--headless"] if self.options.headless else [])],
         )  # fmt: skip
         self.wait_for_port("hmi", port)
         with socket.create_connection(("127.0.0.1", port), 5.0) as hmi:

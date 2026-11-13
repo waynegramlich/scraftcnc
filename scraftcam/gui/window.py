@@ -28,10 +28,12 @@ window, unless one refuses).
 import functools
 import os
 import shutil
+import signal
 import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path
+from types import FrameType
 
 from ..packages import require
 from . import port, theme
@@ -49,7 +51,7 @@ from .fields import shop_units
 from .port import Method, PortError, text_param
 from .theme import colors
 from .tree import Node, edit_path
-from .views import Panel, TreeView, TreeWatcher, splitter
+from .views import MachineControl, Panel, TreeView, TreeWatcher, splitter
 
 # `PySide6` lives in `~/.scraftcam/packages/`, so it is put on
 # `sys.path` (and fetched, the first time) before it is imported.
@@ -59,6 +61,7 @@ from PySide6.QtCore import (  # noqa: E402
     QCoreApplication,
     QEvent,
     QMessageLogContext,
+    QObject,
     Qt,
     QTimer,
     QtMsgType,
@@ -107,6 +110,10 @@ TREE_MOST: float = 0.5
 
 # How long `quit` waits, so its answer is sent before the GUI closes.
 QUIT_DELAY_MS: int = 200
+
+# How often the GUI looks for a signal to close, while it waits for
+# the machines to stop (milliseconds, #56).
+STOP_MS: int = 250
 
 # Every open window, oldest first (the command port's `window`).
 WINDOWS: list["Window"] = []
@@ -189,13 +196,23 @@ def delete_windows() -> None:
 
 
 # Function `run()`:
-def run(model: App, *, headless: bool, command_port: int) -> int:
+def run(
+    model: App,
+    *,
+    headless: bool,
+    command_port: int,
+    machine: Callable[[], MachineControl | None] | None = None,
+) -> int:
     """Show the first window, and run Qt until the last one closes.
 
     Arguments:
     * `model` (`App`): What every window shows.
     * `headless` (`bool`): True to draw offscreen.
     * `command_port` (`int`): The command port, or 0 for none.
+    * `machine` (`Callable[[], MachineControl | None] | None`): Makes
+      a machine's controls for the first window's panel (step 5,
+      #53), once Qt is up; it reports its own failure and gives
+      `None`.
 
     Returns:
     * (`int`): Qt's exit code, 0 normally, or 1 when the port can
@@ -206,6 +223,11 @@ def run(model: App, *, headless: bool, command_port: int) -> int:
     first: Window = Window(model)
     first.show()
     watcher: TreeWatcher = TreeWatcher(model)
+    if machine is not None:
+        control: MachineControl | None = machine()
+        if control is not None:
+            first.panels[0].show_machine(control)
+    stopper: Stopper = Stopper()
 
     # No shop: offer to make one (#97), when someone can answer.
     if model.shop is None and not headless:
@@ -224,7 +246,53 @@ def run(model: App, *, headless: bool, command_port: int) -> int:
     # Until the last window closes, with the trees watched.
     status: int = int(application.exec())
     model.forget(watcher.follow)
+    del stopper
     return status
+
+
+# Class `Stopper`:
+class Stopper(QObject):
+    """Closes the GUI on a `SIGTERM` or `SIGINT`, never mid-cut (#56).
+
+    The signal stops every machine at once; the windows close once
+    each is stopped with its spindle off.  Python sees a signal only
+    when Python runs, so a timer looks every `STOP_MS`.
+
+    Attributes:
+    * `asked` (`bool`): True once a signal has come.
+    * `timer` (`QTimer`): Looks for it.
+    """
+
+    def __init__(self) -> None:
+        """Catch the signals, and start looking."""
+        super().__init__()
+        self.asked: bool = False
+        signal.signal(signal.SIGTERM, self.catch)
+        signal.signal(signal.SIGINT, self.catch)
+        self.timer: QTimer = QTimer(self)
+        self.timer.setInterval(STOP_MS)
+        self.timer.timeout.connect(self.look)
+        self.timer.start()
+
+    def catch(self, _number: int, _frame: FrameType | None) -> None:
+        """Note the signal, and stop the machines at once.
+
+        Arguments:
+        * `_number` (`int`): The signal (ignored).
+        * `_frame` (`FrameType | None`): Where Python was (ignored).
+        """
+        self.asked = True
+        top: Window
+        for top in WINDOWS:
+            panel: Panel
+            for panel in top.panels:
+                if panel.machine is not None and panel.machine.busy():
+                    panel.machine.stop()
+
+    def look(self) -> None:
+        """Close every window, once asked and nothing is busy."""
+        if self.asked and not any(top.busy() for top in WINDOWS):
+            close_all()
 
 
 # Class `Window`:
@@ -461,10 +529,42 @@ class Window(QWidget):
         """
         node: Node | None = self.tree.node_of(item)
         if node is not None:
-            self.panels[self.current].show_node(
-                node, shop_units(self.model.shop)
-            )
+            self.free_panel().show_node(node, shop_units(self.model.shop))
         self.show_actions()
+
+    def free_panel(self) -> Panel:
+        """Return the panel a click shows an item in, and make it current.
+
+        The current one, unless it controls a machine (#58); then the
+        first that does not, or a new one.
+
+        Returns:
+        * (`Panel`): The panel.
+        """
+        if self.panels[self.current].machine is None:
+            return self.panels[self.current]
+        panel: Panel
+        for panel in self.panels:
+            if panel.machine is None:
+                self.make_current(panel)
+                return panel
+        self.add_panel()
+        return self.panels[self.current]
+
+    def busy(self) -> str:
+        """Say why this window may not close, if it may not (#56, #67).
+
+        Returns:
+        * (`str`): The first machine's reason, or the model's (a
+          running machine), or "" when it may close.
+        """
+        panel: Panel
+        for panel in self.panels:
+            if panel.machine is not None:
+                reason: str = panel.machine.busy()
+                if reason:
+                    return reason
+        return self.model.close_refusal(self.controls)
 
     def show_actions(self) -> None:
         """Show the action rows of the current panel's item (#73)."""
@@ -528,7 +628,7 @@ class Window(QWidget):
         * `event` (`QCloseEvent`): Accepted, or ignored with the
           reason on the top line.
         """
-        refusal: str = self.model.close_refusal(self.controls)
+        refusal: str = self.busy()
         if refusal:
             self.model.say(refusal, problem=True)
             event.ignore()
@@ -774,7 +874,7 @@ class CommandServer(QTcpServer):
         """
         top: Window
         for top in WINDOWS:
-            refusal: str = self.model.close_refusal(top.controls)
+            refusal: str = top.busy()
             if refusal:
                 raise PortError(refusal)
         QTimer.singleShot(QUIT_DELAY_MS, close_all)

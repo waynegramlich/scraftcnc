@@ -445,6 +445,10 @@ class HMI(QWidget):
     * `tabs` (`dict[str, QWidget]`): Each tab, by its name.
     * `timer` (`QTimer`): Calls `poll()` every `POLL_MS`.
     * `tools_table` (`QPlainTextEdit`): The tools' speeds and feeds.
+    * `quit_button` (`QPushButton`): Quit, hidden when the HMI is a
+      panel of the GUI (`T.osiade~5.1.9` #56).
+    * `spindle` (`bool`): True while the spindle is on, at the last
+      poll; True until the first poll says otherwise.
     """
 
     # Method `HMI.__init__()`:
@@ -691,13 +695,14 @@ class HMI(QWidget):
         # Under the tabs, for every task: Open and Quit.
         open_button: QPushButton = QPushButton("Open")
         open_button.clicked.connect(self.on_open)
-        quit_button: QPushButton = QPushButton("Quit")
-        quit_button.clicked.connect(self.close)
+        self.quit_button: QPushButton = QPushButton("Quit")
+        self.quit_button.clicked.connect(self.close)
+        self.spindle: bool = True
         bottom: QHBoxLayout = QHBoxLayout()
         bottom.addStretch(1)
         bottom.addWidget(open_button)
         bottom.addSpacing(12)
-        bottom.addWidget(quit_button)
+        bottom.addWidget(self.quit_button)
         layout.addLayout(bottom)
 
         # `poll()` runs every `POLL_MS`.
@@ -1232,6 +1237,30 @@ class HMI(QWidget):
                 return f"MDI refused: it would enter {hit}"
         return ""
 
+    # Method `HMI.busy()`:
+    def busy(self) -> str:
+        """Say why nothing may close yet, if anything (#56).
+
+        A machine is never left to crash: until it is stopped, with
+        its spindle off, the HMI (and the GUI it is in) stays.
+
+        Returns:
+        * (`str`): Why not ("The machine is running", ...), or `""`
+          when it is stopped with its spindle off.
+        """
+        if self.running:
+            return (
+                f"The {self.program_machine or 'machine'} is "
+                f"{'paused' if self.paused else 'running'}: press Reset "
+                "first"
+            )
+        if self.spindle:
+            return (
+                f"The {self.program_machine or 'machine'}'s spindle is "
+                "on: stop it first"
+            )
+        return ""
+
     # Method `HMI.on_stop()`:
     def on_stop(self) -> None:
         """Stop at once, ready to run again from the program's start."""
@@ -1632,6 +1661,7 @@ class HMI(QWidget):
         # The program, read once per file.  The buttons follow
         # LinuxCNC's state (a program may end, or be stopped, without
         # the HMI).
+        self.spindle = status.spindle
         if status.file != self.lines_file:
             self.lines_file = status.file
             self.lines = self.machine.program_lines(status.file)
@@ -1701,6 +1731,71 @@ def run(application: QApplication) -> int:
     return application.exec()
 
 
+# Class `HMIStartError`:
+class HMIStartError(Exception):
+    """The HMI could not start: LinuxCNC, the shop or SolidCraft."""
+
+
+# Function `make_hmi()`:
+def make_hmi(  # pylint: disable=too-many-arguments
+    *,
+    port: int,
+    lcnc_port: int,
+    solidcraft: int,
+    shop: Path,
+    dry_run: bool,
+    parent: QWidget | None = None,
+) -> HMI:
+    """Start the machine, read the shop, and make the HMI.
+
+    Used by `main()` and by the GUI, which shows it in a panel
+    (`T.osiade~5.1.9` #52); a `QApplication` must exist.
+
+    Arguments:
+    * `port` (`int`): The command port, or 0 for none.
+    * `lcnc_port` (`int`): The port of `serve_linuxcnc`.
+    * `solidcraft` (`int`): A SolidCraft control port, to draw each
+      program's setup, or 0 for none.
+    * `shop` (`Path`): The shop's file.
+    * `dry_run` (`bool`): True to use no LinuxCNC.
+    * `parent` (`QWidget | None`): What it is shown in, or `None`
+      for a window of its own.
+
+    Returns:
+    * (`HMI`): The HMI, its speed at the programmed feed.
+
+    Raises:
+    * `HMIStartError`: If LinuxCNC, the shop or the port fails.
+    """
+    # The machine, on and homed, and the command port.
+    try:
+        machine: HMIMachine = HMIMachine(dry_run, lcnc_port)
+        machine.start()
+        top_speed: float = machine.max_speed()
+        command_port: CommandPort | None = CommandPort(port) if port else None
+    except (OSError, RuntimeError, ValueError, BridgeError) as error:
+        raise HMIStartError(str(error)) from error
+
+    # The shop that names the tooling (`T.emsagc~5.2` #63), and the
+    # SolidCraft the setups are drawn in, if any.
+    try:
+        use_shop(shops.read(shop))
+    except shops.ShopError as error:
+        raise HMIStartError(str(error)) from error
+    drawer: SetupDrawer | None = (
+        SetupDrawer(SetupView(PyBind(connect(str(solidcraft))), ModelCache()))
+        if solidcraft
+        else None
+    )
+
+    # An earlier HMI may have left another speed, and the slider starts
+    # at the programmed feed.
+    hmi: HMI = HMI(machine, top_speed, command_port, parent)
+    hmi.set_speed(1.0)
+    hmi.drawer = drawer
+    return hmi
+
+
 # Function `main()`:
 def main(arguments: list[str]) -> int:
     """Show the HMI until its window is closed.
@@ -1747,40 +1842,20 @@ def main(arguments: list[str]) -> int:
     if options.headless:
         use_headless()
 
-    # The machine, on and homed, and the command port.
-    try:
-        machine: HMIMachine = HMIMachine(options.dry_run, options.lcnc_port)
-        machine.start()
-        top_speed: float = machine.max_speed()
-    except (OSError, RuntimeError, ValueError, BridgeError) as error:
-        print(f"lcnc_hmi.py: {error}", file=sys.stderr)
-        return 1
-    port: CommandPort | None = (
-        CommandPort(options.port) if options.port else None
-    )
-
-    # The shop that names the tooling (`T.emsagc~5.2` #63), and the
-    # SolidCraft the setups are drawn in, if any.
-    try:
-        use_shop(shops.read(options.shop))
-    except shops.ShopError as error:
-        print(f"lcnc_hmi.py: {error}", file=sys.stderr)
-        return 1
-    drawer: SetupDrawer | None = (
-        SetupDrawer(
-            SetupView(PyBind(connect(str(options.solidcraft))), ModelCache())
-        )
-        if options.solidcraft
-        else None
-    )
-
-    # The window.  An earlier HMI may have left another speed, and the
-    # slider starts at the programmed feed.
+    # The window.
     found: Any = QApplication.instance()
     application: QApplication = found or QApplication(sys.argv[:1])
-    hmi: HMI = HMI(machine, top_speed, port)
-    hmi.set_speed(1.0)
-    hmi.drawer = drawer
+    try:
+        hmi: HMI = make_hmi(
+            port=options.port or 0,
+            lcnc_port=options.lcnc_port,
+            solidcraft=options.solidcraft or 0,
+            shop=options.shop,
+            dry_run=options.dry_run,
+        )
+    except HMIStartError as error:
+        print(f"lcnc_hmi.py: {error}", file=sys.stderr)
+        return 1
 
     # A `SIGTERM` closes it as Quit does (Python sees the signal at
     # the next `poll()`, as Qt's loop is not Python's).

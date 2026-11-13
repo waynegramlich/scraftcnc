@@ -454,3 +454,50 @@ From the log before the trim (`hg` rev 695):
   `description`), `about_directory()` (the shop key whose meaning
   names "files in `DIR/`", else the first kind's summary), wrapped
   at `ABOUT_WIDTH` (60), no back quotes.  Test `test_about`.
+
+## 2026-11-13: Step 5 design (the HMI as a panel), #50-#57
+
+* Milestone (the user, #51): `show_demo.py` runs with the new GUI;
+  the catalog work (`T.cm~5.1.10`) after.  The HMI today: `class
+  HMI(QWidget)` in `scraftcam/hmi/lcnc_hmi.py` (1807 lines), the
+  LinuxCNC calls in `hmi_machine.py` (`HMIMachine`, a client of
+  `serve_linuxcnc` in the `lcnc` box), its own line command port
+  (5007); `show_demo.py` starts `serve_linuxcnc`, SolidCraft, the
+  watcher, then `lcnc_hmi.py`.
+* #52: the HMI is a panel.  #53: `scraftcam.run --program FILE`
+  for starters; later, the `.nc` file's own setup comments may start
+  things.  #54: the HMI's line port (5007) stays, inside the GUI,
+  for now.  #55: `show_demo.py` still starts `serve_linuxcnc`; the
+  GUI only connects.  #56: never crash a machine: nothing exits
+  until the machine is stopped with its spindle off.  #57:
+  `lcnc_hmi.py` is removed once all of it is in the GUI.
+* #58: a panel controlling a machine is never replaced by a tree
+  click; the click goes to another panel (opening one).  #59: the
+  HMI fills its panel, for now.  #60: one machine now, room for
+  more.  #61 order: host the existing `HMI` widget in a panel behind
+  `--program` (port 5007 kept), then `show_demo.py` starts the GUI,
+  then the close refusal (#56).  The user runs `./show_demo.py`.
+
+## 2026-11-13: Step 5, first cut: the HMI in a panel (#61 1-3 coded)
+
+* `lcnc_hmi.make_hmi(port, lcnc_port, solidcraft, shop, dry_run,
+  parent)` (from `main()`), `HMIStartError`; `HMI.busy()` (running,
+  paused or spindle on: why not to close), `HMI.spindle` (from each
+  poll; True until the first), `HMI.quit_button` (hidden in the GUI).
+* `hmi_machine`: `HMIStatus.spindle`, from stat `spindle`
+  (`spindle_on()`: enabled or turning; unreadable counts as on).
+* GUI: `views.MachineControl(name, widget, busy, stop)`,
+  `Panel.machine`, `Panel.show_machine()`; `Window.free_panel()`
+  (#58), `Window.busy()` (closeEvent and port `quit`, #56);
+  `window.run(..., machine=)`; `window.Stopper` (SIGTERM/SIGINT:
+  stop busy machines, close once none is busy, `STOP_MS`).
+  `run.py`: `--program`, `--hmi-port`, `--solidcraft`,
+  `--lcnc-port`, `--dry-run`; `machine_maker()` imports the HMI only
+  then.
+* `show_demo.py` starts `scraftcam.run --shop examples/shop
+  --program ... --hmi-port ... --solidcraft ...` in place of
+  `lcnc_hmi.py` (`SHOP`).
+* Checked: a headless `--dry-run` GUI answers the HMI's port with the
+  demo open, and exits 0 on SIGTERM.  107 tests (show_demo,
+  lcnc_hmi, hmi_tool_changes, gui_*) pass.  Not run: the real
+  `./show_demo.py` (the user's), the LinuxCNC end-to-end suite.

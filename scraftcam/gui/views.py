@@ -18,6 +18,8 @@
 """
 
 import functools
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..packages import require
@@ -129,6 +131,32 @@ def item_text(node: Node) -> str:
     return docstring(node.path)
 
 
+# Class `MachineControl`:
+@dataclass(frozen=True, slots=True)
+class MachineControl:
+    """A machine's controls, as a panel shows them (step 5, #52).
+
+    The HMI (`scraftcam.hmi.lcnc_hmi.HMI`) is one; the GUI knows it
+    only through these, so that it needs no LinuxCNC to start.
+
+    Attributes:
+    * `name` (`str`): What the panel's title calls it.
+    * `widget` (`QWidget`): The controls, filling the panel (#59).
+    * `busy` (`Callable[[], str]`): Why nothing may close yet (the
+      machine runs, or its spindle is on), or `""` (#56).
+    * `stop` (`Callable[[], None]`): Stops the machine at once.
+
+    Constructor:
+    * `MachineControl(name, widget, busy, stop)`
+    """
+
+    # Constructor arguments:
+    name: str = field(init=True)
+    widget: QWidget = field(init=True)
+    busy: Callable[[], str] = field(init=True)
+    stop: Callable[[], None] = field(init=True)
+
+
 # Class `Panel`:
 class Panel(QFrame):  # pylint: disable=too-many-instance-attributes
     """A panel: shows one item, outlined while it is the current one.
@@ -138,6 +166,8 @@ class Panel(QFrame):  # pylint: disable=too-many-instance-attributes
     * `text` (`QPlainTextEdit`): What the item holds, read only (for
       a shop file, what its fields do not show).
     * `node` (`Node | None`): The item shown, if any.
+    * `machine` (`MachineControl | None`): The machine it controls,
+      if any (`show_machine()`); then it shows nothing else.
     * `clicked` (`Signal`): Sent when the panel is clicked.
     * `entries` (`dict[str, QLineEdit | QPlainTextEdit]`): Each
       field's entry, by key.
@@ -167,6 +197,7 @@ class Panel(QFrame):  # pylint: disable=too-many-instance-attributes
         """
         super().__init__()
         self.node: Node | None = None
+        self.machine: MachineControl | None = None
         self.item: dict[str, object] = {}
         self.rows: list[Row] = []
         self.entries: dict[str, QLineEdit | QPlainTextEdit] = {}
@@ -241,6 +272,24 @@ class Panel(QFrame):  # pylint: disable=too-many-instance-attributes
         """
         del event
         self.clicked.emit()
+
+    def show_machine(self, machine: MachineControl) -> None:
+        """Show a machine's controls, in place of an item, for good.
+
+        A tree click never replaces them (#58).
+
+        Arguments:
+        * `machine` (`MachineControl`): The controls.
+        """
+        self.machine = machine
+        self.node = None
+        self.title.setText(f"{machine.name} (machine)")
+        self.title.setStyleSheet("")
+        self.split.hide()
+        layout: QLayout | None = self.layout()
+        assert layout is not None
+        layout.addWidget(machine.widget)
+        machine.widget.show()
 
     def set_current(self, current: bool) -> None:
         """Outline the panel, or not.

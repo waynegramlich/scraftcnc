@@ -582,9 +582,11 @@ class HMIStatus:
     * `messages` (`list[str]`): LinuxCNC's new error messages.
     * `state` (`str`): `idle`, `running` or `paused` (`""` for a dry
       run, where the HMI's own idea of it stands).
+    * `spindle` (`bool`): True while a spindle turns (or is on), so
+      that nothing closes until it stops (`T.osiade~5.1.9` #56).
 
     Constructor:
-    * `HMIStatus(file, line, position, tool, messages, state)`
+    * `HMIStatus(file, line, position, tool, messages, state, spindle)`
     """
 
     # Constructor arguments:
@@ -594,6 +596,29 @@ class HMIStatus:
     tool: int = field(init=True)
     messages: list[str] = field(init=True)
     state: str = field(init=True)
+    spindle: bool = field(init=True, default=False)
+
+
+# Function `spindle_on()`:
+def spindle_on(spindles: object) -> bool:
+    """Tell whether any spindle is on, from `linuxcnc.stat.spindle`.
+
+    Arguments:
+    * `spindles` (`object`): The stat's `spindle`: one dictionary a
+      spindle, with `enabled` and `speed`.
+
+    Returns:
+    * (`bool`): True if any is enabled or turning; True as well when
+      it can not be read, as a spindle not known to be off is on.
+    """
+    if not isinstance(spindles, (list, tuple)):
+        return True
+    return any(
+        not isinstance(spindle, dict)
+        or bool(spindle.get("enabled", True))
+        or float(spindle.get("speed", 0.0)) != 0.0
+        for spindle in spindles
+    )
 
 
 # Class `HMIMachine`:
@@ -1092,6 +1117,7 @@ class HMIMachine:
             "interp_state",
             "motion_line",
             "paused",
+            "spindle",
             "tool_in_spindle",
             "tool_offset",
         )
@@ -1119,6 +1145,7 @@ class HMIMachine:
             else "paused"
             if stat["paused"]
             else "running",
+            spindle_on(stat["spindle"]),
         )
 
 

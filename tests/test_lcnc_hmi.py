@@ -79,6 +79,7 @@ class FakeClient:
             "paused": False,
             "task_mode": MODE_MDI,
             "task_state": STATE_ON,
+            "spindle": [{"enabled": 0, "speed": 0.0}],
             "tool_in_spindle": 8,
             "tool_offset": [0.0, 0.0, 2.0],
         }
@@ -310,6 +311,33 @@ class TestStatus(unittest.TestCase):
         lcnc.interp_state = RUNNING
         lcnc.values["paused"] = True
         self.assertEqual(machine.status().state, "paused")
+
+    def test_spindle(self) -> None:
+        """The spindle reads as on while enabled or turning (#56)."""
+        machine, lcnc = client_machine()
+        self.assertFalse(machine.status().spindle)
+        lcnc.values["spindle"] = [{"enabled": 1, "speed": 1200.0}]
+        self.assertTrue(machine.status().spindle)
+        self.assertTrue(hmi_machine.spindle_on(None))
+        self.assertTrue(hmi_machine.spindle_on([{"speed": 5.0}]))
+        self.assertFalse(
+            hmi_machine.spindle_on([{"enabled": 0, "speed": 0.0}])
+        )
+
+    def test_busy(self) -> None:
+        """The HMI may close only stopped, its spindle off (#56)."""
+        machine, lcnc = client_machine()
+        hmi: lcnc_hmi.HMI = make_hmi(machine)
+        self.assertIn("spindle", hmi.busy())
+        hmi.poll()
+        self.assertEqual(hmi.busy(), "")
+        lcnc.values["spindle"] = [{"enabled": 1, "speed": 1200.0}]
+        hmi.poll()
+        self.assertIn("spindle is on", hmi.busy())
+        lcnc.values["spindle"] = [{"enabled": 0, "speed": 0.0}]
+        hmi.set_running(True, False)
+        self.assertIn("running", hmi.busy())
+        hmi.deleteLater()
 
     def test_travel_message(self) -> None:
         """LinuxCNC's travel error says how high work Z can go."""
