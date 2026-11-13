@@ -25,4 +25,4 @@ rpm = "1200 rpm"
 feed = "4 in/min"
 notes = """\
   A tool's own speed and feed for a material, which win over those \
-  worked out from `materials.toml`."""
+  worked out from `materials/`."""

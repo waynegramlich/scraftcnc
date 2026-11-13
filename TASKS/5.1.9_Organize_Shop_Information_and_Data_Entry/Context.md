@@ -125,3 +125,32 @@ the example shop's `notes` still mention `materials.toml`.
   fields take about 2/3 of the panel (TOML below); change after
   seeing them?  #10 S3.5 next: `scraftcam/gui/README.md` (the
   field rows, `fields.py`), and the two S3.2 leftovers below.
+
+## 2026-11-13: S3.2 leftovers and #9-#12
+
+* #9: the field rows stay as they are for now (the user).
+* #11 done: the example shop's `notes` (`shop.toml`, the cobalt
+  jobber drill) point at `materials/`, not `materials.toml`.
+* #12: materials stay alphabetical by file name (the user).
+* #10 (S3.5, `scraftcam/gui/README.md`) last, as the user may want
+  to edit it; then steps 4 and 5.
+
+## 2026-11-13: Step 4's decisions, recovered (#13)
+
+From the log before the trim (`hg` rev 695):
+
+* #5: tool sketches are the SVG that `Tool_Models.md` uses, shown in
+  a `QSvgWidget` (replaces the old `tkinter` Canvas plan, #16).
+* #9 (fields): one description of each kind's fields (name, unit
+  kind, required, default, help, sketch letter) drives the forms,
+  the reader's checks, `Tool_Models.md`'s tables and the sketch
+  letters.
+* #16: one drawing per tool (lines, arcs, dimension letters), the
+  same SVG for `Tool_Models.md` and the GUI.
+* #70: SVG (when present) on the right; for documentation, the text
+  left of the SVG; tried out until it "looks right" to the user.
+* #80: agreed in outline: a kind's directory shows its
+  documentation, text left, SVG right, from the source of
+  `Tool_Models.md`; details to come.
+* Next (#14): a tool item shows its existing SVG beside its field
+  rows, with no new drawing code.
