@@ -79,6 +79,7 @@ class FakeClient:
             "paused": False,
             "task_mode": MODE_MDI,
             "task_state": STATE_ON,
+            "current_vel": 0.0,
             "spindle": [{"enabled": 0, "speed": 0.0}],
             "tool_in_spindle": 8,
             "tool_offset": [0.0, 0.0, 2.0],
@@ -324,6 +325,55 @@ class TestStatus(unittest.TestCase):
             hmi_machine.spindle_on([{"enabled": 0, "speed": 0.0}])
         )
 
+    def test_speed_and_feed(self) -> None:
+        """RPM from the spindle; feed in inches a minute (#86, #98)."""
+        machine, lcnc = client_machine()
+        lcnc.values["spindle"] = [{"enabled": 1, "speed": -9200.0}]
+        lcnc.values["current_vel"] = 0.4
+        status = machine.status()
+        self.assertEqual(status.rpm, 9200.0)
+        self.assertAlmostEqual(status.feed, 24.0)
+        self.assertEqual(hmi_machine.spindle_rpm(None), 0.0)
+
+    def test_tool_plan(self) -> None:
+        """Now the tool cutting; next the coming ones, with times."""
+        lines = [
+            "G20",
+            "(MSG, Insert T05: chamfer mill)",
+            "T05 M6",
+            "G1 X1 F10",
+            "T06 M6",
+            "G1 X2 F10",
+            "M2",
+        ]
+        sums = [0.0, 0.0, 0.0, 0.0, 6.0, 6.0, 12.0, 12.0]
+        spans = hmi_machine.change_spans(lines)
+        plan = hmi_machine.tool_plan(lines, sums, spans, 4, 1.0)
+        self.assertIn("Now: T05 chamfer mill", plan)
+        self.assertIn("Next: T06 in 6:00", plan)
+        self.assertIn("End in 12:00", plan)
+        self.assertEqual(hmi_machine.tool_plan([], [0.0], [], 1, 1.0), "")
+        due = hmi_machine.next_intervention(lines, sums, spans, 4, 1.0)
+        assert due is not None
+        self.assertEqual(
+            (due.what, due.left, due.waiting), ("T06", 6.0, False)
+        )
+        last = hmi_machine.next_intervention(lines, sums, spans, 6, 2.0)
+        assert last is not None
+        self.assertEqual((last.what, last.left), ("end", 3.0))
+
+        # With a carousel: only the swaps need the operator (#106).
+        swap = hmi_machine.next_intervention(
+            lines, sums, spans, 1, 1.0, manual=frozenset({1})
+        )
+        assert swap is not None
+        self.assertEqual((swap.what, swap.left, swap.span), ("T06", 6.0, 6.0))
+        none = hmi_machine.next_intervention(
+            lines, sums, spans, 1, 1.0, manual=frozenset()
+        )
+        assert none is not None
+        self.assertEqual((none.what, none.left), ("end", 12.0))
+
     def test_busy(self) -> None:
         """The HMI may close only stopped, its spindle off (#56)."""
         machine, lcnc = client_machine()
@@ -419,15 +469,17 @@ class TestHeadless(unittest.TestCase):
         self.assertFalse(self.tick()["origin_set"])
 
     def test_buttons_follow_the_run(self) -> None:
-        """Start, Pause and Resume grey out as a person sees them."""
+        """The one run button shows Start, Pause or Resume, as it may be."""
         self.open_with_origin()
         buttons = self.tick()["buttons"]
-        self.assertEqual(buttons["Pause"], "disabled")
+        self.assertEqual(buttons["Start"], "normal")
+        self.assertNotIn("Pause", buttons)
         self.assertEqual(self.ask("press Pause"), "error: Pause is greyed out")
 
         self.assertEqual(self.ask("press Start"), "ok")
         buttons = self.tick()["buttons"]
-        self.assertEqual(buttons["Start"], "disabled")
+        self.assertEqual(buttons["Pause"], "normal")
+        self.assertNotIn("Start", buttons)
         self.assertEqual(buttons["+X"], "disabled")
         self.assertEqual(self.ask("press Start"), "error: Start is greyed out")
 
@@ -502,15 +554,37 @@ class TestHeadless(unittest.TestCase):
             [f"open {self.file}", f"tool table {hmi_machine.MATERIAL}"],
         )
 
-    def test_tools_tab(self) -> None:
-        """The Tools tab lists the tools for a material."""
-        self.ask("tab Tools")
-        texts = self.panel.show_state()["texts"]
-        self.assertIn("cutting 6061 aluminum", texts[-1])
+    def test_run_toggle(self) -> None:
+        """One run button, named for the run; Start goes minimal."""
+        self.assertEqual(self.panel.run_toggle.text(), "Start")
+        self.panel.set_running(True, False)
+        self.assertEqual(self.panel.run_toggle.text(), "Pause")
+        self.panel.set_running(True, True)
+        self.assertEqual(self.panel.run_toggle.text(), "Resume")
+        self.panel.ended = True
+        self.panel.set_running(False, False)
+        self.assertEqual(self.panel.run_toggle.text(), "Restart")
+        self.panel.set_minimal(True)
+        self.assertTrue(self.panel.notebook.isHidden())
+        self.assertEqual(self.panel.size_button.text(), "Full")
+        self.panel.toggle_minimal()
+        self.assertFalse(self.panel.notebook.isHidden())
+
+    def test_expert(self) -> None:
+        """The slider is greyed out until Expert is agreed to (#79)."""
+        self.assertFalse(self.panel.slider.isEnabled())
+        self.panel.expert.click()
+        self.assertFalse(self.panel.expert.isChecked())
+        self.assertFalse(self.panel.slider.isEnabled())
+        lcnc_hmi.ANSWERS.append("yes")
+        self.panel.expert.click()
+        self.assertTrue(self.panel.slider.isEnabled())
+        self.panel.expert.click()
+        self.assertFalse(self.panel.slider.isEnabled())
 
     def test_tabs(self) -> None:
         """Each tab can be shown, and `show` says which one is."""
-        self.assertEqual(self.panel.show_state()["tab"], "Run")
+        self.assertEqual(self.panel.show_state()["tab"], "Configure")
         for name in hmi_machine.TABS:
             self.assertEqual(self.ask(f"tab {name}"), "ok")
             self.assertEqual(self.panel.show_state()["tab"], name)
@@ -619,12 +693,12 @@ class TestSetupDrawing(unittest.TestCase):
         )
 
     def test_material_from_setup(self) -> None:
-        """The setup's material picks the tool table and the Tools tab."""
+        """The setup's material picks the tool table."""
         assembly = demo_assembly()
         assembly.items[-1].args["material"] = "brass"
         self.panel.open(self.program(with_setup(self.gcode, assembly)))
         self.assertIn("tool table brass", self.machine.log)
-        self.assertEqual(self.panel.material_chooser.currentText(), "brass")
+        self.assertEqual(self.panel.program_material, "brass")
         self.panel.poll()
         self.assertIn("brass", self.panel.show_state()["position"])
 
@@ -642,9 +716,7 @@ class TestSetupDrawing(unittest.TestCase):
         self.assertEqual(
             self.machine.log[-1], f"tool table {hmi_machine.MATERIAL}"
         )
-        self.assertEqual(
-            self.panel.material_chooser.currentText(), hmi_machine.MATERIAL
-        )
+        self.assertEqual(self.panel.program_material, hmi_machine.MATERIAL)
 
     def test_origin_from_setup(self) -> None:
         """The demo's table and the shop's table place: (4, 3, -6) in."""

@@ -110,7 +110,13 @@ class ServerTest(unittest.TestCase):
             status["windows"],
             [
                 {
-                    "buttons": ["Tree", "+ Panel", "x", "New Shop"],
+                    "buttons": [
+                        "Stop All",
+                        "Tree",
+                        "+ Panel",
+                        "x",
+                        "New Shop",
+                    ],
                     "tree": True,
                     "panels": 1,
                 }

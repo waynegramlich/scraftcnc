@@ -2,10 +2,11 @@
 
 From the top down (`T.osiade~5.1.9` #82):
 
-* The top line: [Stop All] (only while more than one machine runs,
-  #2), [Tree] (shows or hides the tree, on the left edge, #70), the
-  shop's and the design's names, the latest message (red for a
-  problem, #95), [+ Panel] and [x].
+* The top line: [Stop All] (always first and shown: greyed while no
+  machine runs, red, bold and boxed while any does, #2, #100),
+  [Tree] (shows or hides the tree, on the left edge, #70), the shop's
+  and the design's names, the latest message (red for a problem,
+  #95), [+ Panel] and [x].
 * The action rows of the item selected (#73, #75); for now only
   [New Shop], while there is no shop, which opens `NewShopDialog`
   (#97, #98; it also opens by itself when the GUI starts with no
@@ -58,6 +59,7 @@ from .views import MachineControl, Panel, TreeView, TreeWatcher, splitter
 require("PySide6")
 # pylint: disable=wrong-import-position,wrong-import-order
 from PySide6.QtCore import (  # noqa: E402
+    QByteArray,
     QCoreApplication,
     QEvent,
     QMessageLogContext,
@@ -227,6 +229,9 @@ def run(
         control: MachineControl | None = machine()
         if control is not None:
             first.panels[0].show_machine(control)
+            control.on_minimal(
+                functools.partial(first.set_minimal, first.panels[0])
+            )
     stopper: Stopper = Stopper()
 
     # No shop: offer to make one (#97), when someone can answer.
@@ -286,8 +291,9 @@ class Stopper(QObject):
         for top in WINDOWS:
             panel: Panel
             for panel in top.panels:
-                if panel.machine is not None and panel.machine.busy():
-                    panel.machine.stop()
+                for machine in panel.machines:
+                    if machine.busy():
+                        machine.stop()
 
     def look(self) -> None:
         """Close every window, once asked and nothing is busy."""
@@ -296,8 +302,9 @@ class Stopper(QObject):
 
 
 # Class `Window`:
-# A window holds a widget for each thing it shows.
-# pylint: disable-next=too-many-instance-attributes
+# A window holds a widget for each thing it shows, and a method for
+# each button and each thing it follows.
+# pylint: disable-next=too-many-instance-attributes,too-many-public-methods
 class Window(QWidget):
     """One window of the GUI.
 
@@ -317,6 +324,12 @@ class Window(QWidget):
     * `splitter` (`QSplitter`): The tree, then the panels.
     * `tree` (`TreeView`): The shop's and the design's files.
     * `current` (`int`): The current panel's index (#122).
+    * `minimal` (`bool`): True while shrunk to a machine's panel (#94).
+    * `full_geometry` (`QByteArray`): Where the window was, full.
+    * `machine_timer` (`QTimer`): Keeps [Stop All] and the machine
+      tabs' bars up to date.
+    * `blink` (`bool`): Which half of a blink it is (a waiting
+      machine's bar).
     """
 
     def __init__(self, model: App, controls: set[str] | None = None) -> None:
@@ -375,6 +388,8 @@ class Window(QWidget):
         self.splitter.addWidget(self.tree)
         self.panels: list[Panel] = []
         self.current: int = 0
+        self.minimal: bool = False
+        self.full_geometry: QByteArray = QByteArray()
         self.add_panel()
         tree_width: int = int(WIDTH * TREE_MOST)
         self.splitter.setSizes([tree_width, WIDTH - tree_width])
@@ -384,6 +399,10 @@ class Window(QWidget):
         layout.addLayout(top)
         layout.addWidget(self.action_rows)
         layout.addWidget(self.splitter, 1)
+
+        # [Stop All] follows the machines, which change on their own.
+        self.blink: bool = False
+        self.machine_timer: QTimer = self.watch_machines()
 
         # Redraw whenever the model changes, starting now.
         model.listen(self.redraw)
@@ -446,10 +465,7 @@ class Window(QWidget):
         self.message_label.setStyleSheet(
             f"color: {problem}" if latest.problem else ""
         )
-        self.buttons["Stop All"].setStyleSheet(
-            f"color: white; background: {problem}"
-        )
-        self.buttons["Stop All"].setVisible(model.stop_all_shown())
+        self.show_stop_all()
         self.new_shop_row.setVisible(model.shop is None)
         self.buttons["New Shop"].setVisible(model.shop is None)
 
@@ -541,15 +557,53 @@ class Window(QWidget):
         Returns:
         * (`Panel`): The panel.
         """
-        if self.panels[self.current].machine is None:
+        if not self.panels[self.current].machines:
             return self.panels[self.current]
         panel: Panel
         for panel in self.panels:
-            if panel.machine is None:
+            if not panel.machines:
                 self.make_current(panel)
                 return panel
         self.add_panel()
         return self.panels[self.current]
+
+    def set_minimal(self, panel: Panel, minimal: bool) -> None:
+        """Shrink to a machine's panel alone, on top; or show it all.
+
+        While a machine runs, SolidCraft should have the screen, and
+        never cover the machine's Pause (#90, #94, #95).  Only the
+        message, [Stop All], [x] and the panel stay.  Wayland leaves
+        "on top" to the desktop, which may not do it.
+
+        Arguments:
+        * `panel` (`Panel`): The machine's panel.
+        * `minimal` (`bool`): True to shrink, False to show it all.
+        """
+        if minimal == self.minimal:
+            return
+        self.minimal = minimal
+        if minimal:
+            self.full_geometry = self.saveGeometry()
+        hidden: list[QWidget] = [
+            self.tree,
+            self.shop_label,
+            self.design_label,
+            self.action_rows,
+            self.buttons["Tree"],
+            self.buttons["+ Panel"],
+            *[other for other in self.panels if other is not panel],
+        ]
+        widget: QWidget
+        for widget in hidden:
+            widget.setVisible(not minimal)
+        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, minimal)
+        self.show()
+        if minimal:
+            self.resize(self.minimumSizeHint())
+        else:
+            self.restoreGeometry(self.full_geometry)
+            self.redraw()
+            self.fit_tree()
 
     def busy(self) -> str:
         """Say why this window may not close, if it may not (#56, #67).
@@ -560,8 +614,8 @@ class Window(QWidget):
         """
         panel: Panel
         for panel in self.panels:
-            if panel.machine is not None:
-                reason: str = panel.machine.busy()
+            for machine in panel.machines:
+                reason: str = machine.busy()
                 if reason:
                     return reason
         return self.model.close_refusal(self.controls)
@@ -609,8 +663,65 @@ class Window(QWidget):
             self.model.say(HINT)
 
     def stop_all(self) -> None:
-        """Stop every machine ([Stop All])."""
+        """Stop every machine ([Stop All]), each of its panels' too."""
+        top: Window
+        for top in WINDOWS:
+            panel: Panel
+            for panel in top.panels:
+                for machine in panel.machines:
+                    machine.stop()
         self.model.stop_all()
+
+    def running(self) -> bool:
+        """Tell whether any machine runs (or is paused, or turns).
+
+        Returns:
+        * (`bool`): True if one of any window's machines is busy
+          (`MachineControl.busy()`), or the model has one running.
+        """
+        return bool(self.model.running) or any(
+            machine.busy()
+            for top in WINDOWS
+            for panel in top.panels
+            for machine in panel.machines
+        )
+
+    def watch_machines(self) -> QTimer:
+        """Start following the machines, every `STOP_MS`.
+
+        Returns:
+        * (`QTimer`): The timer, running.
+        """
+        timer: QTimer = QTimer(self)
+        timer.setInterval(STOP_MS)
+        timer.timeout.connect(self.follow_machines)
+        timer.start()
+        return timer
+
+    def follow_machines(self) -> None:
+        """Bring [Stop All] and each machine tab's bar up to date."""
+        self.blink = not self.blink
+        self.show_stop_all()
+        panel: Panel
+        for panel in self.panels:
+            panel.show_dues(self.blink)
+
+    def show_stop_all(self) -> None:
+        """Make [Stop All] stand out while any machine runs (#100).
+
+        Not by color alone (some operators are color blind): it is
+        also enabled, bold and heavily boxed only then.
+        """
+        button: QPushButton = self.buttons["Stop All"]
+        active: bool = self.running()
+        button.setEnabled(active)
+        button.setStyleSheet(
+            f"QPushButton {{ color: white; background: {colors().problem};"
+            " font-weight: bold; border: 3px solid black;"
+            " padding: 3px 10px; }"
+            if active
+            else ""
+        )
 
     def new_shop(self) -> None:
         """Ask about the new shop, and make it ([New Shop])."""

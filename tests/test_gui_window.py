@@ -1,16 +1,18 @@
 """Tests of `scraftcam.gui.window` (offscreen) and `scraftcam.run`."""
 
+import functools
 import os
 import tempfile
 import time
 import unittest
+from collections.abc import Callable
 from pathlib import Path
 from unittest import mock
 
 from scraftcam import run
 from scraftcam.gui.app import App
 from scraftcam.gui.theme import colors
-from scraftcam.gui.views import TreeWatcher
+from scraftcam.gui.views import Due, MachineControl, Panel, TreeWatcher
 from scraftcam.gui.window import NewShopDialog, Window
 from tests import qt_app
 
@@ -39,7 +41,7 @@ class WindowTest(unittest.TestCase):
     """Tests of `Window`."""
 
     def test_top_line(self) -> None:
-        """The names, the message, and [Stop All] only with two running."""
+        """The names, the message, and [Stop All] active while any runs."""
         model: App = App(None, Path("plate.py"))
         first: Window = Window(model)
         second: Window = Window(model)
@@ -51,11 +53,13 @@ class WindowTest(unittest.TestCase):
         model.say("hello")
         self.assertEqual(second.message_label.text(), "hello")
         self.assertEqual(first.message_label.styleSheet(), "")
+        self.assertFalse(first.buttons["Stop All"].isHidden())
+        self.assertFalse(first.buttons["Stop All"].isEnabled())
         model.start_machine("shop mill")
-        model.start_machine("router")
-        self.assertFalse(second.buttons["Stop All"].isHidden())
+        self.assertTrue(second.buttons["Stop All"].isEnabled())
+        self.assertIn("bold", second.buttons["Stop All"].styleSheet())
         second.buttons["Stop All"].click()
-        self.assertTrue(first.buttons["Stop All"].isHidden())
+        self.assertFalse(first.buttons["Stop All"].isEnabled())
 
     def test_tree_and_panels(self) -> None:
         """[Tree] toggles the tree; [+ Panel] adds a panel."""
@@ -82,6 +86,49 @@ class WindowTest(unittest.TestCase):
         top.buttons["x"].click()
         self.assertFalse(top.isVisible())
         self.assertNotIn(top.redraw, model.listeners)
+
+    def test_machine_panel(self) -> None:
+        """A machine's panel: never replaced, busy refuses, minimal."""
+        top: Window = Window(App(None, None))
+        top.show()
+        busy: list[str] = ["The mill is running"]
+        stops: list[str] = []
+        told: list[Callable[[bool], None]] = []
+
+        # Function `reason()`:
+        def reason() -> str:
+            """Return why it is busy, while it is."""
+            return busy[0] if busy else ""
+
+        # The controls: any widget (a panel will do).
+        control: MachineControl = MachineControl(
+            "Mill",
+            Panel(9),
+            reason,
+            functools.partial(stops.append, "stop"),
+            told.append,
+            functools.partial(Due, "T05", 0.5, 2.0, False),
+        )
+        top.panels[0].show_machine(control)
+        control.on_minimal(functools.partial(top.set_minimal, top.panels[0]))
+        self.assertIs(top.free_panel(), top.panels[1])
+        top.panels[0].show_dues(True)
+        meter = top.panels[0].headers[0].meter
+        self.assertEqual(meter.format(), "▲ 0:30")
+        self.assertEqual(meter.value(), 750)
+        self.assertEqual(top.busy(), "The mill is running")
+
+        # Minimal: the machine's panel alone; full: all back.
+        told[0](True)
+        self.assertTrue(top.tree.isHidden())
+        self.assertTrue(top.panels[1].isHidden())
+        self.assertFalse(top.panels[0].isHidden())
+        told[0](False)
+        self.assertFalse(top.tree.isHidden())
+        self.assertFalse(top.panels[1].isHidden())
+        busy.clear()
+        top.close()
+        self.assertFalse(top.isVisible())
 
     def test_new_shop(self) -> None:
         """[New Shop] while there is none; the dialog makes one."""

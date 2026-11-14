@@ -101,18 +101,19 @@ class AppTest(unittest.TestCase):
         self.assertEqual(heard, [2])
 
     def test_machines(self) -> None:
-        """[Stop All] with two machines; closing refused while one runs."""
+        """[Stop All] with any machine; closing refused while one runs."""
         model: app.App = app.App(None, None)
+        self.assertFalse(model.any_running())
         model.start_machine("shop mill")
-        self.assertFalse(model.stop_all_shown())
+        self.assertTrue(model.any_running())
         self.assertEqual(
             model.close_refusal({"shop mill"}), "Stop the shop mill first"
         )
         self.assertEqual(model.close_refusal({"router"}), "")
         model.start_machine("router")
-        self.assertTrue(model.stop_all_shown())
+        self.assertTrue(model.any_running())
         model.stop_all()
-        self.assertFalse(model.stop_all_shown())
+        self.assertFalse(model.any_running())
         self.assertEqual(model.close_refusal({"shop mill"}), "")
 
 

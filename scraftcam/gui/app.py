@@ -469,13 +469,13 @@ class App:  # pylint: disable=too-many-instance-attributes
         self.running.clear()
         self.say("Stopped all machines.")
 
-    def stop_all_shown(self) -> bool:
-        """Tell whether [Stop All] shows: more than one machine runs.
+    def any_running(self) -> bool:
+        """Tell whether [Stop All] is active: any machine runs (#100).
 
         Returns:
-        * (`bool`): True while more than one machine runs (#2).
+        * (`bool`): True while at least one machine runs.
         """
-        return len(self.running) > 1
+        return bool(self.running)
 
     def close_refusal(self, controls: set[str]) -> str:
         """Say why a window may not close, if it may not (#67).

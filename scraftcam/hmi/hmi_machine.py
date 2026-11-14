@@ -129,7 +129,7 @@ TOGGLES: tuple[tuple[str, str, bool], ...] = (
 )
 
 # The HMI's tabs, one for each task, in their order.
-TABS: tuple[str, ...] = ("Run", "Setup", "Tools", "View")
+TABS: tuple[str, ...] = ("Configure", "NC Files", "Execute")
 
 # The MDI line's backgrounds: empty, RS-274, and not.
 BLANK: str = "white"
@@ -570,7 +570,7 @@ def next_tool_text(
 
 # Class `HMIStatus`:
 @dataclass(slots=True)
-class HMIStatus:
+class HMIStatus:  # pylint: disable=too-many-instance-attributes
     """What the HMI shows of the machine, from one poll.
 
     Attributes:
@@ -584,9 +584,13 @@ class HMIStatus:
       run, where the HMI's own idea of it stands).
     * `spindle` (`bool`): True while a spindle turns (or is on), so
       that nothing closes until it stops (`T.osiade~5.1.9` #56).
+    * `rpm` (`float`): The spindle's speed (#98).
+    * `feed` (`float`): How fast the tool moves (machine units, inches,
+      a minute).
 
     Constructor:
-    * `HMIStatus(file, line, position, tool, messages, state, spindle)`
+    * `HMIStatus(file, line, position, tool, messages, state, spindle,
+      rpm, feed)`
     """
 
     # Constructor arguments:
@@ -597,6 +601,8 @@ class HMIStatus:
     messages: list[str] = field(init=True)
     state: str = field(init=True)
     spindle: bool = field(init=True, default=False)
+    rpm: float = field(init=True, default=0.0)
+    feed: float = field(init=True, default=0.0)
 
 
 # Function `spindle_on()`:
@@ -619,6 +625,170 @@ def spindle_on(spindles: object) -> bool:
         or float(spindle.get("speed", 0.0)) != 0.0
         for spindle in spindles
     )
+
+
+# Function `spindle_rpm()`:
+def spindle_rpm(spindles: object) -> float:
+    """Return the first spindle's speed, from `linuxcnc.stat.spindle`.
+
+    Arguments:
+    * `spindles` (`object`): The stat's `spindle`.
+
+    Returns:
+    * (`float`): Its RPM (0 when it can not be read).
+    """
+    if isinstance(spindles, (list, tuple)) and spindles:
+        first: object = spindles[0]
+        if isinstance(first, dict):
+            return abs(float(first.get("speed", 0.0)))
+    return 0.0
+
+
+# Class `Intervention`:
+@dataclass(frozen=True, slots=True)
+class Intervention:
+    """When the operator is next needed, for a machine tab's bar (#102).
+
+    Attributes:
+    * `what` (`str`): What then: a tool (`T05`), or `end`.
+    * `left` (`float`): Minutes until then (0 when waiting now).
+    * `span` (`float`): Minutes from the one before to it, so that
+      `left / span` is how much of the wait is left.
+    * `waiting` (`bool`): True when the machine waits for the operator
+      now (a program pause, `M0`).
+
+    Constructor:
+    * `Intervention(what, left, span, waiting)`
+    """
+
+    # Constructor arguments:
+    what: str = field(init=True)
+    left: float = field(init=True)
+    span: float = field(init=True)
+    waiting: bool = field(init=True)
+
+
+# Function `next_intervention()`:
+# It takes what `next_tool_text()` does, and which changes are manual.
+# pylint: disable-next=too-many-arguments
+def next_intervention(
+    lines: list[str],
+    sums: list[float],
+    spans: list[tuple[int, int]],
+    line: int,
+    override: float,
+    *,
+    manual: frozenset[int] | None = None,
+) -> Intervention | None:
+    """Return when the operator next has to handle a tool (#102, #106).
+
+    That is the next tool change done by hand: every change on a
+    machine with no tool changer; with one, only a change that needs
+    a tool swapped into the carousel (`carousel.plan()`).  After the
+    last, it is the program's end.  A remount comes with a job's
+    files (`T.cpfj~5.7`).
+
+    Arguments:
+    * `lines` (`list[str]`): The program's lines.
+    * `sums` (`list[float]`): Minutes up to each line
+      (`next_tool_text()`).
+    * `spans` (`list[tuple[int, int]]`): The tool changes
+      (`change_spans()`).
+    * `line` (`int`): The line being run, or run from (from 1).
+    * `override` (`float`): The feed override.
+    * `manual` (`frozenset[int] | None`): Which changes (from 0, in
+      the program's order) need the operator; `None` for every one.
+
+    Returns:
+    * (`Intervention | None`): The next one; `None` for no program.
+    """
+    if not lines:
+        return None
+    line = min(max(line, 1), len(lines))
+    rate: float = max(override, 1e-6)
+    before: int = 1
+    index: int
+    span: tuple[int, int]
+    for index, span in enumerate(spans):
+        start: int = span[0]
+        if manual is not None and index not in manual:
+            continue
+        if start > line:
+            tool: re.Match[str] | None = re.search(
+                r"T\d+", change_tool_label(lines, span)
+            )
+            return Intervention(
+                tool.group(0) if tool else "tool",
+                (sums[start - 1] - sums[line - 1]) / rate,
+                max((sums[start - 1] - sums[before - 1]) / rate, 1e-6),
+                False,
+            )
+        before = start
+    return Intervention(
+        "end",
+        (sums[len(lines)] - sums[line - 1]) / rate,
+        max((sums[len(lines)] - sums[before - 1]) / rate, 1e-6),
+        False,
+    )
+
+
+# Function `tool_plan()`:
+# It takes what `next_tool_text()` does, and how many tools to show.
+# pylint: disable-next=too-many-arguments,too-many-locals
+def tool_plan(
+    lines: list[str],
+    sums: list[float],
+    spans: list[tuple[int, int]],
+    line: int,
+    override: float,
+    *,
+    count: int = 3,
+) -> str:
+    """Return the tool cutting now, and the next few with their times.
+
+    So the operator can fetch tools while the machine cuts
+    (`T.osiade~5.1.9` #85, #87, #91).
+
+    Arguments:
+    * `lines` (`list[str]`): The program's lines.
+    * `sums` (`list[float]`): Minutes up to each line
+      (`next_tool_text()`).
+    * `spans` (`list[tuple[int, int]]`): The tool changes
+      (`change_spans()`).
+    * `line` (`int`): The line being run, or run from (from 1).
+    * `override` (`float`): The feed override.
+    * `count` (`int`): How many next tools to show.
+
+    Returns:
+    * (`str`): E.g. `Now: T05 1/8 in 90 deg carbide chamfer mill
+      | Next: T06 in 1:20, T01 in 4:05 | End in 9:30`; `""` for no
+      program.
+    """
+    if not lines:
+        return ""
+    line = min(max(line, 1), len(lines))
+    rate: float = max(override, 1e-6)
+    now: str = ""
+    upcoming: list[str] = []
+    span: tuple[int, int]
+    for span in spans:
+        start: int = span[0]
+        if start <= line:
+            now = change_tool_label(lines, span)
+        elif len(upcoming) < count:
+            left: float = (sums[start - 1] - sums[line - 1]) / rate
+            tool: re.Match[str] | None = re.search(
+                r"T\d+", change_tool_label(lines, span)
+            )
+            upcoming.append(
+                f"{tool.group(0) if tool else '?'} in {clock(left)}"
+            )
+    end: float = (sums[len(lines)] - sums[line - 1]) / rate
+    parts: list[str] = [f"Now: {now or 'no tool yet'}"]
+    if upcoming:
+        parts.append("Next: " + ", ".join(upcoming))
+    parts.append(f"End in {clock(end)}")
+    return " | ".join(parts)
 
 
 # Class `HMIMachine`:
@@ -1111,6 +1281,7 @@ class HMIMachine:
             return HMIStatus(self.file, 0, (0.0, 0.0, 0.0), 0, [], "")
         stat: dict[str, Any] = self.lcnc.stat(
             "actual_position",
+            "current_vel",
             "file",
             "g5x_offset",
             "g92_offset",
@@ -1146,6 +1317,8 @@ class HMIMachine:
             if stat["paused"]
             else "running",
             spindle_on(stat["spindle"]),
+            spindle_rpm(stat["spindle"]),
+            float(stat["current_vel"]) * 60.0,
         )
 
 

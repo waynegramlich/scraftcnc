@@ -44,7 +44,7 @@ if __package__ in (None, ""):
 # pylint: disable=wrong-import-position
 from scraftcam.gui import window
 from scraftcam.gui.app import App, find_shop
-from scraftcam.gui.views import MachineControl
+from scraftcam.gui.views import Due, MachineControl
 from scraftcam.lcnc.lcnc_client import PORT as LINUXCNC_PORT
 from scraftcam.shops import SHOP_FILE
 
@@ -143,8 +143,11 @@ def machine_maker(
     def make() -> MachineControl | None:
         """Make the HMI, with the program open."""
         # Only now: it needs LinuxCNC's client, which the GUI does not.
-        # pylint: disable-next=import-outside-toplevel
+        # pylint: disable=import-outside-toplevel
         from scraftcam.hmi import lcnc_hmi
+        from scraftcam.hmi.hmi_machine import Intervention
+
+        # pylint: enable=import-outside-toplevel
 
         if model.shop is None:
             model.say("--program needs a shop", problem=True)
@@ -164,12 +167,31 @@ def machine_maker(
             return None
         hmi.quit_button.hide()
         hmi.on_quit = window.close_all
+
+        # Function `due()`:
+        def due() -> Due | None:
+            """Return when the HMI next needs its operator (#102)."""
+            found: Intervention | None = hmi.intervention()
+            if found is None:
+                return None
+            return Due(found.what, found.left, found.span, found.waiting)
+
+        # Function `listen()`:
+        def listen(callback: Callable[[bool], None]) -> None:
+            """Have the HMI call `callback` when it goes minimal or full."""
+            hmi.on_minimal = callback
+
         try:
             hmi.open(options.program)
         except (ValueError, OSError) as error:
             hmi.message.setText(str(error))
         return MachineControl(
-            hmi.program_machine or "Machine", hmi, hmi.busy, hmi.on_stop
+            hmi.program_machine or "Machine",
+            hmi,
+            hmi.busy,
+            hmi.on_stop,
+            listen,
+            due,
         )
 
     return make

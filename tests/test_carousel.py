@@ -101,8 +101,8 @@ class TestDemo(unittest.TestCase):
             path.write_text(demo.cut_demo()[0].gcode(), encoding="utf-8")
             hmi.open(str(path))
             hmi.poll()
-            hmi.handle("tab Tools")
-        table = hmi.show_state()["texts"][-1]
+            hmi.handle("tab Configure")
+        table = hmi.carousel.toPlainText()
         self.assertIn("Load the carousel before Start", table)
         self.assertIn("slot 1: tool 5 (black/green) T04", table)
         self.assertIn("Swaps during the run: 1", table)

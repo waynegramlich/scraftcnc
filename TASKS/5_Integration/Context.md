@@ -74,3 +74,14 @@ the panels, no tabs, no [Save].  Next: step 1, the top line.
 A shop item's panel shows its fields, edited in place
 (`scraftcam/gui/fields.py`, `views.Panel`); the user liked it in a
 GUI run.  Next: S3.5 (`gui/README.md`).
+
+## 2026-11-13: `T.osiade~5.1.9` steps 3-4 done, step 5 under way
+
+The shop GUI is done (fields, sketches, tooltips, light/dark,
+`stock_materials/`/`tool_materials/`, the grid plate's new API and
+sketches).  Step 5: the HMI is a panel of the GUI (`./show_demo.py`
+starts `scraftcam.run --program`), with machine tabs, a bar to the
+next manual tool task, [Stop All] always shown, a minimal form.  New
+Pending tasks: `T.cpfj~5.7` (carousel planning for a job),
+`T.rslsao~5.8` (several LinuxCNC simulators at once).  Next: the
+inside of a machine tab (see `T.osiade~5.1.9`'s `Context.md`).

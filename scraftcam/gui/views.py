@@ -64,9 +64,12 @@ from PySide6.QtWidgets import (  # noqa: E402
     QLayout,
     QLineEdit,
     QPlainTextEdit,
+    QProgressBar,
     QScrollArea,
     QSplitter,
     QSplitterHandle,
+    QTabBar,
+    QTabWidget,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -77,6 +80,14 @@ from PySide6.QtWidgets import (  # noqa: E402
 
 # A splitter's handle: wide enough to see and grab, in the palette's
 # colors, so it shows in light and dark mode alike (#25).
+# A machine tab's bar: its steps, its least width (pixels), how
+# many minutes count as soon, and soon's color (#102).
+BAR_STEPS: int = 1000
+BAR_WIDTH: int = 140
+SOON: float = 1.0
+SOON_COLOR: str = "#e0a000"
+FILL_COLOR: str = "#3d7fd6"
+
 HANDLE_WIDTH: int = 7
 HANDLE_STYLE: str = (
     "QSplitter::handle { background: palette(mid); } "
@@ -145,9 +156,14 @@ class MachineControl:
     * `busy` (`Callable[[], str]`): Why nothing may close yet (the
       machine runs, or its spindle is on), or `""` (#56).
     * `stop` (`Callable[[], None]`): Stops the machine at once.
+    * `on_minimal` (`Callable[[Callable[[bool], None]], None]`): Hands
+      the controls what to call when they go minimal (True) or full
+      (False), so the window can shrink with them (#94).
+    * `due` (`Callable[[], Due | None]`): When the operator is next
+      needed (#102); `None` with no program.
 
     Constructor:
-    * `MachineControl(name, widget, busy, stop)`
+    * `MachineControl(name, widget, busy, stop, on_minimal, due)`
     """
 
     # Constructor arguments:
@@ -155,6 +171,111 @@ class MachineControl:
     widget: QWidget = field(init=True)
     busy: Callable[[], str] = field(init=True)
     stop: Callable[[], None] = field(init=True)
+    on_minimal: Callable[[Callable[[bool], None]], None] = field(init=True)
+    due: Callable[[], "Due | None"] = field(init=True)
+
+
+# Class `Due`:
+@dataclass(frozen=True, slots=True)
+class Due:
+    """When a machine next needs its operator (#102, #103).
+
+    Attributes:
+    * `what` (`str`): What then: a tool (`T05`), or `end`.
+    * `left` (`float`): Minutes until then (0 when waiting now).
+    * `span` (`float`): Minutes from the one before to it.
+    * `waiting` (`bool`): True when it waits for the operator now.
+
+    Constructor:
+    * `Due(what, left, span, waiting)`
+    """
+
+    # Constructor arguments:
+    what: str = field(init=True)
+    left: float = field(init=True)
+    span: float = field(init=True)
+    waiting: bool = field(init=True)
+
+
+# Class `MachineTab`:
+class MachineTab(QWidget):
+    """A machine tab's header: its name over its bar (#101, #102).
+
+    The bar fills, from black, as the operator's next tool task (a
+    carousel swap, or a change by hand) comes, and is full when it is
+    due; it starts again from black after it (#106).  Its text is the
+    time left.  The urgency shows in marks as well as color, for
+    operators who are color blind: "3:42"; within `SOON` minutes,
+    amber, "▲ 0:40"; waiting now, red and blinking, "■ NOW".
+
+    Attributes:
+    * `meter` (`QProgressBar`): The time left, as a share of the wait.
+    """
+
+    def __init__(self, name: str) -> None:
+        """Make the header.
+
+        Arguments:
+        * `name` (`str`): The machine's name.
+        """
+        super().__init__()
+        layout: QVBoxLayout = QVBoxLayout(self)
+        layout.setContentsMargins(4, 2, 4, 2)
+        layout.setSpacing(1)
+        label: QLabel = QLabel(name)
+        label.setStyleSheet("font-weight: bold")
+        layout.addWidget(label)
+        self.meter: QProgressBar = QProgressBar()
+        self.meter.setRange(0, BAR_STEPS)
+        self.meter.setTextVisible(True)
+        self.meter.setMinimumWidth(BAR_WIDTH)
+        layout.addWidget(self.meter)
+
+    def show_due(self, due: Due | None, blink: bool) -> None:
+        """Show when the operator is next needed.
+
+        Arguments:
+        * `due` (`Due | None`): When; `None` with no program.
+        * `blink` (`bool`): Which half of a blink this is.
+        """
+        if due is None:
+            self.meter.setValue(0)
+            self.meter.setFormat("no program")
+            self.meter.setStyleSheet("")
+            return
+        color: str
+        if due.waiting:
+            self.meter.setValue(BAR_STEPS)
+            self.meter.setFormat("■ NOW")
+            color = colors().problem if blink else colors().quiet
+        else:
+            done: float = 1.0 - min(max(due.left / due.span, 0.0), 1.0)
+            self.meter.setValue(round(done * BAR_STEPS))
+            soon: bool = due.left <= SOON
+            self.meter.setFormat(f"{'▲ ' if soon else ''}{minutes(due.left)}")
+            color = SOON_COLOR if soon else FILL_COLOR
+        self.meter.setToolTip(
+            "Until the end" if due.what == "end" else f"Until {due.what}"
+        )
+        self.meter.setStyleSheet(
+            "QProgressBar { background: black; color: white;"
+            " text-align: center; }"
+            f" QProgressBar::chunk {{ background: {color}; }}"
+        )
+
+
+# Function `minutes()`:
+def minutes(amount: float) -> str:
+    """Return minutes as `M:SS`.
+
+    Arguments:
+    * `amount` (`float`): The minutes.
+
+    Returns:
+    * (`str`): E.g. `3:42`.
+    """
+    seconds: int = max(round(amount * 60.0), 0)
+    return f"{seconds // 60}:{seconds % 60:02d}"
 
 
 # Class `Panel`:
@@ -166,8 +287,11 @@ class Panel(QFrame):  # pylint: disable=too-many-instance-attributes
     * `text` (`QPlainTextEdit`): What the item holds, read only (for
       a shop file, what its fields do not show).
     * `node` (`Node | None`): The item shown, if any.
-    * `machine` (`MachineControl | None`): The machine it controls,
-      if any (`show_machine()`); then it shows nothing else.
+    * `machines` (`list[MachineControl]`): The machines it controls,
+      if any (`show_machine()`), a tab each; then it shows nothing
+      else (#101).
+    * `headers` (`list[MachineTab]`): Their tabs' headers.
+    * `machine_tabs` (`QTabWidget`): The machines' tabs.
     * `clicked` (`Signal`): Sent when the panel is clicked.
     * `entries` (`dict[str, QLineEdit | QPlainTextEdit]`): Each
       field's entry, by key.
@@ -197,7 +321,10 @@ class Panel(QFrame):  # pylint: disable=too-many-instance-attributes
         """
         super().__init__()
         self.node: Node | None = None
-        self.machine: MachineControl | None = None
+        self.machines: list[MachineControl] = []
+        self.headers: list[MachineTab] = []
+        self.machine_tabs: QTabWidget = QTabWidget()
+        self.machine_tabs.hide()
         self.item: dict[str, object] = {}
         self.rows: list[Row] = []
         self.entries: dict[str, QLineEdit | QPlainTextEdit] = {}
@@ -274,22 +401,41 @@ class Panel(QFrame):  # pylint: disable=too-many-instance-attributes
         self.clicked.emit()
 
     def show_machine(self, machine: MachineControl) -> None:
-        """Show a machine's controls, in place of an item, for good.
+        """Add a machine's controls, as a tab, in place of any item.
 
-        A tree click never replaces them (#58).
+        A tree click never replaces them (#58); each machine has a tab
+        of its own, its header the machine's name over its bar (#101).
 
         Arguments:
         * `machine` (`MachineControl`): The controls.
         """
-        self.machine = machine
+        self.machines.append(machine)
         self.node = None
-        self.title.setText(f"{machine.name} (machine)")
+        self.title.setText("Machines")
         self.title.setStyleSheet("")
         self.split.hide()
-        layout: QLayout | None = self.layout()
-        assert layout is not None
-        layout.addWidget(machine.widget)
-        machine.widget.show()
+        if self.machine_tabs.count() == 0:
+            layout: QLayout | None = self.layout()
+            assert layout is not None
+            layout.addWidget(self.machine_tabs)
+        index: int = self.machine_tabs.addTab(machine.widget, "")
+        header: MachineTab = MachineTab(machine.name)
+        self.machine_tabs.tabBar().setTabButton(
+            index, QTabBar.ButtonPosition.LeftSide, header
+        )
+        self.headers.append(header)
+        self.machine_tabs.show()
+
+    def show_dues(self, blink: bool) -> None:
+        """Bring each machine tab's bar up to date (#102).
+
+        Arguments:
+        * `blink` (`bool`): Which half of a blink this is.
+        """
+        machine: MachineControl
+        header: MachineTab
+        for machine, header in zip(self.machines, self.headers, strict=True):
+            header.show_due(machine.due(), blink)
 
     def set_current(self, current: bool) -> None:
         """Outline the panel, or not.

@@ -4,24 +4,25 @@
 A small Qt window (`PySide6`, fetched into `~/.scraftcam/packages/`
 the first time, by `scraftcam.packages`) that drives the LinuxCNC
 back end through its Python API.  On top, on every tab, are the work
-position and the tool in the spindle, LinuxCNC's last message, and
-how much of the setup is drawn; under the tabs, Open and Quit.  The
-tabs, one for each task:
+position and the tool in the spindle, LinuxCNC's last message, how
+much of the setup is drawn, and toggles that show or hide, in
+SolidCraft, the keep-outs, the stock outline, SolidCraft's origin and
+the tools' holders (`TOGGLES`); under the tabs, Quit.  The tabs
+(`T.osiade~5.1.9` #63, a first cut of the GUI's machine panel):
 
-* Run: the G-code already run, the G-code coming next, one line of
-  G-code to run as MDI (Execute, while stopped; green when it reads
-  as RS-274, red when not; refused, as a jog is, when it would
-  enter a keep-out, or moves in `G91`), a run line (-Tool and +Tool, which move
-  the line Start runs from to the previous or next tool change;
-  Start, Pause and Reset) and a speed slider (the feed override).
-* Setup: Next Step (the setup's items, one at a time), Set Origin,
-  Home to the work origin, Set X, Set Y and Set Z (the current
+* Configure: Next Step (the setup's items, one at a time), Set
+  Origin, Home to the work origin, Set X, Set Y and Set Z (the current
   position on one axis made to read the number typed), six jog
-  buttons and the jog step (1 to .0001 in).
-* Tools: the tools' speeds and feeds, for a material chosen.
-* View: toggles that show or hide, in SolidCraft, the keep-outs, the
-  stock outline, SolidCraft's origin and the tools' holders
-  (`TOGGLES`).
+  buttons and the jog step (1 to .0001 in); the G-code already run
+  and coming next; one line of G-code to run as MDI (Execute, while
+  stopped; green when it reads as RS-274, red when not; refused, as a
+  jog is, when it would enter a keep-out, or moves in `G91`); -Tool
+  and +Tool, which move the line Start runs from to the previous or
+  next tool change.
+* NC Files: the job's files, to come; Open, for now.
+* Execute: Start, Pause and Reset; the speed slider (the feed
+  override), greyed out until Expert is checked and agreed to; the
+  file, the line and the time left; the next tool and the time to it.
 
 The LinuxCNC calls are kept in `HMIMachine` (`hmi_machine.py`, with
 everything else that does not draw), a client (through
@@ -94,7 +95,7 @@ from typing import Any
 
 from .. import shops
 from ..assembly import Assembly, AssemblyItem
-from ..carousel import gcode_sequence, plan_text
+from ..carousel import gcode_sequence, plan, plan_text
 from ..geometry import RoundedPolygon
 from ..keepout import assembly_zones
 from ..lcnc.lcnc_client import PORT, BridgeError
@@ -131,13 +132,16 @@ from .hmi_machine import (
     CommandPort,
     HMIMachine,
     HMIStatus,
+    Intervention,
     SetupDrawer,
     change_spans,
+    clock,
     jog_hit,
     line_kind,
     line_minutes,
     material_names,
     mdi_segments,
+    next_intervention,
     next_tool_text,
     origin_lines,
     program_inches,
@@ -146,7 +150,7 @@ from .hmi_machine import (
     setup_warning,
     shop_name,
     tool_changes,
-    tool_speeds,
+    tool_plan,
 )
 
 # `PySide6` lives in `~/.scraftcam/packages/`, so it is put on
@@ -166,7 +170,6 @@ from PySide6.QtWidgets import (  # noqa: E402
     QApplication,
     QButtonGroup,
     QCheckBox,
-    QComboBox,
     QFileDialog,
     QHBoxLayout,
     QInputDialog,
@@ -374,7 +377,7 @@ class HMI(QWidget):
     * `progress` (`QProgressBar`): How much of the setup is drawn.
     * `drawn` (`Assembly | None`): The setup (or the steps of it)
       last handed to `drawer`.
-    * `toggles` (`dict[str, QCheckBox]`): The View tab's check
+    * `toggles` (`dict[str, QCheckBox]`): The check
       buttons, by label (`TOGGLES`).
     * `setup_step` (`int`): How many of the setup's items Next Step
       has shown (0: the whole setup).
@@ -396,11 +399,10 @@ class HMI(QWidget):
     * `message` (`QLabel`): LinuxCNC's last error message.
     * `origin_button` (`QPushButton`): The Set Origin button.
     * `paused` (`bool`): True while the program is paused.
-    * `pause_button` (`QPushButton`): The Pause button.
     * `port` (`CommandPort | None`): The command port, if any.
     * `position` (`QLabel`): The work position and the tool.
-    * `run_button` (`QPushButton`): The Start button (Resume while
-      paused).
+    * `can_start` (`bool`): True when Start (or Resume) may be
+      pressed: stopped or paused, the setup drawn, the origin set.
     * `running` (`bool`): True while a program runs (or is paused).
     * `scrolling` (`bool`): True once the whole program is in the two
       G-code windows, to scroll while paused.
@@ -413,8 +415,6 @@ class HMI(QWidget):
     * `start` (`int`): The line Start runs from (counted from 1; 0
       for the program's start), chosen with -Tool and +Tool.
     * `tool_buttons` (`list[QPushButton]`): -Tool and +Tool.
-    * `material_chooser` (`QComboBox`): The material the Tools tab
-      shows.
     * `next_tool` (`QLabel`): The next tool and the time left to it
       (`T.hs~5.1.5` S6).
     * `notebook` (`QTabWidget`): The tabs.
@@ -445,7 +445,27 @@ class HMI(QWidget):
     * `program_material` (`str`): The material it cuts.
     * `tabs` (`dict[str, QWidget]`): Each tab, by its name.
     * `timer` (`QTimer`): Calls `poll()` every `POLL_MS`.
-    * `tools_table` (`QPlainTextEdit`): The tools' speeds and feeds.
+    * `expert` (`QCheckBox`): Unlocks the speed slider (#79).
+    * `progress_text` (`QLabel`): The file, the line and the time left.
+    * `carousel` (`QPlainTextEdit`): How to load the carousel for the
+      program open (Configure).
+    * `run_toggle` (`QPushButton`): The one run button: Start, Pause,
+      Resume or Restart, for where the run is (#96).
+    * `skip_button` (`QPushButton`): Skip Tool: Start runs from the
+      next tool change (#97).
+    * `stop_button` (`QPushButton`): Stop at once, as Reset does.
+    * `size_button` (`QPushButton`): Minimal or Full (#94).
+    * `minimal` (`bool`): True in the minimal form.
+    * `at` (`int`): The line running, or to start from, at the last
+      poll.
+    * `manual` (`frozenset[int] | None`): The tool changes (from 0)
+      that need the operator: the carousel's swaps; `None` with no
+      carousel, when every change does (#106).
+    * `ended` (`bool`): True once a run has come to its end (Restart).
+    * `on_minimal` (`Callable[[bool], None] | None`): What the GUI does
+      when the HMI goes minimal or full (its window); `None` on its own.
+    * `plan` (`QLabel`): The tool cutting now, the next few, and the
+      end (`tool_plan()`).
     * `quit_button` (`QPushButton`): Quit, hidden when the HMI is a
       panel of the GUI (`T.osiade~5.1.9` #56).
     * `on_quit` (`Callable[[], None] | None`): What Quit (or the
@@ -512,11 +532,38 @@ class HMI(QWidget):
         self.setWindowTitle("SolidCraft LinuxCNC")
         layout: QVBoxLayout = QVBoxLayout(self)
 
-        # Above the tabs, on every tab: the work position and the tool,
-        # LinuxCNC's messages, and how much of the setup is drawn.
+        # At the very top, on every tab and in the minimal form: the one
+        # run button, Skip Tool, Stop, and Minimal / Full
+        # (`T.osiade~5.1.9` #85, #94, #96, #97).
+        self.minimal: bool = False
+        self.ended: bool = False
+        self.at: int = 0
+        self.manual: frozenset[int] | None = None
+        self.on_minimal: Callable[[bool], None] | None = None
+        self.run_toggle: QPushButton = QPushButton("Start")
+        self.run_toggle.clicked.connect(self.on_run_toggle)
+        self.skip_button: QPushButton = QPushButton("Skip Tool")
+        self.skip_button.clicked.connect(functools.partial(self.on_tool, 1))
+        self.stop_button: QPushButton = QPushButton("Stop")
+        self.stop_button.clicked.connect(self.on_stop)
+        self.size_button: QPushButton = QPushButton("Minimal")
+        self.size_button.clicked.connect(self.toggle_minimal)
+        strip: QHBoxLayout = QHBoxLayout()
+        strip.addWidget(self.run_toggle)
+        strip.addWidget(self.skip_button)
+        strip.addWidget(self.stop_button)
+        strip.addStretch(1)
+        strip.addWidget(self.size_button)
+        layout.addLayout(strip)
+
+        # Above the tabs, on every tab: the work position, the tool, the
+        # speed and feed; the tool plan; LinuxCNC's messages (only when
+        # there is one); and how much of the setup is drawn.
         self.position: QLabel = QLabel()
         self.position.setFont(fixed_font())
         layout.addWidget(self.position)
+        self.plan: QLabel = QLabel()
+        layout.addWidget(self.plan)
         self.message: QLabel = QLabel()
         self.message.setStyleSheet("QLabel { color: red; }")
         self.progress: QProgressBar = QProgressBar()
@@ -529,7 +576,21 @@ class HMI(QWidget):
         message_line.addWidget(self.progress)
         layout.addLayout(message_line)
 
-        # The tabs, one for each task, in the order of `TABS`.
+        # Above the tabs as well: what SolidCraft shows, where people
+        # look first (`T.osiade~5.1.9` #70, #73).
+        self.toggles: dict[str, QCheckBox] = {}
+        shown: bool
+        label: str
+        view_line: QHBoxLayout = QHBoxLayout()
+        for label, _, shown in TOGGLES:
+            self.toggles[label] = QCheckBox(label)
+            self.toggles[label].setChecked(shown)
+            self.toggles[label].clicked.connect(self.on_toggle)
+            view_line.addWidget(self.toggles[label])
+        view_line.addStretch(1)
+        layout.addLayout(view_line)
+
+        # The tabs, one for each task, in the order of `TABS` (#63).
         self.notebook: QTabWidget = QTabWidget()
         layout.addWidget(self.notebook, 1)
         self.tabs: dict[str, QWidget] = {}
@@ -538,69 +599,9 @@ class HMI(QWidget):
             self.tabs[name] = QWidget()
             self.notebook.addTab(self.tabs[name], name)
         self.notebook.currentChanged.connect(self.on_tab_changed)
-        run_tab: QVBoxLayout = QVBoxLayout(self.tabs["Run"])
+        configure: QVBoxLayout = QVBoxLayout(self.tabs["Configure"])
 
-        # Run: the G-code run and coming, and below them the MDI line
-        # and Execute.
-        self.executed: QPlainTextEdit = self.scrolled_text(run_tab)
-        self.coming: QPlainTextEdit = self.scrolled_text(run_tab)
-        self.mdi_entry: QLineEdit = QLineEdit()
-        self.mdi_entry.setFont(fixed_font())
-        paint(self.mdi_entry, BLANK)
-        self.execute_button: QPushButton = QPushButton("Execute")
-        self.execute_button.setEnabled(False)
-        self.execute_button.clicked.connect(self.on_execute)
-        mdi_line: QHBoxLayout = QHBoxLayout()
-        mdi_line.addWidget(self.mdi_entry, 1)
-        mdi_line.addWidget(self.execute_button)
-        run_tab.addLayout(mdi_line)
-        self.mdi_entry.textChanged.connect(self.check_mdi)
-
-        # Run: the run line, -Tool and +Tool, Start, Pause and Reset.
-        self.tool_buttons: list[QPushButton] = []
-        label: str
-        step: int
-        for label, step in (("-Tool", -1), ("+Tool", +1)):
-            tool_button: QPushButton = QPushButton(label)
-            tool_button.clicked.connect(functools.partial(self.on_tool, step))
-            self.tool_buttons.append(tool_button)
-        self.run_button: QPushButton = QPushButton("Start")
-        self.run_button.clicked.connect(self.on_run)
-        self.pause_button: QPushButton = QPushButton("Pause")
-        self.pause_button.setEnabled(False)
-        self.pause_button.clicked.connect(self.on_pause)
-        reset: QPushButton = QPushButton("Reset")
-        reset.clicked.connect(self.on_stop)
-        row(
-            run_tab,
-            *self.tool_buttons,
-            self.run_button,
-            self.pause_button,
-            reset,
-            spaces={2: 12},
-        )
-
-        # Run: the speed slider (logarithmic), and the next tool and
-        # the time left (`T.hs~5.1.5` S6).
-        self.top_speed: float = min(max_speed, MAX_SPEED)
-        self.slider: QSlider = QSlider(Qt.Orientation.Horizontal)
-        self.slider.setRange(0, SLIDER_STEPS)
-        self.slider.valueChanged.connect(self.on_slider)
-        self.speed_text: QLabel = QLabel("1x")
-        self.speed_text.setMinimumWidth(
-            self.speed_text.fontMetrics().horizontalAdvance("0.00x0")
-        )
-        slider_line: QHBoxLayout = QHBoxLayout()
-        slider_line.addWidget(QLabel("speed"))
-        slider_line.addWidget(self.slider, 1)
-        slider_line.addWidget(self.speed_text)
-        run_tab.addLayout(slider_line)
-        self.next_tool: QLabel = QLabel("")
-        run_tab.addWidget(self.next_tool)
-        run_tab.addStretch(1)
-
-        # Setup: Next Step, Set Origin and Home.
-        setup_tab: QVBoxLayout = QVBoxLayout(self.tabs["Setup"])
+        # Configure: Next Step, Set Origin and Home.
         self.next_step_button: QPushButton = QPushButton("Next Step")
         self.next_step_button.clicked.connect(self.on_next_step)
         self.origin_button: QPushButton = QPushButton("Set Origin")
@@ -608,14 +609,14 @@ class HMI(QWidget):
         self.home_button: QPushButton = QPushButton("Home")
         self.home_button.clicked.connect(self.on_home)
         row(
-            setup_tab,
+            configure,
             self.next_step_button,
             self.origin_button,
             self.home_button,
             spaces={1: 12},
         )
 
-        # Setup: each axis of the origin set by hand, to a number.
+        # Configure: each axis of the origin set by hand, to a number.
         self.axis_entries: dict[str, QLineEdit] = {}
         self.axis_buttons: dict[str, QPushButton] = {}
         self.axes_set: set[str] = set()
@@ -635,9 +636,10 @@ class HMI(QWidget):
             self.axis_entries[axis] = entry
             self.axis_buttons[axis] = button
             axis_widgets += [entry, button]
-        row(setup_tab, *axis_widgets, spaces={2: 8, 4: 8})
+        row(configure, *axis_widgets, spaces={2: 8, 4: 8})
 
-        # Setup: the jog buttons and their step (one chosen at a time).
+        # Configure: the jog buttons and their step (one chosen at a
+        # time).
         jogs: tuple[tuple[str, int, int], ...] = (
             ("-X", 0, -1),
             ("+X", 0, +1),
@@ -667,46 +669,92 @@ class HMI(QWidget):
             )
             self.steps.addButton(choice)
             self.jog_buttons.append(choice)
-        row(setup_tab, *self.jog_buttons, spaces={6: 12})
-        setup_tab.addStretch(1)
+        row(configure, *self.jog_buttons, spaces={6: 12})
 
-        # Tools: a material, and the tools' speeds and feeds for it
-        # (filled each time the tab is shown).
-        tools_tab: QVBoxLayout = QVBoxLayout(self.tabs["Tools"])
-        self.material_chooser: QComboBox = QComboBox()
-        self.material_chooser.addItem(MATERIAL)
-        self.material_chooser.setMinimumContentsLength(30)
-        self.material_chooser.activated.connect(self.show_tools)
-        tools_tab.addWidget(
-            self.material_chooser, 0, Qt.AlignmentFlag.AlignLeft
+        # Configure: the G-code run and coming, the MDI line and
+        # Execute, and the line Start runs from (-Tool and +Tool).
+        self.executed: QPlainTextEdit = self.scrolled_text(configure)
+        self.coming: QPlainTextEdit = self.scrolled_text(configure)
+        self.mdi_entry: QLineEdit = QLineEdit()
+        self.mdi_entry.setFont(fixed_font())
+        paint(self.mdi_entry, BLANK)
+        self.execute_button: QPushButton = QPushButton("Execute")
+        self.execute_button.setEnabled(False)
+        self.execute_button.clicked.connect(self.on_execute)
+        mdi_line: QHBoxLayout = QHBoxLayout()
+        mdi_line.addWidget(self.mdi_entry, 1)
+        mdi_line.addWidget(self.execute_button)
+        configure.addLayout(mdi_line)
+        self.mdi_entry.textChanged.connect(self.check_mdi)
+        self.tool_buttons: list[QPushButton] = []
+        step: int
+        for label, step in (("-Tool", -1), ("+Tool", +1)):
+            tool_button: QPushButton = QPushButton(label)
+            tool_button.clicked.connect(functools.partial(self.on_tool, step))
+            self.tool_buttons.append(tool_button)
+        row(configure, *self.tool_buttons, spaces={})
+
+        # Configure: how to load the carousel for the program open.
+        self.carousel: QPlainTextEdit = QPlainTextEdit()
+        self.carousel.setReadOnly(True)
+        self.carousel.setFont(fixed_font())
+        self.carousel.setMaximumHeight(
+            8 * self.carousel.fontMetrics().lineSpacing()
         )
-        self.tools_table: QPlainTextEdit = QPlainTextEdit()
-        self.tools_table.setReadOnly(True)
-        self.tools_table.setFont(fixed_font())
-        tools_tab.addWidget(self.tools_table, 1)
+        configure.addWidget(self.carousel)
 
-        # View: what SolidCraft shows.
-        view_tab: QVBoxLayout = QVBoxLayout(self.tabs["View"])
-        self.toggles: dict[str, QCheckBox] = {}
-        shown: bool
-        for label, _, shown in TOGGLES:
-            self.toggles[label] = QCheckBox(label)
-            self.toggles[label].setChecked(shown)
-            self.toggles[label].clicked.connect(self.on_toggle)
-            view_tab.addWidget(self.toggles[label])
-        view_tab.addStretch(1)
-
-        # Under the tabs, for every task: Open and Quit.
+        # NC Files: the job's files (to come, #74, #77); Open for now.
+        files: QVBoxLayout = QVBoxLayout(self.tabs["NC Files"])
+        files.addWidget(
+            QLabel(
+                "A job's .nc files, one tool each, in run order, will be "
+                "listed here.  For now, Open opens one program."
+            )
+        )
         open_button: QPushButton = QPushButton("Open")
         open_button.clicked.connect(self.on_open)
+        files.addWidget(open_button, 0, Qt.AlignmentFlag.AlignLeft)
+        files.addStretch(1)
+
+        # Execute: (Start, Pause and Stop are at the top, on every tab.)
+        execute: QVBoxLayout = QVBoxLayout(self.tabs["Execute"])
+        self.can_start: bool = False
+
+        # Execute: the speed slider (logarithmic), for experts only
+        # (#72, #79): greyed out until Expert is checked, and agreed.
+        self.top_speed: float = min(max_speed, MAX_SPEED)
+        self.expert: QCheckBox = QCheckBox("Expert")
+        self.expert.clicked.connect(self.on_expert)
+        self.slider: QSlider = QSlider(Qt.Orientation.Horizontal)
+        self.slider.setRange(0, SLIDER_STEPS)
+        self.slider.setEnabled(False)
+        self.slider.valueChanged.connect(self.on_slider)
+        self.speed_text: QLabel = QLabel("1x")
+        self.speed_text.setMinimumWidth(
+            self.speed_text.fontMetrics().horizontalAdvance("0.00x0")
+        )
+        slider_line: QHBoxLayout = QHBoxLayout()
+        slider_line.addWidget(self.expert)
+        slider_line.addWidget(QLabel("speed"))
+        slider_line.addWidget(self.slider, 1)
+        slider_line.addWidget(self.speed_text)
+        execute.addLayout(slider_line)
+
+        # Execute: the file and line, the time left, and the next tool
+        # and the time to it (`T.hs~5.1.5` S6, #75).
+        self.progress_text: QLabel = QLabel("")
+        execute.addWidget(self.progress_text)
+        self.next_tool: QLabel = QLabel("")
+        execute.addWidget(self.next_tool)
+        execute.addStretch(1)
+
+        # Under the tabs: Quit (hidden in the GUI, #56).
         self.quit_button: QPushButton = QPushButton("Quit")
         self.quit_button.clicked.connect(self.quit)
         self.on_quit: Callable[[], None] | None = None
         self.spindle: bool = True
         bottom: QHBoxLayout = QHBoxLayout()
         bottom.addStretch(1)
-        bottom.addWidget(open_button)
-        bottom.addSpacing(12)
         bottom.addWidget(self.quit_button)
         layout.addLayout(bottom)
 
@@ -794,13 +842,10 @@ class HMI(QWidget):
         button: QPushButton
         for button in self.tool_buttons:
             button.setEnabled(not running)
-        self.run_button.setText("Resume" if paused else "Start")
-        self.run_button.setEnabled(
-            not (
-                (running and not paused) or self.drawing or not self.origin_set
-            )
+        self.can_start = not (
+            (running and not paused) or self.drawing or not self.origin_set
         )
-        self.pause_button.setEnabled(running and not paused)
+        self.name_run_toggle()
 
         # Jogs only while stopped: LinuxCNC 2.9 will not change modes
         # while a program runs or is paused.  (`poll()` sets Set Origin
@@ -1002,16 +1047,12 @@ class HMI(QWidget):
 
     # Method `HMI.set_material()`:
     def set_material(self, material: str) -> None:
-        """Show a material in the Tools tab's chooser.
+        """Note the material the open program cuts.
 
         Arguments:
         * `material` (`str`): The material's name.
         """
-        index: int = self.material_chooser.findText(material)
-        if index < 0:
-            self.material_chooser.addItem(material)
-            index = self.material_chooser.count() - 1
-        self.material_chooser.setCurrentIndex(index)
+        self.program_material = material
 
     # Method `HMI.load_tools()`:
     def load_tools(self) -> None:
@@ -1066,38 +1107,6 @@ class HMI(QWidget):
             except (ValueError, OSError) as error:
                 self.message.setText(str(error))
 
-    # Method `HMI.show_tools()`:
-    def show_tools(self) -> None:
-        """Fill the Tools tab: the tools' speeds and feeds."""
-        # The shop is read again each time, so edits to it show.
-        text: str
-        material: str = self.material_chooser.currentText()
-        try:
-            shop: dict[str, object] = shops.read(SHOP_FILE)
-        except ValueError as error:
-            text = f"The shop could not be read:\n{error}"
-        else:
-            blocked: bool = self.material_chooser.blockSignals(True)
-            self.material_chooser.clear()
-            self.material_chooser.addItems(material_names(shop))
-            self.material_chooser.blockSignals(blocked)
-            self.set_material(material)
-            text = tool_speeds(shop, SHOP_MACHINE, material)
-
-            # The carousel's slots and swaps for the program open.
-            try:
-                machine: Machine = shops.cnc_machine(
-                    shop, SHOP_MACHINE, material
-                )
-                loads: list[str] = plan_text(
-                    machine, gcode_sequence(self.lines)
-                )
-            except (ValueError, KeyError) as error:
-                loads = [f"Carousel: {error}"]
-            if loads:
-                text = "\n".join([*loads, "", text])
-        self.tools_table.setPlainText(text)
-
     # Method `HMI.tab()`:
     def tab(self) -> str:
         """Return the name of the tab shown.
@@ -1123,9 +1132,70 @@ class HMI(QWidget):
 
     # Method `HMI.on_tab_changed()`:
     def on_tab_changed(self) -> None:
-        """Bring the tab just shown up to date."""
-        if self.tab() == "Tools":
-            self.show_tools()
+        """Bring the tab just shown up to date (none needs it now)."""
+
+    # Method `HMI.progress_line()`:
+    def progress_line(self, at: int) -> str:
+        """Return where the program is, and the time left (#75).
+
+        Arguments:
+        * `at` (`int`): The line being run, or to start from (from 1;
+          0 for the start).
+
+        Returns:
+        * (`str`): E.g. "demo.ngc  line 120 of 697  9:30 left", or ""
+          with no program.
+        """
+        if not self.lines:
+            return ""
+        done: float = self.sums[min(at, len(self.sums) - 1)]
+        left: float = (self.sums[-1] - done) / max(self.override, 1.0e-6)
+        return (
+            f"{Path(self.lines_file).name}  line {at} of {len(self.lines)}"
+            f"  {clock(left)} left"
+        )
+
+    # Method `HMI.show_carousel()`:
+    def show_carousel(self) -> None:
+        """Show how to load the carousel's slots for the program open."""
+        # The shop is read again each time, so edits to it show.
+        loads: list[str]
+        self.manual = None
+        try:
+            shop: dict[str, object] = shops.read(SHOP_FILE)
+            machine: Machine = shops.cnc_machine(
+                shop, SHOP_MACHINE, self.program_material
+            )
+            sequence: list[int] = gcode_sequence(self.lines)
+            loads = plan_text(machine, sequence)
+            if machine.carousel_slots:
+                self.manual = frozenset(
+                    swap.change
+                    for swap in plan(sequence, machine.carousel_slots).swaps
+                )
+        except (ValueError, KeyError) as error:
+            loads = [f"Carousel: {error}"]
+        self.carousel.setPlainText("\n".join(loads))
+
+    # Method `HMI.on_expert()`:
+    def on_expert(self) -> None:
+        """Unlock the speed slider for an expert, or lock it at 1x (#79).
+
+        Checking Expert asks first; unchecking puts the speed back to
+        the program's own.
+        """
+        if self.expert.isChecked():
+            agreed: bool = ask_yes_no(
+                self,
+                "Expert",
+                "Change the speeds?  This is for experts: listen to the "
+                "cut, and change the speed a little at a time.",
+            )
+            self.expert.setChecked(agreed)
+            self.slider.setEnabled(agreed)
+            return
+        self.slider.setEnabled(False)
+        self.set_speed(1.0)
 
     # Method `HMI.on_run()`:
     def on_run(self) -> None:
@@ -1137,6 +1207,85 @@ class HMI(QWidget):
         else:
             self.machine.run(self.start)
         self.set_running(True, False)
+
+    # Method `HMI.name_run_toggle()`:
+    def name_run_toggle(self) -> None:
+        """Name the one run button for where the run is (#96)."""
+        self.run_toggle.setText(
+            "Pause"
+            if self.running and not self.paused
+            else "Resume"
+            if self.paused
+            else "Restart"
+            if self.ended
+            else "Start"
+        )
+        self.run_toggle.setEnabled(
+            (self.running and not self.paused) or self.can_start
+        )
+        self.skip_button.setEnabled(not self.running)
+
+    # Method `HMI.on_run_toggle()`:
+    def on_run_toggle(self) -> None:
+        """Pause a run, or start, resume or restart one (#96).
+
+        Starting goes minimal, so SolidCraft gets the screen (#94).
+        """
+        if self.running and not self.paused:
+            self.on_pause()
+            return
+        if not self.paused:
+            self.ended = False
+            self.set_minimal(True)
+        self.on_run()
+
+    # Method `HMI.intervention()`:
+    def intervention(self) -> Intervention | None:
+        """Return when the operator is next needed, for the tab's bar.
+
+        Returns:
+        * (`Intervention | None`): The next tool change or the end;
+          waiting now while the program has paused itself (`M0`);
+          `None` with no program open.
+        """
+        found: Intervention | None = next_intervention(
+            self.lines,
+            self.sums,
+            self.spans,
+            self.at,
+            self.override,
+            manual=self.manual,
+        )
+        if found is None or not (self.paused and not self.operator_paused):
+            return found
+        return Intervention(found.what, 0.0, found.span, True)
+
+    # Method `HMI.toggle_minimal()`:
+    def toggle_minimal(self) -> None:
+        """Switch between the minimal form and the full one (#94)."""
+        self.set_minimal(not self.minimal)
+
+    # Method `HMI.set_minimal()`:
+    def set_minimal(self, minimal: bool) -> None:
+        """Show only the strip, status and plan, or everything (#90-#94).
+
+        On its own the HMI's window then shrinks and stays on top
+        (#95); in the GUI, `on_minimal` does that for the GUI's window.
+
+        Arguments:
+        * `minimal` (`bool`): True for the minimal form.
+        """
+        self.minimal = minimal
+        self.size_button.setText("Full" if minimal else "Minimal")
+        self.notebook.setVisible(not minimal)
+        self.progress.setVisible(not minimal)
+        if self.on_minimal is not None:
+            self.on_minimal(minimal)
+            return
+        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, minimal)
+        self.show()
+        if minimal:
+            self.resize(self.minimumSizeHint())
 
     # Method `HMI.on_pause()`:
     def on_pause(self) -> None:
@@ -1281,6 +1430,7 @@ class HMI(QWidget):
         self.operator_paused = False
         self.machine.stop()
         self.start = 0
+        self.ended = False
         self.set_running(False, False)
 
     # Method `HMI.on_jog()`:
@@ -1384,7 +1534,7 @@ class HMI(QWidget):
 
     # Method `HMI.on_toggle()`:
     def on_toggle(self) -> None:
-        """Show or hide what the View tab's toggles say.
+        """Show or hide what the toggles say.
 
         Only visibility changes (`SetupView.apply_hidden()`); the
         setup is not drawn again, as nothing in it differs.  A drawing
@@ -1449,6 +1599,12 @@ class HMI(QWidget):
         * (`str`): `ok`, or `error: ...` when there is no such button
           or it is greyed out.
         """
+        # The one run button answers to each of its words, and Stop to
+        # Reset (the words of the buttons it replaced, #96).
+        if label == "Reset":
+            label = "Stop"
+        if label in RUN_WORDS and self.run_toggle.text() != label:
+            return f"error: {label} is greyed out"
         button: QAbstractButton
         for button in self.buttons():
             if button.text() == label:
@@ -1679,10 +1835,15 @@ class HMI(QWidget):
             self.lines_file = status.file
             self.lines = self.machine.program_lines(status.file)
             self.time_program()
+            self.show_carousel()
         if status.state and (
             (status.state != "idle", status.state == "paused")
             != (self.running, self.paused)
         ):
+            finished: bool = self.running and status.state == "idle"
+            if finished:
+                self.ended = True
+                self.set_minimal(False)
             self.set_running(status.state != "idle", status.state == "paused")
 
         # A pause no one asked for is the program's (`M0`, at a tool
@@ -1707,24 +1868,28 @@ class HMI(QWidget):
 
         # The next tool, and the time left until it (cheap: the line
         # times are added up once per program).
+        at: int = status.line if self.running else self.start
+        self.at = at
         self.next_tool.setText(
             next_tool_text(
-                self.lines,
-                self.sums,
-                self.spans,
-                status.line if self.running else self.start,
-                self.override,
+                self.lines, self.sums, self.spans, at, self.override
             )
         )
+        self.progress_text.setText(self.progress_line(at))
 
         # The position, the tool and any message.
         self.position.setText(
             f"X {x:9.4f}  Y {y:9.4f}  Z {z:9.4f}  T{status.tool:02d}"
+            f"  S {status.rpm:5.0f} rpm  F {status.feed:6.1f} in/min"
             f"  start line {self.start}  "
             f"{self.program_machine}, {self.program_material}"
         )
+        self.plan.setText(
+            tool_plan(self.lines, self.sums, self.spans, at, self.override)
+        )
         if status.messages:
             self.message.setText(status.messages[-1])
+        self.message.setVisible(bool(self.message.text()))
 
         # Commands from the port.
         if self.port is not None:
@@ -1742,6 +1907,10 @@ def run(application: QApplication) -> int:
     * (`int`): The exit status.
     """
     return application.exec()
+
+
+# The words the one run button shows (`HMI.name_run_toggle()`).
+RUN_WORDS: tuple[str, ...] = ("Start", "Pause", "Resume", "Restart")
 
 
 # Class `HMIStartError`:
